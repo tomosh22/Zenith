@@ -331,20 +331,20 @@ public:
 	//-------------------------------------------------------------------------
 	// PER-KEY TANGENTS (WU-8.2) — the curve editor's half of the mutation API.
 	//
-	// ★ A TANGENT MODE IS NOT ON THE WIRE AND IS NOT STORED HERE EITHER
-	// (Flux/MeshAnimation/CLAUDE.md, *Tangent sampling*). The clip holds two
-	// Vector3s per key and nothing else; "Auto" is an OPERATION that realises a
-	// shape as numbers, and the only mode a reader can DERIVE afterwards is
-	// "both tangents are unset" (Flux_TangentIsUnset) versus "somebody authored
-	// something". The editor's label for the first of those is **Linear**, never
-	// "Flat": zero IS the linear tangent, a genuinely flat handle is
-	// unrepresentable, and a control labelled "Flat" would promise an ease this
-	// format cannot store.
+	// ★ A TANGENT MODE IS STORED PER END (Flux_TangentMode, B1) BUT IS NOT YET ON
+	// THE WIRE, so at schema 2 it is DERIVED FROM THE VECTOR — exactly zero is
+	// LINEAR, anything else is CUSTOM — and the ONE place that derivation happens
+	// is Flux_BoneChannel's Set*Tangent setters
+	// (Flux/MeshAnimation/CLAUDE.md, *Tangent sampling*). So FLAT and AUTO are not
+	// authorable through any verb below: "Auto" is still an OPERATION that realises
+	// a shape as numbers, and a key it wrote reads back CUSTOM. The editor's label
+	// for a wholly-LINEAR pair is **Linear**, never "Flat" — a control labelled
+	// "Flat" would promise an ease nothing on this path can produce yet.
 	//
-	// ★ AN EXACTLY-ZERO TANGENT IS UNSET IS LINEAR. Nothing here substitutes,
-	// clamps or normalises a tangent: the sampler reads zero as "no authored
-	// derivative at this end of this segment" and uses the segment's own slope,
-	// and any tidying done on the way in would take that meaning away.
+	// ★ THE VECTOR IS STORED EXACTLY. Nothing here (or in the channel) substitutes,
+	// clamps or normalises a tangent; only the MODE is derived from it. That
+	// exactness is what "an exactly-zero vector is the LINEAR one" rests on, and any
+	// tidying on the way in would take the meaning away.
 	//
 	// ★ ROOT MOTION HAS NO TANGENTS AND GAINS NONE (D17). Flux_RootMotion carries
 	// no parallel Flux_KeyTangents array — giving it one moves the .zanim layout
@@ -373,17 +373,17 @@ public:
 	bool SetKeyInTangent(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Vector3& xInTangent);
 	bool SetKeyOutTangent(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Vector3& xOutTangent);
 
-	// ★ CATMULL-ROM FOR ONE KEY, COMPUTED HERE. Flux_BoneChannel offers the two
-	// WHOLE-TRACK presets and no per-key helper, and a curve editor's "Auto" acts
-	// on a SELECTION — so the centred-slope formula is reproduced in this file,
-	// deliberately and identically: interior keys get
-	// (v_{k+1} - v_{k-1}) / (t_{k+1} - t_{k-1}), the two endpoints get the
-	// one-sided slope of the single segment they bound, and a non-positive span
-	// gives zero (which is the linear tangent, and the honest answer when there
-	// is no slope to measure). For ROTATION it is the same construction in
-	// angular-velocity terms — shortest arc between the neighbours, then rotated
-	// into key k's OWN body frame by q_k^-1 * q_{k-1}, because that is the frame
-	// the sampler reads a tangent in.
+	// ★ CATMULL-ROM FOR ONE KEY, AND THE FORMULA IS THE CLIP'S (B1). This calls
+	// Flux_BoneChannel::ComputeAutoTangentForKey — the SAME code
+	// ComputeAutoTangents runs per key — so the panel's per-key *Auto* and its
+	// whole-track *Auto* cannot disagree about a key's slope. It used to be a hand
+	// copy of the centred-slope formula in Zenith_AnimationDocument.cpp, carrying a
+	// second copy of Flux_AnimationClip.cpp's anonymous-namespace rotation-vector
+	// helper with it; both are deleted.
+	//
+	// The root-motion refusal is stated HERE rather than downstream: a bone channel
+	// has never heard of a root-motion track, so nothing below this line could
+	// refuse one.
 	bool SetKeyTangentsAuto(const Zenith_AnimTrackId& xTrack, u_int uKeyId);
 
 	// The two WHOLE-TRACK presets, each as ONE compound whose children capture
@@ -399,9 +399,12 @@ public:
 	bool SetTrackTangentsAuto(const Zenith_AnimTrackId& xTrack);
 	bool SetTrackTangentsLinear(const Zenith_AnimTrackId& xTrack);
 
-	// PURE. Exact, component by component — the same exactness Flux_TangentIsUnset
-	// uses and for the same reason: these are stored values round-tripped through
-	// a file, not measurements, so a tolerance could only swallow a real edit.
+	// PURE. Exact, component by component, AND both Flux_TangentModes — the same
+	// exactness Flux_DeriveTangentModesFromVectors uses and for the same reason:
+	// these are stored values round-tripped through a file, not measurements, so a
+	// tolerance could only swallow a real edit. The modes are in the comparison
+	// because two pairs with identical vectors and different modes SAMPLE
+	// differently, so vectors alone would report a real edit as a no-op.
 	static bool TangentsEqual(const Flux_KeyTangents& xA, const Flux_KeyTangents& xB);
 
 	//-------------------------------------------------------------------------
@@ -518,11 +521,12 @@ private:
 	static bool IsTrackAddressable(const Zenith_AnimTrackId& xTrack);
 
 	//-------------------------------------------------------------------------
-	// Tangent helpers (WU-8.2). All three refuse a root-motion track, which is
-	// the ONE place the "root motion has no tangent array" rule is tested.
+	// Tangent helpers (WU-8.2). Both refuse a root-motion track, which is one of
+	// the places the "root motion has no tangent array" rule is tested — the
+	// third, SetKeyTangentsAuto, states it inline now that the per-key
+	// Catmull-Rom lives on Flux_BoneChannel.
 	//-------------------------------------------------------------------------
 	bool ReadKeyTangentsAtIndex(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const;
-	bool ComputeAutoTangentForKey(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const;
 	// The body SetTrackTangentsAuto and SetTrackTangentsLinear share: capture
 	// every key's pair, run the channel's own preset, then push one command per
 	// key whose pair actually moved, all inside one compound.

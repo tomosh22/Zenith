@@ -44,6 +44,15 @@ inline constexpr u_int uZENITH_SKELETON_SCHEMA_CURRENT = 2;
 inline constexpr u_int uZENITH_MODEL_SCHEMA_CURRENT    = 2;
 // .zanim had NO version word at all before it adopted the envelope, so its schema
 // starts at 1 — the first layout that is self-describing on the wire.
+//
+// ★ SCHEMA 3 IS THE PER-KEY TANGENT MODES, AND IT IS NOT CURRENT YET. B1 added
+// Flux_TangentMode in memory and taught Flux_ReadKeyTangents the 26-byte schema-3
+// record (six floats then two mode bytes, where schema <= 2 is 24 and the modes are
+// DERIVED from the vectors), but the WRITER still emits six floats — deliberately,
+// so the 17 authored clips under Assets/Authored stay byte-identical and the pin
+// boot has nothing to migrate. Bumping this constant is the unit that adds those two
+// bytes to Flux_WriteKeyTangents and a migration step to Zenith_Tools_AnimMigrate;
+// do not bump it on its own.
 inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 2;  // 2: key times are SECONDS (were ticks); byte layout unchanged
 
 // WU-6.2. Both formats are self-describing from their FIRST byte — neither ever

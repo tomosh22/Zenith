@@ -112,6 +112,13 @@ void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenit
 // helpers above: uint32 count, then per entry the in-tangent xyz then the
 // out-tangent xyz. A rotation channel's entries are ANGULAR velocities
 // (axis * rad/s), which is why one Vector3 pair serves all three channel types.
+//
+// ★ THE WRITER IS STILL SIX FLOATS PER RECORD, AND B1 DELIBERATELY DOES NOT
+// CHANGE THAT. Flux_TangentMode exists in memory and the READER below already
+// understands the schema-3 record, but the schema constant is still 2 and this
+// function still emits 24 bytes — so the 17 authored clips in the tree stay
+// byte-identical and the pin boot has nothing to migrate. The unit that moves
+// uZENITH_ANIMATION_SCHEMA_CURRENT to 3 is what adds the two bytes here.
 //=============================================================================
 void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents)
 {
@@ -127,11 +134,16 @@ void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_
 	}
 }
 
-// Same budget-before-reserve contract as Flux_ReadVec3Keys above.
-void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents)
+// Same budget-before-reserve contract as Flux_ReadVec3Keys above — and the budget
+// is what makes uSchemaVersion a REQUIRED argument rather than a convenience: the
+// record is 24 bytes at schemas 1-2 and 26 at schema 3, so a reader that guessed
+// would either refuse a legitimate schema-3 block or accept a hostile count that
+// the bytes cannot back.
+void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents, u_int uSchemaVersion)
 {
-	// In-tangent xyz + out-tangent xyz.
-	constexpr uint64_t ulTANGENT_BYTES = 6ull * sizeof(float);
+	// In-tangent xyz + out-tangent xyz, plus the two mode bytes from schema 3 on.
+	const bool bHasModeBytes = (uSchemaVersion >= 3u);
+	const uint64_t ulTANGENT_BYTES = bHasModeBytes ? 26ull : 24ull;
 
 	uint32_t uCount = 0;
 	xStream >> uCount;
@@ -152,6 +164,34 @@ void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTang
 		xStream >> xTangent.m_xOutTangent.y;
 		xStream >> xTangent.m_xOutTangent.z;
 		if (xStream.HasReadFailure()) break;
+
+		if (bHasModeBytes)
+		{
+			uint8_t uInMode = 0;
+			uint8_t uOutMode = 0;
+			xStream >> uInMode;
+			xStream >> uOutMode;
+			if (xStream.HasReadFailure()) break;
+			// ★ A MODE BYTE ABOVE CUSTOM IS CORRUPTION, NOT A FUTURE MODE. Accepting
+			// one would hand the sampler an enum value no switch has a case for, at
+			// every sample, for the life of the clip. MarkCorrupt reports rather than
+			// asserts — a hostile file is not a programming error.
+			if (uInMode > uFLUX_TANGENT_MODE_MAX || uOutMode > uFLUX_TANGENT_MODE_MAX)
+			{
+				xStream.MarkCorrupt("Flux_ReadKeyTangents: tangent mode byte is not a Flux_TangentMode");
+				break;
+			}
+			xTangent.m_eInMode  = static_cast<Flux_TangentMode>(uInMode);
+			xTangent.m_eOutMode = static_cast<Flux_TangentMode>(uOutMode);
+		}
+		else
+		{
+			// Schemas 1-2 carry no mode, so it is DERIVED — which is exactly what the
+			// channel setters do to an in-memory pair, so a round-tripped clip and a
+			// hand-built one are indistinguishable.
+			Flux_DeriveTangentModesFromVectors(xTangent);
+		}
+
 		xTangents.PushBack(xTangent);
 	}
 }
@@ -847,12 +887,46 @@ namespace
 		return xImaginary * (fAngle / fSinHalfAngle);
 	}
 
+	// ONE END OF ONE SEGMENT, resolved to the derivative the two Hermite formulas
+	// below actually need. This is the only place Flux_TangentMode is interpreted
+	// while sampling, so "what does FLAT do" has exactly one answer.
+	//
+	// LINEAR ignores the stored vector and takes the fallback the caller measured —
+	// the segment's own slope for position/scale, slerp's own constant angular
+	// velocity for rotation. FLAT is the zero derivative that the zero VECTOR used to
+	// be spoken for by. AUTO and CUSTOM both read the stored number and differ only
+	// in provenance.
+	Zenith_Maths::Vector3 Flux_ResolveSegmentEndTangent(Flux_TangentMode eMode,
+		const Zenith_Maths::Vector3& xStored, const Zenith_Maths::Vector3& xLinearFallback)
+	{
+		switch (eMode)
+		{
+		case Flux_TangentMode::FLAT:
+			return Zenith_Maths::Vector3(0.0f);
+		case Flux_TangentMode::AUTO:
+		case Flux_TangentMode::CUSTOM:
+			return xStored;
+		case Flux_TangentMode::LINEAR:
+			break;
+		}
+		return xLinearFallback;
+	}
+
+	// Both ends of the segment take the pre-tangent code path. Kept as a named
+	// predicate because it is the branch EVERY clip in the tree takes on every
+	// sample, and it has to stay bit-identical rather than merely close.
+	bool Flux_SegmentIsWhollyLinear(const Flux_KeyTangents& xTangent0, const Flux_KeyTangents& xTangent1)
+	{
+		return xTangent0.m_eOutMode == Flux_TangentMode::LINEAR
+			&& xTangent1.m_eInMode  == Flux_TangentMode::LINEAR;
+	}
+
 	Zenith_Maths::Vector3 Flux_SampleHermiteVec3(
 		const Zenith_Maths::Vector3& xP0, const Zenith_Maths::Vector3& xP1,
 		const Flux_KeyTangents& xTangent0, const Flux_KeyTangents& xTangent1,
 		float fSegmentDuration, float fU)
 	{
-		if (Flux_TangentIsUnset(xTangent0.m_xOutTangent) && Flux_TangentIsUnset(xTangent1.m_xInTangent))
+		if (Flux_SegmentIsWhollyLinear(xTangent0, xTangent1))
 		{
 			return glm::mix(xP0, xP1, fU);
 		}
@@ -866,8 +940,8 @@ namespace
 		}
 
 		const Zenith_Maths::Vector3 xSlope = (xP1 - xP0) / fSegmentDuration;
-		const Zenith_Maths::Vector3 xM0 = Flux_TangentIsUnset(xTangent0.m_xOutTangent) ? xSlope : xTangent0.m_xOutTangent;
-		const Zenith_Maths::Vector3 xM1 = Flux_TangentIsUnset(xTangent1.m_xInTangent)  ? xSlope : xTangent1.m_xInTangent;
+		const Zenith_Maths::Vector3 xM0 = Flux_ResolveSegmentEndTangent(xTangent0.m_eOutMode, xTangent0.m_xOutTangent, xSlope);
+		const Zenith_Maths::Vector3 xM1 = Flux_ResolveSegmentEndTangent(xTangent1.m_eInMode,  xTangent1.m_xInTangent,  xSlope);
 
 		const Flux_HermiteBasis xBasis = Flux_EvaluateHermiteBasis(fU);
 		return xBasis.m_fH00 * xP0
@@ -881,7 +955,7 @@ namespace
 		const Flux_KeyTangents& xTangent0, const Flux_KeyTangents& xTangent1,
 		float fSegmentDuration, float fU)
 	{
-		if (Flux_TangentIsUnset(xTangent0.m_xOutTangent) && Flux_TangentIsUnset(xTangent1.m_xInTangent))
+		if (Flux_SegmentIsWhollyLinear(xTangent0, xTangent1))
 		{
 			return glm::normalize(glm::slerp(xQ0, xQ1, fU));
 		}
@@ -905,10 +979,10 @@ namespace
 		const Zenith_Maths::Vector3 xSegmentRotation = Flux_RotationVectorFromQuat(xRelative);
 
 		// Slerp's own body-frame angular velocity: constant over the segment, and the
-		// value an unset tangent stands in for.
+		// value a LINEAR end stands in for.
 		const Zenith_Maths::Vector3 xSlerpVelocity = xSegmentRotation / fSegmentDuration;
-		const Zenith_Maths::Vector3 xW0 = Flux_TangentIsUnset(xTangent0.m_xOutTangent) ? xSlerpVelocity : xTangent0.m_xOutTangent;
-		const Zenith_Maths::Vector3 xW1 = Flux_TangentIsUnset(xTangent1.m_xInTangent)  ? xSlerpVelocity : xTangent1.m_xInTangent;
+		const Zenith_Maths::Vector3 xW0 = Flux_ResolveSegmentEndTangent(xTangent0.m_eOutMode, xTangent0.m_xOutTangent, xSlerpVelocity);
+		const Zenith_Maths::Vector3 xW1 = Flux_ResolveSegmentEndTangent(xTangent1.m_eInMode,  xTangent1.m_xInTangent,  xSlerpVelocity);
 
 		// The three cumulative-Bezier control deltas. v1 and v3 are a third of the
 		// endpoint rotation-per-segment because the cumulative basis has slope 3 at
@@ -1034,15 +1108,17 @@ void Flux_BoneChannel::WriteToDataStream(Zenith_DataStream& xStream) const
 	Flux_WriteKeyTangents(xStream, m_xScaleTangents);
 }
 
-void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
+void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream, u_int uSchemaVersion)
 {
 	xStream >> m_strBoneName;
 	Flux_ReadVec3Keys(xStream, m_xPositions);
 	Flux_ReadQuatKeys(xStream, m_xRotations);
 	Flux_ReadVec3Keys(xStream, m_xScales);
-	Flux_ReadKeyTangents(xStream, m_xPositionTangents);
-	Flux_ReadKeyTangents(xStream, m_xRotationTangents);
-	Flux_ReadKeyTangents(xStream, m_xScaleTangents);
+	// Only the tangent block's record size moved with the schema; the three key
+	// blocks are the same bytes at every layout this reader accepts.
+	Flux_ReadKeyTangents(xStream, m_xPositionTangents, uSchemaVersion);
+	Flux_ReadKeyTangents(xStream, m_xRotationTangents, uSchemaVersion);
+	Flux_ReadKeyTangents(xStream, m_xScaleTangents, uSchemaVersion);
 
 	// The writer can only ever emit matched lengths, so a mismatch here is a corrupt
 	// or mis-cut stream. Say so, then restore the invariant rather than leaving the
@@ -1086,26 +1162,82 @@ float Flux_BoneChannel::GetLastKeyTimeSeconds() const
 	return fLast;
 }
 
+//=============================================================================
+// ★ THE ONE PLACE THE SCHEMA-2 MODE INVARIANT IS MAINTAINED (B1).
+//
+// The mode is not on the wire at schema 2, so it has to be a FUNCTION of the
+// vector, and deriving it here — on the incoming copy, at the single write path
+// into the parallel arrays — is what makes that true everywhere at once:
+//
+//  • a clip built in memory is indistinguishable from one read back from a file,
+//    because both ends of the round trip run the same derivation;
+//  • a handle drag that returns a vector to exactly zero reads LINEAR again,
+//    rather than staying CUSTOM with a zero derivative it would then be sampled
+//    with;
+//  • ComputeAutoTangents / ComputeFlatTangents / the editor's presets need no mode
+//    logic of their own — they write vectors and get the matching mode for free.
+//
+// The VECTOR is stored EXACTLY. Nothing here clamps, normalises or tidies one:
+// that is the property the "an exact zero is what LINEAR means" comparison rests
+// on, and a tolerance anywhere on this path would swallow a deliberately tiny
+// authored tangent.
+//=============================================================================
 void Flux_BoneChannel::SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
 {
 	Zenith_Assert(uKeyIndex < m_xPositionTangents.GetSize(), "SetPositionTangent: key index %u out of range (%u keys)", uKeyIndex, m_xPositionTangents.GetSize());
 	if (uKeyIndex < m_xPositionTangents.GetSize())
-		m_xPositionTangents.Get(uKeyIndex) = xTangents;
+	{
+		Flux_KeyTangents xStored = xTangents;
+		Flux_DeriveTangentModesFromVectors(xStored);
+		m_xPositionTangents.Get(uKeyIndex) = xStored;
+	}
 }
 
 void Flux_BoneChannel::SetRotationTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
 {
 	Zenith_Assert(uKeyIndex < m_xRotationTangents.GetSize(), "SetRotationTangent: key index %u out of range (%u keys)", uKeyIndex, m_xRotationTangents.GetSize());
 	if (uKeyIndex < m_xRotationTangents.GetSize())
-		m_xRotationTangents.Get(uKeyIndex) = xTangents;
+	{
+		Flux_KeyTangents xStored = xTangents;
+		Flux_DeriveTangentModesFromVectors(xStored);
+		m_xRotationTangents.Get(uKeyIndex) = xStored;
+	}
 }
 
 void Flux_BoneChannel::SetScaleTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
 {
 	Zenith_Assert(uKeyIndex < m_xScaleTangents.GetSize(), "SetScaleTangent: key index %u out of range (%u keys)", uKeyIndex, m_xScaleTangents.GetSize());
 	if (uKeyIndex < m_xScaleTangents.GetSize())
-		m_xScaleTangents.Get(uKeyIndex) = xTangents;
+	{
+		Flux_KeyTangents xStored = xTangents;
+		Flux_DeriveTangentModesFromVectors(xStored);
+		m_xScaleTangents.Get(uKeyIndex) = xStored;
+	}
 }
+
+#ifdef ZENITH_TESTING
+void Flux_BoneChannel::SetTangentModesForTesting(Flux_AnimTrack eTrack, u_int uKeyIndex,
+	Flux_TangentMode eInMode, Flux_TangentMode eOutMode)
+{
+	// The one door past the derivation above — see the header for why it exists and
+	// why it is not a production verb.
+	Zenith_Vector<Flux_KeyTangents>* pxTangents = nullptr;
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: pxTangents = &m_xPositionTangents; break;
+	case FLUX_ANIM_TRACK_ROTATION: pxTangents = &m_xRotationTangents; break;
+	case FLUX_ANIM_TRACK_SCALE:    pxTangents = &m_xScaleTangents;    break;
+	}
+	Zenith_Assert(pxTangents != nullptr && uKeyIndex < pxTangents->GetSize(),
+		"SetTangentModesForTesting: key index %u out of range", uKeyIndex);
+	if (pxTangents == nullptr || uKeyIndex >= pxTangents->GetSize())
+	{
+		return;
+	}
+	pxTangents->Get(uKeyIndex).m_eInMode = eInMode;
+	pxTangents->Get(uKeyIndex).m_eOutMode = eOutMode;
+}
+#endif
 
 //=============================================================================
 // WU-8.1 — the two tangent PRESETS. Pure over the key arrays; the only thing they
@@ -1181,6 +1313,55 @@ namespace
 	}
 }
 
+//=============================================================================
+// ★ THE PER-KEY AUTO QUERY, AND IT LIVES HERE SO THERE IS ONE OF IT.
+//
+// The editor's document used to carry a hand copy of both helpers above — plus a
+// copy of Flux_RotationVectorFromQuat, because that one is in an anonymous
+// namespace — solely because a curve editor's *Auto* acts on a SELECTION and this
+// class offered only the two whole-track presets. Two copies of a centred-slope
+// formula that MUST agree (the panel's per-key verb and the panel's track verb are
+// the same gesture at two granularities) is the shape that drifts silently: the
+// pose would differ by whichever control the user clicked.
+//
+// PURE — it writes nothing. The presets above are this function plus a store.
+//=============================================================================
+bool Flux_BoneChannel::ComputeAutoTangentForKey(Flux_AnimTrack eTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const
+{
+	Flux_KeyTangents xAuto;
+
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION:
+		if (uKeyIndex >= m_xPositions.GetSize()) { return false; }
+		xAuto.m_xInTangent = Flux_AutoTangentVec3(m_xPositions, uKeyIndex);
+		break;
+
+	case FLUX_ANIM_TRACK_ROTATION:
+		if (uKeyIndex >= m_xRotations.GetSize()) { return false; }
+		xAuto.m_xInTangent = Flux_AutoTangentQuat(m_xRotations, uKeyIndex);
+		break;
+
+	case FLUX_ANIM_TRACK_SCALE:
+		if (uKeyIndex >= m_xScales.GetSize()) { return false; }
+		xAuto.m_xInTangent = Flux_AutoTangentVec3(m_xScales, uKeyIndex);
+		break;
+
+	default:
+		return false;
+	}
+
+	// ★ IN == OUT, which is what makes "Auto" a SMOOTH key rather than a corner. A
+	// broken pair is what a hand drag produces; the preset's whole job is the
+	// unbroken one.
+	xAuto.m_xOutTangent = xAuto.m_xInTangent;
+	// The modes the setters would derive, so a caller may compare this answer
+	// against a stored pair without going through a write first.
+	Flux_DeriveTangentModesFromVectors(xAuto);
+	xOut = xAuto;
+	return true;
+}
+
 void Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack eTrack)
 {
 	switch (eTrack)
@@ -1219,8 +1400,10 @@ void Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack eTrack)
 
 void Flux_BoneChannel::ComputeFlatTangents(Flux_AnimTrack eTrack)
 {
-	// ★ ZERO, WHICH THE SAMPLER READS AS LINEAR — not as a flat handle. See the
-	// Flux_TangentIsUnset block in the header before naming a UI control after this.
+	// ★ ZERO, WHICH THE SETTERS DERIVE AS Flux_TangentMode::LINEAR — not as a FLAT
+	// handle, even though FLAT is now a mode this file understands. Writing FLAT here
+	// would re-time every track this preset touches into an ease. Read the
+	// Flux_TangentMode block in the header before naming a UI control after this.
 	const Flux_KeyTangents xZero;
 
 	switch (eTrack)
@@ -1738,7 +1921,9 @@ Zenith_Status Flux_AnimationClip::ParsePayload(Zenith_DataStream& xStream, u_int
 	{
 		if (xStream.HasReadFailure()) break;
 		Flux_BoneChannel xChannel;
-		xChannel.ReadFromDataStream(xStream);
+		// The schema this payload was written at, handed down verbatim: the tangent
+		// block's record size is the one thing inside a channel that moves with it.
+		xChannel.ReadFromDataStream(xStream, uSchemaVersion);
 		m_xBoneChannels.Emplace(xChannel.GetBoneName(), std::move(xChannel));
 	}
 	if (xStream.HasReadFailure())

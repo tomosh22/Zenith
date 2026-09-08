@@ -248,6 +248,16 @@ namespace
 	// would still pass if the writer and the migrator drifted together, and
 	// samples alone would not notice a re-ordering that changes the file on every
 	// re-bake.
+	//
+	// ★ AND THE SAMPLES ARE STILL COMPARABLE ACROSS B1's PER-KEY TANGENT MODES,
+	// which is why nothing here changed when they landed. A .zanim at schema <= 2
+	// carries no mode byte, so Flux_ReadKeyTangents DERIVES the mode from the vector
+	// on the way in — exactly zero is LINEAR, anything else CUSTOM — and
+	// Flux_BoneChannel's setters derive the same way, so a migrated clip and a
+	// freshly written one agree on the mode as well as on the numbers. When schema 3
+	// puts the two bytes on the wire, THAT is the unit that needs a migration step
+	// here (a schema-2 record has no mode to carry forward except the derived one);
+	// until then this file is untouched by the change on purpose.
 	constexpr u_int uANIM_MIGRATE_SAMPLE_COUNT = 24u;
 
 	bool AnimMigrateSamplesMatch(const Flux_AnimationClip& xA, const Flux_AnimationClip& xB, float fDuration)

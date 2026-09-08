@@ -43,32 +43,55 @@ Stores animation keyframe data loaded from `.zanim` files.
 
 **Sampling:** `SamplePosition/Rotation/Scale(float fTimeSeconds)` interpolates between keyframes — **curve-interpolated through the per-key tangents since WU-8.1**; see *Tangent sampling* below for the two formulas and for the one decision the whole change rests on. Two free helpers make "the last key lands at or before the end of the clip" checkable now that both are in the same unit, and are pure/allocation-free so a generator and a headless unit can assert with the same call: `Flux_ClipLastKeyTimeSeconds(clip)` and `Flux_ClipKeyTimesFitDuration(clip, epsilon)`.
 
-#### Tangent sampling (WU-8.1) — a strict superset, and why it is one
+#### Tangent sampling (WU-8.1, modes since B1) — a strict superset, and why it is one
 
-★ **AN UNSET (EXACTLY ZERO) TANGENT IS THE *LINEAR* TANGENT, NOT A FLAT ONE.**
-That single reading is what let curve interpolation land without moving a byte or a
-pose. Every generated clip in the tree and every clip Assimp imported carries zero
-in every tangent slot, and the classical Hermite reading of a zero derivative is a
-FLAT handle — which turns a straight segment into a smoothstep. Taking it would have
-silently re-timed every animation in the repository into an ease-in/ease-out, with
-no data moving and therefore nothing for a unit, a byte comparison or a bake hash to
-catch.
+★ **EVERY END OF EVERY KEY CARRIES A `Flux_TangentMode`, AND THE SAMPLER BRANCHES ON
+IT.** Four values — `LINEAR` (the segment's own slope; for rotation slerp's own
+constant angular velocity), `FLAT` (a zero derivative — the classical "ease"
+handle), `AUTO` and `CUSTOM` (both read the stored vector, and differ only in
+provenance). `Flux_TangentModeUsesVector` is the predicate for the last two.
+`Flux_ResolveSegmentEndTangent` in `Flux_AnimationClip.cpp` is the ONE place a mode
+is interpreted while sampling, so "what does FLAT do" has exactly one answer.
 
-So an unset tangent means "this end of this segment has no authored derivative" and
-the sampler substitutes the segment's own linear slope there (for rotation, slerp's
-own constant angular velocity). A segment bounded by **two** unset tangents runs the
-pre-WU-8.1 expression verbatim — `glm::mix` / `glm::slerp`, no Hermite arithmetic
-executed at all — so it is bit-identical rather than close, and that is the branch
-every clip in the tree takes today. `Flux_TangentIsUnset` is the named predicate and
-is an EXACT compare on purpose: it tests a default-constructed sentinel that
-round-trips as exact zero bits, not a measurement.
+★ **THE DEFAULT IS LINEAR, AND THAT IS THE WHOLE SAFETY PROPERTY.** Every generated
+clip in the tree and every clip Assimp imported carries zero in every tangent slot,
+and the classical Hermite reading of a zero derivative is a FLAT handle — which turns
+a straight segment into a smoothstep. A `CUSTOM` (or `FLAT`) default would silently
+re-time every animation in the repository into an ease-in/ease-out, with no data
+moving and therefore nothing for a unit, a byte comparison or a bake hash to catch.
+A segment whose two bounding ends are **both** `LINEAR` runs the pre-WU-8.1
+expression verbatim — `glm::mix` / `glm::slerp`, no Hermite arithmetic executed at
+all — so it is bit-identical rather than close, and that is the branch every clip in
+the tree takes today.
 
-★ **THE TRADE:** a genuinely flat tangent (zero derivative — the "ease" handle) is
-NOT authorable, because the zero vector is spoken for. `ComputeFlatTangents` writes
-zeroes and therefore produces LINEAR segments, which is what WU-8.1 specifies "flat"
-mode to mean; telling flat from linear needs a per-key tangent MODE, which is a field
-that is not on the wire and therefore a schema move. **Do not label a UI control
-"flat" without reading this paragraph.**
+★ **AT SCHEMA 2 THE MODE IS NOT ON THE WIRE, SO IT IS DERIVED — `mode == CUSTOM iff
+the vector is non-zero`, per end.** `Flux_DeriveTangentModesFromVectors` is the
+derivation and `Flux_BoneChannel::Set{Position,Rotation,Scale}Tangent` are its ONE
+production caller: they run it over the incoming COPY before storing, so a clip built
+in memory is indistinguishable from one read back from a file, and a handle drag that
+returns a vector to exactly zero reads `LINEAR` again rather than staying `CUSTOM`
+over a zero derivative. The compare is EXACT on purpose: it tests a
+default-constructed sentinel that round-trips as exact zero bits, not a measurement.
+The VECTOR is stored exactly — only the mode is derived. `Flux_ReadKeyTangents`
+applies the same derivation to a schema-1/2 record.
+
+★ **SO `FLAT` AND `AUTO` ARE NOT AUTHORABLE YET.** The writer still emits six floats,
+`uZENITH_ANIMATION_SCHEMA_CURRENT` is still **2**, and every production write path
+goes through a setter that derives. `ComputeFlatTangents` writes zeroes and therefore
+still produces `LINEAR` segments **despite the name** — making it write `FLAT` would
+re-time every track it touched. The reader ALREADY understands the schema-3 record
+(six floats then two mode bytes, 26 bytes rather than 24; a byte above `CUSTOM` is
+`MarkCorrupt`, not a mode); the unit that bumps the schema is what adds those bytes
+to the writer and makes the two modes reachable. **Do not label a UI control "flat"
+until that has happened.**
+
+★ **THE PER-KEY AUTO QUERY LIVES ON THE CHANNEL.**
+`Flux_BoneChannel::ComputeAutoTangentForKey(track, key, out)` is pure, returns
+`false` for a key index past the end of the track, and is the same code
+`ComputeAutoTangents` runs per key — so a curve editor's *Auto* on a SELECTION and
+its *Auto* on a whole track cannot disagree. `Zenith_AnimationDocument` used to carry
+a hand copy of it (and of this file's anonymous-namespace rotation-vector helper);
+both are deleted.
 
 | Track | Formula |
 |---|---|
@@ -85,9 +108,9 @@ velocity is wrong by O(|v|) — invisible in any one pose, a hitch at every keyf
 motion. And `w0 = w1 = v/dt` makes `v1 = v2 = v3 = v/3` about one axis, which commute
 and sum against `B1+B2+B3 = 3u`, giving `q0 * E(u*v)` — slerp, exactly.
 
-**Tangent MODES are an editor concept and are not stored.** The clip holds numbers.
-Two pure whole-track presets realise a mode as numbers, both writing through the
-`Set*Tangent` setters so there is one write path into the parallel arrays:
+**The two whole-track presets** are pure and write through the `Set*Tangent` setters,
+so there is one write path into the parallel arrays — and, since B1, one place the
+mode derivation happens:
 
 - `Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack)` — Catmull-Rom: in = out =
   the centred slope `(v_{k+1}-v_{k-1})/(t_{k+1}-t_{k-1})`, one-sided at the two
@@ -95,7 +118,8 @@ Two pure whole-track presets realise a mode as numbers, both writing through the
   angular-velocity terms, **rotated into key k's own body frame** by
   `q_k^-1 * q_{k-1}` — the raw relative rotation comes out in the EARLIER key's frame,
   and the sampler reads a tangent in its own key's.
-- `Flux_BoneChannel::ComputeFlatTangents(Flux_AnimTrack)` — zeroes. See the trade above.
+- `Flux_BoneChannel::ComputeFlatTangents(Flux_AnimTrack)` — zeroes, which derive
+  `LINEAR`. **Not `Flux_TangentMode::FLAT`, despite the name.** See above.
 
 **`Flux_RootMotion` is still sampled LINEARLY**, deliberately. It carries no tangent
 array (D17 declined to give it one, because that moves the `.zanim` layout), so
@@ -105,10 +129,12 @@ the channel samplers behind their `Has*Keyframes()` guards and do nothing else w
 the values, so a tangent reaches a bone's local pose for free. That is a claim, so it
 is pinned by two units in `Flux_BonePose.Tests.inl` rather than left as a comment.
 
-**No schema bump.** The block D17 reserved is exactly what curve sampling needed —
-in/out per key, angular velocity for rotation — so the wire format did not move and
+**No schema bump — twice.** The block D17 reserved is exactly what curve sampling
+needed — in/out per key, angular velocity for rotation — so the wire format did not
+move at WU-8.1, and B1 did not move it either: `Flux_TangentMode` is an in-memory
+field, `Flux_WriteKeyTangents` still emits six floats per record, and
 `uZENITH_ANIMATION_SCHEMA_CURRENT` is still **2**. A re-bake of the generated clips is
-byte-identical, because none of them authors a tangent.
+byte-identical, and the 17 authored clips under `Assets/Authored/` are untouched.
 
 **Loading:** `LoadFromAssimp()` (tools-only) imports from Assimp's `aiAnimation` structure. Binary `.zanim` files are loaded through the asset system via `Zenith_AnimationAsset::LoadFromFile()` (AssetHandling/Zenith_AnimationAsset.cpp), which now returns a `Zenith_Status` taken straight from `Flux_AnimationClip::ParseStream()` — a refused file no longer reports a successful load holding an empty clip.
 
@@ -162,11 +188,20 @@ like `m_strSourcePath`, so an absolute authoring-machine path never reaches the 
   free the day one is committed, which `Assets/Authored/` now does.
 - **The per-key tangent block (D17), SAMPLED since WU-8.1.** Each channel carries a
   `Zenith_Vector<Flux_KeyTangents>` parallel to each of its three key arrays — same
-  size, zero by default, kept in lockstep by every add/insert/remove/retime path. It
-  was **serialized and round-tripped but NOT sampled** from D17 until WU-8.1, purely
-  so the on-disk layout would not have to move when curve-interpolated sampling
+  size, LINEAR/zero by default, kept in lockstep by every add/insert/remove/retime
+  path. It was **serialized and round-tripped but NOT sampled** from D17 until WU-8.1,
+  purely so the on-disk layout would not have to move when curve-interpolated sampling
   landed — **and it did not: the schema is still 2 and no field moved** (see *Tangent
-  sampling* above). ★ **A ROTATION TANGENT IS AN ANGULAR VELOCITY**, a
+  sampling* above). **The record is 24 bytes** — six floats, and no mode byte.
+  `Flux_ReadKeyTangents(stream, out, uSchemaVersion)` and
+  `Flux_BoneChannel::ReadFromDataStream(stream, uSchemaVersion)` take the schema as a
+  REQUIRED argument (`ParsePayload` passes its own) because the record grows to **26
+  bytes at schema 3** — six floats then the two `Flux_TangentMode` bytes — and the
+  count is budgeted against the bytes that remain BEFORE anything is reserved, so a
+  reader that guessed the size would either refuse a legitimate block or accept a
+  hostile count. At schemas 1-2 the modes are derived from the vectors; at schema 3
+  they are read, and a byte above `CUSTOM` is `MarkCorrupt` (report, not assert — a
+  hostile file is data, not a bug). ★ **A ROTATION TANGENT IS AN ANGULAR VELOCITY**, a
   `Vector3` in axis × radians-per-second form — the same shape as a position or scale
   tangent's units-per-second — because the natural derivative of a slerped rotation
   curve is a body-frame angular velocity. Quaternion Bezier control points would be four

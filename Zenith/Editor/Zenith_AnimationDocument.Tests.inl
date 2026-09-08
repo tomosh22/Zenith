@@ -697,9 +697,9 @@ ZENITH_TEST(AnimDocument, TangentEditsAreOneStepEachAndUndoRestoresTheUnsetPairE
 
 	Flux_KeyTangents xTangents;
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "a key's tangent pair reads back");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
-		"★ and every key of a clip nobody authored a tangent on is UNSET — which is LINEAR, not flat");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+	ZENITH_ASSERT_TRUE(xTangents.m_eInMode == Flux_TangentMode::LINEAR,
+		"★ and every key of a clip nobody authored a tangent on is LINEAR, not flat");
+	ZENITH_ASSERT_TRUE(xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 
 	Flux_KeyTangents xEdited;
 	xEdited.m_xInTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
@@ -724,9 +724,12 @@ ZENITH_TEST(AnimDocument, TangentEditsAreOneStepEachAndUndoRestoresTheUnsetPairE
 	xDoc.Undo();
 	xDoc.Undo();
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "the key still resolves after both undos");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
-		"★ and the pair is back to EXACT zero — the sampler's bit-identical linear branch, not merely close");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+	ZENITH_ASSERT_TRUE(xTangents.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+		&& xTangents.m_eInMode == Flux_TangentMode::LINEAR,
+		"★ and the pair is back to EXACT zero AND to LINEAR — the sampler's bit-identical branch, not "
+		"merely close, and not a zero vector left carrying a CUSTOM mode");
+	ZENITH_ASSERT_TRUE(xTangents.m_xOutTangent == Zenith_Maths::Vector3(0.0f)
+		&& xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 
 	xDoc.Redo();
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "and a redo re-applies");
@@ -781,10 +784,12 @@ ZENITH_TEST(AnimDocument, AutoTangentsOnCollinearKeysAreTheSlopeAndLinearZeroesT
 	{
 		Flux_KeyTangents xTangents;
 		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
-		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
-			"★ Linear writes exact ZEROES — which is the sampler's linear branch, and is why the control "
-			"may not be labelled 'Flat': a flat handle is unrepresentable");
-		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+		ZENITH_ASSERT_TRUE(xTangents.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+			&& xTangents.m_eInMode == Flux_TangentMode::LINEAR,
+			"★ Linear writes exact ZEROES and the setter derives Flux_TangentMode::LINEAR from them — "
+			"NOT Flux_TangentMode::FLAT, which is why the control may not be labelled 'Flat': at schema 2 "
+			"nothing on this path can author an ease");
+		ZENITH_ASSERT_TRUE(xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 	}
 
 	// ★ THE UNDO RESTORES EVERY KEY'S PREVIOUS PAIR, which is the whole reason the
@@ -801,9 +806,89 @@ ZENITH_TEST(AnimDocument, AutoTangentsOnCollinearKeysAreTheSlopeAndLinearZeroesT
 	{
 		Flux_KeyTangents xTangents;
 		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
-		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent),
-			"and a second undo is back at the unset pair the file carried");
+		ZENITH_ASSERT_TRUE(xTangents.m_xOutTangent == Zenith_Maths::Vector3(0.0f)
+			&& xTangents.m_eOutMode == Flux_TangentMode::LINEAR,
+			"and a second undo is back at the LINEAR zero pair the file carried");
 	}
+}
+
+//==============================================================================
+// (15b) B1 — TangentsEqual SEES THE MODES, and re-stating an edit still pushes
+// nothing.
+//
+// ★ THE TWO HALVES ARE IN ONE TEST BECAUSE THEY PULL AGAINST EACH OTHER. Widening
+// the comparison to include the modes is what stops a mode-only edit reading as a
+// no-op — and it is also the change that would break the "SATISFIED, pushes
+// nothing" rule if the requested pair's modes were compared RAW instead of after
+// the same derivation the channel setter applies. A caller hands over vectors; its
+// mode fields are whatever the default constructor left there.
+//==============================================================================
+ZENITH_TEST(AnimDocument, TangentsEqualSeesTheModesAndReStatingAnEditStillPushesNothing)
+{
+	// ---- pure first: equal vectors, different modes are NOT equal --------------
+	Flux_KeyTangents xLinearPair;
+	Flux_KeyTangents xFlatPair;
+	xFlatPair.m_eInMode = Flux_TangentMode::FLAT;
+	ZENITH_ASSERT_TRUE(xLinearPair.m_xInTangent == xFlatPair.m_xInTangent
+		&& xLinearPair.m_xOutTangent == xFlatPair.m_xOutTangent,
+		"fixture: the two pairs carry IDENTICAL vectors");
+	ZENITH_ASSERT_FALSE(Zenith_AnimationDocument::TangentsEqual(xLinearPair, xFlatPair),
+		"★ a LINEAR end and a FLAT end with the same zero vector are NOT the same tangent — they sample "
+		"differently, so a comparison that missed it would report a real edit as a no-op");
+
+	Flux_KeyTangents xAutoPair;
+	xAutoPair.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xAutoPair.m_eOutMode = Flux_TangentMode::AUTO;
+	Flux_KeyTangents xCustomPair;
+	xCustomPair.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xCustomPair.m_eOutMode = Flux_TangentMode::CUSTOM;
+	ZENITH_ASSERT_FALSE(Zenith_AnimationDocument::TangentsEqual(xAutoPair, xCustomPair),
+		"and AUTO differs from CUSTOM even though both read the same stored vector — the difference is "
+		"PROVENANCE, and an undo has to be able to restore it");
+
+	Flux_KeyTangents xSame;
+	xSame.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xSame.m_eOutMode = Flux_TangentMode::CUSTOM;
+	ZENITH_ASSERT_TRUE(Zenith_AnimationDocument::TangentsEqual(xSame, xCustomPair),
+		"two pairs agreeing on all four fields ARE equal");
+
+	// ---- and through the document, where the derivation has to happen first ----
+	AnimDocFixture xFixture("zenith_animdoc_tangentmodes");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+
+	// A caller's struct: vectors filled in, mode fields left at their LINEAR default
+	// — which is exactly what the curve panel's handle drag builds.
+	Flux_KeyTangents xRequested;
+	xRequested.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
+	xRequested.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
+	ZENITH_ASSERT_TRUE(xRequested.m_eInMode == Flux_TangentMode::LINEAR,
+		"fixture: the REQUEST carries the default modes, which disagree with its own vectors");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xRequested), "the edit lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "as one undo step");
+
+	Flux_KeyTangents xStored;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xStored), "and reads back");
+	ZENITH_ASSERT_TRUE(xStored.m_eInMode == Flux_TangentMode::CUSTOM
+		&& xStored.m_eOutMode == Flux_TangentMode::CUSTOM,
+		"with the modes DERIVED from the vectors on the way in");
+
+	// ★ RE-STATING THE VERY SAME REQUEST IS STILL SATISFIED AND STILL PUSHES
+	// NOTHING. This is the assertion that fails if the document compares the raw
+	// request against the stored pair instead of deriving first.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xRequested), "re-stating it is SATISFIED");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u,
+		"★ and pushes NOTHING — the request's default modes must not read as a change");
+
+	// And the round trip through the stored pair (modes already CUSTOM) is a no-op too.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xStored), "so is re-stating what was read back");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "still one step");
 }
 
 //==============================================================================

@@ -625,15 +625,23 @@ column per pixel, so the curve on screen is the curve that plays. A Hermite
 re-derived in the panel would agree with the runtime right up until one of them
 changed.
 
-**★ TANGENT MODE IS NOT ON THE WIRE, AND THE LABEL IS "Linear" — NEVER "Flat".**
-The clip stores two `Vector3`s per key and no mode
-(`Flux/MeshAnimation/CLAUDE.md` → *Tangent sampling*). An exactly-zero tangent is
-the **linear** one, a genuinely flat handle is unrepresentable, and *Auto* is an
-**operation** rather than a stored state — so the only mode a reader can derive
-is `Zenith_AnimCurveTangentModeOf`: **Linear** when `Flux_TangentIsUnset` holds
-on both halves, **Custom** otherwise, including on a pair *Auto* just wrote.
-A control labelled "Flat" would promise an ease this format cannot store and
-silently deliver a straight line.
+**★ TANGENT MODE IS STORED PER END BUT NOT YET ON THE WIRE, AND THE LABEL IS
+"Linear" — NEVER "Flat".** Since B1 the clip stores a four-valued
+`Flux_TangentMode` on each end of each key (`Flux/MeshAnimation/CLAUDE.md` →
+*Tangent sampling*), but the schema is still 2, the writer still emits six floats,
+and every production write path goes through
+`Flux_BoneChannel::Set*Tangent`, which DERIVES the mode from the vector — exactly
+zero is `LINEAR`, anything else is `CUSTOM`. So `FLAT` and `AUTO` are not
+authorable from this editor, *Auto* is still an **operation** whose result reads
+back as Custom, and a control labelled "Flat" would promise an ease nothing here
+can produce.
+
+`Zenith_AnimCurveTangentModeOf` is a **projection** of the stored mode onto the
+two the writer can round-trip — **Linear** when both ends are
+`Flux_TangentMode::LINEAR`, **Custom** otherwise — not a second derivation from
+the numbers. That ordering is deliberate: when `FLAT` becomes authorable a flat
+key displays as "Custom", which is an under-statement rather than a lie, whereas a
+display that re-read the vectors would call it "Linear" and be silently wrong.
 
 **★ THE VALUE AXIS IS A SECOND, PURE MAPPING — the X axis is untouched.**
 `Zenith_AnimCurveValueView` + `Zenith_AnimCurveValueToPixel` / `PixelToValue` /
@@ -686,14 +694,17 @@ key's pair before running `Flux_BoneChannel::ComputeAutoTangents` /
 recomputing a shape. Restoring the exact **unset** pair is what puts a key back
 on the sampler's bit-identical linear branch.
 
-★ The per-key Catmull-Rom is **computed in the document**, because
-`Flux_BoneChannel` offers the two whole-track presets and no per-key helper while
-a curve editor's *Auto* acts on a SELECTION. The formula is reproduced
-deliberately and identically (centred slope, one-sided at the endpoints, zero on
-a non-positive span; for rotation the same in angular-velocity terms, rotated
-into key k's own body frame). `Flux_AnimationClip.cpp`'s rotation-vector helper
-is in an anonymous namespace, so its eight lines are reproduced too — if it ever
-gains a public home, delete the copy.
+★ The per-key Catmull-Rom is **the clip's, with one home** (B1).
+`SetKeyTangentsAuto` calls `Flux_BoneChannel::ComputeAutoTangentForKey` — the same
+code `ComputeAutoTangents` runs per key — so the panel's per-key *Auto* and its
+whole-track *Auto* cannot disagree about a key's slope. It used to be reproduced
+in `Zenith_AnimationDocument.cpp` (centred slope, one-sided at the endpoints, zero
+on a non-positive span; for rotation the same in angular-velocity terms, rotated
+into key k's own body frame) because the channel offered no per-key helper, and
+that copy dragged a second copy of `Flux_AnimationClip.cpp`'s anonymous-namespace
+rotation-vector helper along with it. **Both are deleted.** The root-motion
+refusal moved up into `SetKeyTangentsAuto` itself, because a bone channel has
+never heard of a root-motion track.
 
 **Actions** — `Action_SetCurveView` / `SetTangentsUnified` / `SetKeyTangents` /
 `SetSelectionTangentsAuto` / `SetSelectionTangentsLinear` /

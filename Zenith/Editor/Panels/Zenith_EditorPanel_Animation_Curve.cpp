@@ -224,11 +224,18 @@ const char* Zenith_AnimCurveTangentModeLabel(Zenith_AnimCurveTangentMode eMode)
 
 Zenith_AnimCurveTangentMode Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents& xTangents)
 {
-	// An EXACT compare, through the clip's own named predicate: the value being
-	// tested is a default-constructed sentinel that round-trips as exact zero
-	// bits, not a measurement, so there is no tolerance to choose — and any
-	// tolerance would swallow a deliberately tiny authored tangent.
-	return (Flux_TangentIsUnset(xTangents.m_xInTangent) && Flux_TangentIsUnset(xTangents.m_xOutTangent))
+	// ★ A PROJECTION OF THE STORED Flux_TangentMode ONTO THE TWO THIS ENUM HAS
+	// (B1), not a re-derivation from the vectors. The clip now says what each end
+	// IS, and the display must not answer that question a second way — a projection
+	// that read the numbers would disagree with the stored mode the moment FLAT or
+	// AUTO became authorable, and it would disagree silently.
+	//
+	// LINEAR only when BOTH ends are; anything else is Custom. FLAT and AUTO cannot
+	// be authored at schema 2 (the channel setters derive LINEAR or CUSTOM and the
+	// writer emits no mode byte), so the two-valued display stays honest today — and
+	// when they arrive, a FLAT key showing as "Custom" is an under-statement rather
+	// than a lie, which is the failure this ordering picks on purpose.
+	return (xTangents.m_eInMode == Flux_TangentMode::LINEAR && xTangents.m_eOutMode == Flux_TangentMode::LINEAR)
 		? ZENITH_ANIMCURVE_TANGENT_LINEAR
 		: ZENITH_ANIMCURVE_TANGENT_CUSTOM;
 }

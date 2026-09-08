@@ -428,9 +428,13 @@ ZENITH_TEST(AnimCommands, TheTangentCommandRoundTripsAndRestoresTheExactPrevious
 
 	xDoc.Undo();
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "and again");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xRead.m_xInTangent),
-		"★ back to EXACT zero — the unset pair the file carried, and the sampler's bit-identical branch");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xRead.m_xOutTangent), "on both ends");
+	ZENITH_ASSERT_TRUE(xRead.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+		&& xRead.m_eInMode == Flux_TangentMode::LINEAR,
+		"★ back to EXACT zero AND to LINEAR — the pair the file carried, and the sampler's "
+		"bit-identical branch. A command that restored the vector but not the mode would leave the key "
+		"on a curved branch with numbers that look untouched");
+	ZENITH_ASSERT_TRUE(xRead.m_xOutTangent == Zenith_Maths::Vector3(0.0f)
+		&& xRead.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 
 	// ★ A REDO RE-APPLIES RATHER THAN RE-RECORDS. A command that pushed on redo
 	// would grow the stack it is being replayed from, and the growth only shows up

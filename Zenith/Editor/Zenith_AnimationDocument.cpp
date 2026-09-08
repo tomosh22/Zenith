@@ -189,33 +189,14 @@ namespace
 		}
 	}
 
-	// ★ A SECOND COPY OF Flux_AnimationClip.cpp's ROTATION-VECTOR HELPER, AND IT
-	// IS A COPY BECAUSE THE ORIGINAL IS IN AN ANONYMOUS NAMESPACE. Exporting it
-	// would edit a Flux header this unit does not own; reproducing it is eight
-	// lines and the rule it encodes ("always the short way round") is stated at
-	// both sites. If it ever gains a public home, delete this one.
-	//
-	// A unit quaternion to its axis * radians vector. q and -q are the same
-	// rotation but only one has a non-negative scalar part, and taking the other
-	// reports an angle past pi — a tangent pointing the long way round the sphere,
-	// which the sampler would faithfully reproduce as a spin nobody authored.
-	Zenith_Maths::Vector3 AnimDocRotationVectorFromQuat(const Zenith_Maths::Quat& xQuat)
-	{
-		const Zenith_Maths::Quat xShortest = (xQuat.w < 0.0f) ? -xQuat : xQuat;
-		const Zenith_Maths::Vector3 xImaginary(xShortest.x, xShortest.y, xShortest.z);
-		const float fSinHalfAngle = glm::length(xImaginary);
-		// The same 1e-6 floor Flux_AnimationClip.cpp's fANIM_MIN_ROTATION_VECTOR
-		// is: below it the axis is numerical noise and the honest answer is "no
-		// rotation", which is the zero (linear) tangent.
-		if (fSinHalfAngle < 1.0e-6f)
-		{
-			return Zenith_Maths::Vector3(0.0f);
-		}
-		// atan2 rather than 2*acos(w): acos loses every bit of precision it has as
-		// w approaches 1, which is exactly the small-angle case a key-to-key delta is.
-		const float fAngle = 2.0f * std::atan2(fSinHalfAngle, xShortest.w);
-		return xImaginary * (fAngle / fSinHalfAngle);
-	}
+	// ★ THE ROTATION-VECTOR HELPER THAT USED TO BE COPIED HERE IS GONE (B1), AND SO
+	// IS THE PER-KEY CATMULL-ROM IT SERVED. Both existed only because
+	// Flux_BoneChannel offered the two whole-track presets and no per-key helper, so
+	// a curve editor's *Auto* — which acts on a SELECTION — had to reproduce the
+	// formula, and reproducing it meant reproducing Flux_AnimationClip.cpp's
+	// anonymous-namespace rotation-vector helper too. The clip now owns
+	// Flux_BoneChannel::ComputeAutoTangentForKey and SetKeyTangentsAuto calls it, so
+	// there is one formula and the per-key verb cannot drift from the track verb.
 
 	// The ONE place the id->index accelerator is written, for both keys and
 	// events. It copies the index->id authority wholesale, so the two cannot
@@ -1224,8 +1205,15 @@ bool Zenith_AnimationDocument::ApplySetKeyValue(const Zenith_AnimTrackId& xTrack
 
 bool Zenith_AnimationDocument::TangentsEqual(const Flux_KeyTangents& xA, const Flux_KeyTangents& xB)
 {
+	// ★ THE MODES ARE PART OF THE PAIR (B1). Two keys with identical vectors and
+	// different modes SAMPLE DIFFERENTLY — a FLAT end takes a zero derivative where a
+	// LINEAR one takes the segment slope — so comparing vectors alone would report a
+	// real edit as a no-op, push no command, and leave an undo that cannot restore
+	// the mode it never recorded.
 	return xA.m_xInTangent  == xB.m_xInTangent
-	    && xA.m_xOutTangent == xB.m_xOutTangent;
+	    && xA.m_xOutTangent == xB.m_xOutTangent
+	    && xA.m_eInMode     == xB.m_eInMode
+	    && xA.m_eOutMode    == xB.m_eOutMode;
 }
 
 bool Zenith_AnimationDocument::ReadKeyTangentsAtIndex(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex,
@@ -1250,93 +1238,6 @@ bool Zenith_AnimationDocument::ReadKeyTangentsAtIndex(const Zenith_AnimTrackId& 
 		return false;
 	}
 	xOut = pxTangents->Get(uKeyIndex);
-	return true;
-}
-
-bool Zenith_AnimationDocument::ComputeAutoTangentForKey(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex,
-	Flux_KeyTangents& xOut) const
-{
-	if (xTrack.m_bRootMotion || !IsTrackAddressable(xTrack))
-	{
-		return false;
-	}
-	const Flux_BoneChannel* pxChannel = m_xWorkingClip.GetBoneChannel(xTrack.m_strBoneName);
-	if (pxChannel == nullptr)
-	{
-		return false;
-	}
-
-	// ★ IN == OUT, which is what makes "Auto" a SMOOTH key rather than a corner.
-	// A broken pair is what a hand drag produces; the preset's whole job is the
-	// unbroken one.
-	xOut = Flux_KeyTangents();
-
-	if (xTrack.m_eTrack == FLUX_ANIM_TRACK_ROTATION)
-	{
-		const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys = pxChannel->GetRotationKeyframes();
-		const u_int uCount = xKeys.GetSize();
-		if (uKeyIndex >= uCount)
-		{
-			return false;
-		}
-		if (uCount < 2u)
-		{
-			// One key: no span to divide by, so zero — the LINEAR tangent, which
-			// is also the only honest answer to "what slope?".
-			return true;
-		}
-		const u_int uPrev = (uKeyIndex == 0u) ? 0u : (uKeyIndex - 1u);
-		const u_int uNext = ((uKeyIndex + 1u) >= uCount) ? (uCount - 1u) : (uKeyIndex + 1u);
-		const float fSpan = xKeys.Get(uNext).second - xKeys.Get(uPrev).second;
-		if (fSpan <= 0.0f)
-		{
-			return true;
-		}
-
-		const Zenith_Maths::Quat xPrev = glm::normalize(xKeys.Get(uPrev).first);
-		Zenith_Maths::Quat xNext = glm::normalize(xKeys.Get(uNext).first);
-		if (glm::dot(xPrev, xNext) < 0.0f)
-		{
-			// SHORTEST ARC. A pair straddling the 180-degree seam otherwise
-			// measures a velocity going the long way round, which the sampler
-			// reproduces as an unauthored extra spin.
-			xNext = -xNext;
-		}
-		const Zenith_Maths::Vector3 xInPrevFrame =
-			AnimDocRotationVectorFromQuat(glm::inverse(xPrev) * xNext) / fSpan;
-
-		// ★ INTO THIS KEY'S OWN BODY FRAME. q_prev^-1 * q_next comes out in the
-		// PREVIOUS key's frame and the sampler reads key k's tangent in key k's,
-		// so the result is carried across by q_k^-1 * q_prev.
-		const Zenith_Maths::Quat xThis = glm::normalize(xKeys.Get(uKeyIndex).first);
-		xOut.m_xInTangent = (glm::inverse(xThis) * xPrev) * xInPrevFrame;
-		xOut.m_xOutTangent = xOut.m_xInTangent;
-		return true;
-	}
-
-	const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys =
-		(xTrack.m_eTrack == FLUX_ANIM_TRACK_SCALE) ? pxChannel->GetScaleKeyframes()
-		                                           : pxChannel->GetPositionKeyframes();
-	const u_int uCount = xKeys.GetSize();
-	if (uKeyIndex >= uCount)
-	{
-		return false;
-	}
-	if (uCount < 2u)
-	{
-		return true;
-	}
-	const u_int uPrev = (uKeyIndex == 0u) ? 0u : (uKeyIndex - 1u);
-	const u_int uNext = ((uKeyIndex + 1u) >= uCount) ? (uCount - 1u) : (uKeyIndex + 1u);
-	const float fSpan = xKeys.Get(uNext).second - xKeys.Get(uPrev).second;
-	// NOT an epsilon compare: this divides by the span, and a span at or below
-	// zero is the only value that cannot be divided by.
-	if (fSpan <= 0.0f)
-	{
-		return true;
-	}
-	xOut.m_xInTangent = (xKeys.Get(uNext).first - xKeys.Get(uPrev).first) / fSpan;
-	xOut.m_xOutTangent = xOut.m_xInTangent;
 	return true;
 }
 
@@ -1726,7 +1627,16 @@ bool Zenith_AnimationDocument::SetKeyTangents(const Zenith_AnimTrackId& xTrack, 
 		// a genuine refusal and not a satisfied assignment.
 		return false;
 	}
-	if (TangentsEqual(xBefore, xTangents))
+	// ★ DERIVE THE MODES ON THE REQUESTED PAIR BEFORE COMPARING (B1), because the
+	// channel setter is going to derive them on the way in and the comparison has to
+	// be against what will actually be STORED. A caller hands over vectors — the
+	// panel's handle drag builds a Flux_KeyTangents and fills one component — so its
+	// mode fields are whatever the default constructor left there, and comparing
+	// those against a stored CUSTOM pair would make every re-statement of an edit
+	// look like a change and push a command for it.
+	Flux_KeyTangents xRequested = xTangents;
+	Flux_DeriveTangentModesFromVectors(xRequested);
+	if (TangentsEqual(xBefore, xRequested))
 	{
 		// ★ SATISFIED, NOT REFUSED — and it pushes NOTHING. A recipe that re-states
 		// a tangent it already set is ordinary; making that read as failure is what
@@ -1734,12 +1644,12 @@ bool Zenith_AnimationDocument::SetKeyTangents(const Zenith_AnimTrackId& xTrack, 
 		// asked. The undo-stack depth is the invariant, not the bool.
 		return true;
 	}
-	if (!ApplySetKeyTangents(xTrack, uKeyId, xTangents))
+	if (!ApplySetKeyTangents(xTrack, uKeyId, xRequested))
 	{
 		return false;
 	}
 	MarkDirty();
-	PushCommand(new Zenith_AnimCommand_KeyTangents(this, xTrack, uKeyId, xBefore, xTangents, "Edit Key Tangents"));
+	PushCommand(new Zenith_AnimCommand_KeyTangents(this, xTrack, uKeyId, xBefore, xRequested, "Edit Key Tangents"));
 	return true;
 }
 
@@ -1769,7 +1679,11 @@ bool Zenith_AnimationDocument::SetKeyOutTangent(const Zenith_AnimTrackId& xTrack
 
 bool Zenith_AnimationDocument::SetKeyTangentsAuto(const Zenith_AnimTrackId& xTrack, u_int uKeyId)
 {
-	if (!m_bOpen)
+	// ★ THE ROOT-MOTION REFUSAL LIVES HERE NOW. It used to be the first thing the
+	// document's own ComputeAutoTangentForKey did; that function is gone (the clip
+	// owns the formula), and Flux_BoneChannel has never heard of a root-motion track
+	// — so the refusal has to be stated at the door, before a bone name is looked up.
+	if (!m_bOpen || xTrack.m_bRootMotion || !IsTrackAddressable(xTrack))
 	{
 		return false;
 	}
@@ -1778,8 +1692,16 @@ bool Zenith_AnimationDocument::SetKeyTangentsAuto(const Zenith_AnimTrackId& xTra
 	{
 		return false;
 	}
+	const Flux_BoneChannel* pxChannel = m_xWorkingClip.GetBoneChannel(xTrack.m_strBoneName);
+	if (pxChannel == nullptr)
+	{
+		return false;
+	}
+	// ★ ONE FORMULA (B1). This is the SAME function ComputeAutoTangents runs per key,
+	// so the panel's per-key *Auto* and its whole-track *Auto* cannot disagree about
+	// what a key's slope is.
 	Flux_KeyTangents xAuto;
-	if (!ComputeAutoTangentForKey(xTrack, uIndex, xAuto))
+	if (!pxChannel->ComputeAutoTangentForKey(xTrack.m_eTrack, uIndex, xAuto))
 	{
 		return false;
 	}

@@ -37,7 +37,7 @@ void Flux_ReadQuatKeys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zeni
 // Per-key in/out tangents (decision D17), SAMPLED since WU-8.1.
 //
 // Every channel carries one entry per keyframe of each of its three tracks — same
-// size, zero by default, kept in lockstep by the channel's Add*Keyframe /
+// size, LINEAR/zero by default, kept in lockstep by the channel's Add*Keyframe /
 // SortKeyframes / mutation / read paths. They were serialized and round-tripped
 // from D17 onward specifically so the on-disk layout would not have to move when
 // curve-interpolated sampling landed. It did not: Sample*() now interpolates
@@ -58,50 +58,124 @@ void Flux_ReadQuatKeys (Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zeni
 // produce (see "HOW A SEGMENT IS INTERPOLATED" below), and what lets an authored
 // tangent survive an edit to the OTHER end of its segment.
 //=============================================================================
+
+//=============================================================================
+// THE PER-KEY TANGENT MODE (B1). One byte per END of a key, and it says what the
+// sampler should DO at that end rather than what number is stored there.
+//
+// ★ THE DEFAULT IS LINEAR, AND THAT IS THE WHOLE SAFETY PROPERTY. Every clip in
+// the tree carries zero in every tangent slot; a CUSTOM default would hand those
+// zeroes to the Hermite basis as genuine zero derivatives and silently re-time
+// every animation in the repository into an ease-in/ease-out — a change no unit,
+// no byte comparison and no bake hash could see, because none of the DATA would
+// have moved.
+//
+// The four values, and what the sampler does with each at one end of one segment:
+//
+//   LINEAR — the segment's own slope (for rotation, slerp's own constant angular
+//            velocity). The stored vector is IGNORED. A segment whose two bounding
+//            ends are BOTH linear runs the pre-tangent glm::mix / glm::slerp
+//            expression verbatim, so it is bit-identical rather than merely close.
+//   FLAT   — a zero derivative, the classical "ease" handle. Representable at last,
+//            because the MODE says so rather than the vector.
+//   AUTO   — the stored vector, which a preset computed (Catmull-Rom).
+//   CUSTOM — the stored vector, which somebody authored by hand.
+//
+// AUTO and CUSTOM read the same field and differ only in PROVENANCE, which is what
+// lets a later unit re-apply Auto when a neighbour key moves and leave a hand-
+// authored handle alone. Flux_TangentModeUsesVector is the predicate for "this end
+// reads m_x{In,Out}Tangent".
+//
+// ★ AT SCHEMA 2 THE MODE IS NOT ON THE WIRE, SO IT IS DERIVED, AND THE INVARIANT
+// IS `mode == CUSTOM iff the vector is non-zero, per end`. Flux_BoneChannel's
+// three Set*Tangent setters are the ONE place that derivation happens
+// (Flux_DeriveTangentModesFromVectors on the incoming copy), so an in-memory clip
+// is indistinguishable from a round-tripped one and a handle drag that returns a
+// vector to exactly zero reads LINEAR again. FLAT and AUTO are therefore not
+// AUTHORABLE yet — nothing but a test writes them — and the schema constant stays
+// 2 until the unit that puts the two bytes on the wire lands.
+//
+// The values are pinned with static_asserts because they ARE the wire encoding the
+// schema-3 reader accepts; anything above CUSTOM is corruption, not a mode.
+//=============================================================================
+enum class Flux_TangentMode : uint8_t
+{
+	LINEAR = 0,
+	FLAT   = 1,
+	AUTO   = 2,
+	CUSTOM = 3,
+};
+
+static_assert(static_cast<uint8_t>(Flux_TangentMode::LINEAR) == 0u, "Flux_TangentMode::LINEAR is the wire value 0 and the default");
+static_assert(static_cast<uint8_t>(Flux_TangentMode::FLAT)   == 1u, "Flux_TangentMode::FLAT is the wire value 1");
+static_assert(static_cast<uint8_t>(Flux_TangentMode::AUTO)   == 2u, "Flux_TangentMode::AUTO is the wire value 2");
+static_assert(static_cast<uint8_t>(Flux_TangentMode::CUSTOM) == 3u, "Flux_TangentMode::CUSTOM is the wire value 3");
+
+// The largest byte a reader may accept as a mode. A stored byte above this is a
+// corrupt file, not a mode this build has not heard of.
+constexpr uint8_t uFLUX_TANGENT_MODE_MAX = static_cast<uint8_t>(Flux_TangentMode::CUSTOM);
+
 struct Flux_KeyTangents
 {
 	Zenith_Maths::Vector3 m_xInTangent  = Zenith_Maths::Vector3(0.0f);
 	Zenith_Maths::Vector3 m_xOutTangent = Zenith_Maths::Vector3(0.0f);
+
+	// ★ LINEAR, not CUSTOM. See the block above for why the default choice is the
+	// whole reason this could land without moving a clip.
+	Flux_TangentMode m_eInMode  = Flux_TangentMode::LINEAR;
+	Flux_TangentMode m_eOutMode = Flux_TangentMode::LINEAR;
 };
 
 void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents);
-void Flux_ReadKeyTangents (Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents);
+
+// uSchemaVersion is REQUIRED and selects the record size: 24 bytes (six floats) at
+// schemas 1-2, where the modes are DERIVED from the vectors on the way in, and 26
+// bytes (six floats then two mode bytes) at schema 3 and later, where they are read.
+// It has no default on purpose — a caller that does not know which layout it is
+// looking at cannot budget the count against the bytes that remain.
+void Flux_ReadKeyTangents (Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents, u_int uSchemaVersion);
 
 //=============================================================================
-// ★ AN UNSET (EXACTLY ZERO) TANGENT IS THE **LINEAR** TANGENT, NOT A FLAT ONE,
-// AND THAT IS THE WHOLE REASON THIS BLOCK COULD BE TURNED ON WITHOUT MOVING A
-// SINGLE CLIP IN THE TREE.
+// ★ THE SCHEMA-2 DERIVATION, AND IT HAS EXACTLY ONE CALLER IN PRODUCTION CODE:
+// Flux_BoneChannel::Set{Position,Rotation,Scale}Tangent.
 //
-// The classical cubic-Hermite reading of a zero derivative is a FLAT (horizontal)
-// tangent, which turns a straight segment into a smoothstep. Every generated clip
-// in the tree, and every clip Assimp ever imported, carries zero in every tangent
-// slot — so that reading would have silently re-timed every animation in the
-// repository into an ease-in/ease-out: a change no unit, no byte comparison and no
-// bake hash could see, because none of the DATA would have moved.
+// A .zanim at schema 2 carries two Vector3s per key and no mode byte, so the mode
+// has to come from somewhere — and the ONLY reading that leaves every clip in the
+// tree sampling exactly as it did is "an exactly-zero vector is the LINEAR end,
+// anything else is a CUSTOM one". Deriving it at the setter (rather than at the
+// reader alone) is what makes an in-memory clip indistinguishable from a
+// round-tripped one: a handle drag that returns a vector to exactly zero reads
+// LINEAR again, and re-stating an edit still compares equal.
 //
-// So an unset tangent means "this end of this segment has no authored derivative",
-// and the sampler substitutes the segment's own LINEAR slope there (for rotation,
-// slerp's own constant angular velocity). A segment whose two bounding tangents are
-// BOTH unset is evaluated by the pre-WU-8.1 code path verbatim — glm::mix /
-// glm::slerp, with no Hermite arithmetic executed at all — so it is bit-identical
-// rather than merely close, and that is also the branch every clip in the tree
-// takes on every sample today.
-//
-// ★ THE TRADE, STATED OUT LOUD: a genuinely FLAT tangent (zero derivative — the
-// "ease" handle) is NOT authorable, because the zero vector is spoken for.
-// Flux_BoneChannel::ComputeFlatTangents writes zeroes and therefore produces LINEAR
-// segments, which is today's behaviour and is what WU-8.1 specifies "flat" mode to
-// mean. Telling flat from linear needs a per-key tangent MODE, and a mode is a
-// field that is not on the wire — a schema move, deliberately not made here.
-//
-// The comparison is EXACT on purpose. The value being tested is a
+// ★ THE COMPARISON IS EXACT ON PURPOSE. The value being tested is a
 // default-constructed sentinel that round-trips through a .zanim as exact zero
 // bits, not a measurement, so there is no tolerance to choose — and any tolerance
 // would swallow a deliberately tiny authored tangent instead.
+//
+// ★ IT OVERWRITES WHATEVER MODE IT IS HANDED, INCLUDING FLAT AND AUTO, and that
+// is deliberate at schema 2: a mode the writer cannot emit would survive in memory,
+// change the pose, and vanish on the next save. When the two bytes reach the wire
+// the setters stop deriving and start storing, and this function keeps exactly one
+// job — reading a schema-1/2 record.
 //=============================================================================
-inline bool Flux_TangentIsUnset(const Zenith_Maths::Vector3& xTangent)
+inline void Flux_DeriveTangentModesFromVectors(Flux_KeyTangents& xTangents)
 {
-	return xTangent.x == 0.0f && xTangent.y == 0.0f && xTangent.z == 0.0f;
+	const Zenith_Maths::Vector3& xIn  = xTangents.m_xInTangent;
+	const Zenith_Maths::Vector3& xOut = xTangents.m_xOutTangent;
+	xTangents.m_eInMode = (xIn.x == 0.0f && xIn.y == 0.0f && xIn.z == 0.0f)
+		? Flux_TangentMode::LINEAR
+		: Flux_TangentMode::CUSTOM;
+	xTangents.m_eOutMode = (xOut.x == 0.0f && xOut.y == 0.0f && xOut.z == 0.0f)
+		? Flux_TangentMode::LINEAR
+		: Flux_TangentMode::CUSTOM;
+}
+
+// Does this end read its stored vector at all? LINEAR substitutes the segment's own
+// slope and FLAT substitutes zero, so both IGNORE what is in the struct; AUTO and
+// CUSTOM are the two that mean "use the number beside me".
+inline bool Flux_TangentModeUsesVector(Flux_TangentMode eMode)
+{
+	return eMode == Flux_TangentMode::AUTO || eMode == Flux_TangentMode::CUSTOM;
 }
 
 //=============================================================================
@@ -192,14 +266,14 @@ struct Flux_AnimationEvent
 // HOW A SEGMENT IS INTERPOLATED (WU-8.1).
 //
 // Both formulas below reduce EXACTLY to the pre-tangent lerp / slerp when the two
-// tangents bounding the segment are unset, and both are evaluated in place: no
+// ends bounding the segment are both LINEAR, and both are evaluated in place: no
 // allocation, no virtual dispatch, no per-sample state. Shared setup for the
 // segment between keys k and k+1:
 //
 //   dt = t_{k+1} - t_k        the segment duration, in seconds (dt <= 0 -> key k)
 //   u  = (t - t_k) / dt       the normalized position inside it, in [0,1]
-//   m0 = OUT tangent of key k     (unset -> the segment's own slope, see above)
-//   m1 = IN  tangent of key k+1   (unset -> the same)
+//   m0 = OUT end of key k     (LINEAR -> the segment's own slope; FLAT -> zero)
+//   m1 = IN  end of key k+1   (the same rule, per end)
 //
 // POSITION and SCALE — cubic Hermite, tangents in UNITS PER SECOND:
 //
@@ -219,7 +293,8 @@ struct Flux_AnimationEvent
 //   r    = q0^-1 * qEnd                  the segment's relative rotation
 //   v    = RotVec(r)                     ...as an axis*angle vector
 //   w0, w1                               the two angular velocities
-//                                        (unset -> v/dt, which IS slerp's own)
+//                                        (LINEAR -> v/dt, which IS slerp's own;
+//                                         FLAT -> zero)
 //   v1 = dt*w0/3                         v3 = dt*w1/3
 //   v2 = RotVec( E(v1)^-1 * r * E(v3)^-1 )
 //   q(u) = q0 * E(v1*B1(u)) * E(v2*B2(u)) * E(v3*B3(u))
@@ -267,10 +342,11 @@ public:
 	//
 	// Curve-interpolated through the per-key tangents since WU-8.1 — cubic Hermite
 	// for position/scale, a cumulative-Bezier quaternion Hermite for rotation; see
-	// "HOW A SEGMENT IS INTERPOLATED" above for both formulas. A segment bounded by
-	// two UNSET tangents runs the pre-WU-8.1 glm::mix / glm::slerp code verbatim, so
-	// a clip that authored none (which is every generated and every imported clip)
-	// samples bit-identically to before and pays one Vector3 zero-compare for it.
+	// "HOW A SEGMENT IS INTERPOLATED" above for both formulas. A segment whose two
+	// bounding ends are both Flux_TangentMode::LINEAR runs the pre-WU-8.1 glm::mix /
+	// glm::slerp code verbatim, so a clip that authored no tangent (which is every
+	// generated and every imported clip) samples bit-identically to before and pays
+	// one enum compare per end for it.
 	//
 	// The empty / single-key / at-or-past-the-last-key behaviour is unchanged: the
 	// origin, identity and unit scale for an empty track (see D14 on why an empty
@@ -292,29 +368,59 @@ public:
 	const Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& GetRotationKeyframes() const { return m_xRotations; }
 	const Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& GetScaleKeyframes() const { return m_xScales; }
 
-	// The tangent block (D17). One entry per keyframe of the matching track, zero by
-	// default, serialized and round-tripped, and SAMPLED since WU-8.1. A rotation
-	// tangent is an angular velocity; an exactly-zero tangent is the LINEAR one —
-	// see Flux_KeyTangents and Flux_TangentIsUnset above.
+	// The tangent block (D17). One entry per keyframe of the matching track,
+	// LINEAR/zero by default, serialized and round-tripped, and SAMPLED since WU-8.1. A rotation
+	// tangent is an angular velocity, and each end carries a Flux_TangentMode saying
+	// what the sampler does with the number beside it — see Flux_KeyTangents and
+	// Flux_TangentMode above.
 	const Zenith_Vector<Flux_KeyTangents>& GetPositionTangents() const { return m_xPositionTangents; }
 	const Zenith_Vector<Flux_KeyTangents>& GetRotationTangents() const { return m_xRotationTangents; }
 	const Zenith_Vector<Flux_KeyTangents>& GetScaleTangents()    const { return m_xScaleTangents; }
 
+	// ★ THESE THREE ARE THE ONE PLACE THE SCHEMA-2 MODE INVARIANT IS MAINTAINED.
+	// Each runs Flux_DeriveTangentModesFromVectors over the incoming COPY before
+	// storing it, so the modes on a stored pair always agree with its vectors and
+	// the mode fields on the argument are ignored. The vector itself is stored
+	// EXACTLY — nothing here substitutes, clamps or normalises one.
 	void SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents);
 	void SetRotationTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents);
 	void SetScaleTangent   (u_int uKeyIndex, const Flux_KeyTangents& xTangents);
+
+#ifdef ZENITH_TESTING
+	// ★ TEST-ONLY, AND IT IS THE ONE DOOR PAST THE DERIVATION ABOVE. FLAT and AUTO
+	// are not authorable at schema 2 (the setters derive LINEAR/CUSTOM and the writer
+	// emits no mode byte), so a unit that has to prove the SAMPLER honours FLAT needs
+	// some way to put one in the array. It is not a production verb and must not
+	// become one: the unit that puts modes on the wire is what makes them authorable.
+	// Out of range: assert, nothing changed.
+	void SetTangentModesForTesting(Flux_AnimTrack eTrack, u_int uKeyIndex, Flux_TangentMode eInMode, Flux_TangentMode eOutMode);
+#endif
+
+	// ★ THE PER-KEY Catmull-Rom, WITH ONE HOME. The two whole-track presets below
+	// answer "re-shape this track"; a curve editor's *Auto* acts on a SELECTION and
+	// needs the same formula for one key, which used to mean a hand copy of it (and
+	// of Flux_AnimationClip.cpp's rotation-vector helper) inside the editor's
+	// document. PURE — nothing is written, the answer comes back through xOut.
+	//
+	// out == in, exactly as the presets produce, because Auto is a SMOOTH key: a
+	// broken pair is what a hand drag makes. FALSE (and xOut untouched) for a key
+	// index past the end of the named track. A track with fewer than two keys, and a
+	// key whose neighbour span is non-positive, gets TRUE with a ZERO pair — there is
+	// no slope to measure and zero is the linear tangent, which is the honest answer.
+	bool ComputeAutoTangentForKey(Flux_AnimTrack eTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const;
 
 	//-------------------------------------------------------------------------
 	// Tangent PRESETS (WU-8.1). Two pure, allocation-free whole-track rewrites,
 	// both of which go through the Set*Tangent setters above so there is exactly
 	// one write path into the parallel arrays.
 	//
-	// ★ A TANGENT MODE IS AN EDITOR CONCEPT AND IS NOT STORED. The clip carries
-	// numbers, never "this key is auto" — a mode is not on the wire (D17 reserved
-	// two vectors per key and nothing else) and putting one there is a schema move.
-	// So a curve editor owns the mode, and calls one of these to REALISE it as
-	// numbers; re-applying after a key moves is the editor's job, because the clip
-	// cannot know whether a stored tangent was authored by hand or computed.
+	// ★ A TANGENT MODE IS STORED PER KEY PER END (B1), AND AT SCHEMA 2 IT IS
+	// DERIVED FROM THE VECTOR RATHER THAN AUTHORED. These two presets write VECTORS
+	// through the Set*Tangent setters and therefore get LINEAR (zero) or CUSTOM
+	// (non-zero) back; neither one can produce a FLAT or an AUTO key while the
+	// writer emits no mode byte. Re-applying a preset after a key moves is still the
+	// editor's job — the CUSTOM/AUTO distinction exists so that stops being true,
+	// but nothing writes AUTO yet.
 	//
 	// ComputeAutoTangents — Catmull-Rom style. For an interior key k, in = out =
 	// the centred slope (v_{k+1} - v_{k-1}) / (t_{k+1} - t_{k-1}); the two endpoint
@@ -332,15 +438,20 @@ public:
 	// pin.
 	//
 	// ComputeFlatTangents — zero on every key of the track. ★ THAT IS *LINEAR*, NOT
-	// a flat/eased handle: read the Flux_TangentIsUnset block above before wiring a
-	// UI label to it. It is exactly "put this track back the way every clip in the
-	// tree already is".
+	// a flat/eased handle, DESPITE THE NAME AND DESPITE Flux_TangentMode::FLAT now
+	// existing: it writes vectors through the setters, and a zero vector derives
+	// LINEAR. It is exactly "put this track back the way every clip in the tree
+	// already is". Making it write FLAT would re-time every track it touched.
 	//-------------------------------------------------------------------------
 	void ComputeAutoTangents(Flux_AnimTrack eTrack);
 	void ComputeFlatTangents(Flux_AnimTrack eTrack);
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
+
+	// uSchemaVersion is REQUIRED and is passed straight down to Flux_ReadKeyTangents,
+	// which is the only part of a channel whose record size moved. ParsePayload —
+	// the one production caller — hands over its own.
+	void ReadFromDataStream(Zenith_DataStream& xStream, u_int uSchemaVersion);
 
 	//-------------------------------------------------------------------------
 	// Programmatic keyframe construction (for procedural animations/tests)

@@ -2907,10 +2907,12 @@ ZENITH_TEST(AnimPanel, SelectionAutoIsTheSlopeLinearZeroesAndEachIsOneUndoStep)
 		Flux_KeyTangents xTangents;
 		ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack,
 			xPanel.Document().GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
-		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
-			"★ Linear writes exact ZEROES — the sampler's linear branch. It is NOT a flat handle, which "
-			"this format cannot represent, which is why the control may never be labelled 'Flat'");
-		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "on both ends");
+		ZENITH_ASSERT_TRUE(xTangents.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+			&& xTangents.m_eInMode == Flux_TangentMode::LINEAR,
+			"★ Linear writes exact ZEROES and the channel setter derives Flux_TangentMode::LINEAR from "
+			"them — NOT FLAT, which nothing on the authoring path can write at schema 2, which is why the "
+			"control may never be labelled 'Flat'");
+		ZENITH_ASSERT_TRUE(xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 	}
 
 	// ---- undo, with the selection intact -------------------------------------
@@ -2932,8 +2934,9 @@ ZENITH_TEST(AnimPanel, SelectionAutoIsTheSlopeLinearZeroesAndEachIsOneUndoStep)
 		ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uKeyId), "the selection still resolves");
 		Flux_KeyTangents xTangents;
 		ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uKeyId, xTangents), "and the pair");
-		ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent),
-			"★ is back to the EXACT unset pair the file carried");
+		ZENITH_ASSERT_TRUE(xTangents.m_xOutTangent == Zenith_Maths::Vector3(0.0f)
+			&& xTangents.m_eOutMode == Flux_TangentMode::LINEAR,
+			"★ is back to the EXACT zero pair the file carried, and to LINEAR with it");
 	}
 
 	xPanel.Shutdown();
@@ -2943,28 +2946,46 @@ ZENITH_TEST(AnimPanel, SelectionAutoIsTheSlopeLinearZeroesAndEachIsOneUndoStep)
 // (C5) The DISPLAYED mode is "Linear" for an unset pair and "Custom" for
 // anything else — and it is the ONLY mode a reader can derive.
 //
-// ★ THE LABELS ARE THE POINT OF THIS TEST, NOT THE ENUM. A per-key tangent MODE
-// is not on the wire (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*), zero
-// means LINEAR rather than flat, and a genuinely flat handle is unrepresentable —
-// so a UI that showed "Flat" would promise an ease this format cannot store and
-// silently deliver a straight line.
+// ★ THE LABELS ARE THE POINT OF THIS TEST, NOT THE ENUM. Since B1 this is a
+// PROJECTION of the four-valued Flux_TangentMode the clip stores per end
+// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*) onto the two the writer can
+// round-trip at schema 2. FLAT and AUTO are not authorable through any verb here,
+// so a UI that showed "Flat" would still promise an ease nothing on this path can
+// produce.
 //==============================================================================
 ZENITH_TEST(AnimPanel, TheDisplayedTangentModeIsLinearForUnsetAndCustomOtherwise)
 {
 	// Pure first — no clip needed to pin what the two words mean.
 	Flux_KeyTangents xUnset;
 	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xUnset) == ZENITH_ANIMCURVE_TANGENT_LINEAR,
-		"an all-zero pair displays as LINEAR");
+		"a pair whose two ends are both LINEAR displays as LINEAR");
 	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(ZENITH_ANIMCURVE_TANGENT_LINEAR), "Linear",
-		"★ and the word is 'Linear' — never 'Flat', which this format cannot represent");
+		"★ and the word is 'Linear' — never 'Flat', which nothing here can author");
 	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(ZENITH_ANIMCURVE_TANGENT_CUSTOM), "Custom",
 		"anything authored displays as Custom");
 
+	// ★ THROUGH THE DERIVATION, NOT PAST IT (B1). The projection reads the stored
+	// MODE now, so a hand-built struct has to be put through the same derivation the
+	// channel setter applies before it means anything — otherwise this would be
+	// testing a struct nothing can ever be in.
 	Flux_KeyTangents xOneHalf;
 	xOneHalf.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 1.0e-6f, 0.0f);
+	Flux_DeriveTangentModesFromVectors(xOneHalf);
 	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xOneHalf) == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
-		"★ ONE non-zero half is enough, and the compare is EXACT — a tolerance would swallow a "
-		"deliberately tiny authored tangent and report it as untouched");
+		"★ ONE non-zero half is enough, and the derivation's compare is EXACT — a tolerance would "
+		"swallow a deliberately tiny authored tangent and report it as untouched");
+
+	// ★ AND THE PROJECTION READS THE MODE, NOT THE NUMBERS. A pair whose vectors are
+	// zero but whose ends are FLAT is not LINEAR: it samples as an ease. Nothing can
+	// author one at schema 2, which is exactly why the display has to be a projection
+	// of the stored mode rather than a second derivation from the vectors — the two
+	// would disagree the day FLAT becomes authorable, and disagree silently.
+	Flux_KeyTangents xFlatWithZeroes;
+	xFlatWithZeroes.m_eInMode = Flux_TangentMode::FLAT;
+	xFlatWithZeroes.m_eOutMode = Flux_TangentMode::FLAT;
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xFlatWithZeroes) == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
+		"★ FLAT ends over zero vectors display as Custom, not Linear — an under-statement rather than "
+		"a lie, which is the failure this ordering picks on purpose");
 
 	// ---- and through the panel, against a real clip ---------------------------
 	AnimPanelFixture xFixture("zenith_animpanel_curvemode");
@@ -3050,8 +3071,8 @@ ZENITH_TEST(AnimPanel, ARotationHandleWritesAnAngularVelocityAndMovesTheSampledP
 	Flux_KeyTangents xTangents;
 	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uFirstKeyId, xTangents), "which reads back");
 	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 2.0f, 1e-6f, "as rad/s about Y, on the OUT end");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xInTangent),
-		"with the IN end left UNSET — which the sampler still reads as slerp's own velocity");
+	ZENITH_ASSERT_TRUE(xTangents.m_eInMode == Flux_TangentMode::LINEAR,
+		"with the IN end left LINEAR — which the sampler still reads as slerp's own velocity");
 
 	// Re-fetched rather than reusing the pointer above: nothing in a tangent edit
 	// rehashes the channel map, but a test should not rest on that.
@@ -3078,7 +3099,8 @@ ZENITH_TEST(AnimPanel, ARotationHandleWritesAnAngularVelocityAndMovesTheSampledP
 	// The undo puts the segment back on the sampler's bit-identical linear branch.
 	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one Ctrl+Z");
 	ZENITH_ASSERT_TRUE(xPanel.Document().GetKeyTangents(xTrack, uFirstKeyId, xTangents), "the pair reads back");
-	ZENITH_ASSERT_TRUE(Flux_TangentIsUnset(xTangents.m_xOutTangent), "unset again");
+	ZENITH_ASSERT_TRUE(xTangents.m_xOutTangent == Zenith_Maths::Vector3(0.0f)
+		&& xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "exactly zero and LINEAR again");
 	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uFirstKeyId), "with the selection intact");
 	pxChannel = xPanel.Document().GetClip().GetBoneChannel("Hip");
 	ZENITH_ASSERT_NOT_NULL(pxChannel, "the channel is still there");

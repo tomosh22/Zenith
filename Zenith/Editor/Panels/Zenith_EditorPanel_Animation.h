@@ -420,25 +420,28 @@ float Zenith_AnimCurveTangentFromPixel(const Zenith_AnimTimelineView& xTimeView,
 constexpr float fANIM_CURVE_MIN_HANDLE_SECONDS = 1.0e-3f;
 
 //-----------------------------------------------------------------------------
-// The tangent MODE the editor DISPLAYS. Two values, because two is all the wire
-// can carry (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*): a mode is not a
-// stored field, so the only thing a reader can derive from a key is whether
-// anybody authored a derivative on it.
+// The tangent MODE the editor DISPLAYS. Two values, and it is now a PROJECTION of
+// the four-valued Flux_TangentMode the clip stores per end
+// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*) rather than something
+// re-derived from the numbers — the clip says what each end IS, and a display that
+// answered that question a second way would disagree with it silently.
 //
-// ★ "Auto" IS NOT IN THIS ENUM, AND "Flat" MAY NEVER BE. Auto is an OPERATION —
-// it writes numbers and then the key reads back as Custom, which is honest,
-// because nothing re-applies it when a neighbour moves. Flat is UNREPRESENTABLE:
-// the zero vector means linear, so a control offering "flat" would promise an
-// ease the format cannot store and silently deliver a straight line.
+// ★ "Flat" AND "Auto" ARRIVE WITH THE UNIT THAT PUTS THE MODE BYTES ON THE WIRE.
+// Until then this is the projection of Flux_TangentMode onto the two the writer can
+// round-trip: the schema is still 2, the channel setters derive LINEAR from a zero
+// vector and CUSTOM from anything else, and nothing but a test can put a FLAT or an
+// AUTO into a clip. So a two-valued display stays honest today, and a control
+// labelled "Flat" would still promise an ease this build cannot store.
 //-----------------------------------------------------------------------------
 enum Zenith_AnimCurveTangentMode : u_int
 {
-	// BOTH tangents are exactly zero — Flux_TangentIsUnset on each. The sampler
-	// runs its pre-WU-8.1 lerp/slerp branch for a segment bounded by two of these,
-	// which is what every clip in the tree does today.
+	// BOTH ends are Flux_TangentMode::LINEAR. The sampler runs its pre-WU-8.1
+	// lerp/slerp branch for a segment bounded by two of these, which is what every
+	// clip in the tree does today.
 	ZENITH_ANIMCURVE_TANGENT_LINEAR,
-	// Anything else. Including a pair Auto just wrote: once it is numbers, it is
-	// numbers.
+	// Anything else. Including a pair Auto just wrote — which stores CUSTOM, because
+	// at schema 2 a mode is derived from the vector and nothing re-applies Auto when
+	// a neighbour moves.
 	ZENITH_ANIMCURVE_TANGENT_CUSTOM,
 };
 
