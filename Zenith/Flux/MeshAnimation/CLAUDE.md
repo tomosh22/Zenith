@@ -728,6 +728,16 @@ controller owns and build a new list, so a pointer taken from `AddLayer` or
 deserialize — and nothing on either path can tell a holder. The failure is a
 use-after-free with no assert in front of it.
 
+★ **THE TOP-LEVEL `Flux_AnimationStateMachine*` IS THE SAME HAZARD AND HAS NO ID
+TO HOLD INSTEAD** — `CreateStateMachine`, `BuildStateMachineFromDef`,
+`BuildFromControllerDef` and `ReadFromDataStream` each `delete` and replace it, so
+the pointer `CreateStateMachine` returns is for configuring the machine you just
+made and nothing else. Re-resolve per use with `HasStateMachine()` and then
+`GetStateMachine()`, in that order: `GetStateMachine()` AUTO-CREATES an empty
+`"Default"` machine, so an unguarded reach turns "there is no graph" into a silent
+no-op on an empty one. (`RenderTest_TennisPlayerComponent::BeginStroke` is the
+worked example; it cached the pointer and an editor undo freed it.)
+
 | Verb | Answers |
 |---|---|
 | `AddLayer(name)` | a new layer, carrying a FRESHLY MINTED id. Use the returned pointer to configure it and drop it |

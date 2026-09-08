@@ -12,6 +12,7 @@
 #include "RenderTest/Components/RenderTest_TennisSpin.h"
 #include "RenderTest/Components/RenderTest_TennisDecision.h"
 #include "RenderTest/Components/RenderTest_TennisAgentComponent.h"
+#include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
 #include "RenderTest/Components/RenderTest_GraphNodes.h"
 #include "RenderTest/Components/RenderTest_TennisTelemetry.h"
 #include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
@@ -21,6 +22,10 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_AIAgentComponent.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
+#include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
+#include "Flux/MeshAnimation/Flux_AnimatorControllerDef.h"   // the state-machine rebuild the stroke must survive
 #include "DataStream/Zenith_DataStream.h"
 
 #include <cmath>
@@ -1514,6 +1519,144 @@ ZENITH_TEST(RenderTestTennis, RefereeMoveAssignClearsLiveNavBorrow)
 	// The live referee's NPCs' borrows were nulled (not left dangling at freed agents).
 	ZENITH_ASSERT_TRUE(xFix.AIAgent(0).GetNavMeshAgent() == nullptr, "move-assign nulled the stale nav borrow");
 	ZENITH_ASSERT_TRUE(xFix.AIAgent(1).GetNavMeshAgent() == nullptr, "move-assign nulled the stale nav borrow");
+}
+
+// ============================================================================
+// The stroke re-resolves the controller's state machine (T1 dangling-pointer fix)
+//
+// The NPC used to cache the Flux_AnimationStateMachine* that SetupAnimator's
+// CreateStateMachine returned. That pointer ALIASES
+// Flux_AnimationController::m_pxStateMachine, which CreateStateMachine,
+// BuildStateMachineFromDef, BuildFromControllerDef and — the path that actually
+// ships — Flux_AnimationController::ReadFromDataStream each DELETE and replace.
+// The tennis NPCs carry a serialized animator, so an editor undo (which rebuilds
+// a live entity's animator from its component bytes) followed by a stroke wrote
+// through freed memory.
+//
+// ★ THESE TESTS BUILD THEIR OWN ENTITY. TennisBrainFixture::MakeAgentEntity and
+// TennisMatchFixture deliberately attach NO animator — four tests above pin
+// "no animator => RequestServe/RequestSwing return false" through them — so
+// giving either one an animator would silently delete that coverage.
+//
+// ★ IDENTITY IS ASSERTED BY NAME AND STATE MEMBERSHIP, NOT BY ADDRESS.
+// BuildStateMachineFromDef is `delete m_pxStateMachine; m_pxStateMachine = new
+// Flux_AnimationStateMachine();` — a same-sized allocation immediately after the
+// free, which an allocator very commonly satisfies from the block it just
+// released. A pointer-inequality assertion would therefore be a coin toss.
+// ============================================================================
+
+namespace
+{
+	// An NPC that DOES carry an animator, with the tennis component's own OnStart
+	// run (capsule + LockRotation + SetupAnimator, which loads the four committed
+	// StickFigure clips from Assets/Authored and builds the "Tennis" machine).
+	Zenith_Entity MakeAnimatedTennisEntity(Zenith_SceneData* pxSceneData, const char* szName, bool bNear)
+	{
+		Zenith_Entity xE = g_xEngine.Scenes().CreateEntity(pxSceneData, szName);
+		// The animator ctor primes the store-owned controller, so GetController()
+		// is valid without the component's own OnStart having run.
+		xE.AddComponent<Zenith_AnimatorComponent>();
+		RenderTest_TennisPlayerComponent& xPlayer = xE.AddComponent<RenderTest_TennisPlayerComponent>();
+		xPlayer.Init(bNear);
+		xPlayer.OnStart();
+		return xE;
+	}
+
+	// A minimal whole-controller def whose only job is to REPLACE the live state
+	// machine. It names no clips (nothing here poses anything) and declares the
+	// three stroke triggers — SetTrigger on an UNDECLARED name is a no-op, so a
+	// def without them would make every trigger assertion below vacuously false.
+	void BuildStrokeRebuildDef(Flux_AnimatorControllerDef& xDef, const char* szName)
+	{
+		xDef.SetName(szName);
+		Flux_AnimationStateMachineDef& xSMDef = xDef.GetOrCreateStateMachineDef();
+		xSMDef.SetName(szName);
+		xSMDef.AddState("Rebuilt");
+		xSMDef.SetDefaultState("Rebuilt");
+		xSMDef.GetParameterDeclarations().AddTrigger("ServeTrigger");
+		xSMDef.GetParameterDeclarations().AddTrigger("ForehandTrigger");
+		xSMDef.GetParameterDeclarations().AddTrigger("BackhandTrigger");
+	}
+}
+
+ZENITH_TEST(RenderTestTennis, StrokeResolvesTheRebuiltStateMachine)
+{
+	TennisBrainFixture xFix;
+	Zenith_Entity xE = MakeAnimatedTennisEntity(xFix.pxSceneData, "SM_Rebuild", /*near*/true);
+	Flux_AnimationController& xCtl = xE.GetComponent<Zenith_AnimatorComponent>().GetController();
+
+	ZENITH_ASSERT_TRUE(xCtl.HasStateMachine(), "SetupAnimator built a state machine");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().GetName() == "Tennis", "…and it is the Tennis graph");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().HasState("Ready"), "…carrying the Ready stance state");
+
+	// TWO rebuilds before the first stroke: a pointer taken once in SetupAnimator
+	// is doubly stale by the time BeginStroke runs.
+	Flux_AnimatorControllerDef xDefA;
+	BuildStrokeRebuildDef(xDefA, "RebuildA");
+	ZENITH_ASSERT_TRUE(xCtl.BuildFromControllerDef(xDefA, nullptr),
+		"a def naming no clips and no masks builds completely");
+	Flux_AnimatorControllerDef xDefB;
+	BuildStrokeRebuildDef(xDefB, "RebuildB");
+	ZENITH_ASSERT_TRUE(xCtl.BuildFromControllerDef(xDefB, nullptr), "the second rebuild also completes");
+
+	// The rebuild really replaced the machine: the Tennis graph's name and states
+	// are gone, the newest def's are live.
+	ZENITH_ASSERT_TRUE(xCtl.HasStateMachine(), "the rebuild left a machine in place");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().GetName() == "RebuildB", "the live machine is the newest def's");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().HasState("Rebuilt"), "…with the newest def's state");
+	ZENITH_ASSERT_FALSE(xCtl.GetStateMachine().HasState("Ready"), "…and the Tennis graph's states went with it");
+	ZENITH_ASSERT_FALSE(xCtl.GetStateMachine().GetParameters().PeekTrigger("ServeTrigger"),
+		"no trigger pending before the serve");
+
+	RenderTest_TennisPlayerComponent& xPlayer = xE.GetComponent<RenderTest_TennisPlayerComponent>();
+	ZENITH_ASSERT_TRUE(xPlayer.RequestServe(Zenith_Maths::Vector3(0.0f, 1.0f, 10.0f)),
+		"the stroke starts against the REBUILT machine (a cached pointer is freed memory here)");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().GetParameters().PeekTrigger("ServeTrigger"),
+		"the trigger landed on the machine that exists NOW");
+	ZENITH_ASSERT_FALSE(xPlayer.IsReady(), "a started stroke leaves the NPC un-ready");
+}
+
+ZENITH_TEST(RenderTestTennis, StrokeRefusedWhenTheControllerHasNoStateMachine)
+{
+	TennisBrainFixture xFix;
+	Zenith_Entity xE = MakeAnimatedTennisEntity(xFix.pxSceneData, "SM_Dropped", /*near*/true);
+	Flux_AnimationController& xCtl = xE.GetComponent<Zenith_AnimatorComponent>().GetController();
+	RenderTest_TennisPlayerComponent& xPlayer = xE.GetComponent<RenderTest_TennisPlayerComponent>();
+	ZENITH_ASSERT_TRUE(xCtl.HasStateMachine(), "SetupAnimator built a state machine");
+
+	// A def with NO top-level machine describes a purely layered controller, so
+	// the rebuild DROPS the machine outright.
+	Flux_AnimatorControllerDef xEmptyDef;
+	ZENITH_ASSERT_TRUE(xCtl.BuildFromControllerDef(xEmptyDef, nullptr),
+		"an empty def describes an empty controller completely");
+	ZENITH_ASSERT_FALSE(xCtl.HasStateMachine(), "the rebuild dropped the machine");
+
+	// ★ THE DISCRIMINATOR. A cached machine pointer is still NON-NULL (and freed)
+	// here, so the old code reported a stroke start that never happened and the
+	// brain armed a phantom shot.
+	ZENITH_ASSERT_FALSE(xPlayer.RequestServe(Zenith_Maths::Vector3(0.0f, 1.0f, 10.0f)),
+		"no state machine => no stroke started");
+	ZENITH_ASSERT_TRUE(xPlayer.IsReady(), "a refused stroke leaves the NPC ready");
+	// ★ AND NO PHANTOM "Default" MACHINE. GetStateMachine() auto-creates one, so a
+	// probe that reached for it unguarded would have armed an empty graph and
+	// still returned true.
+	ZENITH_ASSERT_FALSE(xCtl.HasStateMachine(), "the refusal created no Default machine");
+
+	// Give the SAME component a graph again — a third machine — and the very next
+	// stroke resolves that one.
+	Flux_AnimatorControllerDef xDef;
+	BuildStrokeRebuildDef(xDef, "RebuiltAfterDrop");
+	ZENITH_ASSERT_TRUE(xCtl.BuildFromControllerDef(xDef, nullptr), "the controller has a graph again");
+	ZENITH_ASSERT_TRUE(xCtl.HasStateMachine(), "…and a live machine with it");
+	ZENITH_ASSERT_FALSE(xCtl.GetStateMachine().GetParameters().PeekTrigger("ForehandTrigger"),
+		"no trigger pending before the swing");
+
+	// Ball far to the near-side NPC's +X: a forehand for a right-hander facing +Z.
+	ZENITH_ASSERT_TRUE(xPlayer.RequestSwing(Zenith_Maths::Vector3(0.0f, 1.0f, 10.0f), 1000.0f),
+		"the stroke starts against the machine that exists NOW");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().GetName() == "RebuiltAfterDrop", "…which is the newest def's");
+	ZENITH_ASSERT_TRUE(xCtl.GetStateMachine().GetParameters().PeekTrigger("ForehandTrigger"),
+		"the trigger landed on the newest machine, not on the one SetupAnimator built");
 }
 
 ZENITH_TEST(RenderTestTennis, IntegrationCleanTeardown)

@@ -35,7 +35,10 @@
 //
 // Animation: a SINGLE full-body state machine (Ready / Serve / Forehand /
 // Backhand) — deliberately NOT layered, so GetCurrentAnimatorStateInfo() works
-// for contact-frame detection (layers bypass the controller SM).
+// for contact-frame detection (layers bypass the controller SM). That machine is
+// RE-RESOLVED THROUGH THE CONTROLLER ON EVERY USE and never cached on this
+// component — see BeginStroke for what deletes it out from under a cached
+// pointer.
 //
 // IK testbed: a RightArm chain (shoulder->elbow->hand) reaches the hand to the
 // live ball during the swing window, and the end-effector orientation extension
@@ -252,9 +255,32 @@ private:
 
 	// Returns false (no-op) when the animator/state-machine aren't available — so
 	// RequestServe/RequestSwing can report whether a stroke truly started.
+	//
+	// ★ THE STATE MACHINE IS RE-RESOLVED PER USE AND NEVER CACHED. It is owned by
+	// Flux_AnimationController::m_pxStateMachine, and FOUR ordinary verbs delete
+	// and replace it: CreateStateMachine, BuildStateMachineFromDef,
+	// BuildFromControllerDef and — the path that actually ships —
+	// Flux_AnimationController::ReadFromDataStream, reached from
+	// Zenith_AnimatorComponent::ReadFromDataStream and from the editor's
+	// component-bytes undo, which rebuilds a LIVE entity's animator from
+	// serialized bytes. The tennis NPCs carry a serialized animator, so a pointer
+	// taken once in SetupAnimator would be freed memory after one undo and the
+	// next stroke would write through it, with no assert anywhere in front of it.
+	// (Precedent for resolving per use: RenderTest_PlayerComponent's layer ids,
+	// and the D43/D44 note in Flux/MeshAnimation/CLAUDE.md.)
+	//
+	// ★ HasStateMachine() FIRST, BECAUSE GetStateMachine() AUTO-CREATES ONE.
+	// It builds an empty "Default" machine when none exists, so reaching for it
+	// unguarded would turn a stroke into a silent no-op that still returned true —
+	// a phantom armed shot, which is exactly what the "arm only on a confirmed
+	// stroke start" contract above exists to prevent.
 	bool BeginStroke(Stroke eStroke, const Zenith_Maths::Vector3& xAimTarget)
 	{
-		if (!m_pxAnimator || !m_pxSM)
+		// Keep this first: "no animator => false" is what the node-level tests pin.
+		if (!m_pxAnimator)
+			return false;
+		Flux_AnimationController& xCtl = m_pxAnimator->GetController();
+		if (!xCtl.HasStateMachine())
 			return false;
 		m_eStroke = eStroke;
 		m_xAimTarget = xAimTarget;
@@ -264,7 +290,7 @@ private:
 		const char* szTrigger =
 			eStroke == Stroke::Serve ? "ServeTrigger" :
 			eStroke == Stroke::Forehand ? "ForehandTrigger" : "BackhandTrigger";
-		m_pxSM->GetParameters().SetTrigger(szTrigger);
+		xCtl.GetStateMachine().GetParameters().SetTrigger(szTrigger);
 		return true;
 	}
 
@@ -456,30 +482,33 @@ private:
 		xCtl.AddClipFromFile(s_strDir + "StickFigure_Forehand"    ZENITH_ANIMATION_EXT);
 		xCtl.AddClipFromFile(s_strDir + "StickFigure_Backhand"    ZENITH_ANIMATION_EXT);
 
-		m_pxSM = xCtl.CreateStateMachine("Tennis");
+		// ★ LOCAL, NOT A MEMBER. This pointer is valid for the rest of this
+		// function and no longer: the controller deletes and replaces the machine
+		// on every rebuild (see BeginStroke). Everything after setup re-resolves.
+		Flux_AnimationStateMachine* pxSM = xCtl.CreateStateMachine("Tennis");
 		Flux_AnimationClipCollection& xClips = xCtl.GetClipCollection();
 
-		AddClipState(m_pxSM, xClips, "Ready",    "ReadyStance");
-		AddClipState(m_pxSM, xClips, "Serve",    "Serve");
-		AddClipState(m_pxSM, xClips, "Forehand", "Forehand");
-		AddClipState(m_pxSM, xClips, "Backhand", "Backhand");
+		AddClipState(pxSM, xClips, "Ready",    "ReadyStance");
+		AddClipState(pxSM, xClips, "Serve",    "Serve");
+		AddClipState(pxSM, xClips, "Forehand", "Forehand");
+		AddClipState(pxSM, xClips, "Backhand", "Backhand");
 
-		m_pxSM->GetParameters().AddTrigger("ServeTrigger");
-		m_pxSM->GetParameters().AddTrigger("ForehandTrigger");
-		m_pxSM->GetParameters().AddTrigger("BackhandTrigger");
+		pxSM->GetParameters().AddTrigger("ServeTrigger");
+		pxSM->GetParameters().AddTrigger("ForehandTrigger");
+		pxSM->GetParameters().AddTrigger("BackhandTrigger");
 
 		// Ready -> stroke on trigger; stroke -> Ready when the clip finishes. The
 		// match only commands a swing while IsReady(), so a trigger is never lost
 		// mid-stroke.
-		AddTriggerTransition(m_pxSM, "Ready", "Serve",    "ServeTrigger",    0.06f, 50);
-		AddTriggerTransition(m_pxSM, "Ready", "Forehand", "ForehandTrigger", 0.06f, 50);
-		AddTriggerTransition(m_pxSM, "Ready", "Backhand", "BackhandTrigger", 0.06f, 50);
-		AddExitTimeTransition(m_pxSM, "Serve",    "Ready", 0.98f, 0.12f);
-		AddExitTimeTransition(m_pxSM, "Forehand", "Ready", 0.98f, 0.12f);
-		AddExitTimeTransition(m_pxSM, "Backhand", "Ready", 0.98f, 0.12f);
+		AddTriggerTransition(pxSM, "Ready", "Serve",    "ServeTrigger",    0.06f, 50);
+		AddTriggerTransition(pxSM, "Ready", "Forehand", "ForehandTrigger", 0.06f, 50);
+		AddTriggerTransition(pxSM, "Ready", "Backhand", "BackhandTrigger", 0.06f, 50);
+		AddExitTimeTransition(pxSM, "Serve",    "Ready", 0.98f, 0.12f);
+		AddExitTimeTransition(pxSM, "Forehand", "Ready", 0.98f, 0.12f);
+		AddExitTimeTransition(pxSM, "Backhand", "Ready", 0.98f, 0.12f);
 
-		m_pxSM->SetDefaultState("Ready");
-		m_pxSM->ResolveClipReferences(&xClips);
+		pxSM->SetDefaultState("Ready");
+		pxSM->ResolveClipReferences(&xClips);
 
 		// Right-arm IK chain (shoulder -> elbow -> hand). Tuned like the foot
 		// chains for clean convergence near full extension.
@@ -546,8 +575,12 @@ private:
 
 	Zenith_Entity m_xParentEntity;
 	Zenith_Entity m_xBall;
+	// ★ STILL A CACHED COMPONENT POINTER, AND DELIBERATELY SO. A
+	// Zenith_AnimatorComponent lives in the entity's component pool and is a
+	// forwarding handle onto a heap-stable, EntityID-keyed controller; this unit
+	// closed the STATE-MACHINE alias only. The state machine that used to sit
+	// beside this (m_pxSM) is gone — BeginStroke re-resolves it per use.
 	Zenith_AnimatorComponent*    m_pxAnimator = nullptr;
-	Flux_AnimationStateMachine*  m_pxSM = nullptr;
 
 	bool  m_bNearSide = true;
 	bool  m_bFacingPositiveZ = true;

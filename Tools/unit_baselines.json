@@ -22,6 +22,6 @@
     "Combat": 2162,
 
     "$RenderTest": "Every number in this file is OBSERVED from a real Null_ run, never arithmetic on the previous one -- a computed pin is how a suite that also LOST a test still ratchets green. Do NOT narrate individual bumps here: that note drifts at the next bump (it already did once). git log carries the derivation.",
-    "RenderTest": 2263
+    "RenderTest": 2265
   }
 }
