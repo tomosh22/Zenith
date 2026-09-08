@@ -180,7 +180,8 @@ namespace RenderTest
 static bool s_bResourcesInitialized = false;
 static uint32_t s_uRenderTestSmokeFrameLimit = 240;
 
-#ifdef ZENITH_TOOLS
+// Used by both the tools and runtime player-model selection (:1065), so it is
+// NOT tools-only; the platform guard inside is what keeps Android green.
 static bool RenderTest_HasCommandLineFlag(const char* szFlag)
 {
 #ifdef ZENITH_WINDOWS
@@ -194,7 +195,6 @@ static bool RenderTest_HasCommandLineFlag(const char* szFlag)
 #endif
 	return false;
 }
-#endif
 
 // True if any CLI arg STARTS WITH szPrefix (so "--rendertest-gun-showcase=rifle"
 // matches "--rendertest-gun-showcase"). RenderTest_HasCommandLineFlag is exact-match.
