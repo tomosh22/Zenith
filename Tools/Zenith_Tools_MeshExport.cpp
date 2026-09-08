@@ -903,6 +903,62 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 }
 
 //------------------------------------------------------------------------------
+// Routing: the StickFigure rig belongs to its GENERATOR, not to this walk
+//------------------------------------------------------------------------------
+// ★★ THE DIRECTORY IS THE RULE, exactly as IsHumanoidSourcePath
+// (Zenith_Tools_HumanModelExport.cpp) states it for Meshes/Humans. A .gltf under
+// Meshes/StickFigure/ is written BY GenerateStickFigureAssets as a DEBUG EXPORT
+// for the Blender round trip (Zenith_Tools_TestAssetExport.cpp, "Export to glTF
+// format for editing in Blender: MESH AND RIG ONLY") -- it is an OUTPUT of the
+// bake, never a source for it.
+//
+// ★ THE HAZARD THIS CLOSES. ExportAllMeshes() runs at Zenith_Engine.cpp:558 and
+// GenerateTestAssets() at :573, so on every boot AFTER the first, this walk finds
+// the glTF the previous boot wrote and re-imports it through Assimp. That writes
+// StickFigure.zskel and StickFigure.zmodel to the SAME base name and directory the
+// generator uses (see Export() above: strBaseName + ZENITH_SKELETON_EXT /
+// ZENITH_MODEL_EXT) -- correct on disk at the end only because the generator
+// happens to overwrite them fifteen lines later, i.e. by ORDERING alone. It also
+// leaves a stray StickFigure_Mesh0_Mat0.zmesh (the ProcessNode naming above) that
+// nothing references: the generator's own mesh is .zasset/.zgeom and never .zmesh,
+// and SweepGeneratedStickFigureClips sweeps .zanim only, so the stray is never
+// cleaned up by anything.
+//
+// ★ SCOPED TO Meshes/StickFigure/ ONLY. Do NOT widen this to every
+// generator-written glTF, and do NOT widen it to Meshes/**.
+// Meshes/ProceduralTree/Tree.gltf is generator-written too, but the tree set writes
+// NO .zmodel of its own -- Tree.zmodel and Tree_Mesh0_Mat0.zmesh exist ONLY because
+// this walk re-imports that glTF, and Tree_Mesh0_Mat0.zmesh is loaded by the engine
+// (observed in boot logs). Meshes/UnitTest/ArmChain.gltf is consumed the same way by
+// two engine unit tests (Zenith_UnitTests.Tests.inl). Skipping either would delete
+// assets that are actually read.
+static const char* szSTICKFIGURE_DIR = "Meshes/StickFigure/";
+
+static bool IsGeneratedStickFigureSourcePath(const std::string& strPath)
+{
+	// ★ The walk hands us MIXED separators
+	// ("c:/dev/zenith/Zenith/Assets/Meshes\StickFigure\StickFigure.gltf" -- observed
+	// in a real boot log), because the root string is spelled with forward slashes
+	// and recursive_directory_iterator appends native ones. Normalise FIRST and then
+	// match a directory literal, exactly as IsHumanoidSourcePath does; matching
+	// against a raw native path would find nothing and the guard would be inert.
+	//
+	// The trailing '/' in szSTICKFIGURE_DIR is load-bearing: it is what keeps a
+	// sibling directory whose name merely starts the same way (Meshes/StickFigureOfSpeech/)
+	// out of the skip.
+	//
+	// ★ ONE OVERLAP, NOTED RATHER THAN PINNED: the committed authored-clip directory
+	// Assets/Authored/Meshes/StickFigure/ CONTAINS this literal as a substring, so a
+	// path under it would also be skipped. That is inert today -- it holds seventeen
+	// .zanim files and nothing this walk can import (.gltf/.fbx/.obj) -- but if an
+	// importable source is ever added there, this predicate is what would silently
+	// exclude it.
+	std::string strNormalised = strPath;
+	for (char& c : strNormalised) { if (c == '\\') { c = '/'; } }
+	return strNormalised.find(szSTICKFIGURE_DIR) != std::string::npos;
+}
+
+//------------------------------------------------------------------------------
 // Export all meshes from game assets directory
 //------------------------------------------------------------------------------
 // The game/engine asset dirs are gitignored (**/Assets/), so on a fresh checkout
@@ -928,6 +984,19 @@ static void ExportMeshesInDirectory(const std::string& strDirectory)
 		// Avoid trying to export C++ IR files (.obj)
 		if (strFilename.find("Assets") == std::string::npos)
 		{
+			continue;
+		}
+
+		// ★ THE STICKFIGURE RIG BELONGS TO GenerateStickFigureAssets. See
+		// IsGeneratedStickFigureSourcePath above for the whole hazard: this glTF is
+		// the generator's own debug export, re-importing it overwrites .zskel/.zmodel
+		// before the generator rewrites them, and it leaves a .zmesh nothing reads.
+		// Checked BEFORE the extension dispatch so no source type can slip past it.
+		if (IsGeneratedStickFigureSourcePath(strFilename))
+		{
+			Zenith_Log(LOG_CATEGORY_TOOLS,
+				"MESH_EXPORT: %s is the StickFigure generator's own glTF - GenerateStickFigureAssets owns that rig, skipping",
+				strFilename.c_str());
 			continue;
 		}
 
@@ -969,3 +1038,10 @@ void ExportAllMeshes()
 	Zenith_Tools_GlbImport::ImportGlbsInDirectory(GetGameAssetsDirectory());
 	Zenith_Tools_GlbImport::ImportGlbsInDirectory(GetEngineAssetsDirectory());
 }
+
+#ifdef ZENITH_TOOLS
+// Last line of the TU on purpose: the routing predicate is file-local (the header
+// Zenith_Tools_MeshExport.h declares nothing), so the tests must be compiled INTO
+// this translation unit to see it.
+#include "Zenith_Tools_MeshExport.Tests.inl"
+#endif
