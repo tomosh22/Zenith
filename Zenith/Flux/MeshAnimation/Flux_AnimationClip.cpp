@@ -28,11 +28,30 @@ void Flux_WriteVec3Keys(Zenith_DataStream& xStream, const Zenith_Vector<std::pai
 	}
 }
 
+// ★ A COUNT OUT OF A FILE IS AN ALLOCATION REQUEST, so it is budgeted against the
+// bytes that actually remain BEFORE Reserve() is reached — a 0xFFFFFFFF count in a
+// truncated .zanim otherwise asks for 64 GB and then reads 4 billion zero-filled
+// keys out of a stream that refuses every one of them. The count that survives is
+// arithmetically capable of being backed by real bytes; whether it IS is then the
+// per-read bounds checks' business, which is what the in-loop break watches.
+//
+// NEVER "skip to the end" to compensate for a refusal. Zenith_Tools_AnimMigrate
+// detects truncation by comparing GetCursor() against GetCapacity() after a parse
+// it believes succeeded, so a reader that parked the cursor at EOF would report a
+// truncated file as intact.
 void Flux_ReadVec3Keys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>>& xKeys)
 {
+	// 3 position floats + the key time.
+	constexpr uint64_t ulVEC3_KEY_BYTES = 4ull * sizeof(float);
+
 	uint32_t uCount = 0;
 	xStream >> uCount;
 	xKeys.Clear();
+	if (xStream.HasReadFailure() || static_cast<uint64_t>(uCount) > xStream.GetRemainingBytes() / ulVEC3_KEY_BYTES)
+	{
+		xStream.MarkCorrupt("Flux_ReadVec3Keys: key count cannot be backed by the bytes that remain");
+		return;
+	}
 	xKeys.Reserve(uCount);
 	for (u_int i = 0; i < uCount; ++i)
 	{
@@ -41,6 +60,8 @@ void Flux_ReadVec3Keys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenit
 		xStream >> xKey.first.y;
 		xStream >> xKey.first.z;
 		xStream >> xKey.second;
+		// After the read, so a key that did not land is not pushed.
+		if (xStream.HasReadFailure()) break;
 		xKeys.PushBack(xKey);
 	}
 }
@@ -58,11 +79,20 @@ void Flux_WriteQuatKeys(Zenith_DataStream& xStream, const Zenith_Vector<std::pai
 	}
 }
 
+// Same budget-before-reserve contract as Flux_ReadVec3Keys above.
 void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenith_Maths::Quat, float>>& xKeys)
 {
+	// 4 quaternion floats + the key time.
+	constexpr uint64_t ulQUAT_KEY_BYTES = 5ull * sizeof(float);
+
 	uint32_t uCount = 0;
 	xStream >> uCount;
 	xKeys.Clear();
+	if (xStream.HasReadFailure() || static_cast<uint64_t>(uCount) > xStream.GetRemainingBytes() / ulQUAT_KEY_BYTES)
+	{
+		xStream.MarkCorrupt("Flux_ReadQuatKeys: key count cannot be backed by the bytes that remain");
+		return;
+	}
 	xKeys.Reserve(uCount);
 	for (u_int i = 0; i < uCount; ++i)
 	{
@@ -72,6 +102,7 @@ void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenit
 		xStream >> xKey.first.y;
 		xStream >> xKey.first.z;
 		xStream >> xKey.second;
+		if (xStream.HasReadFailure()) break;
 		xKeys.PushBack(xKey);
 	}
 }
@@ -96,11 +127,20 @@ void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_
 	}
 }
 
+// Same budget-before-reserve contract as Flux_ReadVec3Keys above.
 void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTangents>& xTangents)
 {
+	// In-tangent xyz + out-tangent xyz.
+	constexpr uint64_t ulTANGENT_BYTES = 6ull * sizeof(float);
+
 	uint32_t uCount = 0;
 	xStream >> uCount;
 	xTangents.Clear();
+	if (xStream.HasReadFailure() || static_cast<uint64_t>(uCount) > xStream.GetRemainingBytes() / ulTANGENT_BYTES)
+	{
+		xStream.MarkCorrupt("Flux_ReadKeyTangents: tangent count cannot be backed by the bytes that remain");
+		return;
+	}
 	xTangents.Reserve(uCount);
 	for (u_int i = 0; i < uCount; ++i)
 	{
@@ -111,6 +151,7 @@ void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTang
 		xStream >> xTangent.m_xOutTangent.x;
 		xStream >> xTangent.m_xOutTangent.y;
 		xStream >> xTangent.m_xOutTangent.z;
+		if (xStream.HasReadFailure()) break;
 		xTangents.PushBack(xTangent);
 	}
 }
@@ -1684,30 +1725,63 @@ Zenith_Status Flux_AnimationClip::ParsePayload(Zenith_DataStream& xStream, u_int
 	m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(m_strSourcePath);
 
 	// Bone channels
+	//
+	// No count budget here: a bone channel is variable-length (a name plus six
+	// variable-length key blocks), so there is no record size to divide by. Each
+	// block inside the channel budgets itself, and the per-iteration break stops
+	// the loop the moment one of them refuses rather than grinding out uNumChannels
+	// empty channels against a dead stream.
 	uint32_t uNumChannels = 0;
 	xStream >> uNumChannels;
 	m_xBoneChannels.Clear();
 	for (uint32_t i = 0; i < uNumChannels; ++i)
 	{
+		if (xStream.HasReadFailure()) break;
 		Flux_BoneChannel xChannel;
 		xChannel.ReadFromDataStream(xStream);
 		m_xBoneChannels.Emplace(xChannel.GetBoneName(), std::move(xChannel));
 	}
+	if (xStream.HasReadFailure())
+	{
+		ResetToEmpty();
+		return Zenith_ErrorCode::CORRUPT_DATA;
+	}
 
-	// Events
+	// Events. The minimum record is the FIXED part — the normalized time, the event
+	// name's 4-byte length prefix (an empty name is legal) and the four data floats —
+	// so a count that exceeds remaining/24 cannot be backed by any bytes at all.
+	constexpr uint64_t ulEVENT_MIN_BYTES = sizeof(float) + sizeof(uint32_t) + 4ull * sizeof(float);
+
 	uint32_t uNumEvents = 0;
 	xStream >> uNumEvents;
 	m_xEvents.Clear();
+	if (xStream.HasReadFailure() || static_cast<uint64_t>(uNumEvents) > xStream.GetRemainingBytes() / ulEVENT_MIN_BYTES)
+	{
+		xStream.MarkCorrupt("Flux_AnimationClip: event count cannot be backed by the bytes that remain");
+		ResetToEmpty();
+		return Zenith_ErrorCode::CORRUPT_DATA;
+	}
 	m_xEvents.Reserve(uNumEvents);
 	for (u_int i = 0; i < uNumEvents; ++i)
 	{
 		Flux_AnimationEvent xEvent;
 		xEvent.ReadFromDataStream(xStream);
+		if (xStream.HasReadFailure()) break;
 		m_xEvents.PushBack(xEvent);
+	}
+	if (xStream.HasReadFailure())
+	{
+		ResetToEmpty();
+		return Zenith_ErrorCode::CORRUPT_DATA;
 	}
 
 	// Root motion
 	m_xRootMotion.ReadFromDataStream(xStream);
+	if (xStream.HasReadFailure())
+	{
+		ResetToEmpty();
+		return Zenith_ErrorCode::CORRUPT_DATA;
+	}
 
 	return true;
 }

@@ -1755,6 +1755,139 @@ ZENITH_TEST(AnimationReload, ClipParseStreamReportsRefusalsAsAStatus)
 	}
 }
 
+// ============================================================================
+// A6 — the .zanim block readers budget a count against the bytes that remain
+// BEFORE they reserve, and a truncated clip parses to EMPTY with a status.
+//
+// ★ EVERY HOSTILE FIXTURE WRAPS AN EXACTLY-SIZED BUFFER. An owned
+// Zenith_DataStream is bounded by its ALLOCATION, so a "12-byte" owned stream is
+// really a 1024-byte one and GetRemainingBytes() would hand the budget check a
+// number the file never had — the same trap the truncated-envelope case above
+// documents.
+// ============================================================================
+
+ZENITH_TEST(AnimationSerialization, HostileTangentCountRefusedWithoutReserve)
+{
+	// A count of 0xFFFFFFFF followed by eight bytes. At 24 bytes per record that
+	// claims 96 GB out of a 12-byte buffer, and the count reaches Zenith_Vector::
+	// Reserve() as an allocation request unless it is refused first.
+	u_int8 auBytes[12] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu,
+	                       0x00u, 0x00u, 0x00u, 0x00u,
+	                       0x00u, 0x00u, 0x00u, 0x00u };
+	Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+
+	Zenith_Vector<Flux_KeyTangents> xTangents;
+	// A fresh Zenith_Vector already holds its default capacity (uDEFAULT_INITIAL_COUNT), so
+	// "reserved nothing" is observed as the capacity NOT MOVING, not as zero.
+	const u_int uCapacityBefore = xTangents.GetCapacity();
+
+	Flux_ReadKeyTangents(xStream, xTangents);
+
+	ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a count that cannot be backed by the remaining bytes is CORRUPT");
+	// GetCapacity() is the observable for "reserved nothing": it only moves when Reserve
+	// or a PushBack growth allocates. Zenith_MemoryTracker's allocation count is not
+	// usable here — it is Debug-only and blind to Zenith_MemoryManagement::Allocate,
+	// which is the allocator Zenith_Vector actually calls.
+	ZENITH_ASSERT_EQ(xTangents.GetCapacity(), uCapacityBefore, "a refused count must not reach Reserve()");
+	ZENITH_ASSERT_EQ(xTangents.GetSize(), 0u, "and must not append anything");
+}
+
+ZENITH_TEST(AnimationSerialization, HostileVec3KeyCountRefusedWithoutReserve)
+{
+	u_int8 auBytes[12] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu,
+	                       0x00u, 0x00u, 0x00u, 0x00u,
+	                       0x00u, 0x00u, 0x00u, 0x00u };
+	Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+
+	Zenith_Vector<std::pair<Zenith_Maths::Vector3, float>> xKeys;
+	// A fresh Zenith_Vector already holds its default capacity (uDEFAULT_INITIAL_COUNT), so
+	// "reserved nothing" is observed as the capacity NOT MOVING, not as zero.
+	const u_int uCapacityBefore = xKeys.GetCapacity();
+
+	Flux_ReadVec3Keys(xStream, xKeys);
+
+	ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a count that cannot be backed by the remaining bytes is CORRUPT");
+	ZENITH_ASSERT_EQ(xKeys.GetCapacity(), uCapacityBefore, "a refused count must not reach Reserve()");
+	ZENITH_ASSERT_EQ(xKeys.GetSize(), 0u, "and must not append anything");
+}
+
+ZENITH_TEST(AnimationSerialization, ExactLengthBlocksAccepted)
+{
+	// The other half of the budget check: a block whose count is EXACTLY backed by
+	// the bytes that remain must be read in full. An off-by-one in the budget
+	// arithmetic would refuse every real .zanim's last block, which is precisely the
+	// shape a round-trip on an over-allocated owned stream cannot see.
+	Zenith_Vector<Flux_KeyTangents> xIn;
+	Flux_KeyTangents xFirst;
+	xFirst.m_xInTangent  = Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f);
+	xFirst.m_xOutTangent = Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f);
+	Flux_KeyTangents xSecond;
+	xSecond.m_xInTangent  = Zenith_Maths::Vector3(-1.0f, -2.0f, -3.0f);
+	xSecond.m_xOutTangent = Zenith_Maths::Vector3(-4.0f, -5.0f, -6.0f);
+	xIn.PushBack(xFirst);
+	xIn.PushBack(xSecond);
+
+	Zenith_DataStream xWrite;
+	Flux_WriteKeyTangents(xWrite, xIn);
+	const uint64_t ulBlockBytes = xWrite.GetCursor();
+	const uint64_t ulExpectedBytes = sizeof(uint32_t) + 2ull * (6ull * sizeof(float));
+	ZENITH_ASSERT_EQ(ulBlockBytes, ulExpectedBytes, "fixture: count(4) + 2 * 24 bytes");
+
+	// Wrapped at EXACTLY the written length, so GetRemainingBytes() is the file's
+	// number rather than the allocation's.
+	Zenith_DataStream xExact(xWrite.GetData(), ulBlockBytes);
+	Zenith_Vector<Flux_KeyTangents> xOut;
+	Flux_ReadKeyTangents(xExact, xOut);
+
+	ZENITH_ASSERT_FALSE(xExact.HasReadFailure(), "an exactly-sized block is not a hostile one");
+	ZENITH_ASSERT_EQ(xOut.GetSize(), 2u, "both records are read");
+	ZENITH_ASSERT_EQ(xExact.GetCursor(), xExact.GetCapacity(), "and the block ends exactly at end of buffer");
+	if (xOut.GetSize() == 2u)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(0).m_xInTangent.x,   1.0f, 1e-6f, "record 0 round-trips");
+		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(0).m_xOutTangent.z,  6.0f, 1e-6f, "record 0 round-trips");
+		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(1).m_xInTangent.y,  -2.0f, 1e-6f, "record 1 round-trips");
+		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(1).m_xOutTangent.x, -4.0f, 1e-6f, "record 1 round-trips");
+	}
+}
+
+ZENITH_TEST(AnimationSerialization, TruncatedClipParsesToEmptyWithCorruptData)
+{
+	Flux_AnimationClip xClip;
+	ClipBuildTwoBoneClip(xClip);
+
+	Zenith_DataStream xWhole;
+	xClip.WriteToDataStream(xWhole);
+	const uint64_t ulWholeBytes = xWhole.GetCursor();
+
+	// The cut lands INSIDE the bone-channel block. The envelope (16 B), the metadata,
+	// the source path and the channel count together are under 80 bytes for this
+	// fixture, and the whole clip is several hundred, so 128 is past the channel count
+	// and a long way short of the end.
+	constexpr uint64_t ulCUT_BYTES = 128ull;
+	ZENITH_ASSERT_TRUE(ulWholeBytes > 2ull * ulCUT_BYTES, "fixture: the clip is long enough to cut mid-channel");
+
+	// Wrapping the same bytes at a shorter length IS the truncation — a wrapped
+	// stream's capacity is its length, so nothing past ulCUT_BYTES is readable.
+	Zenith_DataStream xTruncated(xWhole.GetData(), ulCUT_BYTES);
+
+	Flux_AnimationClip xLoaded;
+	{
+		// The channel's tangent/keyframe parity assert fires on the way out, and the
+		// count is NOT pinned — how many guards a given cut point trips is a property
+		// of where the cut lands, not of the contract under test (same reasoning as
+		// Zenith_Tools_AnimMigrate.Tests.inl's corrupt-corpus case).
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Status xStatus = xLoaded.ParseStream(xTruncated);
+		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "a truncated payload must be refused with a STATUS");
+		ZENITH_ASSERT_EQ(xStatus.Error(), Zenith_ErrorCode::CORRUPT_DATA, "and the status names the reason");
+	}
+
+	ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 0u, "a refused parse leaves an EMPTY clip");
+	ZENITH_ASSERT_EQ(xLoaded.GetEvents().GetSize(), 0u, "a refused parse leaves an EMPTY clip");
+	ZENITH_ASSERT_TRUE(xLoaded.GetName().empty(), "a refused parse leaves an EMPTY clip");
+}
+
 ZENITH_TEST(AnimationReload, CollectionRefusesAnUnnamedClip)
 {
 	// An unnamed clip keys on "": two of them evict each other from m_xClipsByName

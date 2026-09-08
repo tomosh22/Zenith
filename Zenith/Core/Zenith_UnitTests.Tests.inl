@@ -217,6 +217,281 @@ void Zenith_UnitTests::TestDataStream(){
 	ZENITH_ASSERT_TRUE(xVector.at(0) == 3245. && xVector.at(1) == -1119.);
 }
 
+// ============================================================================
+// Zenith_DataStream read-failure flag.
+//
+// ★ EVERY CORRUPT CASE HERE WRAPS AN EXACTLY-SIZED BUFFER. An owned
+// Zenith_DataStream(4096) is bounded by its ALLOCATION, not by the bytes written
+// into it, so "read past the end" of an owned stream reads uninitialised heap and
+// never trips a bounds check at all — the same trap documented at
+// Flux_AnimationClip.Tests.inl's truncated-envelope case.
+//
+// Several of these paths ALSO Zenith_Assert on the way out (a null stream pointer
+// asserts twice, the container caps once, the string cap not at all), so each is
+// wrapped in a Zenith_AssertCaptureScope. The hit COUNT is deliberately not pinned:
+// it is a property of how many redundant debug guards happen to sit on the path,
+// which is not what these tests are about. What is pinned is HasReadFailure() and
+// the defined output state.
+// ============================================================================
+
+ZENITH_TEST(Core, DataStreamReadFailure_OverflowRead)
+{
+	u_int8 auBytes[8] = { 0x1u, 0x2u, 0x3u, 0x4u, 0x5u, 0x6u, 0x7u, 0x8u };
+	Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+	ZENITH_ASSERT_FALSE(xStream.HasReadFailure(), "a freshly wrapped stream has not failed anything yet");
+
+	u_int8 auOut[16] = { 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu,
+	                     0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu };
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xStream.ReadData(auOut, sizeof(auOut));
+	}
+
+	ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a 16-byte read out of an 8-byte stream must be REPORTED, not just logged");
+	ZENITH_ASSERT_EQ(xStream.GetCursor(), 0ull, "a refused read leaves the cursor exactly where it was");
+	ZENITH_ASSERT_EQ((u_int)auOut[0], 0xCDu, "a refused read must not memcpy anything into the destination");
+	ZENITH_ASSERT_EQ((u_int)auOut[15], 0xCDu, "a refused read must not memcpy anything into the destination");
+	ZENITH_ASSERT_EQ(xStream.GetRemainingBytes(), 8ull, "and the whole buffer is still ahead of the cursor");
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_NullStreamData)
+{
+	// A moved-from stream is the one legitimate way to hold a Zenith_DataStream with
+	// a null buffer, which is the null-pointer branch of ReadData.
+	Zenith_DataStream xSource(32u);
+	Zenith_DataStream xTarget(std::move(xSource));
+	ZENITH_ASSERT_TRUE(xTarget.GetData() != nullptr, "fixture: the move target took the buffer");
+	ZENITH_ASSERT_TRUE(xSource.GetData() == nullptr, "the moved-from stream is the null-buffer fixture");
+	ZENITH_ASSERT_FALSE(xSource.HasReadFailure(), "and starts clean — the move cleared the source");
+
+	u_int8 uByte = 0xCDu;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xSource.ReadData(&uByte, sizeof(uByte));
+	}
+
+	ZENITH_ASSERT_TRUE(xSource.HasReadFailure(), "reading a null stream must set the read-failure flag");
+	ZENITH_ASSERT_EQ((u_int)uByte, 0xCDu, "and must not have written to the destination");
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_StringOverCap)
+{
+	// A length prefix of 2 MB, over the reader's 1 MB sanity cap, with nothing behind
+	// it. Before the flag this logged and returned an EMPTY string — indistinguishable
+	// from a legitimately empty one.
+	// 0x00200000 == 2 MB, little-endian, written out by hand so the fixture does not
+	// depend on the very serializer under test.
+	u_int8 auBytes[4] = { 0x00u, 0x00u, 0x20u, 0x00u };
+
+	Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+	std::string strOut = "clobber me";
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xStream >> strOut;
+	}
+
+	ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a string length over the cap must set the read-failure flag");
+	ZENITH_ASSERT_TRUE(strOut.empty(), "and leave the string empty rather than half-filled");
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_VectorCountOverCap)
+{
+	{
+		u_int8 auBytes[4] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+		Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+		std::vector<u_int> xVec;
+		{
+			Zenith_AssertCaptureScope xCapture;
+			xStream >> xVec;
+		}
+		ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a 0xFFFFFFFF element count must set the read-failure flag");
+		ZENITH_ASSERT_TRUE(xVec.empty(), "and reserve/append nothing");
+	}
+
+	// The new rule: a PREFIX that itself fails to read must not be treated as a count
+	// at all. Two bytes cannot hold a u_int, so there is no loop to run.
+	{
+		u_int8 auBytes[2] = { 0x01u, 0x00u };
+		Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+		std::vector<u_int> xVec;
+		{
+			Zenith_AssertCaptureScope xCapture;
+			xStream >> xVec;
+		}
+		ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "an unreadable count prefix is a read failure");
+		ZENITH_ASSERT_TRUE(xVec.empty(), "and an indeterminate count must never become a loop bound");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), 0ull, "the refused prefix read left the cursor alone");
+	}
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_MapCountOverCap)
+{
+	{
+		u_int8 auBytes[4] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+		Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+		std::unordered_map<u_int, u_int> xMap;
+		{
+			Zenith_AssertCaptureScope xCapture;
+			xStream >> xMap;
+		}
+		ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a 0xFFFFFFFF pair count must set the read-failure flag");
+		ZENITH_ASSERT_TRUE(xMap.empty(), "and insert nothing");
+	}
+
+	{
+		u_int8 auBytes[2] = { 0x01u, 0x00u };
+		Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+		std::unordered_map<u_int, u_int> xMap;
+		{
+			Zenith_AssertCaptureScope xCapture;
+			xStream >> xMap;
+		}
+		ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "an unreadable count prefix is a read failure");
+		ZENITH_ASSERT_TRUE(xMap.empty(), "and an indeterminate count must never become a loop bound");
+		ZENITH_ASSERT_EQ(xStream.GetCursor(), 0ull, "the refused prefix read left the cursor alone");
+	}
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_CleanReadStaysClear)
+{
+	// The flag has to be quiet on the ordinary path, or every caller learns to ignore
+	// it. A full round trip through every reader that can raise it.
+	Zenith_DataStream xStream(64u);
+	xStream << uint32_t(0x1234u);
+	xStream << float(2000.0f);
+	xStream << std::string("a string with some length to it");
+	xStream << std::vector<uint32_t>({ 1u, 2u, 3u });
+	xStream << std::unordered_map<uint32_t, uint32_t>({ { 7u, 9u } });
+	ZENITH_ASSERT_FALSE(xStream.HasReadFailure(), "writing never sets the READ failure flag");
+
+	xStream.SetCursor(0);
+
+	uint32_t uValue = 0u;
+	xStream >> uValue;
+	float fValue = 0.0f;
+	xStream >> fValue;
+	std::string strValue;
+	xStream >> strValue;
+	std::vector<uint32_t> xVec;
+	xStream >> xVec;
+	std::unordered_map<uint32_t, uint32_t> xMap;
+	xStream >> xMap;
+
+	ZENITH_ASSERT_EQ(uValue, 0x1234u, "the round trip is a real one");
+	ZENITH_ASSERT_EQ(fValue, 2000.0f, "the round trip is a real one");
+	ZENITH_ASSERT_TRUE(strValue == "a string with some length to it", "the round trip is a real one");
+	ZENITH_ASSERT_EQ(xVec.size(), (size_t)3u, "the round trip is a real one");
+	ZENITH_ASSERT_EQ(xMap.size(), (size_t)1u, "the round trip is a real one");
+	ZENITH_ASSERT_FALSE(xStream.HasReadFailure(), "a clean read must leave the read-failure flag CLEAR");
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_SurvivesMoveAndClearsSource)
+{
+	// The move ctor and move assignment are EXPLICIT field lists. A member dropped
+	// from either is invisible to the existing move tests, which only look at the
+	// pointer, capacity, cursor and ownership.
+	u_int8 auBytes[4] = { 0x1u, 0x2u, 0x3u, 0x4u };
+	u_int8 auOut[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+
+	Zenith_DataStream xSource(auBytes, sizeof(auBytes));
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xSource.ReadData(auOut, sizeof(auOut));
+	}
+	ZENITH_ASSERT_TRUE(xSource.HasReadFailure(), "fixture: the source stream has failed a read");
+
+	Zenith_DataStream xMoveConstructed(std::move(xSource));
+	ZENITH_ASSERT_TRUE(xMoveConstructed.HasReadFailure(), "move construction must carry the read-failure flag with the bytes");
+	ZENITH_ASSERT_FALSE(xSource.HasReadFailure(), "move construction must clear the gutted source's flag");
+
+	Zenith_DataStream xMoveAssigned(16u);
+	ZENITH_ASSERT_FALSE(xMoveAssigned.HasReadFailure(), "fixture: the assignment target starts clean");
+	xMoveAssigned = std::move(xMoveConstructed);
+	ZENITH_ASSERT_TRUE(xMoveAssigned.HasReadFailure(), "move assignment must carry the read-failure flag with the bytes");
+	ZENITH_ASSERT_FALSE(xMoveConstructed.HasReadFailure(), "move assignment must clear the gutted source's flag");
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_ResetBySetCursorAndReadFromFile)
+{
+	// The two reset points. SetCursor matters most: two long-lived member streams
+	// (Zenith_Prefab's component data, Zenith_ComponentMeta's property overrides) are
+	// rewound to 0 and re-read on every use and never see ReadFromFile, so without
+	// this one bad read would poison them for the life of the process.
+	{
+		u_int8 auBytes[4] = { 0x1u, 0x2u, 0x3u, 0x4u };
+		u_int8 auOut[8] = { 0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u };
+		Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+		{
+			Zenith_AssertCaptureScope xCapture;
+			xStream.ReadData(auOut, sizeof(auOut));
+		}
+		ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "fixture: the stream has failed a read");
+
+		xStream.SetCursor(0);
+		ZENITH_ASSERT_FALSE(xStream.HasReadFailure(), "SetCursor is a reset point — a rewind starts a fresh read");
+	}
+
+	// The file half needs a writable filesystem location; guarded INSIDE the test body
+	// rather than around the registrar so the test COUNT is the same on every platform.
+#ifndef ZENITH_ANDROID
+	{
+		std::error_code xError;
+		std::filesystem::path xRoot = std::filesystem::temp_directory_path(xError);
+		if (xError)
+		{
+			xRoot = ".";
+		}
+		const std::filesystem::path xDir = xRoot / "zenith_datastream_readfailure";
+		std::filesystem::remove_all(xDir, xError);
+		std::filesystem::create_directories(xDir, xError);
+		const std::string strPath = (xDir / "reset.bin").generic_string();
+
+		{
+			Zenith_DataStream xWrite(16u);
+			xWrite << uint32_t(0xABCDu);
+			xWrite.WriteToFile(strPath.c_str());
+		}
+
+		Zenith_DataStream xStream(8u);
+		u_int8 auOut[64] = {};
+		{
+			Zenith_AssertCaptureScope xCapture;
+			xStream.ReadData(auOut, sizeof(auOut));
+		}
+		ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "fixture: the stream has failed a read");
+
+		xStream.ReadFromFile(strPath.c_str());
+		ZENITH_ASSERT_FALSE(xStream.HasReadFailure(), "ReadFromFile is a reset point — these are brand new bytes");
+		uint32_t uRoundTripped = 0u;
+		xStream >> uRoundTripped;
+		ZENITH_ASSERT_EQ(uRoundTripped, 0xABCDu, "and the reloaded stream reads normally");
+
+		std::filesystem::remove_all(xDir, xError);
+	}
+#endif
+}
+
+ZENITH_TEST(Core, DataStreamReadFailure_WrapAroundSizeRefused)
+{
+	// ★ NOT WRITABLE RED-FIRST. `m_ulCursor + ulSize` WRAPS for a size this size, so
+	// before the subtraction form this did not merely mis-report — it passed the
+	// bounds check and ran a memcpy of ~2^64 bytes.
+	u_int8 auBytes[16] = { 0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 15u };
+	Zenith_DataStream xStream(auBytes, sizeof(auBytes));
+	xStream.SetCursor(8);
+
+	u_int8 auOut[8] = { 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu, 0xCDu };
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xStream.ReadData(auOut, 0xFFFFFFFFFFFFFFF8ull);   // cursor(8) + this == 0
+	}
+
+	ZENITH_ASSERT_TRUE(xStream.HasReadFailure(), "a wrap-around size must be REFUSED and reported");
+	ZENITH_ASSERT_EQ(xStream.GetCursor(), 8ull, "and must leave the cursor where it was");
+	ZENITH_ASSERT_EQ((u_int)auOut[0], 0xCDu, "and must copy nothing at all");
+	ZENITH_ASSERT_EQ((u_int)auOut[7], 0xCDu, "and must copy nothing at all");
+}
+
 ZENITH_TEST(Core, MemoryManagement) { Zenith_UnitTests::TestMemoryManagement(); }
 
 void Zenith_UnitTests::TestMemoryManagement(){
