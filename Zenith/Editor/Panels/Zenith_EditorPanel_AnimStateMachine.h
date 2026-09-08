@@ -421,17 +421,26 @@ public:
 	// LIVE ACTIVE-STATE HIGHLIGHTING.
 	//
 	// ★ IT RUNS ON A PANEL-OWNED PREVIEW CONTROLLER, NOT ON THE SELECTED
-	// ENTITY'S, AND THAT IS A PREMISE CORRECTION RATHER THAN A CHOICE. The brief
+	// ENTITY'S, AND THAT WAS A PREMISE CORRECTION RATHER THAN A CHOICE. The brief
 	// asked to highlight from a selected entity whose Zenith_AnimatorComponent
-	// was built FROM THIS ASSET PATH, "compare paths". There is no path to
-	// compare: Zenith_AnimatorComponent::LoadControllerAsset acquires the asset,
-	// calls BuildFromControllerDef and RECORDS NOTHING — the component's only
-	// members are its parent entity and a cached controller pointer, and the
+	// was built FROM THIS ASSET PATH, "compare paths". There was no path to
+	// compare: Zenith_AnimatorComponent::LoadControllerAsset acquired the asset,
+	// called BuildFromControllerDef and RECORDED NOTHING — the component's only
+	// members were its parent entity and a cached controller pointer, and the
 	// controller keeps clip handles but no controller-asset reference. Matching
 	// on anything else available (a layer count, a state name) would highlight a
 	// DIFFERENT character's graph and look right, which is worse than not
-	// highlighting at all. Adding the field is an EntityComponent change this
-	// unit does not own.
+	// highlighting at all. Adding the field was an EntityComponent change that
+	// unit did not own.
+	//
+	// ★ SUPERSEDED BY C2 — AND THIS PANEL HAS NOT MOVED. The component now
+	// records the normalized .zanimctrl it was built from and exposes
+	// Zenith_AnimatorComponent::GetControllerAssetPath(), so the path comparison
+	// the original brief wanted now EXISTS. Consuming it — highlighting from the
+	// selected entity's own controller when its recorded path matches the asset
+	// this panel is editing — is C3's work, not C2's. Until then the preview
+	// controller below is still what drives the highlight, and the paragraph
+	// above records why, not what is possible.
 	//
 	// ★ THE PREVIEW TICKS THE MACHINE, NOT THE CONTROLLER, and it needs no rig.
 	// Flux_AnimationController::Update returns immediately without a

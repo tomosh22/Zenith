@@ -133,17 +133,35 @@ public:
 	// weight, blend mode, emit-events flag, bone mask and its own state machine).
 	// Bone masks resolve against the rig this entity's ModelComponent is animating.
 	//
-	// ★ RUNTIME ONLY — THE PATH IS NOT SERIALIZED. This component writes the whole
-	// controller INLINE into a .zscen (see WriteToDataStream), and committed scene
-	// files carry those bytes; persisting a controller-asset REFERENCE instead is a
-	// change to that layout and a separate decision, deliberately not taken here.
-	// A scene therefore still restores its controller from the inline bytes, and a
-	// game that wants an asset-driven animator calls this after load.
+	// ★ THE PATH IS RECORDED AND SERIALIZED (component schema 2). This component
+	// still writes the whole controller INLINE into a .zscen (see
+	// WriteToDataStream) — the inline bytes remain what a scene restores from —
+	// and the asset path is written AFTER them, so a loaded entity can say which
+	// .zanimctrl it came from. A successful load stores
+	// Zenith_AssetRegistry::NormalizeAssetPath(strPath); a failed ASSET LOOKUP
+	// leaves the previously recorded path alone (a lookup that found nothing has
+	// learned nothing about what this entity is animating).
 	//
 	// Returns false on a controller that could not be fully built — see
 	// Flux_AnimationController::BuildFromControllerDef; every cause is logged with
 	// the offending path.
 	bool LoadControllerAsset(const std::string& strPath);
+
+	// The .zanimctrl this entity's controller was last built FROM, normalized, or
+	// empty when the controller was built in code / restored only from scene bytes.
+	//
+	// ★ TWO THINGS IT DOES NOT PROMISE, and both are deliberate:
+	//   * It can name an asset the live controller was NOT fully built from. The
+	//     path is recorded on an INCOMPLETE build too (LoadControllerAsset returned
+	//     false because a clip or a bone mask did not resolve), because "which asset
+	//     was asked for" is exactly the question a diagnostic asks after a failure.
+	//     The BOOL is the completeness verdict; this getter is not.
+	//   * It is NOT updated by the "Controller" prefab-variant property override,
+	//     which deserializes straight into the store-owned controller (see
+	//     RegisterProperties in the .cpp) without going through any asset. A variant
+	//     that swaps the whole animation graph therefore leaves this naming whatever
+	//     the base was built from — or nothing at all.
+	const std::string& GetControllerAssetPath() const { return m_strControllerAssetPath; }
 
 	// ========== State Machine ==========
 	Flux_AnimationStateMachine& GetStateMachine();
@@ -173,8 +191,27 @@ public:
 	bool IsInitialized() const;
 
 	// ========== Serialization ==========
+	//
+	// On-disk schema version of this component's payload:
+	//   1 : the inline controller bytes ONLY (every .zscen written before the
+	//       controller-asset path existed).
+	//   2 : the inline controller bytes, then the normalized .zanimctrl path.
+	// The meta registry stamps this per-component value into the file OUTSIDE the
+	// size-prefixed payload and hands the persisted value back to the 2-arg reader
+	// (Zenith_ComponentMeta / DeserializeEntityComponents).
+	static constexpr u_int uSchemaVersion = 2;
+
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
+
+	// ★ THE REFUSAL CHANNEL, NOT A MIGRATION. A bool versioned reader states a
+	// verdict on the payload: false means "this schema is not one I can read", and
+	// the wrapper propagates it out through DeserializeEntityComponents to
+	// Zenith_SceneData::LoadFromDataStream. There is deliberately NO schema-1
+	// branch — a legacy path is exactly what this repo does not keep — so a v1
+	// record is refused BEFORE a single payload byte is consumed, and the bounded
+	// per-component realign puts the cursor back on the next record so every later
+	// component and every later entity still loads.
+	bool ReadFromDataStream(Zenith_DataStream& xStream, u_int uPersistedSchemaVersion);
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 
@@ -214,6 +251,15 @@ private:
 
 	Zenith_ModelComponent* m_pxCachedModelComponent = nullptr;
 	uint32_t m_uDiscoveryRetryCount = 0;
+
+	// The .zanimctrl LoadControllerAsset last resolved, normalized for
+	// serialization. SERIALIZED (schema 2) and TRANSFERRED BY BOTH MOVE
+	// OPERATIONS: the component pool relocates by move-CONSTRUCTION only
+	// (swap-and-pop and Grow both move-construct into the new slot), so a
+	// constructor that dropped this would lose the path on the 17th animator in a
+	// scene with nothing logged; move assignment is hand-written-correctness rather
+	// than a pool path, and is kept in step for the same reason.
+	std::string m_strControllerAssetPath;
 
 	// Set true on the SOURCE of a move. A moved-from component must NOT Destroy
 	// the store entry (the moved-TO component now owns the same EntityID-keyed

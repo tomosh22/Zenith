@@ -9,7 +9,7 @@ fully re-authored + saved by editor automation on **every** tools boot — windo
 or headless.
 
 **A headless (`Null_`) boot authors the SAME scene a windowed one does**: 93
-entities, 432534 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
+entities, 431317 bytes, `TerrainTrees_Trunk` / `_Leaves` and their ~323 KB of
 instance data included, and the eleven `TerrainRocks_*` / `FallenTrees_*` /
 `TerrainBushes_*` groups below. Entity and component creation is backend-neutral (ZEN-6);
 only the GPU allocation underneath it is skipped, and on the Null backend that is
@@ -103,7 +103,7 @@ The fix has two halves, both in `Zenith/Core/Zenith.h`'s
 **If you add authoring code that computes a float landing in this scene, use those
 helpers, and re-verify by authoring from both configs and comparing the bytes.**
 (Re-verified with the animated-bush scatter rows: `Vulkan_vs2022_Debug_Win64_True`
-authored 93 entities / 432534 bytes, and following
+authored 93 entities / 431317 bytes, and following
 `Vulkan_vs2022_Release_Win64_True` and `Null_vs2022_Debug_Win64_True` boots both
 logged `[ScenePublish] IDENTICAL` over it. The bush rows added no new authoring
 maths — VAT path and duration are strings and literals, and the per-instance sway
@@ -117,7 +117,7 @@ Eleven more instanced-mesh entities ride the campus alongside the two tree ones 
 and serialized into `RenderTest.zscen` by `Zenith_InstancedMeshComponent`, so
 non-tools boots — which run no automation — get them from the file. The scene
 went 82 entities / 361801 bytes → 90 / 414390 (stone + deadwood) →
-**93 entities / 432534 bytes** (the three animated bush groups).
+**93 entities / 431317 bytes** (the three animated bush groups).
 
 The meshes and materials are **not this game's**: they are the shared sets at
 `Zenith/Assets/Meshes/Rocks/`, `.../FallenTrees/` and `.../Bushes/`, regenerated

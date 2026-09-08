@@ -826,14 +826,21 @@ Assigning a clip to any of the three — a nest **or** a blend space — is refu
 because it would delete the whole sub-graph and report success.
 
 **★ LIVE HIGHLIGHTING RUNS ON A PANEL-OWNED PREVIEW CONTROLLER, NOT ON THE
-SELECTED ENTITY'S, AND THAT IS A PREMISE CORRECTION.** The obvious design is
-"highlight when the selection holds a `Zenith_AnimatorComponent` built from THIS
-asset path" — but **there is no path to compare**:
-`Zenith_AnimatorComponent::LoadControllerAsset` acquires the asset, calls
-`BuildFromControllerDef` and records nothing, and the controller keeps clip
-handles but no controller-asset reference. Matching on anything else available (a
-layer count, a state name) would ring a *different* character's graph and look
-right. So the panel builds its own controller from the working def and ticks it.
+SELECTED ENTITY'S.** The obvious design is "highlight when the selection holds a
+`Zenith_AnimatorComponent` built from THIS asset path". When this panel was
+written there was **no path to compare** —
+`Zenith_AnimatorComponent::LoadControllerAsset` acquired the asset, called
+`BuildFromControllerDef` and recorded nothing — and matching on anything else
+available (a layer count, a state name) would ring a *different* character's
+graph and look right. So the panel builds its own controller from the working def
+and ticks it.
+
+**That premise is SUPERSEDED as of C2**, and the code here has not moved yet:
+the component now records the normalized path and exposes
+`GetControllerAssetPath()`, so the selection-driven highlight is buildable. It is
+C3's, not this unit's — until C3 lands, the panel still previews its own
+controller, and the paragraph above describes what the panel DOES rather than
+what is possible.
 
 **★ THE PREVIEW TICKS THE MACHINE, NOT THE CONTROLLER, AND NEEDS NO RIG.**
 `Flux_AnimationController::Update` returns on its first line without a

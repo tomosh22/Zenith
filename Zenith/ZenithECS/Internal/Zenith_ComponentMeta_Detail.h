@@ -172,8 +172,11 @@ concept HasRegisterProperties = requires(Zenith_Vector<Zenith_PropertyDescriptor
 // Optional: a component declares the on-disk schema version of its serialized
 // payload (see Zenith_ComponentMeta::m_uSchemaVersion). A component opts in by
 // adding `static constexpr u_int uSchemaVersion = N;`. Detected at registration
-// exactly like the lifecycle hooks. Live opt-in: a concrete engine component opts
-// in (uSchemaVersion = 7, scene v7 -- parent moved out of that component's blob).
+// exactly like the lifecycle hooks. TWO concrete engine components opt in today:
+// one at 7 (scene v7 -- parent moved out of that component's blob, migrated by a
+// void versioned reader) and one at 2 (an asset path appended to the payload,
+// REFUSED rather than migrated by a bool versioned reader). The two shapes are
+// the whole point of the pair of concepts below.
 template<typename T>
 concept HasSchemaVersion = requires { { T::uSchemaVersion } -> std::convertible_to<u_int>; };
 
@@ -271,8 +274,10 @@ static bool ComponentDeserializeWrapper(Zenith_Entity& xEntity, Zenith_DataStrea
 	}
 	// Prefer the schema-version-aware overload when the component provides one;
 	// otherwise call the single-arg form and drop the version on the floor.
-	// A concrete engine component opts in (uSchemaVersion = 7) to migrate the pre-v7
-	// parent-in-blob layout; the rest still use the single-arg form.
+	// Two concrete engine components opt in: one (uSchemaVersion = 7) MIGRATES the
+	// pre-v7 parent-in-blob layout through the void overload, one
+	// (uSchemaVersion = 2) REFUSES anything but its own schema through the bool
+	// overload below; the rest still use the single-arg form.
 	//
 	// The BOOL versioned reader is tested first. The two versioned concepts are
 	// disjoint by construction (one requires a void return, the other bool), so the

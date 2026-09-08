@@ -125,9 +125,11 @@ struct Zenith_ComponentMeta
 	// per-component into scene v6+ files OUTSIDE the size-prefixed payload, so it
 	// never disturbs the bounded/unknown-component skip path. Default 1; a component
 	// overrides it via `static constexpr u_int uSchemaVersion`. Populated at
-	// registration from ComponentSchemaVersion<T>(). Live opt-in: a concrete engine
-	// component opts in (= 7, scene v7), whose versioned reader branches on the
-	// persisted value to migrate pre-v7 (parent-in-blob) payloads.
+	// registration from ComponentSchemaVersion<T>(). Two concrete engine components
+	// opt in: one at 7 (scene v7), whose versioned reader branches on the persisted
+	// value to migrate pre-v7 (parent-in-blob) payloads, and one at 2, whose
+	// versioned reader returns BOOL and refuses any other schema outright rather
+	// than carrying a legacy read path.
 	u_int m_uSchemaVersion = 1;
 };
 

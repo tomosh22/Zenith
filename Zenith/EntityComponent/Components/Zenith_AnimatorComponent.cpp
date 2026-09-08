@@ -97,11 +97,20 @@ Zenith_AnimatorComponent::~Zenith_AnimatorComponent()
 // Move Semantics
 //
 // Copy the POD identity (entity handle, cached model component, retry count,
-// the HEAP-STABLE controller pointer) and mark the source moved-out. The
-// controller itself stays in the store keyed by the stable EntityID slot
-// (unchanged across the pool relocation), so the moved-to component resolves
-// the SAME controller. The source is neutralised so its dtor/OnDestroy won't
-// Destroy the shared entry.
+// the HEAP-STABLE controller pointer), TAKE the controller-asset path, and mark
+// the source moved-out. The controller itself stays in the store keyed by the
+// stable EntityID slot (unchanged across the pool relocation), so the moved-to
+// component resolves the SAME controller. The source is neutralised so its
+// dtor/OnDestroy won't Destroy the shared entry.
+//
+// ★ THE PATH IS THE ONE FIELD A MOVE CAN SILENTLY LOSE. Everything else here is
+// either a pointer the store re-resolves or a counter nothing reads across a
+// relocation; m_strControllerAssetPath is owned state with no other source, and
+// Zenith_ComponentPool relocates by MOVE-CONSTRUCTION (swap-and-pop at :173/:197
+// and Grow's doubling at :226 both move-construct into the new storage), so a
+// constructor that dropped it would empty the path on an unrelated component's
+// removal. Move assignment is not a pool path, but it is hand-written and is kept
+// in step.
 //=============================================================================
 
 Zenith_AnimatorComponent::Zenith_AnimatorComponent(Zenith_AnimatorComponent&& xOther) noexcept
@@ -109,10 +118,14 @@ Zenith_AnimatorComponent::Zenith_AnimatorComponent(Zenith_AnimatorComponent&& xO
 	, m_pxController(xOther.m_pxController)
 	, m_pxCachedModelComponent(xOther.m_pxCachedModelComponent)
 	, m_uDiscoveryRetryCount(xOther.m_uDiscoveryRetryCount)
+	, m_strControllerAssetPath(std::move(xOther.m_strControllerAssetPath))
 {
 	xOther.m_pxCachedModelComponent = nullptr;
 	xOther.m_pxController = nullptr;
 	xOther.m_bMovedOut = true;
+	// A moved-from std::string is only guaranteed to be VALID, not empty — state
+	// the neutralised value rather than depending on the implementation's.
+	xOther.m_strControllerAssetPath.clear();
 }
 
 Zenith_AnimatorComponent& Zenith_AnimatorComponent::operator=(Zenith_AnimatorComponent&& xOther) noexcept
@@ -131,10 +144,12 @@ Zenith_AnimatorComponent& Zenith_AnimatorComponent::operator=(Zenith_AnimatorCom
 		m_pxController = xOther.m_pxController;
 		m_pxCachedModelComponent = xOther.m_pxCachedModelComponent;
 		m_uDiscoveryRetryCount = xOther.m_uDiscoveryRetryCount;
+		m_strControllerAssetPath = std::move(xOther.m_strControllerAssetPath);
 		m_bMovedOut = false;
 
 		xOther.m_pxCachedModelComponent = nullptr;
 		xOther.m_pxController = nullptr;
+		xOther.m_strControllerAssetPath.clear();
 		xOther.m_bMovedOut = true;
 	}
 	return *this;
@@ -336,12 +351,20 @@ Flux_AnimationClip* Zenith_AnimatorComponent::GetClip(const std::string& strName
 
 bool Zenith_AnimatorComponent::LoadControllerAsset(const std::string& strPath)
 {
+	// ★ NORMALIZED AFTER GetView, NEVER BEFORE. NormalizeAssetPath is a
+	// SERIALIZATION transform; the registry caches by the key it is handed, so
+	// normalising in front of this call would change the cache key every existing
+	// caller and every existing cached entry uses.
 	Zenith_AnimatorControllerAsset* pxAsset = Zenith_AssetRegistry::GetView<Zenith_AnimatorControllerAsset>(strPath);
 	if (pxAsset == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_ANIMATION,
 			"[AnimatorComponent] entity %u: failed to load animator controller asset '%s'",
 			m_xParentEntity.GetEntityID().m_uIndex, strPath.c_str());
+		// ★ THE PREVIOUS PATH SURVIVES A FAILED LOOKUP. Nothing was rebuilt, so the
+		// live controller is still whatever the last successful load made it — and
+		// recording the path that did not resolve, or clearing the one that did,
+		// would both make this getter describe a controller that does not exist.
 		return false;
 	}
 
@@ -361,6 +384,16 @@ bool Zenith_AnimatorComponent::LoadControllerAsset(const std::string& strPath)
 			pxSkeleton = pxSkeletonInstance->GetSourceSkeleton();
 		}
 	}
+
+	// ★ RECORDED BEFORE THE BUILD, AND THAT IS THE POINT. BuildFromControllerDef
+	// returns false for a def it could only build PART of (a clip that did not
+	// load, a bone mask with no skeleton to resolve against) — the controller is
+	// still rebuilt from this asset either way, so the path is what this entity is
+	// animating from and the bool is the separate question of whether that build
+	// was complete. Recording it only on a true would leave a half-built entity
+	// naming the asset it was built from BEFORE, which is the one answer that is
+	// actively wrong.
+	m_strControllerAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(strPath);
 
 	// A null skeleton is only a failure if the def actually names a mask, and
 	// BuildFromControllerDef is where that is known — it reports the layer and the
@@ -534,14 +567,37 @@ void Zenith_AnimatorComponent::SyncModelInstanceAnimation()
 // Serialization
 //=============================================================================
 
+// Schema 2: the inline controller bytes, THEN the controller-asset path. The
+// controller's own layout is untouched and stays first, so the path is a pure
+// append — which is what makes a schema-1 payload a strict prefix of a schema-2
+// one, and what makes the version stamp the only thing that can tell them apart.
 void Zenith_AnimatorComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	Controller().WriteToDataStream(xStream);
+	xStream << m_strControllerAssetPath;
 }
 
-void Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+bool Zenith_AnimatorComponent::ReadFromDataStream(Zenith_DataStream& xStream, u_int uPersistedSchemaVersion)
 {
+	// ★ REFUSE BEFORE READING A SINGLE BYTE. The bounded per-component realign in
+	// DeserializeEntityComponents forces the cursor from wherever a reader left it
+	// back to the record's declared payload boundary, so the cheapest correct
+	// refusal is the one that consumes nothing — and consuming a schema-1
+	// controller blob only to discard it would run Flux_AnimationController::
+	// ReadFromDataStream (which DELETES this entity's live layers and state
+	// machine) on the way to reporting failure.
+	if (uPersistedSchemaVersion != Zenith_AnimatorComponent::uSchemaVersion)
+	{
+		Zenith_Error(LOG_CATEGORY_ANIMATION,
+			"[AnimatorComponent] refusing component schema %u (this build reads %u) on entity %u",
+			uPersistedSchemaVersion, Zenith_AnimatorComponent::uSchemaVersion,
+			m_xParentEntity.GetEntityID().m_uIndex);
+		return false;
+	}
+
 	Controller().ReadFromDataStream(xStream);
+	xStream >> m_strControllerAssetPath;
+	return true;
 }
 
 //=============================================================================
@@ -633,6 +689,15 @@ void Zenith_AnimatorComponent::RenderStatusAndStateInfoSection()
 	{
 		ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "Status: No skeleton found");
 	}
+
+	// The .zanimctrl this animator was built from, read-only. Editing it here would
+	// be a second way to reach LoadControllerAsset with none of the failure
+	// reporting, so this line answers "where did this graph come from" and nothing
+	// more — an empty path means the controller was assembled in code or restored
+	// from the scene's own inline bytes, which is not an error and must not read as
+	// one.
+	ImGui::Text("Controller asset: %s",
+		m_strControllerAssetPath.empty() ? "(none — built in code)" : m_strControllerAssetPath.c_str());
 
 	// Current state info
 	if (xController.HasStateMachine())
@@ -957,3 +1022,10 @@ void Zenith_AnimatorComponent::RenderUpdateModeSection()
 }
 
 #endif // ZENITH_TOOLS
+
+// AFTER the ZENITH_TOOLS block on purpose: these units exercise serialization and
+// the pool's move operations, none of which is tools-only, so they must register
+// in a _False build too.
+#ifdef ZENITH_TESTING
+#include "EntityComponent/Components/Zenith_AnimatorComponent.Tests.inl"
+#endif

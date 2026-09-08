@@ -329,7 +329,46 @@ Key invariants (pinned by the `Animator` regression suite in `Core/Zenith_UnitTe
 - **Hot path is O(1), no hash.** `OnUpdate` dereferences the cached `m_pxController` directly — no per-frame store lookup. The ctor primes the cache (`GetOrCreate`); `OnStart` re-primes it.
 - **Exactly one controller per entity, exactly one Destroy.** `Destroy(EntityID)` is idempotent. Both the component dtor and `OnDestroy` call it (whichever fires first does the work; the second is a no-op). A **moved-from** component is neutralised (`m_bMovedOut = true`, cached pointer nulled) so the pool's move-construct-then-destruct-source sequence never double-frees — the moved-to instance shares the same EntityID-keyed controller.
 - **`GetCurrentAnimatorStateInfo()` returns `Zenith_AnimatorStateInfo`** — an EC-side mirror POD of `Flux_AnimatorStateInfo` (same field names/types + `IsName`). It is implicitly convertible to `Flux_AnimatorStateInfo` (operator defined in the `.cpp`), so callers that include the Flux state-machine header keep compiling unchanged. The mirror is what lets the by-value return stay Flux-include-free in the header.
-- **Render path is unaffected.** Skinning matrices are read from `Zenith_ModelComponent::GetSkeletonInstance()->GetSkinningMatrices()` by the unified compute-skinning path, never from the controller. Relocating the controller's *ownership* cannot regress rendering. Serialization byte-format is unchanged (no `.zscen` / `.zprfb` bump).
+- **Render path is unaffected.** Skinning matrices are read from `Zenith_ModelComponent::GetSkeletonInstance()->GetSkinningMatrices()` by the unified compute-skinning path, never from the controller. Relocating the controller's *ownership* cannot regress rendering. Wave-19 itself changed no serialized byte; **C2 did** — see below.
+
+### The controller-asset path is component state, and it is serialized (C2)
+
+`Zenith_AnimatorComponent` records the `.zanimctrl` a successful
+`LoadControllerAsset` resolved, normalized through
+`Zenith_AssetRegistry::NormalizeAssetPath`, and exposes it as
+`GetControllerAssetPath()`. `WriteToDataStream` writes the inline controller bytes
+**first, unchanged**, then appends the path — the scene still RESTORES the
+controller from the inline bytes; the path is what lets a loaded entity say where
+its graph came from.
+
+- **`static constexpr u_int uSchemaVersion = 2`**, and the 2-arg reader returns
+  **`bool`**: it **REFUSES** a schema-1 record before consuming a single payload
+  byte instead of migrating it. There is no legacy read path here on purpose, and
+  the refusal is deliberately cheap — reading a schema-1 controller blob only to
+  discard it would run `Flux_AnimationController::ReadFromDataStream`, which
+  DELETES the entity's live layers and state machine, on the way to reporting
+  failure. The bounded per-component realign in `DeserializeEntityComponents` puts
+  the cursor back on the next record, so every later component and every later
+  entity still loads; `Zenith_SceneData::LoadFromDataStream` reports false.
+- **Every tracked `.zscen` carrying an `"Animator"` record must be re-authored in
+  the same commit** as this schema bump, or it loads with that entity's animator
+  refused. `Games/RenderTest/Assets/Scenes/RenderTest.zscen` is the only one.
+- **The 1-arg `ReadFromDataStream` is GONE**, not kept beside the new one.
+- **Three things the getter does not promise**: it is recorded on an INCOMPLETE
+  build too (the bool from `BuildFromControllerDef` is the completeness verdict,
+  the path is "what was asked for"); a FAILED asset lookup leaves the previously
+  recorded path standing (nothing was rebuilt, so the live controller is still the
+  previous one); and the `"Controller"` prefab-variant property override does NOT
+  update it, because that override deserializes straight into the store-owned
+  controller without going through an asset.
+- **Both move operations transfer it and clear the source.** This is the one field
+  on the component with no other source — everything else is a pointer the store
+  re-resolves or a counter nothing reads across a relocation — and the pool
+  relocates by **move-construction** on both its paths (swap-and-pop and `Grow`),
+  so a constructor that dropped it would empty the path on an unrelated
+  component's removal with nothing logged. Pinned by the `AnimatorComponent` units
+  in `Zenith_AnimatorComponent.Tests.inl` (round trip, failed lookup, incomplete
+  build, both moves, swap-and-pop, `Grow`, and the schema-1 refusal).
 
 ## Environment authority: one global Sun/Atmosphere + local blend volumes
 

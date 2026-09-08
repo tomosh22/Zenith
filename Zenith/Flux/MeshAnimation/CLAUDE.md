@@ -611,11 +611,28 @@ def CLEARED.
 - `Zenith_AnimatorComponent::LoadControllerAsset(path)` acquires the asset and
   calls the former, resolving masks against the rig its `ModelComponent` animates.
 
-★ **THE PATH IS NOT SERIALIZED INTO A SCENE, DELIBERATELY.**
-`Zenith_AnimatorComponent::WriteToDataStream` writes the whole controller INLINE
-and committed `.zscen` files carry those bytes today; persisting a controller-asset
-REFERENCE instead moves that layout and is a separate decision. `LoadControllerAsset`
-is a runtime verb.
+★ **THE PATH IS SERIALIZED INTO A SCENE (C2), ALONGSIDE THE INLINE BYTES — NOT
+INSTEAD OF THEM.** `Zenith_AnimatorComponent::WriteToDataStream` still writes the
+whole controller INLINE first, and a scene still RESTORES from those bytes; the
+normalized `.zanimctrl` path is appended after them, so a loaded entity can say
+which asset its graph came from. That append is what
+`Zenith_AnimatorComponent::uSchemaVersion = 2` stamps, and the component's bool
+versioned reader **REFUSES schema 1 outright** rather than migrating it — there is
+no legacy read path, so every `.zscen` carrying an `"Animator"` record had to be
+re-authored in the same commit. `LoadControllerAsset` is still a runtime verb;
+what changed is that it now RECORDS what it loaded.
+
+`Zenith_AnimatorComponent::GetControllerAssetPath()` reads it back, and answers a
+narrower question than it looks like:
+
+- it is recorded on an **incomplete** build too (the `false` from
+  `BuildFromControllerDef` is the completeness verdict; the path is "what was
+  asked for", which is exactly what a post-failure diagnostic wants);
+- a **failed asset lookup leaves the previous path standing** — nothing was
+  rebuilt, so the live controller is still the previous one;
+- it is **not** updated by the `"Controller"` prefab-variant property override,
+  which deserializes straight into the store-owned controller without going
+  through any asset at all.
 
 ★ **THREE THINGS THE `.zanimctrl` CARRIES THAT A `.zscen` DOES NOT**, because
 `Flux_AnimationLayer::WriteToDataStream` reaches committed scene bytes and may not
