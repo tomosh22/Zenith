@@ -26,6 +26,7 @@
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 ZENITH_TEST(Editor, BoundingBoxIntersection)
@@ -1621,8 +1622,105 @@ ZENITH_TEST(Editor, TypeFilterAllPass)
 	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_PREFAB_EXT), "Prefab should pass 'All' filter");
 	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_SCENE_EXT), "Scene should pass 'All' filter");
 	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_ANIMATION_EXT), "Animation should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_ANIMCTRL_EXT), "Animator controller should pass 'All' filter");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_ANIMMASK_EXT), "Bone mask should pass 'All' filter");
 	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ".unknown"), "Unknown extension should pass 'All' filter");
 
+}
+ZENITH_TEST(Editor, TypeFilterMatchesAnimatorControllerAndBoneMask)
+{
+	// WU-9.2 appended two rows to aszFilterTypes, so the combo's indices 8 and 9
+	// are the animator controller and the bone mask.
+	//
+	// ★ THE EXCLUSIONS ARE THE POINT. A `default: return false` makes an index the
+	// switch does not know look exactly like a filter that matched nothing, so the
+	// only assertion that can tell "index 8 selects controllers" from "index 8 is
+	// unhandled" is one that shows something passing AND its neighbours failing.
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(8, ZENITH_ANIMCTRL_EXT),
+		"a .zanimctrl passes the Animator Controllers filter");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(8, ZENITH_ANIMMASK_EXT),
+		"a .zanimmask does not");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(8, ZENITH_ANIMATION_EXT),
+		"and neither does a .zanim");
+
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(9, ZENITH_ANIMMASK_EXT),
+		"a .zanimmask passes the Bone Masks filter");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(9, ZENITH_ANIMCTRL_EXT),
+		"a .zanimctrl does not");
+
+	// ★ AND THE ROWS BEFORE THEM DID NOT SHIFT. Appending anywhere but the end
+	// re-points every index after the insertion, and every one of those filters
+	// would go on looking like it worked — it would just be filtering for the
+	// wrong type.
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(7, ZENITH_ANIMATION_EXT),
+		"index 7 is still Animations");
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_TEXTURE_EXT),
+		"and index 1 is still Textures");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(10, ZENITH_ANIMMASK_EXT),
+		"an index past the last row matches nothing");
+}
+ZENITH_TEST(Editor, KnownFileTypesCarryDedicatedAnimationPayloadIds)
+{
+	// ★ THE DRAG SOURCE AND THE DROP TARGET ARE TWO FILES AND ONE STRING. The
+	// content browser emits GetFileTypeInfo(ext)->m_szDragDropType and the state
+	// machine panel accepts DRAGDROP_PAYLOAD_ANIMCTRL / _ANIMMASK; if those ever
+	// stop being the same characters the drag simply does nothing, which is the
+	// failure mode WU-9.2 nearly shipped by repointing the row and leaving the
+	// target on the generic payload.
+	const EditorFileTypeInfo* pxCtrl = GetFileTypeInfo(ZENITH_ANIMCTRL_EXT);
+	ZENITH_ASSERT_NOT_NULL(pxCtrl, "a .zanimctrl is a known file type");
+	ZENITH_ASSERT_EQ(strcmp(pxCtrl->m_szDragDropType, DRAGDROP_PAYLOAD_ANIMCTRL), 0,
+		"★ and it drags as the DEDICATED controller payload, not the generic file one");
+	ZENITH_ASSERT_NE(strcmp(pxCtrl->m_szDragDropType, DRAGDROP_PAYLOAD_FILE_GENERIC), 0,
+		"which is a different id from the one it used to carry");
+
+	const EditorFileTypeInfo* pxMask = GetFileTypeInfo(ZENITH_ANIMMASK_EXT);
+	ZENITH_ASSERT_NOT_NULL(pxMask, "a .zanimmask is a known file type");
+	ZENITH_ASSERT_EQ(strcmp(pxMask->m_szDragDropType, DRAGDROP_PAYLOAD_ANIMMASK), 0,
+		"★ and it drags as the DEDICATED mask payload");
+	ZENITH_ASSERT_NE(strcmp(pxMask->m_szDragDropType, DRAGDROP_PAYLOAD_FILE_GENERIC), 0,
+		"and not the generic one either");
+	ZENITH_ASSERT_NE(strcmp(DRAGDROP_PAYLOAD_ANIMCTRL, DRAGDROP_PAYLOAD_ANIMMASK), 0,
+		"★ and the two ids are distinct — one id for both would re-create the very "
+		"cross-acceptance the dedicated ids exist to remove");
+
+	// ★ ImGui TRUNCATES A LONGER TYPE TAG INTO ImGuiPayload::DataType[32 + 1] AND
+	// SAYS NOTHING. Two ids that agreed only past character 32 would both accept
+	// each other's drags, so the cap is asserted here rather than trusted to the
+	// comment beside the #defines.
+	ZENITH_ASSERT_LE(strlen(DRAGDROP_PAYLOAD_ANIMCTRL), static_cast<size_t>(32),
+		"the controller id fits ImGui's 32-character payload tag");
+	ZENITH_ASSERT_LE(strlen(DRAGDROP_PAYLOAD_ANIMMASK), static_cast<size_t>(32),
+		"and so does the mask id");
+}
+ZENITH_TEST(Editor, AnimationPanelOwnsClipAndMaskDoubleClicksByExtension)
+{
+	// The per-extension HALF of HandleEntryDoubleClickOpen. The rest of it needs a
+	// live Zenith_Editor with its panels allocated (TryGetAnimationPanel answers
+	// null otherwise, by design), so this asserts the dispatch and Phase G still
+	// owes the by-eye check that the dope sheet actually appears.
+	bool bIsMask = true;
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::OpensInAnimationPanel(ZENITH_ANIMATION_EXT, bIsMask),
+		"a .zanim opens in the Animation Editor");
+	ZENITH_ASSERT_FALSE(bIsMask, "★ as a CLIP — OpenClip, not Action_MaskOpen");
+
+	bIsMask = false;
+	ZENITH_ASSERT_TRUE(Zenith_EditorPanelContentBrowser::OpensInAnimationPanel(ZENITH_ANIMMASK_EXT, bIsMask),
+		"a .zanimmask opens there too");
+	ZENITH_ASSERT_TRUE(bIsMask, "★ as a MASK — the two land in the same panel through DIFFERENT verbs");
+
+	// ★ THE EXTENSIONS THE OTHER BRANCHES OWN MUST NOT BE CLAIMED. A .zanimctrl in
+	// particular reads as "an animation file" to a prefix test and belongs to the
+	// state machine graph; claiming it here would open a controller in the dope
+	// sheet and silently stop opening it in the panel that can edit it.
+	bIsMask = true;
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::OpensInAnimationPanel(ZENITH_ANIMCTRL_EXT, bIsMask),
+		"★ a .zanimctrl does NOT — that is the state machine graph's");
+	ZENITH_ASSERT_FALSE(bIsMask, "and a refusal clears the out-parameter rather than leaving it stale");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::OpensInAnimationPanel(ZENITH_SCENE_EXT, bIsMask),
+		"nor does a .zscen");
+	ZENITH_ASSERT_FALSE(Zenith_EditorPanelContentBrowser::OpensInAnimationPanel(".unknown", bIsMask),
+		"nor an unknown extension");
 }
 ZENITH_TEST(Editor, UniqueFilenameWithExisting)
 {

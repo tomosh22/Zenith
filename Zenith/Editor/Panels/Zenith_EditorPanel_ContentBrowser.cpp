@@ -14,7 +14,10 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AnimatorControllerAsset.h"   // .zanimctrl type badge + WU-6.5 open
-#include "AssetHandling/Zenith_BoneMaskAsset.h"             // WU-6.2 double-click probe
+// WU-9.2: a .zanim and a .zanimmask double-click now OPEN in the dope sheet
+// (ShowFlag + OpenClip / Action_MaskOpen), which replaced WU-6.2's log-only mask
+// probe — so Zenith_BoneMaskAsset.h is no longer read from here.
+#include "Editor/Panels/Zenith_EditorPanel_Animation.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Flux/Flux_ImGuiIntegration.h"
@@ -41,14 +44,16 @@ static const EditorFileTypeInfo s_axKnownFileTypes[] = {
 	{ ZENITH_PREFAB_EXT,     "Prefab",    DRAGDROP_PAYLOAD_PREFAB },
 	{ ZENITH_SCENE_EXT,      "Scene",     DRAGDROP_PAYLOAD_FILE_GENERIC },
 	{ ZENITH_ANIMATION_EXT,  "Animation", DRAGDROP_PAYLOAD_ANIMATION },
-	// WU-6.2. Both carry DRAGDROP_PAYLOAD_FILE_GENERIC rather than an id of their
-	// own: the DRAGDROP_PAYLOAD_* identifiers live in Core/Zenith_DragDropPayloads.h
-	// (they are shared with non-editor code), nothing accepts a controller or mask
-	// drop yet, and a generic file payload is exactly what .zscen already uses for
-	// the same reason. Give them dedicated ids when a drop TARGET exists — an ImGui
-	// payload type is capped at 32 characters.
-	{ ZENITH_ANIMCTRL_EXT,   "Animator Controller", DRAGDROP_PAYLOAD_FILE_GENERIC },
-	{ ZENITH_ANIMMASK_EXT,   "Bone Mask",           DRAGDROP_PAYLOAD_FILE_GENERIC },
+	// WU-9.2. Both carry a DEDICATED id now (they rode DRAGDROP_PAYLOAD_FILE_GENERIC
+	// while nothing accepted them). The state machine panel's controller path field
+	// takes DRAGDROP_PAYLOAD_ANIMCTRL and its per-layer mask field takes
+	// DRAGDROP_PAYLOAD_ANIMMASK, so a drag now says WHAT it is carrying rather than
+	// "a file" — and a mask dropped on the controller field is refused by ImGui
+	// instead of being written into the path box. The ids live in
+	// Core/Zenith_DragDropPayloads.h (they are shared with non-editor code) and an
+	// ImGui payload type is capped at 32 characters.
+	{ ZENITH_ANIMCTRL_EXT,   "Animator Controller", DRAGDROP_PAYLOAD_ANIMCTRL },
+	{ ZENITH_ANIMMASK_EXT,   "Bone Mask",           DRAGDROP_PAYLOAD_ANIMMASK },
 	{ ZENITH_BGRAPH_EXT,     "Graph",     DRAGDROP_PAYLOAD_GRAPH_ASSET },
 };
 
@@ -378,7 +383,11 @@ namespace
 		bool bChanged = Zenith_EditorUI::SearchBox("search", xState.m_szSearchBuffer, sizeof(xState.m_szSearchBuffer), "Search...", fSearchWidth);
 
 		ImGui::SameLine();
-		const char* aszFilterTypes[] = { "All Types", "Textures", "Materials", "Meshes", "Models", "Prefabs", "Scenes", "Animations" };
+		// ★ THE ORDER IS THE FILTER INDEX. MatchesAssetTypeFilter switches on the
+		// combo's index, so a row inserted anywhere but the END silently re-points
+		// every filter after it. WU-9.2 appended the two animation-graph rows.
+		const char* aszFilterTypes[] = { "All Types", "Textures", "Materials", "Meshes", "Models", "Prefabs", "Scenes", "Animations",
+			"Animator Controllers", "Bone Masks" };
 		ImGui::SetNextItemWidth(fFilterWidth);
 		bChanged |= ImGui::Combo("##TypeFilter", &xState.m_iAssetTypeFilter, aszFilterTypes, IM_ARRAYSIZE(aszFilterTypes));
 
@@ -548,8 +557,36 @@ bool MatchesAssetTypeFilter(int iFilterIndex, const std::string& strExtension)
 	case 5: return (strExtension == ZENITH_PREFAB_EXT);
 	case 6: return (strExtension == ZENITH_SCENE_EXT);
 	case 7: return (strExtension == ZENITH_ANIMATION_EXT);
+	// WU-9.2. Indices 8 and 9 are the two rows appended to aszFilterTypes above;
+	// they are LAST for the reason that comment gives.
+	case 8: return (strExtension == ZENITH_ANIMCTRL_EXT);
+	case 9: return (strExtension == ZENITH_ANIMMASK_EXT);
 	default: return false;
 	}
+}
+
+//-----------------------------------------------------------------------------
+// WU-9.2. The per-extension half of the double-click dispatch, as a PURE
+// function: "does the Animation Editor own this file, and is it a mask or a
+// clip". HandleEntryDoubleClickOpen needs a live editor and its panels, which a
+// headless unit does not have — this is the part a unit CAN assert, and keeping
+// it here is what stops the two extensions being spelled a second time inside
+// the ImGui-side branch.
+//-----------------------------------------------------------------------------
+bool OpensInAnimationPanel(const std::string& strExtension, bool& bOutIsMask)
+{
+	if (strExtension == ZENITH_ANIMMASK_EXT)
+	{
+		bOutIsMask = true;
+		return true;
+	}
+	if (strExtension == ZENITH_ANIMATION_EXT)
+	{
+		bOutIsMask = false;
+		return true;
+	}
+	bOutIsMask = false;
+	return false;
 }
 
 std::string GenerateUniqueFilename(const std::string& strBasePath, const std::string& strSuffix)
@@ -768,19 +805,46 @@ void HandleEntryDoubleClickOpen(const ContentBrowserEntry& xEntry)
 				strAssetPath.c_str());
 		}
 	}
-	else if (xEntry.m_strExtension == ZENITH_ANIMMASK_EXT)
+	else
 	{
-		const std::string strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath);
-		const Zenith_BoneMaskAsset* pxMask = Zenith_AssetRegistry::GetView<Zenith_BoneMaskAsset>(strAssetPath);
-		if (pxMask != nullptr)
+		// WU-9.2. A .zanim and a .zanimmask both land in the Animation Editor, and
+		// the two-step is the automation route's (ANIM_OPEN_CLIP): SHOW THE WINDOW
+		// FIRST, then open. Every refusal below has a UI answer, and a hidden panel
+		// would report it to nobody. Action_MaskOpen raises the mask SECTION but not
+		// the window, so the ShowFlag is not redundant on that branch either.
+		bool bIsMask = false;
+		if (!OpensInAnimationPanel(xEntry.m_strExtension, bIsMask))
 		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION,
-				"[ContentBrowser] %s: %u bone weight(s), HasAvatarMask=%s. (No editor panel yet — WU-6.5.)",
-				strAssetPath.c_str(), pxMask->GetEntryCount(), pxMask->HasAvatarMask() ? "yes" : "no");
+			return;
 		}
-		else
+
+		const std::string strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath);
+		Zenith_EditorPanel_Animation* pxPanel = g_xEngine.Editor().TryGetAnimationPanel();
+		if (pxPanel == nullptr)
 		{
-			Zenith_Error(LOG_CATEGORY_ANIMATION, "[ContentBrowser] %s did not load as a " ZENITH_ANIMMASK_EXT, strAssetPath.c_str());
+			// "The editor is not between Initialise and Shutdown" is a real state
+			// the accessor returns a POINTER for — see Zenith_Editor.h.
+			Zenith_Error(LOG_CATEGORY_ANIMATION,
+				"[ContentBrowser] %s: the Animation Editor panel does not exist yet", strAssetPath.c_str());
+			return;
+		}
+
+		pxPanel->ShowFlag() = true;
+		if (bIsMask)
+		{
+			if (!pxPanel->Action_MaskOpen(strAssetPath))
+			{
+				// The mask sub-panel's ONE wording of whatever it is refusing.
+				Zenith_Error(LOG_CATEGORY_ANIMATION, "[ContentBrowser] %s did not open as a " ZENITH_ANIMMASK_EXT ": %s",
+					strAssetPath.c_str(), pxPanel->GetMaskNotice());
+			}
+		}
+		else if (!pxPanel->OpenClip(strAssetPath))
+		{
+			Zenith_Error(LOG_CATEGORY_ANIMATION,
+				"[ContentBrowser] %s did not open as a " ZENITH_ANIMATION_EXT " (result %d, attempted '%s')",
+				strAssetPath.c_str(), static_cast<int>(pxPanel->GetLastOpenResult()),
+				pxPanel->GetLastOpenAttemptPath().c_str());
 		}
 	}
 }

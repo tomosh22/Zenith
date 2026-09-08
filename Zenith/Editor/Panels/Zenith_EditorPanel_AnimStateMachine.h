@@ -206,6 +206,34 @@ public:
 	Zenith_AnimControllerDocument& Document() { return m_xDocument; }
 	const Zenith_AnimControllerDocument& Document() const { return m_xDocument; }
 
+	//=========================================================================
+	// THE TWO DROP TARGETS (WU-9.2), AS ImGui-FREE VERBS.
+	//
+	// ★ THE ImGui BLOCK CALLS THESE AND DOES NOTHING ELSE, which is the only way
+	// a drop is testable at all: a headless unit cannot fabricate a drag — the
+	// fixture deliberately parks the mouse at ImGui's invalid marker so nothing
+	// is ever hovered — so a drop written inline inside BeginDragDropTarget is
+	// code no assertion can reach. Everything an assertion cares about (does the
+	// payload TYPE match, is the EXTENSION right, does the document change) is
+	// here; the ImGui side is the accept call and the pointer cast.
+	//
+	// ★ BOTH REFUSE A NON-MATCHING PAYLOAD TYPE RATHER THAN TRUSTING THE CALLER.
+	// ImGui already filters by type at the accept, so the type argument is
+	// belt-and-braces there — but it is the thing a unit varies, and a helper that
+	// ignored it would assert nothing about the id the content browser emits.
+	//
+	// szPayloadType / szPath may be null; both answer false.
+	//=========================================================================
+
+	// The toolbar's controller path field. DRAGDROP_PAYLOAD_ANIMCTRL and a
+	// ZENITH_ANIMCTRL_EXT path only. Fills the path buffer and returns whatever
+	// OpenAsset returned, so a refused envelope reads as false here too.
+	bool HandleControllerPathDrop(const char* szPayloadType, const char* szPath);
+	// A layer's bone-mask field. DRAGDROP_PAYLOAD_ANIMMASK and a
+	// ZENITH_ANIMMASK_EXT path only; then Action_SetLayerMaskAssetPath, which is
+	// what still applies the additive-layer rule.
+	bool HandleLayerMaskDrop(u_int uLayerId, const char* szPayloadType, const char* szPath);
+
 	//-------------------------------------------------------------------------
 	// View
 	//-------------------------------------------------------------------------

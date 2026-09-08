@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 //=============================================================================
@@ -213,6 +214,66 @@ void Zenith_EditorPanel_AnimStateMachine::Render(float fDtSeconds)
 }
 
 //=============================================================================
+// The two drop targets, as ImGui-free verbs (WU-9.2).
+//
+// Declared in the header with the reason they exist: a headless unit cannot
+// fabricate an ImGui drag, so everything a drop DECIDES lives here and the
+// ImGui block is only the accept call and the pointer cast.
+//=============================================================================
+
+bool Zenith_EditorPanel_AnimStateMachine::HandleControllerPathDrop(const char* szPayloadType, const char* szPath)
+{
+	if (szPayloadType == nullptr || szPath == nullptr)
+	{
+		return false;
+	}
+	if (strcmp(szPayloadType, DRAGDROP_PAYLOAD_ANIMCTRL) != 0)
+	{
+		return false;
+	}
+	const std::string strPath(szPath);
+	if (!strPath.ends_with(ZENITH_ANIMCTRL_EXT))
+	{
+		// A payload id is a claim, not a proof — the extension is what the reader
+		// on the other side of OpenAsset actually depends on.
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[AnimSM] drop refused: '%s' is not a " ZENITH_ANIMCTRL_EXT, szPath);
+		return false;
+	}
+
+	// The buffer moves FIRST, so the field shows what was dropped whether or not
+	// the open succeeds — a refusal with an empty box says nothing about which
+	// file was refused.
+	snprintf(m_acPathBuffer, sizeof(m_acPathBuffer), "%s", szPath);
+	return OpenAsset(strPath);
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::HandleLayerMaskDrop(u_int uLayerId, const char* szPayloadType,
+	const char* szPath)
+{
+	if (szPayloadType == nullptr || szPath == nullptr)
+	{
+		return false;
+	}
+	if (strcmp(szPayloadType, DRAGDROP_PAYLOAD_ANIMMASK) != 0)
+	{
+		return false;
+	}
+	const std::string strPath(szPath);
+	if (!strPath.ends_with(ZENITH_ANIMMASK_EXT))
+	{
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[AnimSM] drop refused: '%s' is not a " ZENITH_ANIMMASK_EXT, szPath);
+		return false;
+	}
+
+	// ★ THE ADDITIVE-LAYER RULE IS STILL Action_SetLayerMaskAssetPath'S. A drop is
+	// a route to the verb, never a second copy of what the verb is allowed to do —
+	// and the verb is what puts the refusal in GetLayerNotice() for the strip to
+	// print. It also re-syncs m_acLayerMaskPathBuffer from the document, so the
+	// buffer is deliberately NOT written here.
+	return Action_SetLayerMaskAssetPath(uLayerId, strPath);
+}
+
+//=============================================================================
 // Toolbar
 //=============================================================================
 
@@ -224,14 +285,19 @@ void Zenith_EditorPanel_AnimStateMachine::RenderToolbar()
 	const bool bPathCommitted = ImGui::InputText("##AnimSmPath", m_acPathBuffer, sizeof(m_acPathBuffer),
 		ImGuiInputTextFlags_EnterReturnsTrue);
 
+	// ★ THE CONTROLLER FIELD MOVED OFF THE GENERIC PAYLOAD IN THE SAME COMMIT THAT
+	// GAVE THE CONTENT BROWSER'S .zanimctrl ROW ITS OWN ID (WU-9.2). It used to
+	// accept DRAGDROP_PAYLOAD_FILE_GENERIC, which is what a .zanimctrl row emitted;
+	// the moment the row started emitting DRAGDROP_PAYLOAD_ANIMCTRL this target
+	// would have stopped matching, and a drag that quietly does nothing is the
+	// hardest kind of nothing to notice.
 	if (ImGui::BeginDragDropTarget())
 	{
-		const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_FILE_GENERIC);
+		const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_ANIMCTRL);
 		if (pxPayload != nullptr && pxPayload->Data != nullptr)
 		{
 			const DragDropFilePayload* pxFile = static_cast<const DragDropFilePayload*>(pxPayload->Data);
-			snprintf(m_acPathBuffer, sizeof(m_acPathBuffer), "%s", pxFile->m_szFilePath);
-			OpenAsset(std::string(m_acPathBuffer));
+			HandleControllerPathDrop(DRAGDROP_PAYLOAD_ANIMCTRL, pxFile->m_szFilePath);
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -460,13 +526,16 @@ void Zenith_EditorPanel_AnimStateMachine::RenderLayerDetail(u_int uLayerId)
 	if (bAcceptsMask && ImGui::BeginDragDropTarget())
 	{
 		// No registry enumeration of .zanimmask files exists, so the route is the
-		// path field plus a drop from the content browser's generic file payload.
-		const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_FILE_GENERIC);
+		// path field plus a drop from the content browser — which since WU-9.2
+		// emits DRAGDROP_PAYLOAD_ANIMMASK for that row. ★ ONLY that id: the field
+		// used to take the GENERIC file payload and write whatever it carried into
+		// the buffer unvalidated, so a .zscen dropped here became a layer's bone
+		// mask path, saved into the .zanimctrl, and resolved to nothing at runtime.
+		const ImGuiPayload* pxPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_ANIMMASK);
 		if (pxPayload != nullptr && pxPayload->Data != nullptr)
 		{
 			const DragDropFilePayload* pxFile = static_cast<const DragDropFilePayload*>(pxPayload->Data);
-			snprintf(m_acLayerMaskPathBuffer, sizeof(m_acLayerMaskPathBuffer), "%s", pxFile->m_szFilePath);
-			Action_SetLayerMaskAssetPath(uLayerId, std::string(m_acLayerMaskPathBuffer));
+			HandleLayerMaskDrop(uLayerId, DRAGDROP_PAYLOAD_ANIMMASK, pxFile->m_szFilePath);
 		}
 		ImGui::EndDragDropTarget();
 	}

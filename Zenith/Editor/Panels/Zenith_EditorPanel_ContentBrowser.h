@@ -13,8 +13,11 @@
 // Unreal-style asset browser: a folder tree on the left, a tile grid (or
 // detail list) on the right, breadcrumbs + search + type filter on top.
 // Tiles carry a colour-coded type badge and, for textures, a live thumbnail.
-// Files drag-drop into the scene / material slots; double-click opens scenes,
-// materials and behaviour graphs.
+// Files drag-drop into the scene / material slots — a .zanimctrl and a
+// .zanimmask carry their OWN payload ids (WU-9.2), so the state machine panel's
+// controller field and its per-layer mask field each accept only what they can
+// use. Double-click opens scenes, materials, behaviour graphs, animator
+// controllers, animation clips and bone masks.
 //=============================================================================
 
 namespace Zenith_EditorPanelContentBrowser
@@ -42,7 +45,8 @@ namespace Zenith_EditorPanelContentBrowser
 	void RenderFileGrid(Zenith_EditorContentBrowserState& xState, float fPanelWidth, float fCellSize);
 
 	// Drag source for a file entry (no-op for directories) and the double-click
-	// open dispatch (scenes, materials, graphs).
+	// open dispatch (scenes, materials, graphs, animator controllers, and — via
+	// the Animation Editor — animation clips and bone masks).
 	void RenderEntryDragDropSource(const ContentBrowserEntry& xEntry);
 	void HandleEntryDoubleClickOpen(const ContentBrowserEntry& xEntry);
 
@@ -51,6 +55,12 @@ namespace Zenith_EditorPanelContentBrowser
 
 	// PURE: whether an extension passes the type-filter combo index (0 = all).
 	bool MatchesAssetTypeFilter(int iFilterIndex, const std::string& strExtension);
+
+	// PURE: does the Animation Editor own this extension on double-click, and is
+	// it a bone MASK (Action_MaskOpen) rather than a clip (OpenClip)? The rest of
+	// HandleEntryDoubleClickOpen needs a live editor and its panels; this is the
+	// half a headless unit can assert.
+	bool OpensInAnimationPanel(const std::string& strExtension, bool& bOutIsMask);
 }
 
 #endif // ZENITH_TOOLS

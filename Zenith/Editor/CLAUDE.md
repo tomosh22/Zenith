@@ -321,10 +321,25 @@ Unreal-style asset browser:
   badge (TEX / MAT / SCN ...), live thumbnails for textures, ellipsised names;
   the detail view is a table with an icon column
 - **Double-click** opens scenes (through the unsaved-changes prompt),
-  materials (Material Editor), behaviour graphs (Graph Editor) and
-  `.zanimctrl` animator controllers (Animator State Machine)
-- **Drag-Drop:** Supports Texture, Mesh, Material, Prefab, Animation, Graph and
-  generic file payloads (the drag preview shows the type icon)
+  materials (Material Editor), behaviour graphs (Graph Editor), `.zanimctrl`
+  animator controllers (Animator State Machine), and — both in the Animation
+  Editor, which is SHOWN first and opened second, exactly as the
+  `ANIM_OPEN_CLIP` automation step does it — `.zanim` clips (`OpenClip`) and
+  `.zanimmask` bone masks (`Action_MaskOpen`, which raises the mask *section*
+  but not the window, so the `ShowFlag` is not redundant on that branch)
+- **Type filter:** the combo's ORDER *is* `MatchesAssetTypeFilter`'s switch
+  index, so rows are appended, never inserted — `Animator Controllers` (8) and
+  `Bone Masks` (9) are the last two
+- **Drag-Drop:** Supports Texture, Mesh, Material, Prefab, Animation, Animator
+  Controller, Bone Mask, Graph and generic file payloads (the drag preview shows
+  the type icon)
+- **★ A dedicated payload id exists so a target can REFUSE.** `.zanimctrl` and
+  `.zanimmask` rode `DRAGDROP_PAYLOAD_FILE_GENERIC` while nothing accepted them;
+  they now emit `DRAGDROP_PAYLOAD_ANIMCTRL` / `DRAGDROP_PAYLOAD_ANIMMASK`. The
+  drag SOURCE and the drop TARGET are two files agreeing on one string, and a
+  mismatch is a drag that silently does nothing — so repointing a row means
+  repointing **every** target that accepted the old id in the same commit
+  (`KnownFileTypesCarryDedicatedAnimationPayloadIds` is the unit that says so)
 - **Context menus:** Open / Open Additive (scenes), Duplicate, Delete, Export to
   .ztxtr (png / jpg), Show in Explorer, Copy Path; empty space offers Create
   Folder / Material, Show in Explorer, Refresh
@@ -567,9 +582,11 @@ Weight sliders commit on **edit-complete**, not per frame of the drag — the sa
 drag, and for the same reason: a command per frame makes Ctrl+Z crawl back
 through positions the user was only passing through.
 
-**Not wired:** double-clicking a `.zanimmask` in the Content Browser still only
-selects and logs it (WU-6.2 left it there). The section's path field + **Open**
-is the route today.
+**Double-clicking a `.zanimmask` in the Content Browser opens it here** (WU-9.2;
+it used to only select and log the file). The browser shows the panel and then
+calls `Action_MaskOpen`, which raises the mask *section* — a refusal is reported
+through `GetMaskNotice()`. The section's path field + **Open** is still the other
+route, and a `.zanim` double-click opens the clip the same way.
 
 ### The Curve view (WU-8.2)
 
@@ -1013,9 +1030,26 @@ state/transition selection to match, because a state name means nothing in a
 different machine.
 
 **Not wired:** there is no enumeration of `.zanimmask` files anywhere in the
-registry, so the mask field is a path text box plus a drop target for the content
-browser's generic file payload. A picker needs an asset-type enumeration that
-does not exist yet.
+registry, so the mask field is a path text box plus a drop target. A picker needs
+an asset-type enumeration that does not exist yet.
+
+**★ THE DROP TAKES `DRAGDROP_PAYLOAD_ANIMMASK` AND NOTHING ELSE** (WU-9.2). It
+used to accept the content browser's *generic* file payload and write whatever
+that carried straight into the layer, so a `.zscen` dropped on the field became a
+bone-mask path, was saved into the `.zanimctrl` and resolved to nothing at
+runtime — with every gate green. The controller path field on the toolbar moved
+to `DRAGDROP_PAYLOAD_ANIMCTRL` in the same commit, for the opposite reason: it
+was the target that *did* match the generic id, and leaving it there would have
+made the `.zanimctrl` drag stop working the moment the row got its own.
+
+**Both drops are ImGui-free verbs** — `HandleControllerPathDrop(type, path)` and
+`HandleLayerMaskDrop(layerId, type, path)` — each checking the payload id AND the
+extension, because an id is a claim and the extension is what the reader depends
+on. The ImGui block is the accept call and the pointer cast, and nothing else:
+**a headless unit cannot fabricate a drag** (the panel fixture parks the mouse at
+ImGui's invalid marker on purpose), so a drop written inline is code no assertion
+can reach. `HandleLayerMaskDrop` still ends in `Action_SetLayerMaskAssetPath`, so
+the additive-layer rule bites a dropped mask exactly as it bites a typed one.
 
 ### The Blend Tree strip (WU-7.3)
 

@@ -13,6 +13,13 @@
 #define DRAGDROP_PAYLOAD_PREFAB   "ZENITH_PREFAB"
 #define DRAGDROP_PAYLOAD_MODEL    "ZENITH_MODEL"
 #define DRAGDROP_PAYLOAD_ANIMATION "ZENITH_ANIMATION"
+// WU-9.2. A .zanimctrl and a .zanimmask each have a drop TARGET now — the state
+// machine panel's controller path field and its per-layer mask field — so each
+// gets its own id rather than riding the generic file payload. A generic payload
+// is accepted by every generic target (the scene hierarchy's additive-load drop
+// among them), which is exactly what makes "drop the wrong file here" silent.
+#define DRAGDROP_PAYLOAD_ANIMCTRL "ZENITH_ANIMCTRL"
+#define DRAGDROP_PAYLOAD_ANIMMASK "ZENITH_ANIMMASK"
 #define DRAGDROP_PAYLOAD_GRAPH_ASSET  "ZGRAPH_ASSET"
 #define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
 

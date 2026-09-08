@@ -28,6 +28,11 @@
 // EDITOR-OWNED dope sheet — the same object the push targets.
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
 #include "Editor/Zenith_BoneMaskDocument.h"
+// WU-9.2: the two drop verbs are asserted against the payload ids the content
+// browser actually emits, so the ids come from the shared header rather than
+// being spelled again as literals here.
+#include "Core/Zenith_DragDropPayloads.h"
+#include "FileAccess/Zenith_FileAccess.h"
 
 #include "imgui.h"
 
@@ -1399,6 +1404,129 @@ ZENITH_TEST(AnimSmPanel, CtrlDragTwinCreatesTheFirstAnyStateTransition)
 	ZENITH_ASSERT_FALSE(xPanel.Action_AddTransition("Idle", ""),
 		"★ a drop ONTO the pseudo-node is refused");
 	ZENITH_ASSERT_EQ(xPanel.Document().GetTransitionCount("Idle"), 0u, "and wrote nothing");
+
+	xPanel.CloseAsset();
+}
+
+//==============================================================================
+// The two drop targets (WU-9.2)
+//
+// ★ THE DROP IS ASSERTED THROUGH THE VERB, NOT THROUGH A DRAG. A headless unit
+// cannot fabricate one: AnimSmPanelImGuiFrame deliberately parks the mouse at
+// ImGui's invalid marker so nothing is ever hovered, which is what stops these
+// tests depending on where the developer's real cursor happened to be. So the
+// ImGui block is two lines — accept, cast — and everything a drop DECIDES is in
+// HandleControllerPathDrop / HandleLayerMaskDrop, where an assertion can reach
+// it. What is NOT covered here is the ImGui accept itself; that is a by-eye
+// check Phase G still owes.
+//==============================================================================
+
+ZENITH_TEST(AnimSmPanel, LayerMaskDropAcceptsOnlyTheMaskPayload)
+{
+	AnimSmFixture xFixture("zenith_animsm_maskdrop");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+
+	ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Base"), "with one layer");
+	u_int uBase = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(0u, uBase), "whose id resolves");
+
+	std::string strBefore("unset");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerMaskAssetPath(uBase, strBefore), "the mask path reads back");
+	ZENITH_ASSERT_TRUE(strBefore.empty(), "and starts empty");
+
+	// ---- the GENERIC payload is refused --------------------------------------
+	// ★ THIS IS THE REGRESSION THE UNIT EXISTS FOR. The field used to accept
+	// DRAGDROP_PAYLOAD_FILE_GENERIC and write whatever it carried into the layer
+	// unvalidated, so a scene dropped here became a bone mask path, went into the
+	// saved .zanimctrl and resolved to nothing at runtime — with every gate green.
+	ZENITH_ASSERT_FALSE(xPanel.HandleLayerMaskDrop(uBase, DRAGDROP_PAYLOAD_FILE_GENERIC, "x.zscen"),
+		"★ a generic file payload is refused");
+	std::string strAfterGeneric("unset");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerMaskAssetPath(uBase, strAfterGeneric), "the path still reads back");
+	ZENITH_ASSERT_EQ(strAfterGeneric, strBefore, "★ and the layer's mask path is UNCHANGED");
+
+	// The id is not the only gate: a payload claiming to be a mask still has to
+	// carry a mask, because the id is a claim and the extension is what the reader
+	// on the other side depends on.
+	ZENITH_ASSERT_FALSE(xPanel.HandleLayerMaskDrop(uBase, DRAGDROP_PAYLOAD_ANIMMASK, "x.zscen"),
+		"★ and so is the RIGHT id carrying the wrong extension");
+	ZENITH_ASSERT_FALSE(xPanel.HandleLayerMaskDrop(uBase, DRAGDROP_PAYLOAD_ANIMMASK, nullptr),
+		"a null path is refused rather than dereferenced");
+	ZENITH_ASSERT_FALSE(xPanel.HandleLayerMaskDrop(uBase, nullptr, "upper.zanimmask"),
+		"and so is a null payload type");
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerMaskAssetPath(uBase, strAfterGeneric), "the path still reads back");
+	ZENITH_ASSERT_TRUE(strAfterGeneric.empty(), "and is still empty after all four refusals");
+
+	// ---- the mask payload lands ----------------------------------------------
+	const std::string strMaskPath = xFixture.PathFor("upper" ZENITH_ANIMMASK_EXT);
+	ZENITH_ASSERT_TRUE(xPanel.HandleLayerMaskDrop(uBase, DRAGDROP_PAYLOAD_ANIMMASK, strMaskPath.c_str()),
+		"★ the dedicated mask payload with a .zanimmask path is accepted");
+	std::string strAfterMask;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerMaskAssetPath(uBase, strAfterMask), "the path reads back");
+	ZENITH_ASSERT_EQ(strAfterMask, Zenith_AssetRegistry::NormalizeAssetPath(strMaskPath),
+		"★ and it is Action_SetLayerMaskAssetPath's effect — normalized on the way in, exactly as the "
+		"path field's Mask button produces, rather than the raw authoring-machine path");
+
+	// ---- and the drop is a ROUTE to the verb, not a bypass of it -------------
+	// ★ THE ADDITIVE RULE STILL BITES. A drop that wrote the layer directly would
+	// look identical on every assertion above and would silently defeat the one
+	// rule that makes a mask assignment mean anything.
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Overlay"), "a second layer");
+	u_int uOverlay = uFLUX_INVALID_LAYER_ID;
+	ZENITH_ASSERT_TRUE(xPanel.Document().GetLayerIdAt(1u, uOverlay), "whose id resolves");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetLayerBlendMode(uOverlay, LAYER_BLEND_ADDITIVE), "made additive");
+	ZENITH_ASSERT_FALSE(xPanel.HandleLayerMaskDrop(uOverlay, DRAGDROP_PAYLOAD_ANIMMASK, strMaskPath.c_str()),
+		"★ a perfectly good mask dropped on an ADDITIVE layer is still refused");
+	ZENITH_ASSERT_EQ(xPanel.GetLayerNotice(), std::string(Zenith_BoneMaskDocument::AdditiveLayerMaskNotice()),
+		"★ with the document's ONE wording, which is what proves the drop went through the verb");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, ControllerPathDropAcceptsOnlyTheControllerPayload)
+{
+	AnimSmFixture xFixture("zenith_animsm_ctrldrop");
+
+	// A real .zanimctrl on disk, written by the engine type rather than by the
+	// panel — the drop has to open something the reader accepts, and a def the
+	// test authored is the same shape the content browser would be dragging.
+	{
+		Flux_AnimatorControllerDef xDef;
+		Flux_AnimationStateMachineDef& xMachine = xDef.GetOrCreateStateMachineDef();
+		ZENITH_ASSERT_NOT_NULL(xMachine.AddState("Idle"), "the fixture def gets a state");
+		xDef.Export(xFixture.m_strControllerPath);
+	}
+
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "nothing is open to begin with");
+
+	// ★ THE GENERIC PAYLOAD IS REFUSED, AND THAT IS THE HALF THAT NEARLY BROKE.
+	// This field accepted DRAGDROP_PAYLOAD_FILE_GENERIC — which is what a
+	// .zanimctrl row used to emit — so giving the row a dedicated id without
+	// moving this target would have left the drag matching nothing at all, and a
+	// drag that quietly does nothing is invisible to every gate.
+	ZENITH_ASSERT_FALSE(xPanel.HandleControllerPathDrop(DRAGDROP_PAYLOAD_FILE_GENERIC,
+		xFixture.m_strControllerPath.c_str()), "★ a generic file payload is refused");
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "★ and nothing was opened by it");
+
+	ZENITH_ASSERT_FALSE(xPanel.HandleControllerPathDrop(DRAGDROP_PAYLOAD_ANIMMASK,
+		xFixture.m_strControllerPath.c_str()), "the OTHER new id is refused here too");
+	ZENITH_ASSERT_FALSE(xPanel.HandleControllerPathDrop(DRAGDROP_PAYLOAD_ANIMCTRL, "x.zscen"),
+		"★ and the right id carrying the wrong extension is refused");
+	ZENITH_ASSERT_FALSE(xPanel.HandleControllerPathDrop(nullptr, xFixture.m_strControllerPath.c_str()),
+		"a null payload type is refused rather than dereferenced");
+	ZENITH_ASSERT_FALSE(xPanel.HandleControllerPathDrop(DRAGDROP_PAYLOAD_ANIMCTRL, nullptr),
+		"and so is a null path");
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "★ still nothing open after five refusals");
+
+	// ---- the controller payload lands ----------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.HandleControllerPathDrop(DRAGDROP_PAYLOAD_ANIMCTRL,
+		xFixture.m_strControllerPath.c_str()),
+		"★ the dedicated controller payload with a .zanimctrl path opens the asset");
+	ZENITH_ASSERT_TRUE(xPanel.IsOpen(), "★ and the document really is open — the bool is OpenAsset's");
+	ZENITH_ASSERT_TRUE(xPanel.Document().HasState("Idle"),
+		"holding the state the file on disk carries, so it opened THAT file and not an empty one");
 
 	xPanel.CloseAsset();
 }
