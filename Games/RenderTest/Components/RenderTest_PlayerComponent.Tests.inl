@@ -666,4 +666,368 @@ ZENITH_TEST(RenderTestInput, JetpackGatingRequiresEquipAndInput)
 		"Equipped + showcase force must thrust (capture path)");
 }
 
+// ----- Layered-animator idempotence (A4) ------------------------------------
+//
+// ★ A SEPARATE FIXTURE, AND IT HAS TO BE. RenderTest_TestFixture above
+// deliberately adds NO Zenith_AnimatorComponent and never calls OnStart — see its
+// own comment: OnStart loads eight .zanim files and builds a two-layer animator,
+// which the input-driven tests neither need nor want. These three cases are about
+// exactly that setup, so they build their own entity: model + animator + collider
+// + the player component, with the animator's own OnStart run once up front so it
+// discovers the skeleton off the model the way the ECS lifecycle would.
+//
+// THE DEFECT UNDER TEST. RenderTest_PlayerComponent::OnStart calls
+// SetupLayeredAnimator, which used to call Flux_AnimationController::AddLayer for
+// "BaseLayer" and "AimLayer" unguarded. AddLayer appends unconditionally and layer
+// names are not unique by design, so a SECOND OnStart over the same store-owned
+// controller left four layers — two stale, two new. That second OnStart is not
+// hypothetical and it is not a scene reload (a reload builds a fresh component
+// beside a fresh controller): Zenith_Editor::EnterPlayMode dispatches OnAwake and
+// OnStart UNCONDITIONALLY over every live entity
+// (Zenith/Editor/Zenith_Editor_SceneOps.cpp:113-129, documented at :378-381), so a
+// Stopped->Playing transition taken over an already-started world re-starts every
+// component in it. `OnAwake(); OnStart();` twice IS that shape.
+namespace
+{
+	struct RenderTest_AnimatorFixture
+	{
+		Zenith_Scene xScene;
+		Zenith_EntityID uPlayerID = INVALID_ENTITY_ID;
+		// The StickFigure rig is BAKE output, not committed:
+		// GenerateStickFigureAssets writes it under ENGINE_ASSETS_DIR on every
+		// tools boot, before Flux comes up (Zenith/Core/Zenith_Engine.cpp:573).
+		std::string strModelPath;
+		// Did the animator actually bind to a skeleton instance? Only the event
+		// case needs this — Flux_AnimationController::Update early-outs without one
+		// (Flux_AnimationController.cpp:315) — and it ASSERTS on it rather than
+		// skipping, so a cold tree fails loudly instead of counting 0 == 0. The two
+		// narrower flags exist so that failure names WHICH step gave out.
+		bool bModelLoaded = false;
+		bool bModelHasSkeleton = false;
+		bool bRigWarm = false;
+
+		RenderTest_AnimatorFixture()
+		{
+			RenderTest_GameplayState::Reset();
+
+			xScene = g_xEngine.Scenes().LoadScene("RenderTestAnimatorTestScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+			g_xEngine.Scenes().SetActiveScene(xScene);
+			Zenith_SceneData* pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
+
+			Zenith_Entity xPlayer = g_xEngine.Scenes().CreateEntity(pxSceneData, "AnimPlayer");
+			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition({ 0.0f, 0.0f, 0.0f });
+			uPlayerID = xPlayer.GetEntityID();
+
+			// LoadModel reports a missing file and returns (Zenith_ModelComponent.cpp:178-183)
+			// rather than asserting, so the cold case reaches bRigWarm == false instead
+			// of taking the process down.
+			strModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure" ZENITH_MODEL_EXT;
+			Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
+			xModel.LoadModel(strModelPath);
+			bModelLoaded = xModel.HasModel();
+			bModelHasSkeleton = bModelLoaded && xModel.HasSkeleton();
+
+			// The player's own OnStart adds the capsule when no body exists yet, so
+			// a bare ColliderComponent is all this needs; TryFire/TryInteractGun
+			// early-out without one.
+			xPlayer.AddComponent<Zenith_ColliderComponent>();
+
+			Zenith_AnimatorComponent& xAnimator = xPlayer.AddComponent<Zenith_AnimatorComponent>();
+			xAnimator.OnStart();   // TryDiscoverSkeleton off the ModelComponent
+			bRigWarm = xAnimator.GetController().IsInitialized();
+
+			xPlayer.AddComponent<RenderTest_PlayerComponent>();
+		}
+
+		~RenderTest_AnimatorFixture()
+		{
+			// Components are owned by the scene; UnloadSceneForced tears them down
+			// (dispatching OnDisable/OnDestroy through the meta registry), which is
+			// also what destroys the store-owned animation controller.
+			g_xEngine.Scenes().UnloadSceneForced(xScene);
+		}
+
+		RenderTest_AnimatorFixture(const RenderTest_AnimatorFixture&) = delete;
+		RenderTest_AnimatorFixture& operator=(const RenderTest_AnimatorFixture&) = delete;
+
+		// Re-fetched per use rather than cached: several component pools are touched
+		// here and a pointer into one is only as stable as the next AddComponent.
+		Zenith_Entity Entity() const
+		{
+			return g_xEngine.Scenes().GetSceneData(xScene)->GetEntity(uPlayerID);
+		}
+		RenderTest_PlayerComponent& Player() const
+		{
+			return Entity().GetComponent<RenderTest_PlayerComponent>();
+		}
+		Flux_AnimationController& Controller() const
+		{
+			return Entity().GetComponent<Zenith_AnimatorComponent>().GetController();
+		}
+
+		// The EnterPlayMode shape, spelled once: OnAwake (which resets
+		// m_uBaseLayerId / m_uAimLayerId to uFLUX_INVALID_LAYER_ID) then OnStart,
+		// over the SAME live controller.
+		void RestartPlayerComponent() const
+		{
+			Player().OnAwake();
+			Player().OnStart();
+		}
+	};
+
+	struct RTA4_EventSink
+	{
+		Zenith_Vector<std::string> m_xNames;
+
+		u_int CountOf(const char* szName) const
+		{
+			u_int uCount = 0;
+			for (u_int u = 0; u < m_xNames.GetSize(); ++u)
+			{
+				if (m_xNames.Get(u) == szName)
+					uCount++;
+			}
+			return uCount;
+		}
+
+		void Reset() { m_xNames.Clear(); }
+	};
+
+	void RTA4_OnEvent(void* pUserData, const std::string& strEventName, const Zenith_Maths::Vector4&)
+	{
+		static_cast<RTA4_EventSink*>(pUserData)->m_xNames.PushBack(strEventName);
+	}
+
+	// ★ THE CLIP THIS ADDS AN EVENT TO IS THE SHARED REGISTRY ASSET'S.
+	// Flux_AnimationController::AddClipFromFile stores a NON-owning reference to
+	// Zenith_AnimationAsset::GetClip() (Flux_AnimationController.cpp:525-553), so a
+	// probe event left behind would be visible to every controller in the process
+	// and to every test that runs after this one. Hence RAII, on every return path.
+	//
+	// Removal is BY NAME, not by the index we pushed at: Flux_AnimationClip::AddEvent
+	// re-sorts the whole vector by time (Flux_AnimationClip.cpp:1440-1448).
+	struct RTA4_ScopedClipEvent
+	{
+		Flux_AnimationClip* m_pxClip = nullptr;
+		std::string m_strName;
+
+		RTA4_ScopedClipEvent(Flux_AnimationClip* pxClip, const char* szName, float fNormalizedTime)
+			: m_pxClip(pxClip)
+			, m_strName(szName)
+		{
+			if (m_pxClip == nullptr)
+				return;
+			Flux_AnimationEvent xEvent;
+			xEvent.m_strEventName = m_strName;
+			xEvent.m_fNormalizedTime = fNormalizedTime;
+			xEvent.m_xData = Zenith_Maths::Vector4(fNormalizedTime, 0.0f, 0.0f, 0.0f);
+			m_pxClip->AddEvent(xEvent);
+		}
+
+		~RTA4_ScopedClipEvent()
+		{
+			if (m_pxClip == nullptr)
+				return;
+			for (u_int u = m_pxClip->GetEvents().GetSize(); u > 0; --u)
+			{
+				if (m_pxClip->GetEvents().Get(u - 1).m_strEventName == m_strName)
+					m_pxClip->RemoveEvent(u - 1);
+			}
+		}
+
+		RTA4_ScopedClipEvent(const RTA4_ScopedClipEvent&) = delete;
+		RTA4_ScopedClipEvent& operator=(const RTA4_ScopedClipEvent&) = delete;
+	};
+}
+
+// (A) LAYER IDENTITY. A second OnStart must leave exactly the two layers the
+// first one built — same ids, same live state machines — not four.
+ZENITH_TEST(RenderTestInput, LayeredAnimatorAdoptsItsLayersOnARepeatedStart)
+{
+	RenderTest_AnimatorFixture xFix;
+
+	xFix.RestartPlayerComponent();
+
+	Flux_AnimationController& xController = xFix.Controller();
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u,
+		"the player authors exactly TWO layers (got %u)", xController.GetLayerCount());
+
+	Flux_AnimationLayer* pxBase = xController.GetLayer(0u);
+	Flux_AnimationLayer* pxAim  = xController.GetLayer(1u);
+	ZENITH_ASSERT_NOT_NULL(pxBase, "layer 0 is missing after a successful OnStart");
+	ZENITH_ASSERT_NOT_NULL(pxAim,  "layer 1 is missing after a successful OnStart");
+	if (pxBase == nullptr || pxAim == nullptr) { return; }
+
+	// BaseLayer must stay FIRST: HumanShowcase reads the base state machine off
+	// GetLayer(0) by index (Games/RenderTest/Tests/HumanShowcase.cpp:97-108).
+	ZENITH_ASSERT_STREQ(pxBase->GetName().c_str(), "BaseLayer",
+		"BaseLayer must be the first layer added — GetLayer(0) is read by index elsewhere");
+	ZENITH_ASSERT_STREQ(pxAim->GetName().c_str(), "AimLayer",
+		"AimLayer must be the second layer added");
+
+	const u_int uBaseId = pxBase->GetLayerId();
+	const u_int uAimId  = pxAim->GetLayerId();
+	ZENITH_ASSERT_NE(uBaseId, uAimId, "two layers of one controller must not share an id");
+	const Flux_AnimationStateMachine* pxBaseSM = pxBase->GetStateMachinePtr();
+	const Flux_AnimationStateMachine* pxAimSM  = pxAim->GetStateMachinePtr();
+	ZENITH_ASSERT_NOT_NULL(pxBaseSM, "the base state machine was never created");
+	ZENITH_ASSERT_NOT_NULL(pxAimSM,  "the aim state machine was never created");
+
+	// ...and again, over the same controller.
+	xFix.RestartPlayerComponent();
+
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u,
+		"a second OnStart DUPLICATED the layers (2 -> %u). Flux_AnimationController::AddLayer "
+		"appends unconditionally and layer names are not unique, so the stale pair is still "
+		"ticked by EvaluateAndComposeLayers and still emits events",
+		xController.GetLayerCount());
+	if (xController.GetLayerCount() != 2u) { return; }
+
+	ZENITH_ASSERT_EQ(xController.GetLayer(0u)->GetLayerId(), uBaseId,
+		"layer 0's id moved across a repeated OnStart — the base layer was rebuilt, not adopted");
+	ZENITH_ASSERT_EQ(xController.GetLayer(1u)->GetLayerId(), uAimId,
+		"layer 1's id moved across a repeated OnStart — the aim layer was rebuilt, not adopted");
+
+	// The opposite failure to duplication, and the reason the adopt branch must not
+	// call CreateStateMachine: that DELETES the live machine
+	// (Flux_AnimationLayer.cpp:64-69) along with whatever state the game is in.
+	ZENITH_ASSERT_TRUE(xController.GetLayer(0u)->GetStateMachinePtr() == pxBaseSM,
+		"the base layer's LIVE state machine was rebuilt by the second OnStart");
+	ZENITH_ASSERT_TRUE(xController.GetLayer(1u)->GetStateMachinePtr() == pxAimSM,
+		"the aim layer's LIVE state machine was rebuilt by the second OnStart");
+	ZENITH_ASSERT_NOT_NULL(xController.GetLayer(0u)->GetStateMachinePtr(),
+		"the second OnStart dropped the base state machine entirely");
+}
+
+// (B) THE COMPONENT STILL DRIVES THE ADOPTED LAYERS. This is the regression for a
+// bare-early-return "fix": OnAwake resets m_uBaseLayerId / m_uAimLayerId to
+// uFLUX_INVALID_LAYER_ID on the way into every start, so a SetupLayeredAnimator
+// that merely returned when the layers already existed would leave both ids
+// invalid — and every write in this component goes through
+// `if (Flux_AnimationLayer* px = ResolveAimLayer())`, which then silently does
+// nothing. Layer count and ids would look perfect; the player would animate in its
+// idle pose forever.
+//
+// ★ GetAimLayerWeight() IS NOT A VALID PROBE FOR THIS. m_fAimLayerWeight is
+// tracked unconditionally by OnUpdate, deliberately NOT gated on the layer
+// existing (see the comment above the ramp), so it moves either way. The probes
+// below are the two writes that only happen INSIDE the resolve: the trigger set on
+// the aim layer's own state machine, and SetWeight on the layer object itself.
+ZENITH_TEST(RenderTestInput, LayeredAnimatorAdoptedLayersStillTakeComponentWrites)
+{
+	RenderTest_AnimatorFixture xFix;
+
+	xFix.RestartPlayerComponent();
+	xFix.RestartPlayerComponent();   // the adopt path
+
+	Flux_AnimationController& xController = xFix.Controller();
+	Flux_AnimationLayer* pxAim = xController.GetLayerByName("AimLayer");
+	ZENITH_ASSERT_NOT_NULL(pxAim, "no AimLayer to drive");
+	if (pxAim == nullptr) { return; }
+
+	// Preconditions, so neither assertion below can pass on a value that was
+	// already there.
+	ZENITH_ASSERT_FALSE(pxAim->GetStateMachine().GetParameters().PeekTrigger("FireTrigger"),
+		"FireTrigger should be clear before the fire verb");
+	ZENITH_ASSERT_EQ_FLOAT(pxAim->GetWeight(), 0.0f, 1.0e-5f,
+		"the aim layer is authored at weight 0 and nothing has raised it yet");
+
+	// TryFire writes FireTrigger through ResolveAimLayer() and sets the 0.4s
+	// force-aim timer that raises the layer weight in OnUpdate.
+	xFix.Player().TryFire();
+	ZENITH_ASSERT_TRUE(pxAim->GetStateMachine().GetParameters().PeekTrigger("FireTrigger"),
+		"the fire verb did not reach the ADOPTED aim layer — m_uAimLayerId was not "
+		"re-adopted after OnAwake invalidated it, so ResolveAimLayer() returned null "
+		"and the write was a silent no-op");
+
+	// Ten frames of forced ADS: the ramp is clamp(dt * 6.66) per frame, so ~0.69
+	// after ten frames of 1/60s, and the force-aim timer still has ~0.23s left.
+	for (int i = 0; i < 10; ++i)
+	{
+		xFix.Player().OnUpdate(1.0f / 60.0f);
+	}
+	ZENITH_ASSERT_GT(pxAim->GetWeight(), 0.05f,
+		"the per-LAYER SetWeight never reached the adopted aim layer (weight %.3f) — the "
+		"aim pose would be composed at zero weight forever", pxAim->GetWeight());
+}
+
+// (C) EVENTS FIRE ONCE PER LAYER, NOT ONCE PER DUPLICATE. This is the clause a
+// layer-count assertion cannot reach: a stale layer is at weight 0, so it composes
+// nothing and looks harmless — but Flux_AnimationLayer::CollectEventSpans consults
+// m_bEmitEvents alone and NEVER the weight (Flux_AnimationLayer.h:118-140), and
+// Flux_AnimationController::DispatchClipEvents arbitrates per layer (D36). Four
+// layers therefore mean every authored footstep / weapon beat fires twice.
+ZENITH_TEST(RenderTestInput, LayeredAnimatorEventsFirePerLayerNotPerDuplicate)
+{
+	RenderTest_AnimatorFixture xFix;
+
+	// ★ RIG-GATED, AND IT FAILS RATHER THAN SKIPS. Flux_AnimationController::Update
+	// returns immediately without a live skeleton instance
+	// (Flux_AnimationController.cpp:315), so on a cold tree every count below would
+	// be 0 and "0 == 0" would report a pass for a test that ran nothing.
+	ZENITH_ASSERT_TRUE(xFix.bRigWarm,
+		"rig not baked — cannot verify: the animator never bound a skeleton instance, so "
+		"the controller cannot be ticked and no event can fire (modelLoaded=%s "
+		"modelHasSkeleton=%s). '%s' is written by GenerateStickFigureAssets on every "
+		"ZENITH_TOOLS boot before Flux comes up (Zenith/Core/Zenith_Engine.cpp:573); "
+		"reaching here without it is a broken bake, not a case to skip",
+		xFix.bModelLoaded ? "yes" : "no",
+		xFix.bModelHasSkeleton ? "yes" : "no",
+		xFix.strModelPath.c_str());
+	if (!xFix.bRigWarm) { return; }
+
+	xFix.RestartPlayerComponent();
+
+	Flux_AnimationController& xController = xFix.Controller();
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u,
+		"expected the two authored layers before counting events (got %u)",
+		xController.GetLayerCount());
+
+	// Both layers play this ONE clip by default: BaseLayer's default state is
+	// "Idle", and AimLayer's default "Hipfire" deliberately reuses the same clip
+	// (the aim mask zeroes the locomotion-only channels).
+	Flux_AnimationClip* pxIdle = xController.GetClip("Idle");
+	ZENITH_ASSERT_NOT_NULL(pxIdle, "the Idle clip is not in the controller's collection");
+	if (pxIdle == nullptr) { return; }
+	const float fDuration = pxIdle->GetDuration();
+	ZENITH_ASSERT_GT(fDuration, 0.0f,
+		"a zero-duration clip has no normalized range for an event to sit in");
+	// The step below is exactly ONE clip duration, which spans [t, 1) U [0, t) for
+	// any starting phase t and therefore crosses every authored event exactly once
+	// — that identity is what lets the second measurement start from wherever the
+	// first one left the playhead, and it needs a LOOPING clip.
+	ZENITH_ASSERT_TRUE(pxIdle->IsLooping(),
+		"this test steps one whole clip duration per tick, which only fires every event "
+		"exactly once from an arbitrary phase when the clip loops");
+	if (fDuration <= 0.0f || !pxIdle->IsLooping()) { return; }
+
+	RTA4_ScopedClipEvent xProbe(pxIdle, "RTA4_Probe", 0.5f);
+
+	RTA4_EventSink xSink;
+	xController.SetEventCallback(&RTA4_OnEvent, &xSink);
+
+	xController.Update(fDuration);
+	const u_int uAfterFirstStart = xSink.CountOf("RTA4_Probe");
+	ZENITH_ASSERT_EQ(uAfterFirstStart, xController.GetLayerCount(),
+		"one crossing should fire once per LAYER (D36): %u layers, %u events",
+		xController.GetLayerCount(), uAfterFirstStart);
+
+	// The EnterPlayMode shape again — and the event RATE must not move.
+	xFix.RestartPlayerComponent();
+
+	xSink.Reset();
+	xController.Update(fDuration);
+	const u_int uAfterSecondStart = xSink.CountOf("RTA4_Probe");
+
+	ZENITH_ASSERT_EQ(xController.GetLayerCount(), 2u,
+		"a second OnStart duplicated the layers (now %u)", xController.GetLayerCount());
+	ZENITH_ASSERT_EQ(uAfterSecondStart, uAfterFirstStart,
+		"the event rate DOUBLED across a repeated OnStart (%u -> %u per crossing): the "
+		"stale layers are at weight 0 and compose nothing, but they are still ticked and "
+		"still emit — layer emission reads m_bEmitEvents, never the weight",
+		uAfterFirstStart, uAfterSecondStart);
+
+	xController.ClearEventCallback();
+}
+
 #endif // ZENITH_INPUT_SIMULATOR

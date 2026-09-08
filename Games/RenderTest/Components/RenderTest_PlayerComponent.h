@@ -254,13 +254,29 @@ public:
 
 	void OnStart()
 	{
-		// OnStart fires once per component instance: once during automation (when the
-		// entity is first created) and again after SaveScene/LoadScene reload.
-		// During automation we add the explicit-dim capsule fresh; on reload the
-		// scene file may have already deserialized a (degenerate, scale-derived)
-		// capsule via the ColliderComponent's saved volume type. Only call
-		// AddCapsuleCollider when no body exists yet to avoid the
-		// "ColliderComponent already has a collider" assert in AddCollider.
+		// ★ OnStart CAN FIRE TWICE ON THIS SAME COMPONENT INSTANCE, and the
+		// mechanism is Zenith_Editor::EnterPlayMode
+		// (Zenith/Editor/Zenith_Editor_SceneOps.cpp:113-129): its OnAwake / OnEnable
+		// / OnStart passes are dispatched UNCONDITIONALLY over every live entity, so
+		// a Stopped->Playing transition taken over an already-started world starts
+		// this instance a second time against the SAME store-owned animation
+		// controller. That unconditional re-dispatch is documented at
+		// Zenith_Editor_SceneOps.cpp:378-381.
+		//
+		// A SaveScene/LoadScene reload is NOT that case, and the comment that used
+		// to sit here named it as if it were: a reload destroys this component and
+		// builds a fresh one beside a fresh controller, so nothing there can be
+		// duplicated. Everything below is written for the re-dispatch case instead —
+		// the collider add is guarded on HasValidBody, and SetupLayeredAnimator
+		// resolves the layers it already built by name rather than adding a second
+		// pair of them.
+		//
+		// The collider guard specifically: during automation we add the
+		// explicit-dim capsule fresh; on a scene load the file may have already
+		// deserialized a (degenerate, scale-derived) capsule via the
+		// ColliderComponent's saved volume type. Only call AddCapsuleCollider when
+		// no body exists yet to avoid the "ColliderComponent already has a
+		// collider" assert in AddCollider.
 		Zenith_ColliderComponent* pxExistingCollider = m_xParentEntity.TryGetComponent<Zenith_ColliderComponent>();
 		Zenith_ColliderComponent& xCollider = pxExistingCollider != nullptr
 			? *pxExistingCollider
@@ -603,6 +619,27 @@ private:
 	// Constructs the layered animator on the player's animator component.
 	// Layer 0 (BaseLayer): full-body locomotion + jump + hit.
 	// Layer 1 (AimLayer): upper-body aim/fire/reload, masked to torso+arms+head.
+	//
+	// ★ IDEMPOTENT BY NAME-LOOKUP-AND-ADOPT, NOT BY AN EARLY RETURN. OnStart can
+	// fire a second time on this same component over the same store-owned
+	// controller — see OnStart for the mechanism (EnterPlayMode's unconditional
+	// re-dispatch) — and OnAwake has just reset m_uBaseLayerId / m_uAimLayerId back
+	// to uFLUX_INVALID_LAYER_ID on the way in. Flux_AnimationController::AddLayer
+	// appends unconditionally and layer NAMES are not unique by design
+	// (Flux_AnimationController.h:455-460), so an unguarded second run left FOUR
+	// layers: a stale BaseLayer and a stale AimLayer that are both still ticked by
+	// EvaluateAndComposeLayers and, worse, still EMIT ANIMATION EVENTS — a layer's
+	// emission consults m_bEmitEvents alone and never its weight
+	// (Flux_AnimationLayer.h:118-140) — plus the two freshly built ones.
+	//
+	// So: resolve both layers by name, and when both are already present re-adopt
+	// their IDS and skip the build entirely. The re-adopt is the load-bearing half.
+	// A bare early return would leave both ids invalid, and then every Speed /
+	// IsSprinting / IsGrounded / IsAiming / FireTrigger / ReloadTrigger write in
+	// this component resolves to nullptr and silently does nothing — those call
+	// sites are all `if (Flux_AnimationLayer* px = Resolve...Layer())`, so the
+	// failure is a player that animates in its idle pose forever with no error.
+	// Skipping the build also stops the eight duplicate AddClipFromFile AddRefs.
 	void SetupLayeredAnimator()
 	{
 		if (!m_pxAnimator)
@@ -610,6 +647,83 @@ private:
 
 		Flux_AnimationController& xController = m_pxAnimator->GetController();
 
+		Flux_AnimationLayer* pxExistingBase = xController.GetLayerByName("BaseLayer");
+		Flux_AnimationLayer* pxExistingAim  = xController.GetLayerByName("AimLayer");
+		if (pxExistingBase != nullptr && pxExistingAim != nullptr)
+		{
+			// Re-adopt. Deliberately NOT re-running CreateStateMachine on either
+			// layer: that DELETES the live machine (Flux_AnimationLayer.cpp:64-69)
+			// and would throw away the state the running game is standing in.
+			m_uBaseLayerId = pxExistingBase->GetLayerId();
+			m_uAimLayerId  = pxExistingAim->GetLayerId();
+		}
+		else
+		{
+			// Both-or-neither. A controller carrying exactly one of the two names
+			// is not something any path here produces, and building over it is the
+			// honest recovery: half a rig is not a rig this component can drive.
+			BuildAnimatorLayers(xController);
+		}
+
+		// IK foot-placement chains. CreateLegChain configures pole vector (0,0,1)
+		// (forward) and a knee hinge constraint along (1,0,0). This tail runs on
+		// BOTH branches above, because layers and IK chains are independent: a
+		// controller restored from a .zscen carries layers and no solver chains at
+		// all. The HasChain guards — not the layer adopt above — are what make it
+		// safe to re-enter.
+		Flux_IKSolver& xIK = xController.GetIKSolver();
+		if (!xIK.HasChain("LeftLeg"))
+		{
+			Flux_IKChain xLeft = Flux_IKSolver::CreateLegChain("LeftLeg",
+				"LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
+			// Bump iterations + tighten tolerance — FABRIK with pole vector and
+			// hinge constraints converges slowly near full chain extension, which
+			// is exactly the foot-IK case. The default 10 iterations leaves
+			// ~10-15mm error on a bent leg; 30 iterations brings error under 3mm.
+			xLeft.m_uMaxIterations = 30;
+			xLeft.m_fTolerance = 0.0005f;
+			xIK.AddChain(xLeft);
+		}
+		if (!xIK.HasChain("RightLeg"))
+		{
+			Flux_IKChain xRight = Flux_IKSolver::CreateLegChain("RightLeg",
+				"RightUpperLeg", "RightLowerLeg", "RightFoot");
+			xRight.m_uMaxIterations = 30;
+			xRight.m_fTolerance = 0.0005f;
+			xIK.AddChain(xRight);
+		}
+
+		// Arm IK chains for holding a gun. The RIGHT arm is driven to a body-anchored
+		// hold (with an end-effector orientation that squares the gun barrel forward);
+		// the LEFT arm reaches the gun's foregrip for a two-handed weapon. Both have
+		// NO target until a gun is picked up, so an unused chain is a no-op in Solve
+		// (the foot-IK demo and the gunless tests are unaffected). Tuned like the
+		// leg chains for clean convergence near full extension.
+		if (!xIK.HasChain("RightArm"))
+		{
+			Flux_IKChain xRightArm = Flux_IKSolver::CreateArmChain("RightArm",
+				"RightUpperArm", "RightLowerArm", "RightHand");
+			xRightArm.m_uMaxIterations = 30;
+			xRightArm.m_fTolerance = 0.0005f;
+			xIK.AddChain(xRightArm);
+		}
+		if (!xIK.HasChain("LeftArm"))
+		{
+			Flux_IKChain xLeftArm = Flux_IKSolver::CreateArmChain("LeftArm",
+				"LeftUpperArm", "LeftLowerArm", "LeftHand");
+			xLeftArm.m_uMaxIterations = 30;
+			xLeftArm.m_fTolerance = 0.0005f;
+			xIK.AddChain(xLeftArm);
+		}
+	}
+
+	// The one-time half of SetupLayeredAnimator: the eight clips, the upper-body
+	// bone mask, and the two layers with their state machines. Called ONLY from the
+	// else-branch above, i.e. only when this controller does not already carry both
+	// named layers. Everything in here appends or overwrites, so calling it twice
+	// on one controller is exactly the defect the adopt exists to prevent.
+	void BuildAnimatorLayers(Flux_AnimationController& xController)
+	{
 		// --- Load all clips into the controller's clip collection ---
 		//
 		// ★ FROM Assets/Authored/, NOT Assets/Meshes/ (WU-9.1). The seventeen
@@ -777,55 +891,6 @@ private:
 
 		pxAimSM->SetDefaultState("Hipfire");
 		pxAimSM->ResolveClipReferences(&xClips);
-
-		// IK foot-placement chains. CreateLegChain configures pole vector (0,0,1)
-		// (forward) and a knee hinge constraint along (1,0,0). HasChain guards keep
-		// SetupLayeredAnimator idempotent — OnStart can fire twice (once during
-		// automation, once after SaveScene/LoadScene reload).
-		Flux_IKSolver& xIK = xController.GetIKSolver();
-		if (!xIK.HasChain("LeftLeg"))
-		{
-			Flux_IKChain xLeft = Flux_IKSolver::CreateLegChain("LeftLeg",
-				"LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
-			// Bump iterations + tighten tolerance — FABRIK with pole vector and
-			// hinge constraints converges slowly near full chain extension, which
-			// is exactly the foot-IK case. The default 10 iterations leaves
-			// ~10-15mm error on a bent leg; 30 iterations brings error under 3mm.
-			xLeft.m_uMaxIterations = 30;
-			xLeft.m_fTolerance = 0.0005f;
-			xIK.AddChain(xLeft);
-		}
-		if (!xIK.HasChain("RightLeg"))
-		{
-			Flux_IKChain xRight = Flux_IKSolver::CreateLegChain("RightLeg",
-				"RightUpperLeg", "RightLowerLeg", "RightFoot");
-			xRight.m_uMaxIterations = 30;
-			xRight.m_fTolerance = 0.0005f;
-			xIK.AddChain(xRight);
-		}
-
-		// Arm IK chains for holding a gun. The RIGHT arm is driven to a body-anchored
-		// hold (with an end-effector orientation that squares the gun barrel forward);
-		// the LEFT arm reaches the gun's foregrip for a two-handed weapon. Both have
-		// NO target until a gun is picked up, so an unused chain is a no-op in Solve
-		// (the foot-IK demo and the gunless tests are unaffected). Tuned like the
-		// leg chains for clean convergence near full extension.
-		if (!xIK.HasChain("RightArm"))
-		{
-			Flux_IKChain xRightArm = Flux_IKSolver::CreateArmChain("RightArm",
-				"RightUpperArm", "RightLowerArm", "RightHand");
-			xRightArm.m_uMaxIterations = 30;
-			xRightArm.m_fTolerance = 0.0005f;
-			xIK.AddChain(xRightArm);
-		}
-		if (!xIK.HasChain("LeftArm"))
-		{
-			Flux_IKChain xLeftArm = Flux_IKSolver::CreateArmChain("LeftArm",
-				"LeftUpperArm", "LeftLowerArm", "LeftHand");
-			xLeftArm.m_uMaxIterations = 30;
-			xLeftArm.m_fTolerance = 0.0005f;
-			xIK.AddChain(xLeftArm);
-		}
 	}
 
 	static void AddClipState(Flux_AnimationStateMachine* pxSM,
