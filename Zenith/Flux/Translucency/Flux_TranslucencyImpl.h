@@ -11,6 +11,9 @@ class Flux_MeshInstance;
 class Flux_ShaderBinder;
 class Zenith_MaterialAsset;
 class Flux_RenderSceneSnapshot;
+class Flux_GraphicsImpl;
+class Flux_LightClusteringImpl;
+class Flux_IBLImpl;
 
 // Per-frame draw item resolved on the main thread during Prepare: one
 // translucent/additive SUBMESH (the gather walks every model's meshes and
@@ -50,6 +53,16 @@ public:
 	void BuildPipelines();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// ONE view's entire "Translucency" declaration. Driven once per ACTIVE
+	// FULL-PIPELINE view by SetupRenderGraph's ForEachActiveFullPipelineView walk,
+	// in ascending slot order. The graphics / light-clustering / IBL references and
+	// the CSM array handle are passed in rather than re-reached through g_xEngine:
+	// SetupRenderGraph already holds them hoisted, and this subsystem sits at its
+	// singleton-allowlist ceiling.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics,
+		Flux_LightClusteringImpl& xLightClustering, Flux_IBLImpl& xIBL,
+		Flux_TransientHandle xCSMArrayHandle);
 
 	// Phase 2: engine-owned uncullled snapshot injected at the composition root. The
 	// Prepare reads it instead of running its own ECS scan. Keeps this TU off the ratchet.

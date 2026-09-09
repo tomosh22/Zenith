@@ -2,6 +2,7 @@
 #include "Flux/Translucency/Flux_Translucency_Shaders.h"
 
 #include "Flux/Translucency/Flux_TranslucencyImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"	// per-view pass names — slot 0 returns the base literal by pointer identity
 #include "Core/Zenith_Engine.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -130,6 +131,70 @@ void Flux_TranslucencyImpl::Shutdown()
 	m_xShader.Reset();
 }
 
+void Flux_TranslucencyImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics,
+	Flux_LightClusteringImpl& xLightClustering, Flux_IBLImpl& xIBL, Flux_TransientHandle xCSMArrayHandle)
+{
+	// ONE view's entire forward-translucency declaration. Every resource is indexed
+	// by uSlot and the record side was ALREADY uSlot-parameterised
+	// (m_axDrawPackets[FLUX_MAX_RENDER_VIEWS], selected by the recording pass's
+	// slot), so the only per-slot branch in the whole declaration is the main-only
+	// Prepare below.
+	//
+	// Forward pass over the lit HDR scene — registered between SSAO and Fog in the
+	// setup walk (Flux_FeatureRegistry): glass must not be darkened by SSAO's
+	// post-hoc multiply, and fog must composite over it. READ_DEPTH is what gives
+	// the pass a depth attachment at all — the graph infers it from this read and
+	// binds that view's scene depth READ-ONLY (InferPassAttachments).
+	//
+	// No ClearTargets on any slot: "Apply Lighting" owns the main HDR clear and
+	// "Apply Lighting (Preview)" the preview one.
+	//
+	// The name comes from Flux_ViewPassName, which supplies the per-view uniqueness
+	// the graph's duplicate-name assert demands: slot 0 gets the base literal back
+	// by pointer identity, so the main row is still exactly "Translucency", and the
+	// preview slot composes "Translucency (Preview)" — byte-for-byte the literal
+	// this replaced.
+	const Flux_PassHandle xPass = xGraph.AddPass(Flux_ViewPassName("Translucency", uSlot), ExecuteTranslucency)
+		.View  (uSlot)
+		.Writes(xGraphics.GetHDRSceneTarget(uSlot),  RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (xGraphics.GetDepthAttachment(uSlot), RESOURCE_ACCESS_READ_DEPTH);
+
+	// ★ THE GATHER IS MAIN-ONLY, and `uSlot == kuFluxViewSlotMain` is the right
+	// discriminator here rather than a view PROPERTY, because what is being
+	// discriminated is OWNERSHIP of once-per-frame work: ONE GatherDrawPacket fills
+	// EVERY view's packet — the main packet from the snapshot walk (+ main-masked
+	// external items), the preview packet from the renderer's preserved external
+	// translucent items — and it CLEARS every packet first, so a second Prepare
+	// would re-gather the lot. Attached through SetPrepare rather than the builder's
+	// .Prepare because the builder temporary above died at its semicolon once the
+	// handle was captured.
+	if (uSlot == kuFluxViewSlotMain)
+	{
+		xGraph.SetPrepare(xPass, [](void* p){ g_xEngine.Translucency().GatherDrawPacket(p); });
+	}
+
+	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
+	// graph orders this pass after the cascade writers with a full-array barrier.
+	// Declared for EVERY view, not just the main one: the shader STATICALLY samples
+	// those persistent VIEW members, so the graph-Read validator demands the
+	// declaration even for a view whose flags gate the sampling off at runtime.
+	xGraph.ReadTransient(xPass, xCSMArrayHandle, RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
+
+	// Clustered light buffers (LightBuffer itself is not graph-tracked — see the
+	// DeferredShading declaration comment). Declared per view for the same reason
+	// as the CSM read above.
+	if (xLightClustering.IsInitialised())
+	{
+		xGraph.ReadBuffer(xPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
+			RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadBuffer(xPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
+			RESOURCE_ACCESS_READ_SRV);
+	}
+
+	// IBL textures (BRDF LUT + both double-buffered cubemaps).
+	xIBL.DeclareConsumerReads(xGraph, xPass);
+}
+
 // TODO(taa-translucent-velocity): this pass writes NO TAA motion vectors, and that is
 // a decision with evidence behind it, not an unfinished corner. Read this before
 // "completing" the velocity plumbing — the obvious change makes the picture worse.
@@ -192,60 +257,53 @@ void Flux_TranslucencyImpl::Shutdown()
 // "Translucency and Particles deliberately write NO velocity".
 void Flux_TranslucencyImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Forward pass over the lit HDR scene — registered between SSAO and Fog
-	// in the setup walk (Flux_FeatureRegistry): glass must not be darkened by
-	// SSAO's post-hoc multiply, and fog must composite over it. READ_DEPTH is
-	// what gives the pass a depth attachment at all — the graph infers it from
-	// this read and binds the scene depth READ-ONLY (InferPassAttachments).
+	// ONE "Translucency" pass per ACTIVE FULL-PIPELINE view, in ascending slot
+	// order. The registry decides membership by view PROPERTIES, never by slot
+	// number: slot 0 always qualifies (active + full-pipeline from construction),
+	// the preview slot joins while its owner has it up, and depth-only shadow
+	// cascades are never full-pipeline and never get a pass. Today that set is
+	// exactly {main} ∪ {preview if active} — which is what the hand-written call
+	// plus its `if (IsViewActive(preview))` block produced, in the same declaration
+	// order (per-slot-then-per-pass, and this feature declares exactly one pass per
+	// slot, so nothing can sit between a preview instance and its main twin).
+	//
+	// ★ WHY THE PREVIEW INSTANCE EXISTS AT ALL: unlike the scene-derived features,
+	// this one is not inert — the preview packet carries the renderer's preserved
+	// external translucent items, so the preview instance genuinely draws them.
+	// "Translucency" is also on the golden per-view pass list
+	// RT_RenderGraphViewStructure asserts.
+	//
+	// The callback is a CAPTURELESS LAMBDA written inside the member body rather
+	// than a file-static free function, matching Flux_HiZImpl::SetupRenderGraph:
+	// being captureless it converts to the registry's plain fn-pointer, so `this`,
+	// the graph and the ALREADY-hoisted subsystem references all travel through
+	// pCtx. Nothing in the walk re-reaches g_xEngine — this TU sat exactly on its
+	// engine-singleton allowlist ceiling, and the four hoists below are the ONLY
+	// reaches left in this function.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	const Flux_PassHandle xPass = xGraph.AddPass("Translucency", ExecuteTranslucency)
-		.Prepare([](void* p){ g_xEngine.Translucency().GatherDrawPacket(p); })
-		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (xGraphics.GetDepthAttachment(),      RESOURCE_ACCESS_READ_DEPTH);
-
-	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
-	// graph orders this pass after the cascade writers with a full-array barrier.
-	xGraph.ReadTransient(xPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
-
-	// Clustered light buffers (LightBuffer itself is not graph-tracked — see
-	// the DeferredShading declaration comment).
 	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
-	if (xLightClustering.IsInitialised())
-	{
-		xGraph.ReadBuffer(xPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
-			RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadBuffer(xPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
-			RESOURCE_ACCESS_READ_SRV);
-	}
-
-	// IBL textures (BRDF LUT + both double-buffered cubemaps).
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
-	xIBL.DeclareConsumerReads(xGraph, xPass);
+	// The CSM depth-array handle is a per-BUILD value shared by every view (one
+	// 4-cascade array, not a per-view resource), so it is read ONCE here rather
+	// than re-reached per slot.
+	const Flux_TransientHandle xCSMArrayHandle = g_xEngine.Shadows().GetCSMArrayHandle();
 
-	// Preview view (S5b): a second translucency instance over the preview view's
-	// HDR target + depth (NO ClearTargets — deferred already cleared the target).
-	// Same record callback — the pass's view slot selects the per-view packet +
-	// the preview VIEW set (whose flags gate shadow/cluster sampling off). The
-	// CSM/cluster/IBL reads are still declared: the shader STATICALLY samples
-	// those persistent VIEW members, so the graph-Read validator demands them.
-	// NO Prepare here — the main pass's gather above fills EVERY view's packet
-	// (a second Prepare would double-gather).
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	struct SetupCtx
 	{
-		const Flux_PassHandle xPreviewPass = xGraph.AddPass("Translucency (Preview)", ExecuteTranslucency)
-			.View(kuFluxViewSlotPreview)
-			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Reads (xGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_DEPTH);
-		xGraph.ReadTransient(xPreviewPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
-		if (xLightClustering.IsInitialised())
-		{
-			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
-				RESOURCE_ACCESS_READ_SRV);
-			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
-				RESOURCE_ACCESS_READ_SRV);
-		}
-		xIBL.DeclareConsumerReads(xGraph, xPreviewPass);
-	}
+		Flux_TranslucencyImpl*    m_pxThis;
+		Flux_RenderGraph*         m_pxGraph;
+		Flux_GraphicsImpl*        m_pxGraphics;
+		Flux_LightClusteringImpl* m_pxLightClustering;
+		Flux_IBLImpl*             m_pxIBL;
+		Flux_TransientHandle      m_xCSMArrayHandle;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics, &xLightClustering, &xIBL, xCSMArrayHandle };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, *xSetup.m_pxGraphics,
+			*xSetup.m_pxLightClustering, *xSetup.m_pxIBL, xSetup.m_xCSMArrayHandle);
+	}, &xCtx);
 }
 
 // Build one translucent packet entry from a draw source — mesh instance +
