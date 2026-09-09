@@ -107,9 +107,32 @@ the CPU ring, packs active slots into `[0..uActiveDecalCount-1]`, and uploads
 to the dynamic SSBO. The Apply shader's `SV_InstanceID` indexes the dense
 copy, never the sparse ring.
 
+## Per-view instantiation
+
+`SetupRenderGraph` declares the clone transient and the pass PAIR once per
+ACTIVE FULL-PIPELINE view, by driving
+`Flux_RenderViewRegistry::ForEachActiveFullPipelineView` over
+`Flux_DecalsImpl::SetupViewPasses` (one view per call, its two passes
+adjacent, ascending slot order). Membership is decided by view PROPERTIES,
+never by slot number: slot 0 always qualifies, a preview view joins while its
+owner has it up, and depth-only shadow cascades never do. Names come from
+`Flux_ViewPassName`, so slot 0 keeps the bare literals (`"Decal Normals
+Copy"` / `"Decal Apply"`) and every other slot composes `"<base> (<suffix>)"`.
+
+The normals clone is a per-slot transient (`m_axNormalsCopyHandles[]`), sized
+from `Flux_GraphicsImpl::GetViewSetupDims(uSlot)` — the same derivation
+`SetupTransients` sized that view's normalsAmbient MRT with, so the copy can
+never disagree with the MRT it clones. `ExecuteApply` binds it by the
+RECORDING pass's view slot.
+
+A non-main instance records NOTHING: decals are scene-derived, a preview
+view's flags carry no `FLUX_VIEW_FLAG_SCENE_CONTENT`, and both Execute
+callbacks early-out on any non-main slot. It exists because both bases are on
+the golden per-view pass list `RT_RenderGraphViewStructure` asserts.
+
 ## Idle-frame cost
 
-Both passes are always-enabled. We tried gating via
+Both passes are always-enabled, on every slot. We tried gating via
 `Flux_RenderGraph::SetEnabled` to skip work when `uActiveDecalCount == 0`,
 but the render graph deliberately skips Prepare callbacks for disabled
 passes (`Flux_RenderGraph_Execution.cpp:155`) — disabling the pass would
@@ -122,6 +145,13 @@ draws. If profiling later shows this idle cost is meaningful, the right
 fix is to add a permanently-enabled "tick" pass that owns Prepare and
 flips the visible passes' enable bits — but that complexity isn't
 warranted at v1.
+
+**The lifetime-tick Prepare is attached to the MAIN view's NormalsCopy pass
+ONLY.** It is once-per-frame work — it ages every decal by `dt`, dense-packs
+the survivors and uploads them — so a second instance would age every decal
+twice in one frame. `uSlot == kuFluxViewSlotMain` is therefore the
+discriminator inside `SetupViewPasses`; it is about OWNERSHIP of that work,
+not about what a preview view can render.
 
 ## Debug visualisation
 

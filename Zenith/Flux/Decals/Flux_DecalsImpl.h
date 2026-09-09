@@ -3,10 +3,12 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"	// FLUX_MAX_RENDER_VIEWS (per-view normals clones)
 #include "Maths/Zenith_Maths.h"
 
 class Zenith_TextureAsset;
 class Flux_RenderGraph;
+class Flux_GraphicsImpl;
 
 // ===== INSTANCE STRUCT (mirrors Flux_Decals_Apply.slang) =====
 //
@@ -63,6 +65,14 @@ public:
 	void Shutdown();
 	void BuildPipelines();
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// ONE view's entire "Decal Normals Copy" + "Decal Apply" declaration, clone
+	// transient included. Driven once per ACTIVE FULL-PIPELINE view by
+	// SetupRenderGraph's ForEachActiveFullPipelineView walk, in ascending slot
+	// order. The graphics reference is passed in rather than re-reached through
+	// g_xEngine: SetupRenderGraph already holds it hoisted, and this subsystem was
+	// sitting on its singleton-allowlist ceiling when the walk was written.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics);
 
 	// Promoted from a file-static helper; VulkanMemory is reached via g_xEngine
 	// at point of use. Public because the (former free-function) call site sits
@@ -131,14 +141,15 @@ public:
 	u_int                       m_uActiveDecalCount = 0;
 
 	Flux_RenderGraph*           m_pxGraph = nullptr;
-	Flux_TransientHandle        m_xNormalsCopyHandle;
-	// Per-view normals clone for the preview view's parity pass pair. Created
-	// (and thus valid) only while the preview view is active at setup time —
-	// referenced solely by the "(Preview)" pass declarations, whose Executes
-	// early-out for non-main views.
-	Flux_TransientHandle        m_xPreviewNormalsCopyHandle;
-	Flux_PassHandle             m_xNormalsCopyPass;
-	Flux_PassHandle             m_xApplyPass;
+	// The normals clone, ONE PER VIEW SLOT. A slot's entry is created (and thus
+	// valid) only for the views SetupRenderGraph declared a pass pair for that
+	// build — slot 0 always, every other full-pipeline slot while its owner has
+	// the view up. ExecuteApply indexes it by the RECORDING pass's view slot, so
+	// the record side can never pair one view's cube draw with another view's
+	// clone. (There are deliberately no cached PASS handles beside it: the pair
+	// this feature declares is always-enabled and nothing ever re-read the two
+	// members that used to sit here.)
+	Flux_TransientHandle        m_axNormalsCopyHandles[FLUX_MAX_RENDER_VIEWS];
 
 	Flux_Shader                 m_xNormalsCopyShader;
 	Flux_Shader                 m_xApplyShader;

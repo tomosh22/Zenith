@@ -3,6 +3,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Decals/Flux_DecalsImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"	// per-view pass names — slot 0 returns the base literal by pointer identity
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -423,9 +424,13 @@ static void ExecuteNormalsCopy(Flux_CommandBuffer* pxCommandList, void*)
 	// cannot capture, so it re-enters via g_xEngine.Decals() to reach the
 	// singleton instance; FluxGraphics is reached via g_xEngine at point of
 	// use (mirrors ExecuteSSAOGenerate).
-	// Per-view parity: decals are scene-derived and the preview view's flags
-	// carry no FLUX_VIEW_FLAG_SCENE_CONTENT — the "(Preview)" pass pair exists
-	// for structural parity and records nothing.
+	// RECORD-TIME EARLY-OUT, and it must stay: decals are scene-derived and a
+	// non-main view's flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT, so a non-main
+	// instance (which exists because "Decal Normals Copy" is on the oracle's golden
+	// pass list — see SetupRenderGraph) records nothing. It is also what stops a
+	// non-main pass sampling the MAIN G-buffer into that view's own target: the
+	// GetGBufferSRV call below passes no view slot, so it resolves to the main
+	// view's normals whatever slot is recording.
 	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
 		return;
 
@@ -451,7 +456,12 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	// the singleton instance; FluxGraphics is reached via g_xEngine at point
 	// of use (mirrors ExecuteSSAOGenerate).
 	// Per-view parity: early-out for non-main views (see ExecuteNormalsCopy).
-	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
+	// The slot is kept rather than compared-and-dropped: the normals clone is a
+	// PER-VIEW transient now, so the SRV bind below indexes it by the RECORDING
+	// pass's slot instead of naming one member. Today the early-out means that is
+	// always the main slot; the indexing is what keeps it true if it ever is not.
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+	if (uViewSlot != kuFluxViewSlotMain)
 		return;
 
 	Flux_DecalsImpl& xDecals = g_xEngine.Decals();
@@ -468,7 +478,7 @@ static void ExecuteApply(Flux_CommandBuffer* pxCommandList, void*)
 	namespace AP = Flux_Generated_Decals::Decals_Apply;
 
 	xBinder.BindSRV(AP::hg_xDepthTex,       g_xEngine.FluxGraphics().GetDepthStencilSRV());
-	xBinder.BindSRV(AP::hg_xNormalsCopyTex, &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_xNormalsCopyHandle).SRV());
+	xBinder.BindSRV(AP::hg_xNormalsCopyTex, &xDecals.m_pxGraph->GetTransientAttachment(xDecals.m_axNormalsCopyHandles[uViewSlot]).SRV());
 	xBinder.BindSRV_Buffer(AP::hDecalBuffer, xDecals.m_xDecalBuffer.GetSRV());
 
 	// Brush mask is sampled per-decal via g_axTextures[asuint(m_xParams.z)] —
@@ -519,84 +529,119 @@ static void PrepareDecals(void*)
 
 // ===== GRAPH SETUP =====
 
-void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_DecalsImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics)
 {
-	m_pxGraph = &xGraph;
-
+	// ONE view's normals clone + pass pair. Every resource is indexed by uSlot and
+	// the only per-slot branch in the whole declaration is the main-only Prepare.
+	//
+	// The clone is sized from GetViewSetupDims — the ONE derivation SetupTransients
+	// sized THIS view's normalsAmbient MRT with — so the copy can never disagree
+	// with the MRT it clones. For slot 0 that resolves to GetRenderDims(), i.e. the
+	// GetRenderWidth/GetRenderHeight pair this replaced, temporal-upscaling latch
+	// included (HiZ/SSAO/SSR/SSGI all made the same move for the same reason).
 	Flux_TransientTextureDesc xDesc;
-	// RENDER dims: the NormalsCopy clones the render-res normalsAmbient MRT and the Apply pass
-	// writes the render-res G-buffer, so this transient must match them (== output when off).
-	xDesc.m_uWidth       = g_xEngine.FluxGraphics().GetRenderWidth();
-	xDesc.m_uHeight      = g_xEngine.FluxGraphics().GetRenderHeight();
+	const Zenith_Maths::UVector2 xDims = xGraphics.GetViewSetupDims(uSlot);
+	xDesc.m_uWidth       = xDims.x;
+	xDesc.m_uHeight      = xDims.y;
 	xDesc.m_eFormat      = k_eNormalsCopyFormat;
 	xDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-	m_xNormalsCopyHandle = xGraph.CreateTransient(xDesc);
+	m_axNormalsCopyHandles[uSlot] = xGraph.CreateTransient(xDesc);
 
-	// NormalsCopy — clones live normalsAmbient into the transient. The
-	// attached Prepare callback also runs the per-frame lifetime tick,
-	// dense-packs active slots into the GPU staging array, and uploads.
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	m_xNormalsCopyPass = xGraph.AddPass("Decal Normals Copy", ExecuteNormalsCopy)
-		.Prepare(PrepareDecals)
+	// NormalsCopy — clones this view's live normalsAmbient into the transient.
+	//
+	// The names come from Flux_ViewPassName, which supplies the per-view uniqueness
+	// the graph's duplicate-name assert demands: slot 0 gets the base literals back
+	// by pointer identity, so the main rows are still exactly "Decal Normals Copy"
+	// and "Decal Apply", and the preview slot composes "… (Preview)" — byte-for-byte
+	// the literals this replaced.
+	//
+	// The declared ClearTargets is on the clone (the pass's only WRITE), which is
+	// decal-private on every slot, so it clears nothing anyone else owns.
+	const Flux_PassHandle xNormalsCopyPass = xGraph.AddPass(Flux_ViewPassName("Decal Normals Copy", uSlot), ExecuteNormalsCopy)
+		.View           (uSlot)
 		.ClearTargets()
-		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_READ_SRV)
-		.WritesTransient(m_xNormalsCopyHandle,                                       RESOURCE_ACCESS_WRITE_RTV);
+		.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uSlot), RESOURCE_ACCESS_READ_SRV)
+		.WritesTransient(m_axNormalsCopyHandles[uSlot],                               RESOURCE_ACCESS_WRITE_RTV);
 
-	// Apply — instanced cube into all 3 G-buffer MRTs. Reads depth + the
-	// cloned normals; writes diffuse / normalsAmbient / material under
-	// per-attachment blend.
-	m_xApplyPass = xGraph.AddPass("Decal Apply", ExecuteApply)
-		.Reads         (xGraphics.GetDepthAttachment(),                      RESOURCE_ACCESS_READ_SRV)
-		.ReadsTransient(m_xNormalsCopyHandle,                                      RESOURCE_ACCESS_READ_SRV)
-		.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV);
-
-	// Both passes are always-enabled. The render graph skips Prepare
-	// callbacks for disabled passes (Flux_RenderGraph_Execution.cpp:144),
-	// so we cannot gate these via SetEnabled — that would prevent the
-	// active count from ever lifting off zero. Idle-frame cost is bounded
-	// by the early-out at the top of each Execute callback (no commands
-	// recorded when active==0; only the render-pass setup runs).
-
-	// Preview view (S5c): parity pass pair against a PER-VIEW normals clone +
-	// the preview MRTs/depth. Decals are scene-derived (the preview view's
-	// flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT), so both Executes early-out
-	// for non-main views and record nothing. CRITICAL: the decal lifetime-tick
-	// Prepare stays ONLY on the main-view NormalsCopy pass above (see
-	// Decals/CLAUDE.md "Idle-frame cost" — a second Prepare would double-tick
-	// lifetimes). No ClearTargets on the Apply instance — the preview MRT
-	// clears belong to the preview geometry passes; the NormalsCopy clone is
-	// decal-private, so its declared clear (mirroring the main pass) is
-	// harmless. The clone transient is legal even though nothing samples it in
-	// practice: ValidateUnusedTransients only requires that some pass
-	// references it, and ValidateOrphanedReads sees an enabled writer.
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	// ★ THE LIFETIME TICK IS MAIN-ONLY, and `uSlot == kuFluxViewSlotMain` is the
+	// right discriminator here rather than a view PROPERTY, because what is being
+	// discriminated is OWNERSHIP of once-per-frame work: PrepareDecals ticks every
+	// decal's remaining lifetime by dt, dense-packs the survivors and uploads them,
+	// so a second Prepare would age every decal TWICE in one frame (see
+	// Decals/CLAUDE.md, "Idle-frame cost"). Attached through SetPrepare rather than
+	// the builder's .Prepare because the builder temporary above died at its
+	// semicolon once the handle was captured.
+	if (uSlot == kuFluxViewSlotMain)
 	{
-		// Same derivation SetupTransients sized the preview normals MRT with — the
-		// clone is a copy of it, so a mismatch would be a silent rescale.
-		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
-		Flux_TransientTextureDesc xPreviewDesc;
-		xPreviewDesc.m_uWidth       = xPreviewDims.x;
-		xPreviewDesc.m_uHeight      = xPreviewDims.y;
-		xPreviewDesc.m_eFormat      = k_eNormalsCopyFormat;
-		xPreviewDesc.m_uMemoryFlags = (1u << MEMORY_FLAGS__SHADER_READ);
-		m_xPreviewNormalsCopyHandle = xGraph.CreateTransient(xPreviewDesc);
-
-		xGraph.AddPass("Decal Normals Copy (Preview)", ExecuteNormalsCopy)
-			.View           (kuFluxViewSlotPreview)
-			.ClearTargets()
-			.Reads          (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV)
-			.WritesTransient(m_xPreviewNormalsCopyHandle,                                                 RESOURCE_ACCESS_WRITE_RTV);
-
-		xGraph.AddPass("Decal Apply (Preview)", ExecuteApply)
-			.View          (kuFluxViewSlotPreview)
-			.Reads         (xGraphics.GetDepthAttachment(kuFluxViewSlotPreview),                         RESOURCE_ACCESS_READ_SRV)
-			.ReadsTransient(m_xPreviewNormalsCopyHandle,                                                 RESOURCE_ACCESS_READ_SRV)
-			.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV);
+		xGraph.SetPrepare(xNormalsCopyPass, PrepareDecals);
 	}
+
+	// Apply — instanced cube into all 3 G-buffer MRTs. Reads depth + the cloned
+	// normals; writes diffuse / normalsAmbient / material under per-attachment
+	// blend. NO ClearTargets on any slot — the MRT clears belong to that view's
+	// geometry passes.
+	xGraph.AddPass(Flux_ViewPassName("Decal Apply", uSlot), ExecuteApply)
+		.View          (uSlot)
+		.Reads         (xGraphics.GetDepthAttachment(uSlot),                      RESOURCE_ACCESS_READ_SRV)
+		.ReadsTransient(m_axNormalsCopyHandles[uSlot],                            RESOURCE_ACCESS_READ_SRV)
+		.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes        (xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       uSlot), RESOURCE_ACCESS_WRITE_RTV);
+}
+
+void Flux_DecalsImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// The graph back-ref is per-BUILD, not per-view — ExecuteApply resolves EVERY
+	// view's clone transient through it — so it is set once, first, and outside the
+	// walk.
+	m_pxGraph = &xGraph;
+
+	// ONE clone + pass PAIR per ACTIVE FULL-PIPELINE view, in ascending slot order,
+	// each view's two passes adjacent. The registry decides membership by view
+	// PROPERTIES, never by slot number: slot 0 always qualifies (active +
+	// full-pipeline from construction), the preview slot joins while its owner has
+	// it up (so its clone transient exists exactly when its passes do — the graph's
+	// unused-transient validation demands that), and depth-only shadow cascades are
+	// never full-pipeline and never get a pair. Today that set is exactly
+	// {main} ∪ {preview if active} — which is what the two hand-written blocks this
+	// replaced produced, in the same declaration order.
+	//
+	// Both passes are always-ENABLED on every slot. The render graph skips Prepare
+	// callbacks for disabled passes, so gating them via SetEnabled would stop the
+	// lifetime tick and the active count could never lift off zero again (see
+	// Decals/CLAUDE.md, "Idle-frame cost"). Idle cost is bounded by the early-out at
+	// the top of each Execute callback: no commands recorded when active == 0, only
+	// the render-pass setup runs.
+	//
+	// ★ WHY A NON-MAIN INSTANCE EXISTS AT ALL: nothing in the graph needs it. No
+	// pass reads what it writes, it satisfies no layout requirement, and both
+	// Executes early-out on every non-main slot (decals are scene-derived and a
+	// preview view's flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT), so it records
+	// nothing. It exists because "Decal Normals Copy" and "Decal Apply" are on the
+	// golden per-view pass list RT_RenderGraphViewStructure asserts — that is the
+	// whole reason, and it is worth stating plainly rather than calling it
+	// "structural parity".
+	//
+	// The callback is a CAPTURELESS LAMBDA written inside the member body rather
+	// than a file-static free function, matching Flux_HiZImpl::SetupRenderGraph:
+	// being captureless it converts to the registry's plain fn-pointer, so `this`,
+	// the graph and the ALREADY-hoisted graphics reference all travel through pCtx.
+	// Nothing in the walk re-reaches g_xEngine — this TU sat exactly on its
+	// engine-singleton allowlist ceiling, and the hoist below is the only reach left
+	// in this function (the transient's dims used to cost two more).
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	struct SetupCtx
+	{
+		Flux_DecalsImpl*   m_pxThis;
+		Flux_RenderGraph*  m_pxGraph;
+		Flux_GraphicsImpl* m_pxGraphics;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, *xSetup.m_pxGraphics);
+	}, &xCtx);
 }
 
 void Flux_DecalsImpl::Reset()
