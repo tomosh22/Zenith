@@ -4,6 +4,7 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 
 class Flux_RenderGraph;
+class Flux_GraphicsImpl;
 
 // Phase 9: state + behaviour for top-level Fog orchestrator subsystem.
 class Flux_FogImpl
@@ -25,6 +26,14 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// ONE view's "Fog_Simple" declaration. Driven once per ACTIVE FULL-PIPELINE
+	// view by SetupRenderGraph's ForEachActiveFullPipelineView walk, in ascending
+	// slot order; the five froxel/raymarch/god-ray passes are NOT in the walk (see
+	// SetupRenderGraph). The graphics reference is passed in rather than re-reached
+	// through g_xEngine: SetupRenderGraph already holds it hoisted, and this
+	// subsystem sits at its singleton-allowlist ceiling.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics);
+
 	void ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph);
 
 	// NOTE: the bespoke game-override path (SetExternallyOverridden /
@@ -35,6 +44,14 @@ public:
 	// touching their base enable bits. ApplyTechniqueSelectionToGraph keeps the
 	// base bits current; lifting the override restores the active technique exactly.
 
+	// ★ THE MAIN VIEW'S "Fog_Simple" HANDLE ONLY — deliberately not a per-slot
+	// array. ApplyTechniqueSelectionToGraph disables this pass whenever the
+	// technique is not 0; every other view's instance must stay PERMANENTLY
+	// ENABLED, because the five alternative technique passes are main-only, so
+	// toggling a non-main instance would leave that view with no fog pass rather
+	// than a different one — and the per-view oracle samples GetPasses(), which
+	// still lists a disabled pass, so nothing would catch it. Full reasoning at
+	// Flux_FogImpl::SetupViewPasses.
 	Flux_PassHandle m_xSimpleFogPass;
 	Flux_PassHandle m_xFroxelInjectPass;
 	Flux_PassHandle m_xFroxelLightPass;

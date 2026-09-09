@@ -11,6 +11,7 @@
 #include "Flux/Fog/Flux_GodRaysFogImpl.h"
 #include "Flux/Fog/Flux_RaymarchFogImpl.h"
 #include "Flux/Fog/Flux_FroxelFogImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"   // per-view pass names — slot 0 returns the base literal by pointer identity
 #include "Flux/Shadows/Flux_ShadowsImpl.h"
 #include "Core/FrameContext.h"
 
@@ -186,10 +187,12 @@ void Flux_FogImpl::ApplyTechniqueSelectionToGraph(Flux_RenderGraph& xGraph)
 static void ExecuteSimpleFog(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	// Per-view parity: fog is scene-derived and the preview view's flags carry no
-	// FLUX_VIEW_FLAG_SCENE_CONTENT, so only the main view ever renders fog — the
-	// "Fog_Simple (Preview)" instance exists for structural parity and records
-	// nothing.
+	// RECORD-TIME EARLY-OUT, and it must stay: fog is scene-derived, a non-main
+	// view's flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT, and the binds below are
+	// MAIN's depth SRV — only this early-out stops a non-main instance sampling
+	// main resources into a non-main target. The "Fog_Simple (Preview)" instance
+	// (which exists because the oracle's golden pass list carries "Fog_Simple" —
+	// see SetupRenderGraph) therefore records nothing.
 	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
 	{
 		return;
@@ -266,6 +269,47 @@ static void ExecuteGodRays(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	g_xEngine.GodRaysFog().Render(pxCommandList);
 }
 
+void Flux_FogImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics)
+{
+	// ONE view's simple-fog declaration. Both resources are indexed by uSlot and
+	// there is no per-slot branch in the declaration itself: the difference between
+	// the main view's pass and a preview view's pass is the slot and nothing else.
+	// The name comes from Flux_ViewPassName, which supplies the per-view uniqueness
+	// the graph's duplicate-name assert demands (slot 0 gets the base literal back
+	// by pointer identity, so the main row is still exactly "Fog_Simple", and the
+	// preview slot composes "Fog_Simple (Preview)" — byte-for-byte the literal this
+	// replaced). No ClearTargets on any slot — the preview HDR clear is owned by
+	// "Apply Lighting (Preview)" and a declared clear here would clobber the lit
+	// result (declared clears still run for passes that record nothing).
+	const Flux_PassHandle xPass = xGraph.AddPass(Flux_ViewPassName("Fog_Simple", uSlot), ExecuteSimpleFog)
+		.View  (uSlot)
+		.Writes(xGraphics.GetHDRSceneTarget(uSlot),  RESOURCE_ACCESS_WRITE_RTV)
+		.Reads (xGraphics.GetDepthAttachment(uSlot), RESOURCE_ACCESS_READ_SRV);
+
+	// ★ ONLY THE MAIN INSTANCE'S HANDLE IS STORED, so only the main instance is
+	// ever toggled by ApplyTechniqueSelectionToGraph and every other view's
+	// instance stays PERMANENTLY ENABLED. That is exactly the behaviour this
+	// replaced — the preview pass's handle was discarded at the old call site —
+	// and it is kept DELIBERATELY, not by omission:
+	//   * THE TECHNIQUE OPTION PICKS WHICH TECHNIQUE WRITES THE MAIN HDR. A
+	//     non-main view has no froxel / raymarch / god-rays instance to switch TO
+	//     (those five passes are main-only, see SetupRenderGraph), so disabling
+	//     its Fog_Simple at techniques 1-3 would leave that view with NO fog pass
+	//     rather than a different one — which is not what the option means.
+	//   * AND NOTHING WOULD CATCH IT. The per-view oracle samples
+	//     Flux_RenderGraph::GetPasses(), which still contains a disabled pass
+	//     (SetEnabled only flips m_bEnabled on an already-added pass), so its
+	//     golden list would stay green while the pass silently left the execution
+	//     order at any technique but 0.
+	//   * The cost of leaving it enabled is a render-pass begin/end on a 512²
+	//     target and no draw at all — ExecuteSimpleFog early-outs.
+	// Hence no per-slot handle array and no SetEnabled over one.
+	if (uSlot == kuFluxViewSlotMain)
+	{
+		m_xSimpleFogPass = xPass;
+	}
+}
+
 void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// All fog technique passes are registered, but only the active technique's
@@ -290,9 +334,53 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// stored handles (s_x…Pass). Handles captured via the builder's implicit
 	// Flux_PassHandle conversion.
 
-	m_xSimpleFogPass = xGraph.AddPass("Fog_Simple", ExecuteSimpleFog)
-		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
-		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	// ONE "Fog_Simple" pass per ACTIVE FULL-PIPELINE view, in ascending slot order
+	// (the registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies, the preview slot joins while its owner has it up,
+	// and depth-only shadow cascades are never full-pipeline). Today that set is
+	// exactly {main} ∪ {preview if active} — the same two passes the hand-written
+	// call plus its trailing `if (IsViewActive(preview))` block produced.
+	//
+	// ★ THE PREVIEW INSTANCE NOW SITS IMMEDIATELY AFTER THE MAIN ONE — five passes
+	// EARLIER in declaration order than it used to (it was declared after
+	// Fog_GodRays). That move is INERT: its only declarations are the PREVIEW
+	// view's HDR target and depth, which are disjoint from every resource the five
+	// technique passes below touch (main HDR, main depth, the froxel grids, the CSM
+	// array), so no ordering edge between any two passes changes; feature setup
+	// steps run sequentially, so its position relative to other features' passes is
+	// unchanged; and it records nothing at all (see ExecuteSimpleFog).
+	//
+	// ★ WHY THE PREVIEW INSTANCE EXISTS AT ALL: nothing in the graph needs it. No
+	// pass reads what it writes, it satisfies no layout requirement, and
+	// ExecuteSimpleFog early-outs on every non-main slot. It exists because
+	// "Fog_Simple" is on the golden per-view pass list RT_RenderGraphViewStructure
+	// asserts — that is the whole reason, and it is worth stating plainly rather
+	// than calling it "structural parity".
+	//
+	// The five froxel / raymarch / god-rays passes are deliberately OUTSIDE the
+	// walk: they write SCALAR (single-instance) resources — the shared froxel
+	// density / lighting / scattering grids — so a second instance would be a
+	// second writer of one grid per frame, and their 3D volume memory and cost are
+	// unjustified for a 512² single-mesh preview that never wants volumetrics.
+	//
+	// The callback is a CAPTURELESS LAMBDA written inside the member body rather
+	// than a file-static free function, matching Flux_HiZImpl::SetupRenderGraph:
+	// being captureless it converts to the registry's plain fn-pointer, so `this`,
+	// the graph and the ALREADY-hoisted graphics reference all travel through
+	// pCtx. Nothing in the walk re-reaches g_xEngine — this TU sits exactly on its
+	// engine-singleton allowlist ceiling.
+	struct SetupCtx
+	{
+		Flux_FogImpl*      m_pxThis;
+		Flux_RenderGraph*  m_pxGraph;
+		Flux_GraphicsImpl* m_pxGraphics;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, *xSetup.m_pxGraphics);
+	}, &xCtx);
 
 	m_xFroxelInjectPass = xGraph.AddPass("Fog_FroxelInject", ExecuteFroxelInject)
 		.WritesTransient(xFroxelFog.GetDensityGridHandle(), RESOURCE_ACCESS_WRITE_UAV);
@@ -326,23 +414,6 @@ void Flux_FogImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	m_xGodRaysPass = xGraph.AddPass("Fog_GodRays", ExecuteGodRays)
 		.Writes(xGraphics.GetHDRSceneTarget(),       RESOURCE_ACCESS_WRITE_RTV)
 		.Reads (xGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
-
-	// Preview view (S5c): a structural-parity instance of the simple-fog pass
-	// ONLY — the froxel 3D volumes / raymarch / god-rays are deliberately NOT
-	// duplicated (their grid memory and cost are unjustified for a 512²
-	// single-mesh preview, which never wants volumetrics). Fog is scene-derived
-	// and the preview view's flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT, so
-	// ExecuteSimpleFog early-outs for non-main views and this pass renders
-	// nothing. No ClearTargets — the preview HDR clear is owned by
-	// "Apply Lighting (Preview)" and a declared clear here would clobber the
-	// lit result (declared clears still run for passes that record nothing).
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
-	{
-		xGraph.AddPass("Fog_Simple (Preview)", ExecuteSimpleFog)
-			.View  (kuFluxViewSlotPreview)
-			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview),  RESOURCE_ACCESS_WRITE_RTV)
-			.Reads (xGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-	}
 
 	// A game that overrides fog force-disables owner "Fog" on the graph; that
 	// overlay persists across graph rebuilds (it is NOT cleared by Clear()), so a

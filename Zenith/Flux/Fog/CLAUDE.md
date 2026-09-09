@@ -160,7 +160,7 @@ Each per-stage file is a single `.slang` module (vertex/fragment/compute entry p
 
 ## Pass placement
 
-Volume fog registers **six** passes with the render graph up front — one `Fog_Simple`, three Froxel passes (`Fog_FroxelInject` / `Fog_FroxelLight` / `Fog_FroxelApply`), one `Fog_Raymarch` and one `Fog_GodRays`. `ApplyTechniqueSelectionToGraph` toggles which passes are enabled per frame (only the active technique's passes run). Ordering comes from declared Read/Write dependencies, not from any enum. The Froxel rows below are its three passes:
+Volume fog registers **six** passes with the render graph up front **for the main view** (plus one `Fog_Simple` per additional active full-pipeline view — see *Per-view instantiation* below) — one `Fog_Simple`, three Froxel passes (`Fog_FroxelInject` / `Fog_FroxelLight` / `Fog_FroxelApply`), one `Fog_Raymarch` and one `Fog_GodRays`. `ApplyTechniqueSelectionToGraph` toggles which passes are enabled per frame (only the active technique's passes run). Ordering comes from declared Read/Write dependencies, not from any enum. The Froxel rows below are its three passes:
 
 | Pass | Type | Reads | Writes |
 |------|------|-------|--------|
@@ -169,6 +169,58 @@ Volume fog registers **six** passes with the render graph up front — one `Fog_
 | Application pass | graphics | froxel lighting and scattering volumes, scene depth | HDR scene |
 
 The application pass naturally runs after deferred shading writes the HDR scene and before tonemap reads it.
+
+### Per-view instantiation (`Fog_Simple` only)
+
+`Flux_FogImpl::SetupRenderGraph` declares `Fog_Simple` once per ACTIVE
+FULL-PIPELINE view by driving
+`Flux_GraphicsImpl::RenderViews().ForEachActiveFullPipelineView(...)`, in
+ascending slot order — the registry decides membership by view PROPERTIES, never
+by slot number, so depth-only shadow cascades never get a fog pass and the
+material-preview slot joins only while its owner has it up. Today that set is
+`{main} ∪ {preview if active}`, so the six registered passes above become seven
+while a preview is up. Names come from `Flux_ViewPassName(base, uSlot)`
+(`Flux/RenderViews/Flux_ViewPassNames.h`): slot 0 gets the base literal back by
+pointer identity, so the main row is still exactly `Fog_Simple`, and the preview
+slot composes `Fog_Simple (Preview)`.
+
+**The five froxel / raymarch / god-rays passes stay OUTSIDE that walk.** They
+write the shared froxel density / lighting / scattering grids, which are SCALAR
+resources — one grid, not one per view — so a second instance would be a second
+writer of the same grid in one frame; and their 3D volume memory and cost are
+unjustified for a 512² single-mesh preview that never wants volumetrics.
+
+**Why the preview instance exists at all:** nothing in the graph needs it. No
+pass reads what it writes, it satisfies no layout requirement, and
+`ExecuteSimpleFog` early-outs on every non-main slot (fog is scene-derived, and a
+non-main view's flags carry no `FLUX_VIEW_FLAG_SCENE_CONTENT`), so it records
+nothing. It exists because `"Fog_Simple"` is on the golden per-view pass list
+`Games/RenderTest/Tests/Test_RenderGraphViewStructure.cpp`
+(`RT_RenderGraphViewStructure`) asserts.
+
+★ **The preview instance is PERMANENTLY ENABLED, and that is deliberate.**
+`Flux_FogImpl` stores only the MAIN view's handle (`m_xSimpleFogPass`), so
+`ApplyTechniqueSelectionToGraph`'s `SetEnabled(m_xSimpleFogPass, uTechnique == 0)`
+toggles the main pass alone — which is exactly what the code before the per-view
+walk did (it discarded the preview pass's handle). Do NOT extend that toggle over
+a per-slot handle array:
+
+* The technique option picks **which technique writes the MAIN HDR**. A non-main
+  view has no froxel / raymarch / god-rays instance to switch to — those five
+  passes are main-only — so disabling its `Fog_Simple` at techniques 1-3 would
+  leave that view with *no* fog pass rather than a different one.
+* **Nothing would catch it.** `RT_RenderGraphViewStructure` samples
+  `Flux_RenderGraph::GetPasses()`, which still contains a disabled pass
+  (`SetEnabled` only flips `m_bEnabled` on an already-added pass), so the golden
+  list stays green while the pass silently leaves the execution order at any
+  technique but 0.
+* Leaving it enabled costs a render-pass begin/end on a 512² target and no draw
+  at all — `ExecuteSimpleFog` early-outs.
+
+★ **`ExecuteSimpleFog`'s `!= kuFluxViewSlotMain → return` early-out is
+load-bearing, not decoration.** The record body binds MAIN's depth SRV
+(`xGfx.GetDepthStencilSRV()`); only that early-out stops a non-main instance
+sampling main resources into a non-main target.
 
 ### Game override (generic)
 
