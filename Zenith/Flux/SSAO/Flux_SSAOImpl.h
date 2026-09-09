@@ -27,10 +27,13 @@ struct Flux_SSAOSelection
 // ZENITH_TOOLS hot-reload callback) cannot capture state, so they re-enter via
 // g_xEngine.SSAO() to reach this singleton instance.
 //
-// S5b: the raw/filtered occlusion chain and committed output selector are
-// per-render-view. Slot 0 follows the swapchain and preview follows its fixed
-// view size; both use the committed half/quarter divisor. uViewSlot defaults
-// keep single-view callers unchanged.
+// The raw/filtered occlusion chain and the committed output selector are
+// per-render-view. SetupRenderGraph builds one chain per ACTIVE FULL-PIPELINE
+// view by driving Flux_RenderViewRegistry::ForEachActiveFullPipelineView, each
+// at that view's Flux_GraphicsImpl::GetViewSetupDims (slot 0 resolves to the
+// render dims; every other qualifying slot to its own) divided by the committed
+// half/quarter divisor. No slot number is special-cased anywhere in the walk.
+// uViewSlot defaults keep single-view callers unchanged.
 class Flux_SSAOImpl
 {
 public:
@@ -79,9 +82,11 @@ public:
 	Flux_RenderGraph*    m_pxGraph = nullptr;
 
 private:
-	// Per-view raw + legacy/separable filter chains (S5b): called for the main
-	// view at swapchain dims, then for the preview view at
-	// kuFLUX_PREVIEW_VIEW_SIZE² only while it is active.
+	// Per-view raw + legacy/separable filter chains. Called once per ACTIVE
+	// FULL-PIPELINE view by SetupRenderGraph's ForEachActiveFullPipelineView
+	// walk, in ascending slot order, at the dims GetViewSetupDims returns for
+	// that slot. xSelection is the ONE snapshot taken before the walk, so no two
+	// views can commit different blur algorithms or divisors.
 	void SetupViewPasses(
 		Flux_RenderGraph& xGraph,
 		u_int uViewSlot,

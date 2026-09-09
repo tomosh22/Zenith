@@ -8,6 +8,7 @@
 #include "Flux/Flux_RendererImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/SSAO.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
@@ -317,35 +318,54 @@ static Flux_SSAOSelection GetLiveSSAOSelection()
 
 void Flux_SSAOImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// The graph back-ref is per-BUILD, not per-view — every view's attachment
+	// accessors resolve their transients through it — so it is set once, first,
+	// and outside the walk.
 	m_pxGraph = &xGraph;
-	// Snapshot graph-shaping debug/options once so main and preview cannot
-	// commit different algorithms or dimensions if a UI toggle lands mid-setup.
+
+	// Snapshot the graph-shaping debug/options ONCE, BEFORE the walk. Blur
+	// on/off, the blur algorithm and the resolution divisor each shape the
+	// transients AND the committed output handle, so every view must be built
+	// from the SAME value; reading them inside the walk would let a UI toggle
+	// landing mid-setup give one view a legacy blur chain and the next a
+	// separable one, at different dimensions.
 	const Flux_SSAOSelection xSelection = GetLiveSSAOSelection();
 
-	// Main view at swapchain dims (byte-equivalent to the historical
-	// single-view path), then the preview view at its own dims — only while
-	// active, so its transients exist exactly when its passes do (the graph's
-	// unused-transient validation demands this). Both come from GetViewSetupDims,
-	// the ONE derivation SetupTransients sized each view's G-buffer/depth with, so
-	// these passes can never disagree with the targets they read; the preview slot
-	// is active inside this branch, hence its dims are staged.
+	// ONE chain per ACTIVE FULL-PIPELINE view, in ascending slot order. The
+	// registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies (active + full-pipeline from construction), the
+	// preview slot joins while its owner has it up (so its transients exist
+	// exactly when its passes do — the graph's unused-transient validation
+	// demands that), and depth-only shadow cascades are never full-pipeline and
+	// never get a chain. Today that set is exactly {main} ∪ {preview if active},
+	// which is what the two hand-written calls this replaced produced.
+	//
+	// Every view's dims come from GetViewSetupDims — the ONE derivation
+	// SetupTransients sized that view's G-buffer and depth with — so an SSAO
+	// chain can never disagree with the targets it reads. Slot 0 resolves to the
+	// render dims, which is exactly the GetRenderWidth/GetRenderHeight pair the
+	// hand-written main call passed.
+	//
+	// The callback is a CAPTURELESS LAMBDA written here rather than a file-static
+	// free function on purpose: SetupViewPasses is private, and a closure declared
+	// inside a member body inherits the class's access. Being captureless (so it
+	// converts to the registry's plain fn-pointer), `this`, the graph, the hoisted
+	// graphics reference and the snapshot all travel through pCtx.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	SetupViewPasses(
-		xGraph,
-		kuFluxViewSlotMain,
-		xGraphics.GetRenderWidth(),
-		xGraphics.GetRenderHeight(),
-		xSelection);
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	struct SetupCtx
 	{
-		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
-		SetupViewPasses(
-			xGraph,
-			kuFluxViewSlotPreview,
-			xPreviewDims.x,
-			xPreviewDims.y,
-			xSelection);
-	}
+		Flux_SSAOImpl*            m_pxThis;
+		Flux_RenderGraph*         m_pxGraph;
+		Flux_GraphicsImpl*        m_pxGraphics;
+		const Flux_SSAOSelection* m_pxSelection;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics, &xSelection };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		const Zenith_Maths::UVector2 xDims = xSetup.m_pxGraphics->GetViewSetupDims(uSlot);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, xDims.x, xDims.y, *xSetup.m_pxSelection);
+	}, &xCtx);
 }
 
 void Flux_SSAOImpl::ApplySelectionToGraph(Flux_RenderGraph& /*xGraph*/)
@@ -386,12 +406,13 @@ void Flux_SSAOImpl::SetupViewPasses(
 	xIntermediateDesc.m_eFormat = SSAO_INTERMEDIATE_FORMAT;
 	m_axSeparableHHandles[uViewSlot] = xGraph.CreateTransient(xIntermediateDesc);
 
-	// Pass names must be per-view unique + static-lifetime (duplicate names
-	// are a hard assert). View 0 keeps the historical names (profiling /
-	// FindPass stability).
-	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
-
-	xGraph.AddPass(bMainView ? "SSAO Generate" : "SSAO Generate (Preview)", ExecuteSSAOGenerate)
+	// Pass names must be per-view unique + static-lifetime (a duplicate name is
+	// a hard assert), so they come from the interning pool rather than a second
+	// literal table: Flux_ViewPassName hands slot 0 the base pointer ITSELF, so
+	// the main view's names stay byte-for-byte the historical ones that
+	// profiling labels and FindPass key off, and every other slot gets an
+	// interned, static-lifetime "<base> (<suffix>)".
+	xGraph.AddPass(Flux_ViewPassName("SSAO Generate", uViewSlot), ExecuteSSAOGenerate)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads         (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -399,7 +420,7 @@ void Flux_SSAOImpl::SetupViewPasses(
 		.WritesTransient(m_axRawOcclusionHandles[uViewSlot],                             RESOURCE_ACCESS_WRITE_RTV);
 
 	const Flux_PassHandle xLegacyBlurPass = xGraph.AddPass(
-		bMainView ? "SSAO Blur Legacy" : "SSAO Blur Legacy (Preview)", ExecuteSSAOBlurLegacy)
+		Flux_ViewPassName("SSAO Blur Legacy", uViewSlot), ExecuteSSAOBlurLegacy)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads         (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -408,7 +429,7 @@ void Flux_SSAOImpl::SetupViewPasses(
 		.WritesTransient(m_axLegacyBlurredHandles[uViewSlot],                            RESOURCE_ACCESS_WRITE_RTV);
 
 	const Flux_PassHandle xBlurHPass = xGraph.AddPass(
-		bMainView ? "SSAO Blur H" : "SSAO Blur H (Preview)", ExecuteSSAOBlurH)
+		Flux_ViewPassName("SSAO Blur H", uViewSlot), ExecuteSSAOBlurH)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads         (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -418,7 +439,7 @@ void Flux_SSAOImpl::SetupViewPasses(
 
 	// Keep the historical "SSAO Blur" profiler label on the final/default pass.
 	const Flux_PassHandle xBlurVPass = xGraph.AddPass(
-		bMainView ? "SSAO Blur" : "SSAO Blur (Preview)", ExecuteSSAOBlurV)
+		Flux_ViewPassName("SSAO Blur", uViewSlot), ExecuteSSAOBlurV)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads         (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
