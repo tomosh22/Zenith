@@ -9,6 +9,7 @@
 #include "Flux/Particles/Flux_ParticleData.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "Flux/Particles/Flux_ParticleGPUImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"   // per-view pass names — slot 0 returns the base literal by pointer identity
 
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -221,9 +222,11 @@ void Flux_ParticlesImpl::Render(void*)
 static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 {
 	(void)pUserData;
-	// Per-view parity: scene particles must never appear in the preview view (its
-	// flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT) — the "Particles (Preview)"
-	// instance exists for structural parity and records nothing.
+	// RECORD-TIME EARLY-OUT, and it must stay: scene particles must never appear
+	// in a non-main view (its flags carry no FLUX_VIEW_FLAG_SCENE_CONTENT), and it
+	// is also what makes the compute output MAIN-ONLY — the "Particles (Preview)"
+	// instance (which exists because the oracle's golden pass list carries
+	// "Particles" — see SetupRenderGraph) records nothing.
 	if (Flux_RenderGraph::GetCurrentRecordingPassViewSlot() != kuFluxViewSlotMain)
 	{
 		return;
@@ -376,6 +379,48 @@ static void ExecuteParticleCompute(Flux_CommandBuffer* pxCmdList, void*)
 // (finding 3), at a fraction of the cost and without claiming a motion vector the
 // content does not have. Full write-up: Flux/TAA/CLAUDE.md, section "Translucency and
 // Particles deliberately write NO velocity".
+void Flux_ParticlesImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics,
+	Flux_ParticleGPUImpl& xParticleGPU, Flux_PassHandle xComputePass)
+{
+	// ONE view's draw declaration. The HDR target is indexed by uSlot; the name
+	// comes from Flux_ViewPassName, which supplies the per-view uniqueness the
+	// graph's duplicate-name assert demands (slot 0 gets the base literal back by
+	// pointer identity, so the main row is still exactly "Particles", and the
+	// preview slot composes "Particles (Preview)" — byte-for-byte the literal this
+	// replaced). No ClearTargets on any slot — "Apply Lighting (Preview)" owns the
+	// preview HDR clear.
+	const Flux_PassHandle xDrawPass = xGraph.AddPass(Flux_ViewPassName("Particles", uSlot), ExecuteParticles)
+		.View  (uSlot)
+		.Writes(xGraphics.GetHDRSceneTarget(uSlot), RESOURCE_ACCESS_WRITE_RTV);
+
+	// ★ EVERYTHING BELOW IS MAIN-ONLY, and `uSlot == kuFluxViewSlotMain` is the
+	// right discriminator here rather than a view PROPERTY, because what is being
+	// discriminated is OWNERSHIP of once-per-frame work:
+	//   * the Prepare owns the emitter sim + instance upload + GPU spawn drain,
+	//     which must run exactly once a frame (a second Prepare would tick every
+	//     emitter twice);
+	//   * the compute dependency and the two buffer reads describe the GPU
+	//     particle output, which ExecuteParticles' early-out makes MAIN-ONLY —
+	//     no non-main pass ever fetches from those buffers, so declaring the
+	//     reads for one would order a pass against work it cannot consume.
+	if (uSlot != kuFluxViewSlotMain)
+	{
+		return;
+	}
+
+	// Render (main-thread Prepare) does the emitter sim + instance-buffer upload
+	// before any record callback runs; ExecuteParticles (worker) then only emits
+	// draw commands. This keeps the xEmitter.Update ECS mutation off the worker
+	// thread. Attached through the graph's SetPrepare rather than the builder's
+	// .Prepare because the builder temporary above died at its semicolon once the
+	// handle was captured.
+	xGraph.SetPrepare(xDrawPass, [](void* p){ g_xEngine.Particles().Render(p); });
+	xGraph.DependsOn(xDrawPass, xComputePass);
+
+	xGraph.ReadBuffer(xDrawPass, xParticleGPU.GetInstanceBuffer().GetBuffer(),     RESOURCE_ACCESS_READ_VERTEX_BUFFER);
+	xGraph.ReadBuffer(xDrawPass, xParticleGPU.GetIndirectArgsBuffer().GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
+}
+
 void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	// GPU particle compute pass. Its CPU half (spawn upload + indirect seeding) is
@@ -383,18 +428,13 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// Prepare in the graph runs before any record, and keeping the emitter tick and
 	// the spawn drain in one callback is what guarantees a spawn reaches the GPU on
 	// the frame it was requested.
-	Flux_PassHandle xComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute);
-
-	// Render (main-thread Prepare) does the emitter sim + instance-buffer upload
-	// before any record callback runs; ExecuteParticles (worker) then only emits
-	// draw commands. This moves the xEmitter.Update ECS mutation off the worker
-	// thread. Render was previously defined but never registered — this is a new,
-	// required edge (without it the CPU particle sim/upload would never run).
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	Flux_PassHandle xDrawPass = xGraph.AddPass("Particles", ExecuteParticles)
-		.Prepare([](void* p){ g_xEngine.Particles().Render(p); })
-		.Writes(xGraphics.GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
-		.DependsOn(xComputePass);
+	//
+	// ★ THE COMPUTE PASS IS DELIBERATELY OUTSIDE THE PER-VIEW WALK BELOW, and is
+	// the one piece of this feature that must never be duplicated: a second
+	// instance would be a non-golden pass name AND a second dispatch over the
+	// SHARED ping-pong buffers, i.e. two writers of one resource in one frame.
+	// There is exactly one particle simulation, and every view draws its result.
+	const Flux_PassHandle xComputePass = xGraph.AddPass("Particles Compute", ExecuteParticleCompute);
 
 	// The GPU path's buffer traffic, declared so the graph synthesises the
 	// compute-write -> vertex-fetch / indirect-read barriers. Before this the pass
@@ -405,28 +445,55 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// makes the per-frame role swap invisible to the graph: the compiled barriers
 	// are identical under either parity, so DispatchCompute is free to decide which
 	// is input and which is output at record time. (Same trick as the grass
-	// displacement ping-pong.)
+	// displacement ping-pong.) These four are the COMPUTE pass's own writes and
+	// stay outside the walk with it; the matching main-only READS are declared by
+	// SetupViewPasses, still after these, so the per-resource write-before-read
+	// declaration order is what it always was.
+	Flux_GraphicsImpl&    xGraphics    = g_xEngine.FluxGraphics();
 	Flux_ParticleGPUImpl& xParticleGPU = g_xEngine.ParticleGPU();
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.m_xParticleBufferA.GetBuffer(),      RESOURCE_ACCESS_READWRITE_UAV);
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.m_xParticleBufferB.GetBuffer(),      RESOURCE_ACCESS_READWRITE_UAV);
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.GetInstanceBuffer().GetBuffer(),     RESOURCE_ACCESS_WRITE_UAV);
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.GetIndirectArgsBuffer().GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV);
 
-	xGraph.ReadBuffer(xDrawPass, xParticleGPU.GetInstanceBuffer().GetBuffer(),     RESOURCE_ACCESS_READ_VERTEX_BUFFER);
-	xGraph.ReadBuffer(xDrawPass, xParticleGPU.GetIndirectArgsBuffer().GetBuffer(), RESOURCE_ACCESS_READ_INDIRECT_ARG);
-
-	// Preview view (S5c): parity instance writing the preview HDR target. Scene
-	// particles never render in the preview (no FLUX_VIEW_FLAG_SCENE_CONTENT) —
-	// ExecuteParticles early-outs for non-main views. The compute/sim pass is
-	// NOT duplicated and no Prepare is attached (the main pass's Prepare owns
-	// the once-per-frame emitter sim). No ClearTargets — "Apply Lighting
-	// (Preview)" owns the preview HDR clear.
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	// ONE "Particles" DRAW pass per ACTIVE FULL-PIPELINE view, in ascending slot
+	// order. The registry decides membership by view PROPERTIES, never by slot
+	// number: slot 0 always qualifies (active + full-pipeline from construction),
+	// the preview slot joins while its owner has it up, and depth-only shadow
+	// cascades are never full-pipeline and never get a draw. Today that set is
+	// exactly {main} ∪ {preview if active} — which is what the hand-written call
+	// plus its `if (IsViewActive(preview))` block produced, in the same
+	// declaration order.
+	//
+	// ★ WHY THE PREVIEW INSTANCE EXISTS AT ALL: nothing in the graph needs it. No
+	// pass reads what it writes, it satisfies no layout requirement, and
+	// ExecuteParticles early-outs on every non-main slot, so it records nothing.
+	// It exists because "Particles" is on the golden per-view pass list
+	// RT_RenderGraphViewStructure asserts — that is the whole reason, and it is
+	// worth stating plainly rather than calling it "structural parity".
+	//
+	// The callback is a CAPTURELESS LAMBDA written inside the member body rather
+	// than a file-static free function, matching Flux_HiZImpl::SetupRenderGraph:
+	// being captureless it converts to the registry's plain fn-pointer, so `this`,
+	// the graph, the compute handle and the two ALREADY-hoisted subsystem
+	// references all travel through pCtx. Nothing in the walk re-reaches g_xEngine
+	// — this TU is over its engine-singleton baseline already, so the walk must
+	// not add a single reference.
+	struct SetupCtx
 	{
-		xGraph.AddPass("Particles (Preview)", ExecuteParticles)
-			.View  (kuFluxViewSlotPreview)
-			.Writes(xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV);
-	}
+		Flux_ParticlesImpl*   m_pxThis;
+		Flux_RenderGraph*     m_pxGraph;
+		Flux_GraphicsImpl*    m_pxGraphics;
+		Flux_ParticleGPUImpl* m_pxParticleGPU;
+		Flux_PassHandle       m_xComputePass;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics, &xParticleGPU, xComputePass };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, *xSetup.m_pxGraphics,
+			*xSetup.m_pxParticleGPU, xSetup.m_xComputePass);
+	}, &xCtx);
 }
 
 // Packed per-particle instance lane (compressed-vertex Phase 6). Hosted beside the

@@ -6,6 +6,8 @@
 #include "Flux/Particles/Flux_ParticleData.h"
 
 class Flux_RenderGraph;
+class Flux_GraphicsImpl;
+class Flux_ParticleGPUImpl;
 
 // Phase 9: state + behaviour for Particles subsystem.
 //
@@ -33,6 +35,16 @@ public:
 	void Reset();
 	void Render(void*);
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// ONE view's "Particles" DRAW declaration. Driven once per ACTIVE
+	// FULL-PIPELINE view by SetupRenderGraph's ForEachActiveFullPipelineView walk,
+	// in ascending slot order. "Particles Compute" is NOT in the walk (see
+	// SetupRenderGraph), so its handle — plus the two subsystem references
+	// SetupRenderGraph already holds hoisted — are passed in rather than
+	// re-reached through g_xEngine: this TU is over its singleton-allowlist
+	// baseline already and the walk may not make that worse.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics,
+		Flux_ParticleGPUImpl& xParticleGPU, Flux_PassHandle xComputePass);
 
 	// Promoted from file-static free functions so their per-emitter / per-buffer
 	// self-references route through 'this' instead of re-entering via
