@@ -698,10 +698,20 @@ Two differences from what this note guessed, both load-bearing:
   every tolerance-based guard. `Zenith_Maths::AuthoringRotationX/Y/Z` are the pinned,
   non-inline replacements, and they only cover the three cardinal axes — so the executor
   refuses anything else rather than silently computing it the other way.
-- **There is no `AddStep_AnimBakeIK`.** WU-4.4 shipped `Action_BakeIKForSelectedChain`
-  (§6) but no automation step wraps it and no target-selection widget aims it yet — see
-  §6's correction and §7's "as built" table. A pose can be authored and asserted at boot
-  through the five steps above; an IK bake cannot, today, be driven the same way.
+- **`AddStep_AnimBakeIK` LANDED WITH E1** — this note previously recorded its absence,
+  and that is no longer true. WU-4.4 shipped `Action_BakeIKForSelectedChain` (§6) with
+  no step wrapping it and no widget aiming it; E1 added both. The step is
+  `void AddStep_AnimBakeIK(float fTargetModelX, float fTargetModelY, float fTargetModelZ)`,
+  in its OWN one-member `ANIM_IK_*` enum block appended after `ANIM_CURVE_*` and routed
+  to `ExecuteAnimIkAction`. The effector comes from the SELECTION (`AnimSelectBone`), not
+  from an argument, exactly as the rest of the `ANIM_POSE_*` family works.
+
+  ★ **The three floats are passed VERBATIM, with no arithmetic anywhere on the path.**
+  That is the strongest form of the FP-determinism rule above — the
+  `AddStep_SetTransformRotationQuat` shape rather than the cardinal-axis one — and it
+  costs nothing here because a target is a POSITION the recipe already knows, not a
+  rotation the step has to construct. The rotations that reach the `.zanim` are the
+  SOLVER's and are not authored by this step at all.
 
 **★ These land in a CONTIGUOUS enum block** — confirmed, `ANIM_POSE_SELECT_BONE` ..
 `ANIM_POSE_EXPECT_BONE_LOCAL_ROTATION`, five wide, pinned by
@@ -866,13 +876,35 @@ The live pose is applied the same way as a drag — direct `SetBoneLocalTransfor
 plus `RefreshDerivedPose()` — so the IK path also honours §4.4: solve without auto-key,
 and the pose is visible but unkeyed until Set Key.
 
-**★ Confirmed and worth flagging: there is no target-selection widget yet.** WU-4.4
-shipped the whole verb chain — `BuildChainFromEffector` → `SolveChainToLocalRotations` →
-`Action_SetKeyForBones`/`BakeChain` — and `Action_BakeIKForSelectedChain` is fully
-callable and unit-tested end to end, but nothing in the preview pane lets a user AIM it:
-the `.cpp`'s own header comment says so — *"There is deliberately NO IK section drawn in
-the preview pane here … The verb is complete and callable; the widget that aims it is a
-follow-up."* §5.5 confirms there is no automation step for it either.
+**★ THE TARGET-SELECTION WIDGET LANDED WITH E1**, and the paragraph this replaces —
+which recorded its absence, and quoted the `_IK.cpp` header comment saying the widget
+was "a follow-up" — is no longer true of the tree. What E1 added:
+
+- **The handle.** One point drawn over the preview image, seeded on the effector's own
+  model-space joint and re-seeded whenever the selection moves, with a leader line back
+  to that joint while the two are apart. Nothing is drawn without a bone selected, which
+  is the panel's standing rule; `WasIKHandleDrawnLastFrame()` is what a unit reads.
+- **The verbs** — `Action_BeginIKDragAtPixel` / `Action_UpdateIKDragToPixel` /
+  `Action_EndIKDrag` / `Action_CancelIKDrag`, pixel-based and ImGui-free like the ring
+  drag's, so a unit performs the whole gesture without synthesising input. The press
+  latches the chain's bone-local rotations and opens the session's drag bracket on the
+  effector; each update **restores that latch before solving**, because
+  `SolveChainToLocalRotations` seeds from the live TRS and a solve fed its own output
+  would compose (a slow drag and a fast one to the same pixel would end differently).
+  The drag plane is screen-parallel through the latched target, frozen at press.
+- **The release BAKES unconditionally**, unlike the ring drag's, which honours auto-key.
+  §6.3's verb IS "solve and bake down to keys"; it keys unconditionally and there is no
+  key-less IK path for an auto-key-off release to take. Escape abandons the drag and
+  writes nothing.
+- **The two manipulators exclude each other** — each `Begin` refuses while the other is
+  live, because both latch state and both open the session's single drag bracket.
+
+E1 also fixed a pre-existing leak in the RING drag that the new widget would have
+duplicated: **Escape was the only cancel that existed**, so a gesture ended by anything
+else — the panel being hidden, `CloseClip`, `OnDocumentOpened`, a rig re-resolve, or a
+selection change — left `m_bPoseDragActive` true forever and every later grab refused,
+with the session's drag bracket still open. All six paths now go through one
+`CancelAllPoseGestures()` (`Editor/CLAUDE.md`, *The two preview-pane manipulators*).
 
 ### 6.4 Chain scope for Phase 4
 
@@ -909,7 +941,8 @@ pose-authoring-specific files landed in `Editor/Animation/`.
 | WU-4.1 | `36e1c4c4` | `Zenith/Editor/Animation/Zenith_BonePickGeometry.{h,cpp,Tests.inl}`; additions to `Zenith/Editor/Zenith_AnimationPreviewSession.{h,cpp}` (selection, hover, `RefreshDerivedPose`, the pick-set cache, the drag primitives §4.2 depends on); the full `Action_*` declaration surface on `Zenith/Editor/Panels/Zenith_EditorPanel_Animation.h` (stub bodies for what 4.3/4.4 fill); `RayIntersectsSphere` added to `Zenith/Maths/Zenith_Maths_Intersections.h` (inline free function, not a class member) | Selectable bone target + hit geometry (§2, with the ownership rule corrected from this note's original — see §2) |
 | WU-4.2 | `3acce596` | `Zenith/Editor/Animation/Zenith_BoneSpace.{h,cpp,Tests.inl}` | The seven space-conversion functions (§3.3) — signatures matched the design brief exactly |
 | WU-4.3 | `f69e4c1d` | `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_Pose.cpp` (manipulator + drag + Set Key/auto-key bodies); the five-step `ANIM_POSE_*` block in `Zenith/Editor/Zenith_EditorAutomation.{h,cpp}` (§5.5) | The manipulator, drag transactions, Set Key and auto-key — reusing the document's OWN `BeginCompound`/`EndCompound` + `Zenith_AnimCommand_Compound` (`Zenith_EditorAnimCommands.h`) rather than the bespoke `Zenith_UndoCommand_AnimPoseKeys` this note designed (§4.3) |
-| WU-4.4 | `da697fce` | `Zenith/Editor/Animation/Zenith_AnimationPoseIK.{h,cpp,Tests.inl}`; `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_IK.cpp` | IK-assisted posing baked to keys (§6) — an index-based `SolveRequest` + a separate `BuildChainFromEffector`, not the `Flux_IKChain`-by-value shape this note designed; `Action_BakeIKForSelectedChain` is complete and unit-tested but has **no target-selection widget and no automation step** yet |
+| WU-4.4 | `da697fce` | `Zenith/Editor/Animation/Zenith_AnimationPoseIK.{h,cpp,Tests.inl}`; `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_IK.cpp` | IK-assisted posing baked to keys (§6) — an index-based `SolveRequest` + a separate `BuildChainFromEffector`, not the `Flux_IKChain`-by-value shape this note designed |
+| E1 | (this change) | `Zenith/Editor/Panels/Zenith_EditorPanel_Animation_IK.cpp` (the widget's verbs), `_Render.cpp` (its input translation + handle), `_Pose.cpp` (`CancelAllPoseGestures` + the cross-refusals), `Zenith_EditorPanel_Animation.{h,cpp,Tests.inl}`, `Zenith_AnimationPreviewSession.{h,cpp}` (`GetRigGeneration`), the one-member `ANIM_IK_*` block in `Zenith_EditorAutomation.{h,cpp,Tests.inl}` | The **target-selection widget** that aims §6's verb, `AddStep_AnimBakeIK`, and the shared gesture cancel that closes the ring drag's five-path flag leak (§6.3) |
 
 None of the file-list or "sole writer" plumbing this section used to carry (which file
 each unit "Owns", the shared-write-conflict avoidance) is worth keeping once the work is

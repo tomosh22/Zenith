@@ -1401,6 +1401,30 @@ void Zenith_EditorAutomation::AddStep_AnimTangentExpectKeyMode(const char* szBon
 	m_axActions.PushBack(xAction);
 }
 
+//------------------------------------------------------------------------------
+// IK POSING (E1), the one-verb ANIM_IK_* block. The packing contract, stated
+// ONCE here and read back by ExecuteAnimIkAction:
+//
+//   afArgs[0..2] — the MODEL-SPACE target, VERBATIM. Nothing on this path
+//                  performs arithmetic on it: what the recipe types is what
+//                  Zenith_AnimationPoseIK is handed, which is the strongest form
+//                  of the FP-determinism rule (see the header).
+//
+// Nothing else is packed. The chain is derived from the SELECTED bone, so a
+// recipe addresses it with AnimSelectBone rather than by naming bones here —
+// one address for one thing, the way the pose block already works.
+//------------------------------------------------------------------------------
+
+void Zenith_EditorAutomation::AddStep_AnimBakeIK(float fTargetModelX, float fTargetModelY, float fTargetModelZ)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_IK_BAKE_TO_TARGET;
+	xAction.m_afArgs[0] = fTargetModelX;
+	xAction.m_afArgs[1] = fTargetModelY;
+	xAction.m_afArgs[2] = fTargetModelZ;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -4168,6 +4192,48 @@ static void ExecuteAnimTangentAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// IK POSING (E1): ANIM_IK_BAKE_TO_TARGET, and nothing else yet. Its own
+// sub-executor rather than a case in ExecuteAction's switch, for the reason the
+// enum block is a block: the first second verb would otherwise have to promote
+// one into the other, moving a boundary two units and a static_assert pin.
+//
+// The case ends in the panel's own Action_* twin — the SAME call the preview
+// pane's IK target drag makes on release — so a recipe and a human's gesture run
+// one code path, and nothing here reaches past the panel.
+//-----------------------------------------------------------------------------
+namespace
+{
+	void AnimIkActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation IK step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+}
+
+static void ExecuteAnimIkAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET:
+		// ★ THE THREE FLOATS GO STRAIGHT THROUGH — no scale, no axis test, no
+		// conversion. Unlike ANIM_POSE_ROTATE_SELECTED_BONE_WORLD, which has to
+		// build a quaternion and therefore has to do it through the pinned
+		// Zenith_Maths::Authoring* helpers, there is no arithmetic to pin here:
+		// the recipe states a position and the solver is handed that position.
+		AnimIkActionChecked(xPanel.Action_BakeIKForSelectedChain(
+			Zenith_Maths::Vector3(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2])),
+			"AnimBakeIK", nullptr);
+		break;
+
+	default:
+		Zenith_Assert(false, "Non-IK action routed to ExecuteAnimIkAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -4606,6 +4672,17 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE)
 	{
 		ExecuteAnimTangentAction(xAction);
+		return;
+	}
+
+	// IK posing (E1). An EIGHTH animation range, for the reason the seventh
+	// exists. Written as a RANGE although it is one member wide today: a second
+	// IK verb then appends for free, where a `case` in the switch below would
+	// have to be promoted to a range and would move a boundary two units pin.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET)
+	{
+		ExecuteAnimIkAction(xAction);
 		return;
 	}
 

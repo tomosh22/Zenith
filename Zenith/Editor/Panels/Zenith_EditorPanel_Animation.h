@@ -31,11 +31,16 @@ struct ImDrawList;
 // EDITABLE — add, drag, delete, rename, payload — plus D40's scrub-emission
 // toggle and a strip of what the runtime dispatcher actually fired.
 //
-// The class is spread over THREE TUs, split by what a reader wants separately:
+// The class is spread over SIX TUs, split by what a reader wants separately:
 //   Zenith_EditorPanel_Animation.cpp        — lifecycle, rows, the hit rects
 //   Zenith_EditorPanel_Animation_Render.cpp — the drawing, and input TRANSLATION
 //   Zenith_EditorPanel_Animation_Ops.cpp    — selection and the operations,
 //                                             with not one line of ImGui in it
+//   Zenith_EditorPanel_Animation_Pose.cpp   — the ring manipulator, the drag
+//                                             transaction, Set Key and auto-key
+//   Zenith_EditorPanel_Animation_IK.cpp     — the IK target widget's maths and
+//                                             verbs, with no ImGui in it either
+//   Zenith_EditorPanel_Animation_Curve.cpp  — the curve view
 //
 // ★ IT IS A CLASS, NOT A PILE OF FILE STATICS, AND THAT IS THE ONE THING IT
 // DOES NOT COPY FROM THE GRAPH EDITOR. That panel keeps its whole state in a
@@ -227,6 +232,29 @@ constexpr float fANIM_POSE_RING_SCREEN_FRACTION = 0.18f;
 // on, through Flux_GizmosImpl::SnapValue — the SAME pure rounding the entity
 // gizmo snaps with, so a snapped bone and a snapped entity agree.
 constexpr float fANIM_POSE_SNAP_DEGREES = 15.0f;
+
+// How far the IK target has to move, IN MODEL-SPACE UNITS, before the drag counts
+// as having happened at all — the position twin of the ring drag's angular dead
+// zone, and it exists for the same reason: a press-and-release that never moved
+// must write no key, push no undo entry and raise no unkeyed-pose badge. 1e-4 is
+// a tenth of a millimetre on a metre-scale rig, far below anything a hand
+// produces through a projected plane and far above the float noise a ray/plane
+// intersection carries.
+constexpr float fANIM_IK_DRAG_DEAD_ZONE = 1.0e-4f;
+// ★ THE PIXEL HALF OF THE DEAD ZONE. The handle pixel a press lands on is the
+// effector PROJECTED and rounded; reprojecting that same pixel onto the drag
+// plane lands a fraction of a pixel away from the effector in model space --
+// far more than fANIM_IK_DRAG_DEAD_ZONE -- so a press-and-release on the spot
+// read as a move. The cursor has to leave the press pixel by this much before
+// the model-space test is even asked.
+constexpr float fANIM_IK_DRAG_DEAD_ZONE_PIXELS = 1.0f;
+
+// The IK handle's drawn radius at 1x DPI. Deliberately SMALLER than the grab
+// tolerance (fANIM_POSE_RING_GRAB_PIXELS, which the handle shares with the
+// rings): a handle that is easier to hit than it looks is the right way round,
+// and giving the handle a second tolerance of its own is how "where it is drawn"
+// and "where it can be grabbed" become two numbers that drift.
+constexpr float fANIM_IK_HANDLE_RADIUS_1X = 4.5f;
 
 //-----------------------------------------------------------------------------
 // One ring, projected into preview-image pixels. Closed: the last point repeats
@@ -990,6 +1018,89 @@ public:
 	bool Action_BakeIKForSelectedChain(const Zenith_Maths::Vector3& xTargetModelSpace);
 
 	//------------------------------------------------------------------------
+	// THE IK TARGET WIDGET (E1) — the thing that AIMS the verb above.
+	//
+	// ★ IT IS THE SECOND MANIPULATOR OVER ONE PREVIEW PANE, AND THE TWO EXCLUDE
+	// EACH OTHER. The rings turn ONE bone about its own joint; this drags a
+	// POINT and lets the solver decide what three bones do to reach it. Both
+	// latch state at press and rewrite the live pose from that latch every
+	// frame, and both open the session's drag bracket — so a press that started
+	// one while the other was live would have two owners for one bone, one
+	// mouse-up and one latched value belonging to neither. Each Begin refuses
+	// while the other is active, which is one line in each and the only place
+	// the rule can be enforced.
+	//
+	// ★ AND THE RELEASE BAKES WHETHER OR NOT AUTO-KEY IS ON, which is the one
+	// place this drag deliberately differs from the ring's. The verb it aims —
+	// Action_BakeIKForSelectedChain, the whole of design note §6 — is defined as
+	// "solve, then bake down to keys"; it keys unconditionally, and there is no
+	// second, key-less IK path for an auto-key-off release to take. A cancel
+	// still writes nothing at all.
+	//
+	// Every verb here is pixel-based and reads no ImGui state, like the ring's,
+	// so a unit performs the whole gesture without synthesising input.
+	//------------------------------------------------------------------------
+
+	// The target the widget is currently aiming at, in MODEL space — the same
+	// space Action_BakeIKForSelectedChain takes and Zenith_AnimationPoseIK
+	// solves in. False when there is no selection to have seeded one from.
+	//
+	// ★ AT REST IT IS THE EFFECTOR'S OWN MODEL-SPACE JOINT, re-taken every frame
+	// a drag does not own it — so the handle sits exactly under the bone it
+	// moves and the first pixel of a drag is the first pixel of a solve. A
+	// target seeded once and left would sit where the bone USED to be after any
+	// seek, undo or ancestor edit, and the next grab would snap the chain back
+	// to it. Only a live drag moves it away from the joint, and the bake on
+	// release puts the joint back under it.
+	bool GetIKTargetModelSpace(Zenith_Maths::Vector3& xOut) const;
+
+	// Where that target projects to, as a pixel RELATIVE to the preview image's
+	// top-left — the space Action_BeginIKDragAtPixel consumes. False without a
+	// selection, without a seeded target, without a rendered frame, or when the
+	// target is behind the preview camera.
+	bool GetIKHandlePixel(float& fOutPixelX, float& fOutPixelY) const;
+
+	// Grab the handle. Refused when the pixel is more than
+	// fANIM_POSE_RING_GRAB_PIXELS from it, when no bone is selected, when the
+	// chain cannot be built (a ROOT effector has nothing above it to bend),
+	// without a rendered frame, or while EITHER manipulator is already dragging.
+	//
+	// Latches the chain's bone-local rotations and opens the session's drag
+	// bracket on the effector, which is what suspends clip evaluation for the
+	// length of the gesture.
+	bool Action_BeginIKDragAtPixel(float fPixelX, float fPixelY);
+
+	// Move the target to the pixel and re-solve. ★ THE LATCH IS RESTORED FIRST,
+	// EVERY TIME: Zenith_AnimationPoseIK seeds from the live TRS, so solving
+	// from the previous solve's output would COMPOSE and the pose reached would
+	// depend on how many mouse moves the drag happened to span. False when no IK
+	// drag is in flight.
+	bool Action_UpdateIKDragToPixel(float fPixelX, float fPixelY);
+
+	// Release. A drag that never left the dead zone writes nothing; otherwise
+	// ONE Action_BakeIKForSelectedChain at the target, which is one compound and
+	// one Ctrl+Z. True iff a drag was in flight.
+	bool Action_EndIKDrag();
+
+	// Escape: put the whole chain back where the drag found it, close the
+	// bracket and forget the moved target. Nothing reaches the document, so
+	// there is nothing to undo.
+	bool Action_CancelIKDrag();
+
+	// Live IK state, so a test can tell "the handle was never grabbed" apart
+	// from "the drag ran and the solve refused".
+	bool IsIKDragActive() const { return m_bIKDragActive; }
+	// How many bones the live drag latched — the chain the solve is moving.
+	// Zero when no drag is in flight.
+	u_int GetIKDragChainLength() const { return m_bIKDragActive ? m_auIKDragChainBones.GetSize() : 0u; }
+	// Was the handle PAINTED last frame? Ungated, for the reason every other
+	// draw diagnostic on this panel is: "nothing was drawn" and "something was
+	// drawn in the wrong place" are different failures and a rect cannot tell
+	// them apart when there is no rect. False with no selection, which is this
+	// panel's standing "nothing selected draws NOTHING" rule.
+	bool WasIKHandleDrawnLastFrame() const { return m_bIKHandleDrawn; }
+
+	//------------------------------------------------------------------------
 	// The preview camera, as pure maths.
 	//
 	// Both of these are exact inverses of each other through DIFFERENT code:
@@ -1037,6 +1148,14 @@ public:
 
 	// Live manipulator state, so a test can tell "the ring was never grabbed"
 	// apart from "the drag ran and produced no rotation".
+	//
+	// ★ THE FLAG BEHIND THIS IS WRITTEN BY FOUR FUNCTIONS AND NO OTHERS:
+	// Action_BeginBoneDragAtPixel raises it, Action_EndBoneDrag and
+	// Action_CancelBoneDrag lower it, and CancelAllPoseGestures lowers it on
+	// behalf of the six paths that end a gesture with no mouse-up (see that
+	// helper). Anything else clearing it directly would leave the SESSION's drag
+	// bracket open with nothing left to close it, which suspends clip evaluation
+	// for good.
 	bool IsBonePoseDragActive() const { return m_bPoseDragActive; }
 	u_int GetPoseDragAxis() const { return m_bPoseDragActive ? m_uPoseDragAxis : uINVALID_ANIM_POSE_RING; }
 	// The ACCUMULATED, UNSNAPPED angle in radians. The applied one is this
@@ -1579,6 +1698,12 @@ private:
 	// keeps a press on a ring from also re-picking a bone or orbiting the camera.
 	bool HandlePoseManipulatorInput(bool bImageHovered);
 	void DrawPoseManipulator(ImDrawList* pxDraw);
+	// The IK handle's half of the same contract, and it runs SECOND: the rings
+	// are the finer target (an 8 px band round a polyline) and the handle sits
+	// at their shared centre, so asking the rings first costs the handle
+	// nothing and keeps "the gizmo moved the camera" impossible for both.
+	bool HandleIKTargetInput(bool bImageHovered);
+	void DrawIKTargetHandle(ImDrawList* pxDraw);
 	// Set Key / Auto-key / Angle snap. Its own toolbar LINE, for the reason
 	// RenderEventToolbar has one: the first row already runs wider than a 900 px
 	// window and a SameLine past the edge is a control nobody can reach.
@@ -1588,6 +1713,40 @@ private:
 	// one delta applied to a fixed value cannot drift, and feeding the output
 	// back in would accumulate both the float error and the snap's rounding.
 	void ApplyPoseDragAngle();
+
+	//-------------------------------------------------------------------------
+	// ★ THE ONE PLACE A LIVE MANIPULATOR GESTURE IS ABANDONED — both of them,
+	// together — and the ONLY writer of m_bPoseDragActive / m_bIKDragActive
+	// outside their own Begin/End/Cancel verbs.
+	//
+	// Six things end a gesture without a mouse-up, and until E1 not one of them
+	// did anything about it: the panel being HIDDEN (Render's !m_bShow return
+	// cleared seven sheet flags and neither drag flag), CloseClip,
+	// OnDocumentOpened, a rig RE-RESOLVE, Action_SelectBone and
+	// Action_ClearBoneSelection. The flag then stayed true forever and
+	// Action_BeginBoneDragAtPixel refused every later grab — a manipulator that
+	// silently stops working, with the pose, the clip and the undo stack all
+	// healthy and nothing to see. Escape was the only cancel that existed.
+	//
+	// True iff something WAS cancelled, so a caller can report the change.
+	//-------------------------------------------------------------------------
+	bool CancelAllPoseGestures();
+
+	// Put the IK target back on the selected bone's own model-space joint. Cheap
+	// (one matrix read) and it does nothing while a drag is in flight, which owns
+	// the target. Called once per rendered frame AND from the selection verbs, so
+	// the handle is correct whether or not a frame has been drawn since.
+	void SeedIKTargetFromSelection();
+
+	// Write one bone-local rotation per latched chain bone into the LIVE pose,
+	// root-first, ending in RefreshDerivedPose. ★ THE EFFECTOR GOES THROUGH THE
+	// SESSION'S UpdateBoneDrag and its ancestors do not, which is not an
+	// inconsistency: the session's drag bracket is open on the effector, and
+	// UpdateBoneDrag is what raises the unkeyed-pose badge. Writing the
+	// ancestors through it is impossible (it only ever writes m_uDragBoneIndex)
+	// and writing the effector around it would lose the badge — the one thing a
+	// user can silently lose.
+	void ApplyIKChainRotations(const Zenith_Vector<Zenith_Maths::Quat>& axLocalRotations);
 	//-------------------------------------------------------------------------
 	// The curve view — Zenith_EditorPanel_Animation_Curve.cpp. Drawing, input
 	// translation and the accessors, beside the pure mapping they all use.
@@ -1902,6 +2061,58 @@ private:
 	bool m_bPoseWasUnkeyedAtDragStart = false;
 	u_int m_uPoseHoverAxis = uINVALID_ANIM_POSE_RING;
 	bool m_bPoseAngleSnap = false;
+
+	//-------------------------------------------------------------------------
+	// The IK target widget (E1). Same "preview, then commit" shape as the ring
+	// drag — the live pose is the preview, and ONE bake runs on release.
+	//-------------------------------------------------------------------------
+
+	// The target, in MODEL space. Meaningless while m_uIKSeededForBone says no
+	// selection has seeded it.
+	Zenith_Maths::Vector3 m_xIKTarget = Zenith_Maths::Vector3(0.0f);
+	// Which bone m_xIKTarget was seeded from, or kuINVALID_BONE_SELECTION. Both
+	// the "is there a target" test and the "has the selection moved" test, as
+	// one value, for the reason uINVALID_ANIM_POSE_RING is one value: a bool
+	// beside it would give one fact two representations that can disagree.
+	u_int m_uIKSeededForBone = kuINVALID_BONE_SELECTION;
+
+	bool m_bIKDragActive = false;
+	bool m_bIKDragMoved = false;
+	// ★ WAS THE POSE ALREADY UNKEYED WHEN THIS DRAG STARTED — the same latch,
+	// for the same reason, as m_bPoseWasUnkeyedAtDragStart: a cancel must put
+	// the badge back the way it found it rather than hiding an EARLIER unkeyed
+	// edit that is still in the pose.
+	bool m_bIKWasUnkeyedAtDragStart = false;
+	// Where the target was when the drag started. What a cancel restores, and
+	// what the dead zone is measured from.
+	Zenith_Maths::Vector3 m_xIKDragStartTarget = Zenith_Maths::Vector3(0.0f);
+	// The press pixel, for the pixel half of the dead zone (see
+	// fANIM_IK_DRAG_DEAD_ZONE_PIXELS).
+	float m_fIKDragStartPixelX = 0.0f;
+	float m_fIKDragStartPixelY = 0.0f;
+	// The chain the press latched, ROOT FIRST (BuildChainFromEffector's order),
+	// and one bone-local rotation per entry. ★ CAPTURED ONCE AT PRESS. Rebuilding
+	// the chain per mouse move would re-read a pose the previous move wrote, so
+	// the "restore the latch" below would restore the last solve rather than the
+	// pre-drag pose and a slow drag would not reach the same place as a fast one.
+	Zenith_Vector<u_int> m_auIKDragChainBones;
+	Zenith_Vector<Zenith_Maths::Quat> m_axIKLatchedLocalRotations;
+	// The drag plane, in WORLD space, frozen at press: the point is the latched
+	// target and the normal faces the camera, so the target tracks the cursor
+	// across the screen rather than sliding along the view ray. Frozen for the
+	// same reason the ring drag freezes its axis — a plane that re-faced the
+	// camera every frame would move under a target that had not been dragged.
+	Zenith_Maths::Vector3 m_xIKDragPlanePoint = Zenith_Maths::Vector3(0.0f);
+	Zenith_Maths::Vector3 m_xIKDragPlaneNormal = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	// Per-frame draw diagnostic, cleared by ClearFrameRects with every other one.
+	bool m_bIKHandleDrawn = false;
+	bool m_bIKHandleHovered = false;
+
+	// The session rig generation this panel has already reconciled against. See
+	// Zenith_AnimationPreviewSession::GetRigGeneration: a re-resolve invalidates
+	// every latched rotation both manipulators are holding, and this is the only
+	// thing the panel can observe it through.
+	u_int m_uSeenRigGeneration = 0u;
 
 	//-------------------------------------------------------------------------
 	// The curve view (WU-8.2).

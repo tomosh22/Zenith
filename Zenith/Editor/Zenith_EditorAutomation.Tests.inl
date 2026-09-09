@@ -3544,7 +3544,7 @@ ZENITH_TEST(Automation, AnimLayerEnumBlockIsContiguous)
 	// the router thinks it does; the successor being a sixth animation block
 	// instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's own
 	// "must stay outside every range" is pinned by the unit for whichever block is
-	// YOUNGEST — AnimTangentEnumBlockIsContiguous as of B3, which is where its
+	// YOUNGEST — AnimIkEnumBlockIsContiguous as of E1, which is where its
 	// neighbour now is.
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER), 1,
@@ -3585,7 +3585,7 @@ ZENITH_TEST(Automation, AnimBlendEnumBlockIsContiguous)
 	// ENDS where the router thinks it does; the successor being a seventh
 	// animation block instead of the navmesh verb does not weaken that.
 	// SET_NAVMESH_ASSET's own "must stay outside every range" is pinned by the unit
-	// for whichever block is YOUNGEST — AnimTangentEnumBlockIsContiguous as of B3,
+	// for whichever block is YOUNGEST — AnimIkEnumBlockIsContiguous as of E1,
 	// which is where its neighbour now is.
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION), 1,
@@ -3623,8 +3623,9 @@ ZENITH_TEST(Automation, AnimCurveEnumBlockIsContiguous)
 	// WU-7.3, WU-8.2, and now this). What it pins is that the ANIM_CURVE range ENDS
 	// where the router thinks it does; the successor being an eighth animation block
 	// instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's own
-	// "must stay outside every range" is pinned by AnimTangentEnumBlockIsContiguous
-	// below, which is where its neighbour now is.
+	// "must stay outside every range" is pinned by the unit for whichever block is
+	// YOUNGEST — AnimIkEnumBlockIsContiguous as of E1, which is where its
+	// neighbour now is.
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT), 1,
 		"the ANIM_TANGENT block must start immediately after the ANIM_CURVE range ends — inside it, the "
@@ -3633,26 +3634,101 @@ ZENITH_TEST(Automation, AnimCurveEnumBlockIsContiguous)
 
 ZENITH_TEST(Automation, AnimTangentEnumBlockIsContiguous)
 {
-	// The youngest block (B3), pinned the way every block before it is: the header
-	// static_asserts the WIDTH, and this pins each member's POSITION so a reorder
-	// that preserves the width fails here naming the member that moved rather than
-	// at boot inside a neighbour's `default:` assert.
+	// The EIGHTH animation block (B3), pinned the way every block before it is: the
+	// header static_asserts the WIDTH, and this pins each member's POSITION so a
+	// reorder that preserves the width fails here naming the member that moved
+	// rather than at boot inside a neighbour's `default:` assert.
 	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE);
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_SELECTION_MODE) - iFirst, 1,
 		"ANIM_TANGENT_SET_SELECTION_MODE must be the second member of the block");
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE) - iFirst, 2,
 		"ANIM_TANGENT_EXPECT_KEY_MODE must END the block — the router compares against it");
 
-	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
-	// reaching ExecuteAction's own switch: swallowed into this range it would land
-	// in ExecuteAnimTangentAction's `default:` assert at boot, which is a run-time
-	// failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT), 1,
 		"the ANIM_TANGENT block must start immediately after the ANIM_CURVE range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it MOVED with E1 rather than
+	// being deleted — the EIGHTH time it has moved (WU-4.3, WU-6.5, WU-7.1, WU-7.2,
+	// WU-7.3, WU-8.2, B3, and now this). What it pins is that the ANIM_TANGENT
+	// range ENDS where the router thinks it does; the successor being a ninth
+	// animation block instead of the navmesh verb does not weaken that.
+	// SET_NAVMESH_ASSET's own "must stay outside every range" is pinned by
+	// AnimIkEnumBlockIsContiguous below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_TANGENT range — inside it, the "
-		"router would hand it to ExecuteAnimTangentAction's default: assert");
+		"the ANIM_IK block must start immediately after the ANIM_TANGENT range ends — inside it, the "
+		"router would hand an IK verb to ExecuteAnimTangentAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimIkEnumBlockIsContiguous)
+{
+	// The youngest block (E1), and the FIRST one-member block in the enum — which
+	// is why it is pinned differently from its eight predecessors and worth saying
+	// out loud rather than looking like a gap. Those pin "member N is N past the
+	// first"; here the first IS the last, so every such assertion would compare a
+	// value against itself and pin nothing at all. What is pinnable is the pair of
+	// BOUNDARIES, and they are what the router actually compares against.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET);
+
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 1,
+		"the ANIM_IK block must start immediately after the ANIM_TANGENT range ends");
+
+	// SET_NAVMESH_ASSET is a STANDALONE verb that has to keep reaching
+	// ExecuteAction's own switch: swallowed into this range it would land in
+	// ExecuteAnimIkAction's `default:` assert at boot, which is a run-time failure
+	// for a compile-time mistake. This is the same clause that has followed the
+	// youngest animation block through eight appends.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) - iFirst, 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_IK range — inside it, the "
+		"router would hand it to ExecuteAnimIkAction's default: assert");
+
+	// ★ AND THE WIDTH, WHICH IS THE THING THE HEADER'S static_assert CANNOT STATE
+	// FROM THE INSIDE. A second IK verb is APPENDED (moving SET_NAVMESH_ASSET and
+	// this line with it); one inserted BEFORE ANIM_IK_BAKE_TO_TARGET would silently
+	// join the ANIM_TANGENT range instead, which is the exact mistake the whole
+	// contiguity apparatus exists to catch.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 2,
+		"the ANIM_IK block is exactly ONE wide — it sits alone between the ANIM_TANGENT range and "
+		"the navmesh verb");
+}
+
+ZENITH_TEST(Automation, AnimIkStepPacksItsPayload)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct. This asserts the packing
+	// contract ExecuteAnimIkAction reads back; the two halves are written from the
+	// same comment block in the .cpp, and this is what stops them drifting.
+	//
+	// ★ AND IT ASSERTS THE FLOATS ARE BIT-IDENTICAL, not merely close, with a zero
+	// tolerance. The whole claim this step makes is that the target reaches the
+	// solver VERBATIM — no scale, no conversion, no arithmetic anywhere on the
+	// path (see the header) — and a tolerance would be exactly the guard that
+	// cannot see the one failure that matters.
+	//
+	// ★ ON ITS OWN INSTANCE, NOT THE ENGINE'S, unlike its older siblings above.
+	// Packing a step touches nothing but the action vector, so a stack-local queue
+	// asserts exactly the same thing without reaching for the engine singleton —
+	// and without the "did somebody leave a step in the real queue" coupling that
+	// makes the Reset() calls in those tests load-bearing.
+	Zenith_EditorAutomation xAuto;
+
+	xAuto.AddStep_AnimBakeIK(0.25f, -1.5f, 3.75f);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step queued");
+
+	const Zenith_EditorAction& xBake = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xBake.m_eType == Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET,
+		"step 0 is ANIM_IK_BAKE_TO_TARGET");
+	ZENITH_ASSERT_EQ_FLOAT(xBake.m_afArgs[0], 0.25f, 0.0f, "afArgs[0..2] is the MODEL-SPACE target, verbatim");
+	ZENITH_ASSERT_EQ_FLOAT(xBake.m_afArgs[1], -1.5f, 0.0f, "afArgs[0..2] is the MODEL-SPACE target, verbatim");
+	ZENITH_ASSERT_EQ_FLOAT(xBake.m_afArgs[2], 3.75f, 0.0f, "afArgs[0..2] is the MODEL-SPACE target, verbatim");
+
+	// ★ NO BONE IS PACKED, AND THAT IS THE CONTRACT RATHER THAN AN OMISSION. The
+	// chain is derived from the SELECTED bone, so a recipe addresses it with
+	// AnimSelectBone — one address for one thing, exactly as the ANIM_POSE block
+	// already works. A bone name here would be a second way to say it, and the two
+	// would disagree the first time a recipe set only one of them.
+	ZENITH_ASSERT_TRUE(xBake.m_szArg1.empty(), "the effector comes from the SELECTION, not from an argument");
 }
 
 ZENITH_TEST(Automation, AnimCurveStepsPackTheirPayloads)

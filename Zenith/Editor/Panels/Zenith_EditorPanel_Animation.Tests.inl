@@ -1679,12 +1679,13 @@ ZENITH_TEST(AnimPanel, BoneSelectionActionsRoundTrip)
 	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "clearing a live selection reports the change");
 	ZENITH_ASSERT_FALSE(xPanel.Action_ClearBoneSelection(), "and is idempotent afterwards");
 
-	// ★ THE WHOLE PHASE-4 SURFACE IS DECLARED, AND WHAT IS STILL A STUB SAYS SO.
-	// A stub that returned true would let a caller wired up early report success
-	// having written no key at all. WU-4.3 has since filled Set Key, auto-key,
-	// the angle snap, the rotate primitive and the pointer drag — those have
-	// their own units below, and what this pins here is the SELECTION-less
-	// refusal each of them makes, because the selection was just cleared.
+	// ★ NOTHING IN THE PHASE-4 SURFACE IS A STUB ANY MORE — WU-4.3 filled Set
+	// Key, auto-key, the angle snap, the rotate primitive and the pointer drag,
+	// WU-4.4 filled the IK bake, and E1 filled the target widget that aims it.
+	// Every one of them has its own unit below. What this block pins is the
+	// SELECTION-LESS REFUSAL each of them still makes, because the selection was
+	// just cleared — a verb that returned true here would report success having
+	// written no key at all.
 	Zenith_Vector<u_int> axNoBones;
 	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyForBones(axNoBones, true, false),
 		"Set Key with no bones writes nothing rather than pushing an empty undo step");
@@ -1693,7 +1694,12 @@ ZENITH_TEST(AnimPanel, BoneSelectionActionsRoundTrip)
 	ZENITH_ASSERT_FALSE(xPanel.Action_RotateSelectedBoneWorld(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f)),
 		"and so does the rotate primitive");
 	ZENITH_ASSERT_FALSE(xPanel.Action_BakeIKForSelectedChain(Zenith_Maths::Vector3(0.0f)),
-		"the IK bake is WU-4.4's to fill and still refuses");
+		"the IK bake is filled, and still refuses without an effector to build a chain from");
+	ZENITH_ASSERT_FALSE(xPanel.Action_BeginIKDragAtPixel(10.0f, 10.0f),
+		"and so does the widget that aims it — there is no handle drawn to grab");
+	Zenith_Maths::Vector3 xNoTarget(0.0f);
+	ZENITH_ASSERT_FALSE(xPanel.GetIKTargetModelSpace(xNoTarget),
+		"with no selection there is no seeded target either");
 
 	// The two toggles report whether the value CHANGED, matching
 	// Action_SetEmitEventsOnScrub — a toggle set to what it already is pushes
@@ -2274,6 +2280,671 @@ ZENITH_TEST(AnimPanel, CancellingABoneDragRestoresTheRotationItStartedFrom)
 		"and the badge goes with it — the pose is back to what the clip evaluates to");
 
 	ZENITH_ASSERT_FALSE(xPanel.Action_CancelBoneDrag(), "and it is idempotent afterwards");
+}
+
+//==============================================================================
+// THE IK TARGET WIDGET (E1) — the handle, the drag, and the SIX paths that end
+// a gesture without a mouse-up.
+//
+// ★ STILL HEADLESS AND STILL NOT requiresGraphics, for the reason the whole
+// WU-4.3 block above is: the preview pane occupies the same rectangle whether or
+// not the backend can hand it a texture, and everything below is CPU maths over
+// that rectangle plus a real ImGui frame.
+//==============================================================================
+
+namespace
+{
+	// A THREE-BONE rig — Hip -> Spine -> Hand — and the reason the IK units do not
+	// reuse AnimPanelWriteRiggedProbe's two.
+	//
+	// ★ A TWO-BONE RIG CANNOT FALSIFY THE THING THESE TESTS EXIST FOR. A chain of
+	// two JOINTS is one bone, and FABRIK's answer for one bone is "point it at the
+	// target" whatever pose it was seeded from — so a solve that composed off the
+	// previous solve instead of off the drag's latch would produce the identical
+	// result and IKDragRestoresTheLatchBeforeEachSolve would pass with the restore
+	// deleted. Three joints is the shortest chain whose answer is seed-dependent.
+	//
+	// ★ AND THE BIND POSE IS AN L, NOT A LINE, WHICH IS ALSO LOAD-BEARING. Three
+	// joints stacked straight up put the effector at FULL EXTENSION, where the
+	// chain has no slack: every target past the reach straightens it back to the
+	// bind pose, so a solve could produce the bind rotations and a "the middle
+	// joint moved" assertion would fail on a working solver. Bending it 90 degrees
+	// at the Spine puts the effector 0.707 m from the root against a 1.0 m reach,
+	// so there is room on both sides of the current pose.
+	void AnimPanelWriteIKRiggedProbe(const AnimPanelFixture& xFixture)
+	{
+		{
+			Zenith_SkeletonAsset xSkeleton;
+			const Zenith_Maths::Quat xIdentity(1.0f, 0.0f, 0.0f, 0.0f);
+			const Zenith_Maths::Vector3 xUnitScale(1.0f);
+			xSkeleton.AddBone("Hip", -1, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), xIdentity, xUnitScale);
+			xSkeleton.AddBone("Spine", 0, Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), xIdentity, xUnitScale);
+			// Sideways off the Spine: model-space Hand ends up at (0.5, 0.5, 0).
+			xSkeleton.AddBone("Hand", 1, Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), xIdentity, xUnitScale);
+			xSkeleton.ComputeBindPoseMatrices();
+			xSkeleton.Export(xFixture.m_strSkeletonPath.c_str());
+		}
+		{
+			Zenith_MeshAsset xMesh;
+			xMesh.Reserve(3, 3);
+			xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 0.0f));
+			xMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(1.0f, 0.0f));
+			xMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), Zenith_Maths::Vector2(0.0f, 1.0f));
+			xMesh.AddTriangle(0u, 1u, 2u);
+			xMesh.AddSubmesh(0u, 3u, 0u);
+			xMesh.ComputeBounds();
+			xMesh.Export(xFixture.m_strMeshPath.c_str());
+		}
+
+		Flux_AnimationClip xClip;
+		xClip.SetName("IKRiggedProbe");
+		xClip.SetDuration(2.0f);
+		xClip.SetLooping(false);
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+		xClip.GetMetadata().m_strSkeletonPath = xFixture.m_strSkeletonPath;
+		xClip.GetMetadata().m_strPreviewModelPath = xFixture.m_strMeshPath;
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		xClip.Export(xFixture.m_strPath);
+	}
+
+	// Open, lay out, draw two frames and select uBone. False if anything refused,
+	// which every caller asserts on — so a setup failure names itself instead of
+	// surfacing as "the drag did not start".
+	bool AnimPanelOpenRiggedAndSelect(Zenith_EditorPanel_Animation& xPanel,
+		const AnimPanelFixture& xFixture, u_int uBone)
+	{
+		if (!xPanel.OpenClip(xFixture.m_strPath) || xPanel.Session().NeedsRigSelection())
+		{
+			return false;
+		}
+		xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+		AnimPanelRenderFrames(xPanel, 2u);
+		return xPanel.WasSheetDrawnLastFrame() && xPanel.Action_SelectBone(uBone);
+	}
+
+	// A bone's MODEL-space position, read the way the widget reads it — the
+	// translation column of Zenith_BoneSpace::BoneModelMatrix. The quantity an IK
+	// target is expressed in, so "did the effector reach it" is a subtraction.
+	Zenith_Maths::Vector3 AnimPanelBoneModelPosition(Zenith_EditorPanel_Animation& xPanel, u_int uBone)
+	{
+		const Flux_SkeletonInstance* pxInstance = xPanel.Session().GetSkeletonInstance();
+		if (pxInstance == nullptr)
+		{
+			return Zenith_Maths::Vector3(0.0f);
+		}
+		const Zenith_Maths::Matrix4 xModel = Zenith_BoneSpace::BoneModelMatrix(*pxInstance, uBone);
+		return Zenith_Maths::Vector3(xModel[3].x, xModel[3].y, xModel[3].z);
+	}
+
+	// Grab the handle exactly where the panel says it is drawn, then walk the
+	// cursor to (handle + delta) in uSteps equal moves. Leaves the drag OPEN — the
+	// caller decides whether it ends or is cancelled.
+	//
+	// ★ THE PRESS PIXEL IS THE PANEL'S OWN ANSWER, NOT A GUESS. GetIKHandlePixel
+	// projects the model-space target through the preview camera and the grab
+	// tests the same projection, so this is a round trip through the two halves
+	// rather than a coordinate typed in from a screenshot.
+	//
+	// Used where only "did the gesture start and can it be cancelled" matters. A
+	// test that cares WHERE the target ends up uses the model-point form below,
+	// because a raw pixel delta means a different number of metres on every
+	// camera and would silently drift a target past the chain's reach.
+	bool AnimPanelIKDrag(Zenith_EditorPanel_Animation& xPanel, float fDeltaX, float fDeltaY, u_int uSteps)
+	{
+		float fHandleX = 0.0f;
+		float fHandleY = 0.0f;
+		if (!xPanel.GetIKHandlePixel(fHandleX, fHandleY))
+		{
+			return false;
+		}
+		if (!xPanel.Action_BeginIKDragAtPixel(fHandleX, fHandleY))
+		{
+			return false;
+		}
+		for (u_int u = 1u; u <= uSteps; ++u)
+		{
+			const float fT = static_cast<float>(u) / static_cast<float>(uSteps);
+			if (!xPanel.Action_UpdateIKDragToPixel(fHandleX + fDeltaX * fT, fHandleY + fDeltaY * fT))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// The same gesture, aimed at a MODEL-SPACE point the test chooses: the point
+	// is projected through the panel's own camera and the cursor walks to that
+	// pixel in uSteps equal moves.
+	//
+	// ★ THE TARGET IS STATED IN THE SPACE THE SOLVE USES, so a test can keep it
+	// inside the chain's reach on purpose rather than hoping a pixel count lands
+	// there. What the drag actually reaches is that point pushed onto the
+	// screen-parallel plane the press froze — the same screen position, at the
+	// press's depth — which is the widget's contract and not a rounding error.
+	bool AnimPanelIKDragToModelPoint(Zenith_EditorPanel_Animation& xPanel,
+		const Zenith_Maths::Vector3& xTargetModel, u_int uSteps)
+	{
+		float fFromX = 0.0f;
+		float fFromY = 0.0f;
+		if (!xPanel.GetIKHandlePixel(fFromX, fFromY))
+		{
+			return false;
+		}
+		const Zenith_Maths::Vector4 xWorld =
+			xPanel.Session().GetSessionModelMatrix() * Zenith_Maths::Vector4(xTargetModel, 1.0f);
+		float fToX = 0.0f;
+		float fToY = 0.0f;
+		if (!xPanel.ProjectPreviewWorldPoint(Zenith_Maths::Vector3(xWorld.x, xWorld.y, xWorld.z), fToX, fToY))
+		{
+			return false;
+		}
+		if (!xPanel.Action_BeginIKDragAtPixel(fFromX, fFromY))
+		{
+			return false;
+		}
+		for (u_int u = 1u; u <= uSteps; ++u)
+		{
+			const float fT = static_cast<float>(u) / static_cast<float>(uSteps);
+			if (!xPanel.Action_UpdateIKDragToPixel(fFromX + (fToX - fFromX) * fT, fFromY + (fToY - fFromY) * fT))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// A model-space point the three-bone probe's chain can comfortably reach from
+	// its L-shaped bind pose: 0.474 m from the root against a 1.0 m reach, and
+	// 0.354 m from where the effector starts — far enough that the solve is not
+	// noise, near enough that the chain stays BENT at both ends of the drag.
+	Zenith_Maths::Vector3 AnimPanelIKReachableTarget()
+	{
+		return Zenith_Maths::Vector3(0.15f, 0.45f, 0.0f);
+	}
+}
+
+//==============================================================================
+// (I1) An IK drag moves the chain, and its release is exactly ONE undo step.
+//==============================================================================
+ZENITH_TEST(AnimPanel, IKDragIsOneUndoStepAndTheChainMoves)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ikdrag");
+	AnimPanelWriteIKRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 2u),
+		"the three-bone probe opens, draws and selects the Hand (else everything below is vacuous)");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetBoneCount(), 3u, "Hip -> Spine -> Hand");
+
+	// ★ THE HANDLE STARTS ON THE EFFECTOR'S OWN JOINT, which is what makes the
+	// first pixel of a drag the first pixel of a solve.
+	Zenith_Maths::Vector3 xTarget(0.0f);
+	ZENITH_ASSERT_TRUE(xPanel.GetIKTargetModelSpace(xTarget), "selecting a bone seeds a target");
+	const Zenith_Maths::Vector3 xEffectorBefore = AnimPanelBoneModelPosition(xPanel, 2u);
+	ZENITH_ASSERT_NEAR_VEC3(xTarget, xEffectorBefore, 1.0e-5f,
+		"★ and the seed IS the effector's model-space joint, not a point near it");
+	ZENITH_ASSERT_NEAR_VEC3(xEffectorBefore, Zenith_Maths::Vector3(0.5f, 0.5f, 0.0f), 1.0e-4f,
+		"which the L-shaped bind pose puts at (0.5, 0.5, 0) — 0.707 m out of a 1.0 m reach");
+
+	float fHandleX = 0.0f;
+	float fHandleY = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.GetIKHandlePixel(fHandleX, fHandleY), "which projects into the pane");
+
+	// A pixel well outside the grab tolerance grabs nothing — the handle is a
+	// handle, not the whole image.
+	ZENITH_ASSERT_FALSE(xPanel.Action_BeginIKDragAtPixel(fHandleX + 60.0f, fHandleY),
+		"a press 60 px away from the handle is not a grab");
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(), "and starts nothing");
+
+	const u_int uDepthBefore = xPanel.Document().GetUndoStackSize();
+
+	// ★ SIX Update CALLS — six FRAMES of a real drag. What is being pinned is that
+	// the count does not reach the undo stack.
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 6u),
+		"the handle was grabbed and walked");
+	ZENITH_ASSERT_TRUE(xPanel.IsIKDragActive(), "the drag is in flight");
+	ZENITH_ASSERT_EQ(xPanel.GetIKDragChainLength(), 3u,
+		"latching the whole chain the walk up from the effector found");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepthBefore,
+		"★ and NOTHING has reached the document yet — the live pose is not an undo entry");
+
+	const Zenith_Maths::Vector3 xEffectorDuring = AnimPanelBoneModelPosition(xPanel, 2u);
+	ZENITH_ASSERT_GT(Zenith_Maths::Length(xEffectorDuring - xEffectorBefore), 0.05f,
+		"the solve genuinely moved the effector (else the release below asserts nothing)");
+	ZENITH_ASSERT_TRUE(xPanel.Session().HasUnkeyedPose(),
+		"and the live pose is unkeyed while the button is down, exactly as a ring drag's is");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_EndIKDrag(), "release");
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(), "which ends it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepthBefore + 1u,
+		"★ ONE undo entry for the whole gesture, not one per frame of it");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(),
+		"★ and the badge goes: an IK release BAKES, whether or not auto-key is on");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Hand", FLUX_ANIM_TRACK_ROTATION)), 1u,
+		"the effector was keyed");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_ROTATION)), 1u,
+		"and so was the root of the chain — the whole chain is one compound");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Hand", FLUX_ANIM_TRACK_SCALE)), 0u,
+		"★ and SCALE is never written: the first key on a channel changes that bone across the WHOLE clip");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one Ctrl+Z takes the whole gesture back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Hand", FLUX_ANIM_TRACK_ROTATION)), 0u,
+		"leaving the channel as it was");
+
+	// ---- a press and release that never moved -------------------------------
+	const u_int uDepthAfterUndo = xPanel.Document().GetUndoStackSize();
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 0.0f, 0.0f, 1u), "grab the handle and let go on the spot");
+	ZENITH_ASSERT_TRUE(xPanel.Action_EndIKDrag(), "released without moving");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), uDepthAfterUndo,
+		"★ a press that never left the dead zone records NOTHING — no solve, no key, no undo entry");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(),
+		"and leaves no unkeyed-pose badge behind either, because it changed no pose");
+
+	ZENITH_ASSERT_FALSE(xPanel.Action_EndIKDrag(), "ending a drag that is not in flight reports nothing");
+	ZENITH_ASSERT_FALSE(xPanel.Action_UpdateIKDragToPixel(1.0f, 1.0f), "and neither does updating one");
+}
+
+//==============================================================================
+// (I2) Every solve starts from the LATCH, so the pose a drag reaches does not
+//      depend on how many mouse moves it took to get there.
+//
+// ★ THIS IS THE ONE PROPERTY A SOLVER-BACKED DRAG CAN LOSE SILENTLY.
+// Zenith_AnimationPoseIK seeds from the live TRS, so a solve fed the previous
+// solve's output COMPOSES: the chain would creep further with every frame the
+// cursor happened to spend on the way, a fast drag and a slow one to the same
+// pixel would end in different poses, and nothing about either of them looks
+// wrong on screen.
+//==============================================================================
+ZENITH_TEST(AnimPanel, IKDragRestoresTheLatchBeforeEachSolve)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_iklatch");
+	AnimPanelWriteIKRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 2u),
+		"the three-bone probe opens, draws and selects the Hand");
+
+	const Zenith_Maths::Quat xHipBefore = xPanel.Session().GetBoneLocalRotation(0u);
+	const Zenith_Maths::Quat xSpineBefore = xPanel.Session().GetBoneLocalRotation(1u);
+
+	// ---- one step to the target pixel ---------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 1u),
+		"one move straight to the pixel");
+	const Zenith_Maths::Quat xHipOneStep = xPanel.Session().GetBoneLocalRotation(0u);
+	const Zenith_Maths::Quat xSpineOneStep = xPanel.Session().GetBoneLocalRotation(1u);
+	const Zenith_Maths::Vector3 xEffectorOneStep = AnimPanelBoneModelPosition(xPanel, 2u);
+	ZENITH_ASSERT_LT(AnimPanelQuatAlignment(xSpineBefore, xSpineOneStep), 0.9999f,
+		"the solve moved a MIDDLE joint (else this rig has nothing seed-dependent to assert on)");
+
+	// A SECOND update to the SAME pixel must change nothing: the latch is
+	// restored, so the solve is run again on identical input.
+	float fHandleX = 0.0f;
+	float fHandleY = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.GetIKHandlePixel(fHandleX, fHandleY), "the handle has followed the target");
+	ZENITH_ASSERT_TRUE(xPanel.Action_UpdateIKDragToPixel(fHandleX, fHandleY), "re-stating where the cursor is");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineOneStep, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"is a no-op, not a second solve stacked on the first");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "Escape");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xHipBefore, xPanel.Session().GetBoneLocalRotation(0u)), 1.0f, 1.0e-5f,
+		"puts the CHAIN ROOT back, not just the effector");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"and every joint between it and the effector");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"★ writing NOTHING: a cancel is not a release, and an IK release is a bake");
+
+	// ---- eight steps to the SAME pixel --------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 8u),
+		"the same drag, eight moves instead of one");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xHipOneStep, xPanel.Session().GetBoneLocalRotation(0u)), 1.0f, 1.0e-4f,
+		"★ ends in the SAME pose — a solve that composed off its own output could not");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineOneStep, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-4f,
+		"★ ends in the SAME pose — a solve that composed off its own output could not");
+	ZENITH_ASSERT_NEAR_VEC3(AnimPanelBoneModelPosition(xPanel, 2u), xEffectorOneStep, 1.0e-3f,
+		"and puts the effector in the same place, which is what the user is aiming");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+}
+
+//==============================================================================
+// (I3) The two manipulators exclude each other.
+//==============================================================================
+ZENITH_TEST(AnimPanel, IKAndRingDragsExcludeEachOther)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ikexclusive");
+	AnimPanelWriteIKRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 2u),
+		"the three-bone probe opens, draws and selects the Hand");
+
+	// ---- an IK drag locks the rings out -------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 12.0f, 0.0f, 2u), "an IK drag is in flight");
+	ZENITH_ASSERT_FALSE(AnimPanelRingPressOnly(xPanel, 1u, 6u),
+		"★ and a press on a rotation ring is REFUSED — two latches and one drag bracket");
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "so no ring drag started");
+	ZENITH_ASSERT_TRUE(xPanel.IsIKDragActive(), "and the IK drag is untouched");
+	ZENITH_ASSERT_FALSE(xPanel.Action_RotateSelectedBoneWorld(
+		Zenith_Maths::AngleAxis(0.4f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f))),
+		"the one-shot rotate is refused for the same reason");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "Escape");
+
+	// ---- a ring drag locks the handle out -----------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u), "now a ring drag is in flight");
+	float fHandleX = 0.0f;
+	float fHandleY = 0.0f;
+	ZENITH_ASSERT_TRUE(xPanel.GetIKHandlePixel(fHandleX, fHandleY), "the handle is still projectable");
+	ZENITH_ASSERT_FALSE(xPanel.Action_BeginIKDragAtPixel(fHandleX, fHandleY),
+		"★ but a press on it is REFUSED while the ring owns the gesture");
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(), "so no IK drag started");
+	ZENITH_ASSERT_TRUE(xPanel.IsBonePoseDragActive(), "and the ring drag is untouched");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "Escape");
+
+	// With neither in flight, both are grabbable again.
+	ZENITH_ASSERT_TRUE(xPanel.Action_BeginIKDragAtPixel(fHandleX, fHandleY), "the handle takes once the ring lets go");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "and not one refusal touched the clip");
+}
+
+//==============================================================================
+// (I4) Nothing selected draws NOTHING — this panel's standing rule, applied to
+//      the handle, and read at FRAME level rather than from the verb.
+//
+// ★ THE VERB REFUSING IS NOT THE SAME FACT. GetIKHandlePixel answering false and
+// the pane painting no circle are two things, and a draw that ignored the
+// accessor would put a control on screen that every press then refuses.
+//==============================================================================
+ZENITH_TEST(AnimPanel, IKHandleDrawsNothingWithoutASelection)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ikhandledraw");
+	AnimPanelWriteIKRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the three-bone probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	ZENITH_ASSERT_FALSE(xPanel.WasIKHandleDrawnLastFrame(), "nothing has been drawn at all yet");
+
+	xPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 600.0f);
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.WasSheetDrawnLastFrame(), "the window drew its body");
+	ZENITH_ASSERT_FALSE(xPanel.WasIKHandleDrawnLastFrame(),
+		"★ and painted NO handle: there is no bone selected, so there is no effector to aim");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "select the Hand");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_TRUE(xPanel.WasIKHandleDrawnLastFrame(), "now the handle is painted");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "drop the selection");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.WasIKHandleDrawnLastFrame(), "and it goes with it");
+	Zenith_Maths::Vector3 xTarget(0.0f);
+	ZENITH_ASSERT_FALSE(xPanel.GetIKTargetModelSpace(xTarget),
+		"the target goes too — it was seeded FROM the selection");
+
+	// A panel that is hidden paints nothing, so the diagnostic must say so rather
+	// than repeating what it painted the last time anybody looked at it.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "select it again");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_TRUE(xPanel.WasIKHandleDrawnLastFrame(), "painted again");
+	xPanel.ShowFlag() = false;
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.WasIKHandleDrawnLastFrame(), "a hidden panel reports NOT DRAWN, not last frame's answer");
+}
+
+//==============================================================================
+// (I5) THE ACCEPTANCE CASE FOR THE LEAK — six paths end a live IK drag, each of
+//      them leaving the pre-drag pose, an untouched undo stack, and a widget
+//      that can be grabbed again.
+//
+// ★ THE LAST CLAUSE IS THE ONE THAT WOULD HAVE CAUGHT THE ORIGINAL BUG. Before
+// E1 only Escape cancelled anything: after any of the other five the drag flag
+// stayed true forever and every later press was refused, with the pose, the clip
+// and the undo stack all healthy and nothing anywhere to say why. A test that
+// only checked "the pose came back" would have passed on five of the six.
+//==============================================================================
+ZENITH_TEST(AnimPanel, IKDragCancelledByEachPathLeavesThePreDragPoseAndDepth)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ikcancelpaths");
+	AnimPanelWriteIKRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 2u),
+		"the three-bone probe opens, draws and selects the Hand");
+
+	const Zenith_Maths::Quat xHipBefore = xPanel.Session().GetBoneLocalRotation(0u);
+	const Zenith_Maths::Quat xSpineBefore = xPanel.Session().GetBoneLocalRotation(1u);
+
+	// ---- (1) Escape ---------------------------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 3u), "drag the target");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "Escape ends it");
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(), "the drag is over");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"and the chain is back where the press found it");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing on the undo stack");
+
+	// ---- (2) selecting a DIFFERENT bone -------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 3u), "drag it again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "select a different bone mid-drag");
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(),
+		"★ which cancels: the gesture belonged to the bone that WAS selected");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"the chain is back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing recorded");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "back to the Hand");
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 5.0f, 0.0f, 1u),
+		"★ and the widget is GRABBABLE AGAIN — the flag did not leak");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+
+	// ---- (3) clearing the selection -----------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 3u), "drag it again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "clear the selection mid-drag");
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(), "★ which cancels");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xHipBefore, xPanel.Session().GetBoneLocalRotation(0u)), 1.0f, 1.0e-5f,
+		"the chain is back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing recorded");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "re-select the Hand");
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 5.0f, 0.0f, 1u), "★ and it is grabbable again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+
+	// ---- (4) a RIG RE-RESOLVE, to the same rig ------------------------------
+	// ★ THE SUB-CASE NOTHING ELSE COULD SEE. Re-resolving to the SAME skeleton
+	// leaves the bone COUNT unchanged, so the session's own shape-change reset
+	// does not fire — but the skeleton instance every latched rotation belongs to
+	// has still been deleted and rebuilt underneath the drag. The panel observes
+	// it through the rig GENERATION, once per frame.
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 3u), "drag it again");
+	ZENITH_ASSERT_TRUE(xPanel.Session().SetRigOverride(xFixture.m_strSkeletonPath, xFixture.m_strMeshPath),
+		"re-resolve the SAME rig (else this sub-case is asserting about a failed resolve)");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(), "★ which cancels on the next frame");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing recorded");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"and the chain is back on the REBUILT instance");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "the Hand again");
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 5.0f, 0.0f, 1u), "★ and it is grabbable again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+
+	// ---- (5) the panel being HIDDEN -----------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 3u), "drag it again");
+	xPanel.ShowFlag() = false;
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(),
+		"★ which cancels: the mouse-up that would have ended it goes to whatever is on screen now");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"and does NOT commit — a hidden panel must not bake a key on the user's behalf");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xSpineBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"the chain is back");
+	xPanel.ShowFlag() = true;
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "the Hand again");
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 5.0f, 0.0f, 1u), "★ and it is grabbable again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+
+	// ---- (6) the document being CLOSED --------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelIKDragToModelPoint(xPanel, AnimPanelIKReachableTarget(), 3u),
+		"drag it one last time");
+	xPanel.CloseClip();
+	ZENITH_ASSERT_FALSE(xPanel.IsIKDragActive(),
+		"★ which cancels — and cancels BEFORE the rig it latched against is released");
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "the clip is gone");
+
+	// Re-opening the same clip is a fresh gesture surface, which is the whole
+	// point of the flag not leaking across a close.
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 2u), "re-open and re-select");
+	ZENITH_ASSERT_TRUE(AnimPanelIKDrag(xPanel, 5.0f, 0.0f, 1u),
+		"★ and the widget works in the NEXT clip — which it did not before E1");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelIKDrag(), "cleaned up");
+}
+
+//==============================================================================
+// (I6) THE SAME SIX PATHS FOR THE RING DRAG — the pre-existing leak E1 fixes.
+//
+// ★ THIS IS NOT A COPY OF THE TEST ABOVE FOR SYMMETRY'S SAKE. The ring drag has
+// shipped since WU-4.3 with exactly one cancel (Escape), so five of the six
+// paths below are the bug as it stood: m_bPoseDragActive left true, the
+// session's drag bracket left open — which suspends Tick — and
+// Action_BeginBoneDragAtPixel refusing every later grab.
+//==============================================================================
+ZENITH_TEST(AnimPanel, RingDragCancelledByEachPathLeavesThePreDragPoseAndDepth)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ringcancelpaths");
+	AnimPanelWriteRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 1u),
+		"the rigged probe opens, draws and selects Spine");
+	// Auto-key ON throughout, so any path that ENDED the drag instead of
+	// cancelling it would write a key and move the depth — which is what the
+	// depth assertions below are really watching for.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetAutoKey(true), "auto-key ON, so a COMMIT would be visible");
+
+	const Zenith_Maths::Quat xBefore = xPanel.Session().GetBoneLocalRotation(1u);
+
+	// ---- (1) Escape ---------------------------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag a ring");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "Escape ends it");
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "the drag is over");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"and the bone is back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing on the undo stack");
+
+	// ---- (2) selecting a DIFFERENT bone -------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag it again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(0u), "select the root mid-drag");
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "★ which cancels");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"the bone is back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing recorded, auto-key or no auto-key");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "back to Spine");
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u),
+		"★ and a ring is GRABBABLE AGAIN — the flag did not leak");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "cleaned up");
+
+	// ---- (3) clearing the selection -----------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag it again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_ClearBoneSelection(), "clear the selection mid-drag");
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "★ which cancels");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"the bone is back");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing recorded");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "re-select Spine");
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u), "★ and a ring is grabbable again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "cleaned up");
+
+	// ---- (4) a RIG RE-RESOLVE, to the same rig ------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag it again");
+	ZENITH_ASSERT_TRUE(xPanel.Session().SetRigOverride(xFixture.m_strSkeletonPath, xFixture.m_strMeshPath),
+		"re-resolve the SAME rig");
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "★ which cancels on the next frame");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing recorded");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"and the bone is back on the REBUILT instance");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "Spine again");
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u), "★ and a ring is grabbable again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "cleaned up");
+
+	// ---- (5) the panel being HIDDEN -----------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag it again");
+	xPanel.ShowFlag() = false;
+	AnimPanelRenderFrames(xPanel, 1u);
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "★ which cancels");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u,
+		"and does NOT commit — a hidden panel must not write a key on the user's behalf");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelQuatAlignment(xBefore, xPanel.Session().GetBoneLocalRotation(1u)), 1.0f, 1.0e-5f,
+		"the bone is back");
+	xPanel.ShowFlag() = true;
+	AnimPanelRenderFrames(xPanel, 2u);
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(1u), "Spine again");
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u), "★ and a ring is grabbable again");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "cleaned up");
+
+	// ---- (6) the document being CLOSED --------------------------------------
+	ZENITH_ASSERT_TRUE(AnimPanelRingDrag(xPanel, 1u, 6u, 18u), "drag it one last time");
+	xPanel.CloseClip();
+	ZENITH_ASSERT_FALSE(xPanel.IsBonePoseDragActive(), "★ which cancels");
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "the clip is gone");
+
+	ZENITH_ASSERT_TRUE(AnimPanelOpenRiggedAndSelect(xPanel, xFixture, 1u), "re-open and re-select");
+	ZENITH_ASSERT_TRUE(AnimPanelRingPressOnly(xPanel, 1u, 6u),
+		"★ and the manipulator works in the NEXT clip — which it did not before E1");
+	ZENITH_ASSERT_TRUE(xPanel.Action_CancelBoneDrag(), "cleaned up");
+}
+
+//==============================================================================
+// (I7) The BAKE verb the widget aims — stated directly, at a target the test
+//      chooses, so "the drag reached somewhere" and "the solve reaches the
+//      target it was given" are separate assertions.
+//
+// This is also the verb ANIM_IK_BAKE_TO_TARGET's executor ends in, so what an
+// authored recipe does at boot is pinned here rather than only in the packing
+// unit beside it.
+//==============================================================================
+ZENITH_TEST(AnimPanel, IKBakeToTargetMovesTheEffectorAndIsOneUndoStep)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_ikbake");
+	AnimPanelWriteIKRiggedProbe(xFixture);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the three-bone probe opens");
+	ZENITH_ASSERT_FALSE(xPanel.Session().NeedsRigSelection(), "and its rig resolved");
+	ZENITH_ASSERT_EQ(xPanel.Session().GetBoneCount(), 3u, "Hip -> Spine -> Hand");
+
+	// ★ NO RENDERED FRAME. The bake takes a model-space target, so unlike the
+	// widget it needs no projection and no pane geometry — which is exactly what
+	// lets an authoring recipe drive it at boot.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(2u), "select the Hand as the effector");
+
+	const Zenith_Maths::Vector3 xEffectorBefore = AnimPanelBoneModelPosition(xPanel, 2u);
+	ZENITH_ASSERT_NEAR_VEC3(xEffectorBefore, Zenith_Maths::Vector3(0.5f, 0.5f, 0.0f), 1.0e-4f,
+		"the L-shaped bind pose puts the effector at (0.5, 0.5, 0)");
+
+	// 0.825 m from the root, comfortably inside the chain's 1.0 m reach, and well
+	// away from where the effector starts so a solve that did nothing at all could
+	// not produce it.
+	const Zenith_Maths::Vector3 xTarget(0.2f, 0.8f, 0.0f);
+	ZENITH_ASSERT_TRUE(xPanel.Action_BakeIKForSelectedChain(xTarget), "the bake takes");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u,
+		"★ as ONE undo step for the whole chain, through Action_SetKeyForBones");
+
+	ZENITH_ASSERT_NEAR_VEC3(AnimPanelBoneModelPosition(xPanel, 2u), xTarget, 0.02f,
+		"★ and the effector is AT the target — the thing an IK solve is for");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(Zenith_AnimTrackId::Bone("Spine", FLUX_ANIM_TRACK_ROTATION)), 1u,
+		"the middle joint was keyed too: the whole chain bends, not just the effector");
+	ZENITH_ASSERT_FALSE(xPanel.Session().HasUnkeyedPose(),
+		"and the pose IS in the clip, so no badge is left warning about losing it");
+
+	// ---- a ROOT effector has nothing above it to bend -----------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectBone(0u), "select the ROOT");
+	ZENITH_ASSERT_FALSE(xPanel.Action_BakeIKForSelectedChain(xTarget),
+		"★ refused rather than solved: a one-joint chain has nothing to move");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "and the refusal touched nothing");
 }
 
 //==============================================================================

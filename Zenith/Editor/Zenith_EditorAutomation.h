@@ -562,6 +562,40 @@ enum class Zenith_EditorActionType
 	ANIM_TANGENT_SET_SELECTION_MODE,
 	ANIM_TANGENT_EXPECT_KEY_MODE,	// END of the contiguous ANIM_TANGENT range (see ANIM_TANGENT_SET_KEY_MODE)
 
+	// IK POSING (E1). A NINTH animation block, appended for the reason the
+	// second through eighth exist: adding a verb INSIDE the block above would
+	// move ANIM_TANGENT_EXPECT_KEY_MODE, which is the upper bound BOTH the
+	// router's range test and the header's static_assert compare against, and
+	// which `Automation, AnimTangentEnumBlockIsContiguous` pins by position.
+	//
+	// ★ ONE MEMBER TODAY, AND IT IS STILL A BLOCK. The router tests it as a range
+	// like every other family, so a second IK verb is APPENDED here and costs
+	// nothing; a one-off `case` in ExecuteAction's own switch would have to be
+	// promoted to a range the first time that happened, moving the boundary this
+	// file and two units pin.
+	//
+	// It performs EXACTLY what Zenith_EditorPanel_Animation::
+	// Action_BakeIKForSelectedChain performs — the same call the preview pane's
+	// own IK target drag ends in on release — so an authored recipe and a human's
+	// gesture cannot diverge.
+	//
+	// ★ THE TARGET IS PASSED VERBATIM, WITH NO ARITHMETIC ANYWHERE ON THE PATH,
+	// which is the *AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE* rule
+	// (Editor/CLAUDE.md) applied to a position rather than a rotation. What the
+	// step packs is what the solver is handed. The rotations that reach the
+	// .zanim are the SOLVER's and are not authored here, so nothing on this path
+	// re-derives a value between the recipe and the file.
+	//
+	// A typical authoring sequence:
+	//   AnimOpenClip("game:Animations/Reach.zanim") -> AnimSelectBone(7) ->
+	//   AnimBakeIK(0.2f, 1.1f, 0.4f) ->
+	//   AnimExpectBoneLocalRotation(7, x, y, z, w, 1e-3f).
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole
+	// range to ExecuteAnimIkAction by a pair of comparisons against its first
+	// and last member — which are the same member while it is one wide).
+	ANIM_IK_BAKE_TO_TARGET,	// END of the contiguous ANIM_IK range (and its start)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -651,16 +685,25 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW) == 7,
 	"the ANIM_CURVE block must stay CONTIGUOUS and eight wide — ExecuteAction routes it by range");
-// And the same pin for the ANIM_TANGENT block (B3), the EIGHTH animation range
-// and now the youngest block in the enum. Width here; the
-// `Automation, AnimTangentEnumBlockIsContiguous` unit pins each member's POSITION
-// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
-// range", whose neighbour this block has become (it was ANIM_CURVE's until this
-// one was appended; that assertion has now been re-pointed seven times, which is
-// the mechanism working rather than a smell).
+// And the same pin for the ANIM_TANGENT block (B3), the EIGHTH animation range.
+// Width here; the `Automation, AnimTangentEnumBlockIsContiguous` unit pins each
+// member's POSITION and both boundaries.
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE) == 2,
 	"the ANIM_TANGENT block must stay CONTIGUOUS and three wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_IK block (E1), the NINTH animation range and
+// now the youngest block in the enum. It is ONE wide, so its own first and last
+// member are the same value and a `last - first == 0` assert would pin nothing —
+// the WIDTH is therefore pinned from the far side, against the neighbour it
+// pushed along. That neighbour is SET_NAVMESH_ASSET's "must stay outside every
+// range", whose predecessor this block has become (it was ANIM_TANGENT's until
+// this one was appended; that assertion has now been re-pointed eight times,
+// which is the mechanism working rather than a smell). The
+// `Automation, AnimIkEnumBlockIsContiguous` unit pins both boundaries.
+static_assert(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET) == 1,
+	"the ANIM_IK block is ONE wide — a second IK verb is APPENDED to it (which moves "
+	"SET_NAVMESH_ASSET and this line with it), never inserted in front of it");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1680,6 +1723,33 @@ void AddStep_AnimTangentSetSelectionMode(int iEnd, int iMode);
 	// are Flat" is a different claim from "each end is something".
 void AddStep_AnimTangentExpectKeyMode(const char* szBone, int iTrack, int iKeyIndex, int iEnd,
 	int iExpectedMode);
+
+	//--------------------------------------------------------------------------
+	// IK POSING (E1), the one-verb ANIM_IK_* block.
+	//
+	// Solve a transient chain from the SELECTED bone (the effector) and up to two
+	// of its ancestors to a MODEL-SPACE target, then bake the result down to
+	// rotation keys — Zenith_EditorPanel_Animation::Action_BakeIKForSelectedChain,
+	// which is the same call the preview pane's target drag ends in on release,
+	// and which keys through Action_SetKeyForBones as ONE undo step.
+	//
+	// ★ THE CLIP MUST BE OPEN, THE RIG MUST HAVE RESOLVED AND A BONE MUST BE
+	// SELECTED: begin with AnimOpenClip and AnimSelectBone. A ROOT effector is
+	// refused (there is nothing above it to bend), as is a target the solver
+	// cannot reach a finite rotation for — both fire at BOOT through the checked
+	// wrapper, on the step that is wrong.
+	//
+	// ★ NO RENDERED FRAME IS NEEDED, unlike the curve drag: the target is stated
+	// in model space rather than picked off the screen, so nothing here goes
+	// through the pixel mapping.
+	//
+	// ★ THE THREE FLOATS ARE PASSED VERBATIM — no arithmetic between this call
+	// and Zenith_AnimationPoseIK. That is deliberate and it is the enum block's
+	// note in full: it is the strongest form of the FP-determinism rule
+	// (*AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE*, Editor/CLAUDE.md),
+	// the same one AddStep_SetTransformRotationQuat takes.
+	//--------------------------------------------------------------------------
+void AddStep_AnimBakeIK(float fTargetModelX, float fTargetModelY, float fTargetModelZ);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

@@ -512,6 +512,58 @@ the panel cannot grow a second copy of the mapping that drifts from the first.
 so a title decorated with a dirty marker or the clip name would dock nothing and
 the window would silently float. Both are shown in the toolbar instead.
 
+### The two preview-pane manipulators, and the one cancel they share (WU-4.3 + E1)
+
+The preview image carries **two** ImGui draw-list manipulators, not one, and they
+are different gestures over the same selected bone:
+
+- **the rotation rings** (`_Pose.cpp`) — three projected circles centred on the
+  selected bone's own joint. A drag turns THAT bone; releasing writes a key only
+  when **auto-key** is on.
+- **the IK target handle** (`_IK.cpp` for the maths and the verbs, `_Render.cpp`
+  for input and drawing) — one point, seeded on the effector's model-space joint
+  and re-seeded whenever the selection moves. A drag moves the point on a
+  screen-parallel plane frozen at press, solves the chain to it, and on release
+  runs `Action_BakeIKForSelectedChain` **unconditionally** — that verb IS "solve
+  and bake down to keys" (design note §6) and there is no key-less IK path for an
+  auto-key-off release to take. Escape is how an IK drag is abandoned.
+
+**★ EACH `Begin` REFUSES WHILE THE OTHER IS LIVE.** Both latch state at press and
+both open the session's single `BeginBoneDrag` bracket, so two live drags would
+mean one latch belonging to nobody and one mouse-up ending the wrong transaction.
+The input chain is `HandlePoseManipulatorInput` → `HandleIKTargetInput` →
+`HandlePreviewPaneInput`, first claimer wins; rings are asked first and it costs
+the handle nothing, because the handle sits at the ring set's CENTRE and a ring is
+only grabbable within 8 px of its projected polyline.
+
+**★ EVERY SOLVE STARTS FROM THE PRESS'S LATCH, NOT FROM THE PREVIOUS SOLVE.**
+`Zenith_AnimationPoseIK` seeds from the live TRS, so a drag that fed each solve
+its own output would COMPOSE — the chain creeping further with every frame the
+cursor spent on the way, and a slow drag ending somewhere a fast one to the same
+pixel did not. `Action_UpdateIKDragToPixel` restores the latched chain before
+each solve; `IKDragRestoresTheLatchBeforeEachSolve` pins it, on a THREE-joint
+probe rig because a two-joint chain's answer is seed-independent and could not
+falsify it.
+
+**★ SIX THINGS END A GESTURE WITHOUT A MOUSE-UP, and all six route through
+`CancelAllPoseGestures()`**: the panel being hidden, `CloseClip`,
+`OnDocumentOpened`, a rig re-resolve, `Action_SelectBone` (when the selection
+actually changes) and `Action_ClearBoneSelection`. Before E1 only **Escape**
+cancelled anything, so after any of the other five `m_bPoseDragActive` stayed true
+forever and every later grab was refused — a manipulator that silently stops
+working, with the pose, the clip and the undo stack all healthy and nothing
+anywhere to say why. It is always a CANCEL and never an END: the user did not
+release the button, so committing a key on their behalf would write the pose they
+were still deciding about.
+
+**★ The rig re-resolve is observed through `Zenith_AnimationPreviewSession::
+GetRigGeneration()`, once per frame, and nothing else would do.**
+`ResolveRigInternal` deletes and rebuilds the skeleton instance on every call, but
+the session drops its OWN drag only when the bone COUNT changed — so re-resolving
+to the SAME rig left a live gesture latched against a deleted instance. A pointer
+comparison is no substitute: the allocator routinely hands the freed address
+straight back.
+
 ### The Bone Mask sub-panel (WU-7.1)
 
 A **"Bone Masks"** section inside the Animation Editor, over its own
@@ -1445,14 +1497,13 @@ asserts at boot via `GrassTypeActionChecked`. `GrassTypesSave` writes
 `game:Vegetation/GrassTypes.zdata` through `Zenith_GrassTypeTableAsset` and then
 applies, so a file that reached disk but never took effect cannot go unnoticed.
 
-### The split dispatcher: twenty contiguous ranges
+### The split dispatcher: twenty-one contiguous ranges
 
 `ExecuteAction` is a **router, not a switch**. Before its (now small) main switch
-it forwards **twenty CONTIGUOUS enum ranges** to twenty sub-executors
-(`Zenith_EditorAutomation.cpp:4438..4608`), which is what keeps the dispatcher
-inside the complexity gate. The table below is the **twelve non-animation**
-ranges, in router order; the eight animation ranges follow them and are described
-under "EIGHT ANIMATION ranges" below:
+it forwards **twenty-one CONTIGUOUS enum ranges** to twenty-one sub-executors,
+which is what keeps the dispatcher inside the complexity gate. The table below is
+the **twelve non-animation** ranges, in router order; the nine animation ranges
+follow them and are described under "NINE ANIMATION ranges" below:
 
 | Range | Sub-executor |
 |---|---|
@@ -1469,8 +1520,7 @@ under "EIGHT ANIMATION ranges" below:
 | `SET_TERRAIN_MATERIAL` .. `SET_TERRAIN_SPLATMAP_PATH` | `ExecuteTerrainMaterialAction` |
 | `CREATE_PREFAB_FROM_SELECTED` .. `INSTANTIATE_PREFAB` | `ExecutePrefabAction` |
 
-...and the eight animation ranges that follow them, in router order
-(`:4533..:4608`):
+...and the nine animation ranges that follow them, in router order:
 
 | Range | Sub-executor |
 |---|---|
@@ -1482,6 +1532,12 @@ under "EIGHT ANIMATION ranges" below:
 | `ANIM_BLEND_SET_TREE_KIND` .. `ANIM_BLEND_EXPECT_POINT_POSITION` | `ExecuteAnimBlendAction` |
 | `ANIM_CURVE_SET_VIEW` .. `ANIM_CURVE_EXPECT_KEY_TANGENT` | `ExecuteAnimCurveAction` |
 | `ANIM_TANGENT_SET_KEY_MODE` .. `ANIM_TANGENT_EXPECT_KEY_MODE` | `ExecuteAnimTangentAction` |
+| `ANIM_IK_BAKE_TO_TARGET` .. `ANIM_IK_BAKE_TO_TARGET` | `ExecuteAnimIkAction` |
+
+The last row is **one member wide, and is still a range**, which is deliberate:
+the router's shape does not change when a second IK verb is appended, where a
+`case` in the main switch would have to be promoted to a range and would move the
+boundary a `static_assert` and two units pin.
 
 **Ranges are COMPARED, never numbered.** Each row is a pair of `>=` / `<=` tests
 against its block's first and last member, so:
@@ -1497,29 +1553,38 @@ member. **Every block added since is pinned twice** — a `static_assert` on its
 WIDTH in `Zenith_EditorAutomation.h`, and a unit test on each member's POSITION
 plus both neighbouring boundaries, so a reorder that preserves the width fails
 naming the member that moved instead of at boot inside a neighbour's `default:`
-assert — nine of them now: `Automation, GrassTypesEnumBlockIsContiguous`,
+assert — ten of them now: `Automation, GrassTypesEnumBlockIsContiguous`,
 `… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous`,
 `… AnimSmEnumBlockIsContiguous`, `… AnimMaskEnumBlockIsContiguous`,
 `… AnimLayerEnumBlockIsContiguous`, `… AnimBlendEnumBlockIsContiguous`,
-`… AnimCurveEnumBlockIsContiguous` and `… AnimTangentEnumBlockIsContiguous`.
+`… AnimCurveEnumBlockIsContiguous`, `… AnimTangentEnumBlockIsContiguous` and
+`… AnimIkEnumBlockIsContiguous`.
 
-**EIGHT ANIMATION ranges sit at the end of the enum, and they are eight rather
+**A ONE-MEMBER BLOCK IS PINNED FROM THE FAR SIDE**, and `ANIM_IK` is the first
+one. Its first and last member are the same value, so the usual
+`last - first == N` assert would compare a value against itself and pin nothing;
+what its `static_assert` states instead is the distance to the NEXT block
+(`SET_NAVMESH_ASSET - ANIM_IK_BAKE_TO_TARGET == 1`), which fails the build if a
+verb is inserted in front of the block rather than appended to it — the exact
+mistake the whole apparatus exists to catch.
+
+**NINE ANIMATION ranges sit at the end of the enum, and they are nine rather
 than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet),
 `ANIM_POSE_*` (WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the
 animator-controller state machine), `ANIM_MASK_*` (WU-7.1, the bone-mask
 sub-panel), `ANIM_LAYER_*` (WU-7.2, the layer strip), `ANIM_BLEND_*` (WU-7.3, the
-blend-tree strip), `ANIM_CURVE_*` (WU-8.2, the curve view) and `ANIM_TANGENT_*`
-(B3, the per-end tangent MODE) each route to their
-own sub-executor, and each new family was APPENDED as its own block rather than
-added to the one before it — because appending into an existing block moves its
-LAST member, which is the upper bound both the router's range test and the
-header's `static_assert` compare against and which that block's unit pins by
-position. `SET_NAVMESH_ASSET` follows all eight and must stay outside every range;
-`AnimTangentEnumBlockIsContiguous` is where that is now pinned — the assertion has
-been re-pointed seven times (off `ANIM`'s unit, then `ANIM_POSE`'s, then
-`ANIM_SM`'s, then `ANIM_MASK`'s, then `ANIM_LAYER`'s, then `ANIM_BLEND`'s, then
-`ANIM_CURVE`'s: WU-4.3, WU-6.5, WU-7.1, WU-7.2, WU-7.3, WU-8.2, B3) rather than
-deleted, which is the mechanism working.
+blend-tree strip), `ANIM_CURVE_*` (WU-8.2, the curve view), `ANIM_TANGENT_*`
+(B3, the per-end tangent MODE) and `ANIM_IK_*` (E1, the IK target widget) each
+route to their own sub-executor, and each new family was APPENDED as its own
+block rather than added to the one before it — because appending into an existing
+block moves its LAST member, which is the upper bound both the router's range
+test and the header's `static_assert` compare against and which that block's unit
+pins by position. `SET_NAVMESH_ASSET` follows all nine and must stay outside every
+range; `AnimIkEnumBlockIsContiguous` is where that is now pinned — the assertion
+has been re-pointed eight times (off `ANIM`'s unit, then `ANIM_POSE`'s,
+`ANIM_SM`'s, `ANIM_MASK`'s, `ANIM_LAYER`'s, `ANIM_BLEND`'s, `ANIM_CURVE`'s and
+`ANIM_TANGENT`'s: WU-4.3, WU-6.5, WU-7.1, WU-7.2, WU-7.3, WU-8.2, B3, E1) rather
+than deleted, which is the mechanism working.
 
 ## Selection System
 

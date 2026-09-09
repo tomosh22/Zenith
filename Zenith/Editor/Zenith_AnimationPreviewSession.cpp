@@ -426,6 +426,14 @@ void Zenith_AnimationPreviewSession::ResolveRig()
 
 	ResolveRigInternal();
 
+	// ★ BUMPED FOR EVERY RESOLVE, NOT JUST A SHAPE CHANGE, and that is the
+	// difference between this and the bone-count test below. ResolveRigInternal
+	// deletes and re-creates the instance every time, so a gesture holding a
+	// latched rotation off the OLD instance is stale whether or not the new
+	// skeleton has the same number of bones — and the panel, which owns those
+	// gestures, has nothing else to observe (see GetRigGeneration).
+	++m_uRigGeneration;
+
 	const u_int uNewBoneCount = GetBoneCount();
 	if (uNewBoneCount != uPreviousBoneCount)
 	{

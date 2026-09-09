@@ -8,6 +8,8 @@
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Core/Zenith_DragDropPayloads.h"
 #include "FileAccess/Zenith_FileAccess.h"   // ZENITH_ANIMMASK_EXT, in the section's prompt
+#include "Editor/Animation/Zenith_BoneSpace.h"                 // E1: the IK handle's leader starts at the joint
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"          // ...which is read off the session's instance
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 
@@ -126,9 +128,28 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 		m_bCurveHandleDragActive = false;
 		m_bCurveDragMoved = false;
 		m_uCurveDragKeyId = uINVALID_ANIM_KEY_ID;
+		// ★ AND BOTH POSE MANIPULATORS, WHICH THIS RETURN USED TO WALK PAST (E1).
+		// Clearing their flags the way the seven above are cleared would be WRONG:
+		// each of them owns a LATCHED bone rotation and an open drag bracket on the
+		// session, so dropping the flag alone leaves the bone wherever the last
+		// mouse move put it and leaves clip evaluation suspended with nothing left
+		// to resume it. The cancel restores the latch and closes the bracket.
+		CancelAllPoseGestures();
 		return;
 	}
 
+	// ★ A RIG RE-RESOLVE INVALIDATES EVERY LATCHED ROTATION A MANIPULATOR IS
+	// HOLDING, and this is the only thing the panel can observe it through:
+	// ResolveRigInternal deletes and rebuilds the skeleton instance on every
+	// call, but the SESSION only drops its own drag when the bone COUNT moved —
+	// so a re-resolve to the same rig (the "Use this rig" button pressed twice,
+	// a reload) left a live gesture pointing at a pose that no longer exists.
+	// Checked before anything below can draw a handle from it.
+	if (m_xSession.GetRigGeneration() != m_uSeenRigGeneration)
+	{
+		m_uSeenRigGeneration = m_xSession.GetRigGeneration();
+		CancelAllPoseGestures();
+	}
 	if (m_xDocument.IsOpen())
 	{
 		RebuildRows();
@@ -142,6 +163,13 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 			m_xSession.Tick(fDtSeconds);
 		}
 	}
+
+	// AFTER the tick and the clip refresh, deliberately: the seed reads the
+	// model-transform cache, and taking it above would draw this frame's handle
+	// off last frame's pose — one frame of lag behind the bone it is supposed to
+	// sit on. Cheap and unconditional (one matrix read), and it returns
+	// immediately while a drag is live, which owns the target.
+	SeedIKTargetFromSelection();
 
 	if (m_bPlacementRequested)
 	{
@@ -920,19 +948,30 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 	m_xPreviewImageRect.m_fMaxY = xImageMax.y;
 	m_bPreviewImageRectValid = true;
 
-	// ★ THE MANIPULATOR GETS THE GESTURE FIRST, and only what it declines reaches
-	// the pick / orbit handler. A press on a rotation ring that also re-selected
-	// whatever bone the ray passed through and started an orbit is the classic
-	// "the gizmo moves the camera" bug, and the two handlers cannot both own a
-	// mouse-down. (WU-4.3, Zenith_EditorPanel_Animation_Pose.cpp.)
+	// ★ THE MANIPULATORS GET THE GESTURE FIRST, and only what BOTH decline
+	// reaches the pick / orbit handler. A press on a rotation ring (or on the IK
+	// target) that also re-selected whatever bone the ray passed through and
+	// started an orbit is the classic "the gizmo moves the camera" bug, and
+	// three handlers cannot all own one mouse-down.
+	//
+	// ★ THE RINGS ARE ASKED BEFORE THE IK HANDLE, and the order costs the handle
+	// nothing: the handle opens at the ring set's own CENTRE, and a ring is only
+	// grabbable within fANIM_POSE_RING_GRAB_PIXELS of its projected POLYLINE —
+	// which is a ring radius away from that centre. The two claim disjoint
+	// pixels until the target has been dragged off the joint, and after that the
+	// handle is nowhere near a ring at all.
+	// (WU-4.3 Zenith_EditorPanel_Animation_Pose.cpp; E1 below and _IK.cpp.)
 	const bool bPreviewImageHovered = ImGui::IsItemHovered();
-	if (!HandlePoseManipulatorInput(bPreviewImageHovered))
+	if (!HandlePoseManipulatorInput(bPreviewImageHovered) && !HandleIKTargetInput(bPreviewImageHovered))
 	{
 		HandlePreviewPaneInput(bPreviewImageHovered);
 	}
 	DrawBoneOverlay(ImGui::GetWindowDrawList());
 	// Over the bone lines, so a ring is never hidden by the segment it turns.
 	DrawPoseManipulator(ImGui::GetWindowDrawList());
+	// And the target over both: it is the thing being aimed, and a handle behind
+	// a ring is a handle nobody can see they have grabbed.
+	DrawIKTargetHandle(ImGui::GetWindowDrawList());
 
 	ImGui::SameLine();
 	ImGui::BeginGroup();
@@ -1081,6 +1120,153 @@ void Zenith_EditorPanel_Animation::DrawBoneOverlay(ImDrawList* pxDraw)
 	}
 
 	pxDraw->PopClipRect();
+}
+
+//=============================================================================
+// THE IK TARGET WIDGET (E1) — input translation and the handle.
+//
+// ★ THESE TWO FUNCTIONS ARE THE ONLY IK CODE THAT READS ImGui, and each branch
+// ends in an Action_*. Everything they decide — where the handle IS, whether a
+// pixel grabbed it, what a moved target does to the chain — lives in
+// Zenith_EditorPanel_Animation_IK.cpp, which has no ImGui in it at all, so a
+// unit performs the whole gesture through the verbs with no frame open.
+//=============================================================================
+
+bool Zenith_EditorPanel_Animation::HandleIKTargetInput(bool bImageHovered)
+{
+	if (!m_bPreviewImageRectValid)
+	{
+		m_bIKHandleHovered = false;
+		return false;
+	}
+
+	const ImGuiIO& xIO = ImGui::GetIO();
+	const float fLocalX = xIO.MousePos.x - m_xPreviewImageRect.m_fMinX;
+	const float fLocalY = xIO.MousePos.y - m_xPreviewImageRect.m_fMinY;
+
+	if (m_bIKDragActive)
+	{
+		// ★ ESCAPE IS TESTED BEFORE THE RELEASE, exactly as the ring drag tests
+		// it: otherwise a cancel would be followed immediately by the mouse-up's
+		// bake and the user would get the key they had just asked not to have.
+		if (ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+		{
+			Action_CancelIKDrag();
+			return true;
+		}
+		if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+		{
+			Action_UpdateIKDragToPixel(fLocalX, fLocalY);
+		}
+		else
+		{
+			Action_EndIKDrag();
+		}
+		// A live drag owns the pointer whether or not it is still over the image,
+		// for the ring drag's reason: a cursor that wandered off the pane
+		// mid-gesture must keep moving the target, not start orbiting the camera.
+		return true;
+	}
+
+	if (!bImageHovered)
+	{
+		m_bIKHandleHovered = false;
+		return false;
+	}
+
+	float fHandleX = 0.0f;
+	float fHandleY = 0.0f;
+	if (!GetIKHandlePixel(fHandleX, fHandleY))
+	{
+		// No selection, no seeded target, or the target is behind the camera —
+		// there is nothing drawn to grab, so nothing is claimed.
+		m_bIKHandleHovered = false;
+		return false;
+	}
+
+	const float fDx = fLocalX - fHandleX;
+	const float fDy = fLocalY - fHandleY;
+	m_bIKHandleHovered = (std::sqrt(fDx * fDx + fDy * fDy) <= fANIM_POSE_RING_GRAB_PIXELS);
+	if (!m_bIKHandleHovered)
+	{
+		return false;
+	}
+
+	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+	{
+		return Action_BeginIKDragAtPixel(fLocalX, fLocalY);
+	}
+	// Merely hovering claims nothing: the wheel still zooms and the pane still
+	// lights the bone under the cursor.
+	return false;
+}
+
+void Zenith_EditorPanel_Animation::DrawIKTargetHandle(ImDrawList* pxDraw)
+{
+	if (pxDraw == nullptr || !m_bPreviewImageRectValid)
+	{
+		return;
+	}
+
+	// ★ NOTHING IS DRAWN WITHOUT A BONE SELECTION, which is this panel's standing
+	// rule and which GetIKHandlePixel answers for: with no effector the handle
+	// would be a control that cannot act, and one drawn at the origin would
+	// invite a drag that refuses.
+	float fHandleX = 0.0f;
+	float fHandleY = 0.0f;
+	if (!GetIKHandlePixel(fHandleX, fHandleY))
+	{
+		return;
+	}
+
+	const float fOriginX = m_xPreviewImageRect.m_fMinX;
+	const float fOriginY = m_xPreviewImageRect.m_fMinY;
+
+	pxDraw->PushClipRect(Vec(m_xPreviewImageRect.m_fMinX, m_xPreviewImageRect.m_fMinY),
+		Vec(m_xPreviewImageRect.m_fMaxX, m_xPreviewImageRect.m_fMaxY), true);
+
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+	const ImU32 uLIT_COLOUR = IM_COL32(255, 225, 120, 255);
+	const bool bLit = m_bIKDragActive || m_bIKHandleHovered;
+	const ImU32 uColour = bLit ? uLIT_COLOUR : xPalette.m_uAccent;
+
+	// ★ A LEADER FROM THE EFFECTOR'S JOINT TO THE TARGET, drawn only while the
+	// two are apart. It is the whole readout of an IK drag: how far the solver
+	// is being asked to reach and in which direction. Both ends come from the
+	// same projection the hit test uses, so what is painted and what can be
+	// grabbed cannot drift.
+	float fJointX = 0.0f;
+	float fJointY = 0.0f;
+	const Flux_SkeletonInstance* pxInstance = m_xSession.GetSkeletonInstance();
+	if (pxInstance != nullptr && m_xSession.HasBoneSelection())
+	{
+		const Zenith_Maths::Vector3 xJoint = Zenith_BoneSpace::BoneWorldPosition(
+			m_xSession.GetSessionModelMatrix(), *pxInstance, m_xSession.GetSelectedBoneIndex());
+		if (ProjectPreviewWorldPoint(xJoint, fJointX, fJointY))
+		{
+			const float fLeaderDx = fHandleX - fJointX;
+			const float fLeaderDy = fHandleY - fJointY;
+			if ((fLeaderDx * fLeaderDx + fLeaderDy * fLeaderDy) > 1.0f)
+			{
+				pxDraw->AddLine(Vec(fOriginX + fJointX, fOriginY + fJointY),
+					Vec(fOriginX + fHandleX, fOriginY + fHandleY),
+					xPalette.m_uTextDim, Zenith_EditorUI::Px(1.0f));
+			}
+		}
+	}
+
+	const float fRadius = Zenith_EditorUI::Px(fANIM_IK_HANDLE_RADIUS_1X);
+	pxDraw->AddCircleFilled(Vec(fOriginX + fHandleX, fOriginY + fHandleY), fRadius, uColour);
+	pxDraw->AddCircle(Vec(fOriginX + fHandleX, fOriginY + fHandleY),
+		fRadius + Zenith_EditorUI::Px(2.0f), uColour, 0, Zenith_EditorUI::Px(bLit ? 2.0f : 1.0f));
+
+	pxDraw->PopClipRect();
+
+	// The diagnostic is raised HERE and nowhere else, so
+	// WasIKHandleDrawnLastFrame() answers "was it painted" rather than "would it
+	// have been" — the distinction every other draw diagnostic on this panel
+	// keeps, and the one a frame-level unit needs.
+	m_bIKHandleDrawn = true;
 }
 
 //=============================================================================

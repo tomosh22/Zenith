@@ -486,11 +486,13 @@ bool Zenith_EditorPanel_Animation::Action_GetPoseAngleSnap() const
 
 bool Zenith_EditorPanel_Animation::Action_RotateSelectedBoneWorld(const Zenith_Maths::Quat& xWorldDelta)
 {
-	if (!m_xSession.IsOpen() || !m_xSession.HasBoneSelection() || m_bPoseDragActive)
+	if (!m_xSession.IsOpen() || !m_xSession.HasBoneSelection() || m_bPoseDragActive || m_bIKDragActive)
 	{
-		// A pointer drag owns the same bone and the same latched rotation; a
-		// one-shot landing in the middle of it would be overwritten by the next
-		// mouse move with no trace of having happened.
+		// A pointer drag — either manipulator — owns the same bone and the same
+		// latched rotation; a one-shot landing in the middle of one would be
+		// overwritten by the next mouse move with no trace of having happened.
+		// The session's BeginBoneDrag below would refuse anyway, but a refusal
+		// naming the reason beats one that reads as "the bone does not exist".
 		return false;
 	}
 	Flux_SkeletonInstance* pxInstance = m_xSession.GetSkeletonInstance();
@@ -522,7 +524,12 @@ bool Zenith_EditorPanel_Animation::Action_RotateSelectedBoneWorld(const Zenith_M
 
 bool Zenith_EditorPanel_Animation::Action_BeginBoneDragAtPixel(float fPixelX, float fPixelY)
 {
-	if (m_bPoseDragActive || !m_xSession.HasBoneSelection())
+	// ★ THE TWO MANIPULATORS EXCLUDE EACH OTHER (the other half of the rule is
+	// in Action_BeginIKDragAtPixel). Both latch state at press and both open the
+	// SESSION's single drag bracket, so a ring grabbed mid-IK-drag would leave
+	// one latch belonging to nobody and one mouse-up ending the wrong
+	// transaction.
+	if (m_bPoseDragActive || m_bIKDragActive || !m_xSession.HasBoneSelection())
 	{
 		return false;
 	}
@@ -688,6 +695,46 @@ bool Zenith_EditorPanel_Animation::Action_CancelBoneDrag()
 		m_xSession.ClearUnkeyedPose();
 	}
 	return true;
+}
+
+//=============================================================================
+// ★ THE SHARED GESTURE CANCEL (E1) — the ONE place a live manipulator gesture
+// is abandoned without a mouse-up, for BOTH manipulators.
+//
+// ★ WHAT THIS FIXES IS A FLAG THAT LEAKED, and the symptom was a manipulator
+// that silently stopped working. Escape (HandlePoseManipulatorInput below) was
+// the only cancel that existed. Six other things end a gesture and not one of
+// them said so:
+//
+//   the panel being HIDDEN  — Render's !m_bShow return cleared seven sheet
+//                             flags and neither drag flag
+//   CloseClip               — the clip the keys would be written to is gone
+//   OnDocumentOpened        — a different clip, and a re-Open'd session
+//   a rig RE-RESOLVE        — the skeleton instance the latch belongs to has
+//                             been deleted and rebuilt
+//   Action_SelectBone       — the gesture belongs to the bone that WAS selected
+//   Action_ClearBoneSelection
+//
+// After any of them m_bPoseDragActive stayed true forever, so
+// Action_BeginBoneDragAtPixel refused every later grab — with the pose, the
+// clip and the undo stack all healthy and nothing anywhere to say why. And the
+// SESSION's drag bracket stayed open with it, which suspends Tick.
+//
+// It is a CANCEL and never an END: what these six have in common is that the
+// user did not release the button, so committing a key on their behalf would
+// write the pose they were still deciding about.
+//=============================================================================
+
+bool Zenith_EditorPanel_Animation::CancelAllPoseGestures()
+{
+	// Both are asked unconditionally and each answers false when it was not in
+	// flight, so this is idempotent and the OR is the honest "did anything
+	// happen". They cannot both be live — each Begin refuses while the other is
+	// — but asking both is what makes that an invariant rather than something
+	// this function has to know.
+	const bool bCancelledRing = Action_CancelBoneDrag();
+	const bool bCancelledIK = Action_CancelIKDrag();
+	return bCancelledRing || bCancelledIK;
 }
 
 //=============================================================================
@@ -885,9 +932,18 @@ void Zenith_EditorPanel_Animation::RenderPoseToolbar()
 			(m_uPoseDragAxis == 0u) ? "X" : ((m_uPoseDragAxis == 1u) ? "Y" : "Z"),
 			static_cast<double>(m_fPoseDragAngleRadians * fPOSE_RAD_TO_DEG));
 	}
+	else if (m_bIKDragActive)
+	{
+		// The chain LENGTH rather than the target's coordinates: "which bones is
+		// this moving" is the question a poser has mid-drag, and three model-space
+		// floats scrolling past are unreadable at any rate a hand produces.
+		ImGui::TextDisabled("| dragging IK target: %u bone chain, releases as a key",
+			m_auIKDragChainBones.GetSize());
+	}
 	else
 	{
-		ImGui::TextDisabled("| bone %u - drag a ring to pose it, Esc cancels", m_xSession.GetSelectedBoneIndex());
+		ImGui::TextDisabled("| bone %u - drag a ring to turn it or the centre handle to reach with it, Esc cancels",
+			m_xSession.GetSelectedBoneIndex());
 	}
 }
 

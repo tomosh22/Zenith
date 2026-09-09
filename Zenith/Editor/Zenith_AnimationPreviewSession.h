@@ -239,6 +239,26 @@ public:
 	u_int GetBoneCount() const;
 
 	//-------------------------------------------------------------------------
+	// How many times the rig has been RESOLVED. Starts at 0 and increments on
+	// every ResolveRig — including a re-resolve to the SAME rig, which is the
+	// case that matters.
+	//
+	// ★ IT IS NOT A BONE COUNT AND IT IS NOT AN INSTANCE POINTER, and neither of
+	// those would do. ResolveRigInternal DELETES and re-creates the skeleton
+	// instance on every call, so every live pose and every latched bone rotation
+	// an editor gesture is holding belongs to an object that no longer exists —
+	// but the bone COUNT is unchanged when the rig is the same one, so the
+	// shape-change reset below never fires, and the freed instance's address is
+	// routinely handed straight back by the allocator, so a pointer comparison is
+	// blind exactly when it matters. A counter cannot be either.
+	//
+	// The PANEL reads this once per frame and cancels its in-flight manipulator
+	// gestures when it moves (Zenith_EditorPanel_Animation::CancelAllPoseGestures).
+	// The session cancels its OWN drag here only when the rig changed SHAPE, which
+	// is a narrower rule and always was.
+	u_int GetRigGeneration() const { return m_uRigGeneration; }
+
+	//-------------------------------------------------------------------------
 	// POSE AUTHORING (Phase 4).
 	//
 	// ★ BONE SELECTION LIVES HERE, NOT IN Zenith_SelectionSystem, and that is a
@@ -525,6 +545,11 @@ private:
 	// different bone — so the selection is dropped when this moves, rather than
 	// silently retargeting to whatever bone now sits at that index.
 	u_int m_uSelectionRigBoneCount = 0u;
+
+	// See GetRigGeneration. Bumped by ResolveRig, unconditionally — including on
+	// the failure paths, because a resolve that FAILED also released the instance
+	// every holder of a bone index was pointing at.
+	u_int m_uRigGeneration = 0u;
 
 	bool m_bBoneDragActive = false;
 	bool m_bUnkeyedPose = false;

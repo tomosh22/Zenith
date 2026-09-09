@@ -137,6 +137,13 @@ bool Zenith_EditorPanel_Animation::PromoteAndOpenAuthoredOverride(const std::str
 
 void Zenith_EditorPanel_Animation::OnDocumentOpened()
 {
+	// ★ BEFORE THE SESSION IS RE-OPENED, and that ordering is the point: a live
+	// manipulator gesture holds a latched rotation and an open drag bracket on
+	// the session that is about to be replaced, so it has to be put back while
+	// there is still something to put it back into. Cancelling AFTER Open would
+	// restore a pose onto a skeleton instance that no longer exists.
+	CancelAllPoseGestures();
+
 	m_bShow = true;
 	m_bCloseRefusedDirty = false;
 	m_bExternalConflict = false;
@@ -193,6 +200,13 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 	m_uSeenUndoDepth = m_xDocument.GetUndoStackSize();
 	m_uSeenRedoDepth = m_xDocument.GetRedoStackSize();
 
+	// Open() re-resolved the rig, so the generation has already moved: taken here
+	// rather than left for the next Render to notice, which would otherwise
+	// cancel a gesture this function has just cancelled and re-seed a target it
+	// has just invalidated.
+	m_uSeenRigGeneration = m_xSession.GetRigGeneration();
+	m_uIKSeededForBone = kuINVALID_BONE_SELECTION;
+
 	RebuildRows();
 	RecountKeysPastDuration();
 
@@ -214,6 +228,14 @@ void Zenith_EditorPanel_Animation::OnDocumentOpened()
 
 void Zenith_EditorPanel_Animation::CloseClip()
 {
+	// ★ FIRST, WHILE THE RIG IS STILL THERE. A live ring or IK drag holds a
+	// latched rotation and an open drag bracket on the session; Close() releases
+	// the skeleton instance both of those refer to, so the cancel has to happen
+	// before it rather than be skipped because "everything is going away anyway".
+	// Skipping it is what left m_bPoseDragActive true across a close and made the
+	// manipulator refuse every grab in the NEXT clip.
+	CancelAllPoseGestures();
+
 	// Dropped BEFORE the session is closed, so nothing can be dispatched into a
 	// panel that is halfway through tearing its state down. The pointer could not
 	// dangle either way (the session is a member), but a strip that grew an entry
@@ -261,6 +283,14 @@ void Zenith_EditorPanel_Animation::CloseClip()
 	m_uInspectorBufferEventId = uINVALID_ANIM_KEY_ID;
 	m_bEventInspectorEditing = false;
 	ClearEmittedEvents();
+
+	// The IK target named a bone of a rig this session no longer has. The rig
+	// GENERATION is re-taken beside it rather than left to drift: Close releases
+	// the rig without re-resolving it, so the counter does not move and this is a
+	// resync rather than a fix — written explicitly so the two places that own
+	// the pair (here and OnDocumentOpened) read the same.
+	m_uIKSeededForBone = kuINVALID_BONE_SELECTION;
+	m_uSeenRigGeneration = m_xSession.GetRigGeneration();
 }
 
 Zenith_AnimDocCloseResult Zenith_EditorPanel_Animation::RequestCloseClip()
@@ -624,6 +654,13 @@ void Zenith_EditorPanel_Animation::ClearFrameRects()
 	m_bMaskAssignmentDrawn = false;
 	m_uMaskBoneRowsDrawn = 0;
 	m_strMaskNotice.clear();
+
+	// E1's IK handle, for exactly the same reason: WasIKHandleDrawnLastFrame()
+	// has to say "not this frame" for a frame the pane did not draw, not repeat
+	// what it painted the last time anybody looked at it. The HOVER goes with it
+	// — a highlight left lit for a frame with no cursor in it is the same lie.
+	m_bIKHandleDrawn = false;
+	m_bIKHandleHovered = false;
 }
 
 void Zenith_EditorPanel_Animation::GetMaskRigBoneNames(Zenith_Vector<std::string>& axOut) const
@@ -861,13 +898,32 @@ bool Zenith_EditorPanel_Animation::BuildPreviewRay(float fPixelX, float fPixelY,
 // Bone selection — WU-4.1's own three verbs.
 //-----------------------------------------------------------------------------
 
+//-----------------------------------------------------------------------------
+// ★ ALL THREE SELECTION VERBS CANCEL A LIVE MANIPULATOR GESTURE (E1), and only
+// when the selection ACTUALLY MOVES. A ring drag and an IK drag both belong to
+// the bone that was selected when they started — the ring turns it, the IK
+// chain is built upward from it — so a selection change mid-gesture would leave
+// a drag writing one bone while the panel drew the handles of another, and the
+// leaked m_bPoseDragActive would then refuse every later grab. Re-selecting the
+// bone that is already selected is not a change and must not cancel anything:
+// the manipulator's own press does exactly that on some paths.
+//-----------------------------------------------------------------------------
+
 bool Zenith_EditorPanel_Animation::Action_SelectBone(u_int uBoneIndex)
 {
 	if (!m_xSession.IsOpen())
 	{
 		return false;
 	}
+	const u_int uPrevious = m_xSession.GetSelectedBoneIndex();
 	m_xSession.SelectBone(uBoneIndex);
+	if (m_xSession.GetSelectedBoneIndex() != uPrevious)
+	{
+		// Cancelled AFTER the session has moved the selection, which is safe: a
+		// cancel restores by the DRAG's own bone index, not by the selection.
+		CancelAllPoseGestures();
+		SeedIKTargetFromSelection();
+	}
 	// The session clears rather than storing an index that does not resolve, so
 	// this is also the range check's answer.
 	return m_xSession.HasBoneSelection();
@@ -879,7 +935,9 @@ bool Zenith_EditorPanel_Animation::Action_ClearBoneSelection()
 	{
 		return false;
 	}
+	CancelAllPoseGestures();
 	m_xSession.ClearBoneSelection();
+	SeedIKTargetFromSelection();
 	return true;
 }
 
@@ -901,24 +959,35 @@ bool Zenith_EditorPanel_Animation::Action_PickBoneAtPreviewPixel(float fPixelX, 
 		return false;
 	}
 
+	// ★ THROUGH THE SAME GUARD AS Action_SelectBone rather than straight into
+	// the session. The input chain makes it impossible for a pick to land during
+	// a drag (both manipulators claim the mouse-down ahead of the pane handler),
+	// but a hole left open "because nothing can reach it" is the whole shape of
+	// the bug this unit exists to fix.
+	const u_int uPrevious = m_xSession.GetSelectedBoneIndex();
 	m_xSession.SelectBone(uBone);
+	if (m_xSession.GetSelectedBoneIndex() != uPrevious)
+	{
+		CancelAllPoseGestures();
+		SeedIKTargetFromSelection();
+	}
 	return m_xSession.HasBoneSelection();
 }
 
 //-----------------------------------------------------------------------------
-// Declared here, filled elsewhere.
+// Declared here, filled elsewhere. NOTHING IN THE PHASE-4 SURFACE IS A STUB ANY
+// MORE — every declaration on the header has a body, in the TU that owns the
+// thing it drives:
 //
-// WU-4.3's half — Set Key, auto-key, the angle snap, the one-shot rotate and
-// the whole pointer drag — now lives in Zenith_EditorPanel_Animation_Pose.cpp,
-// beside the manipulator that drives it. What is left here is WU-4.4's, and it
-// still returns false and names its owner so a caller wired up early gets a
-// refusal rather than a silent success.
+//   Zenith_EditorPanel_Animation_Pose.cpp (WU-4.3) — Set Key, auto-key, the
+//     angle snap, the one-shot rotate, the ring drag, and E1's shared
+//     CancelAllPoseGestures.
+//   Zenith_EditorPanel_Animation_IK.cpp (WU-4.4 + E1) —
+//     Action_BakeIKForSelectedChain, which solves a TRANSIENT chain on a SCRATCH
+//     pose (never the controller's own, which would run IK twice on the same
+//     pose) and bakes the result down through Action_SetKeyForBones; and the
+//     target widget's verbs, which are what AIM it.
 //-----------------------------------------------------------------------------
-
-// Action_BakeIKForSelectedChain is FILLED in its own TU:
-// Zenith_EditorPanel_Animation_IK.cpp (WU-4.4). It solves a TRANSIENT chain on a
-// SCRATCH pose (never the controller's own, which would run IK twice on the same
-// pose) and bakes the result down through Action_SetKeyForBones.
 
 //=============================================================================
 // Events (WU-5B) — the inspector target and the emitted-event strip.
