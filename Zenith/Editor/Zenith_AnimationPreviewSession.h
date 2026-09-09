@@ -4,7 +4,6 @@
 
 #include "Editor/Animation/Zenith_BonePickGeometry.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
-#include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include <string>
 
@@ -35,13 +34,19 @@ struct Zenith_EditorPrefs;
 // RefreshClipFrom() is how a panel pushes the document's new content across
 // without losing the play head or the rig choice.
 //
-// ★ THE SESSION HOLDS THE PREVIEW-SLOT HANDLE, NOT THE PANEL (D32). Sharing the
-// existing material-preview view slot is an implementation detail that a later
-// promotion to a dedicated slot should be able to change without touching panel
-// code, so the panel only ever asks HasPreviewSlot() / GetPreviewSlotOwnerName()
-// / ReclaimPreviewSlot(). The arbitration itself lives one layer down, in
-// Flux_PreviewSlotArbiter — Flux_MaterialPreviewController is the other claimant
-// and Flux may not include Editor.
+// ★ THE SESSION DRIVES ITS OWN RENDER VIEW, AND SHARES NOTHING (D32 is spent).
+// D32 gave the panel HasPreviewSlot()/GetPreviewSlotOwnerName()/ReclaimPreviewSlot()
+// because there was ONE preview view and two editors wanting it. There are two
+// now — kuFluxViewSlotPreviewMaterial and kuFluxViewSlotPreviewAnim, each with
+// its own persistent LDR — so this session stages slot 6 and nothing else stages
+// slot 6. Nothing to arbitrate means nothing to be dispossessed OF, which is why
+// the panel's placeholder-plus-Reclaim UI is DELETED rather than disabled: a
+// button for a state that can no longer occur is a promise the code cannot keep.
+//
+// Flux_PreviewSlotArbiter is KEPT and is untouched from here. It still arbitrates
+// the MATERIAL slot, which still has two claimants of its own — the material
+// editor panel's liveness window and the --preview-test-view diagnostic — and
+// Flux_MaterialPreviewController is its only owner now.
 //=============================================================================
 
 //-----------------------------------------------------------------------------
@@ -88,8 +93,9 @@ public:
 	~Zenith_AnimationPreviewSession();
 
 	// ★ NON-COPYABLE. It owns a Flux_AnimationController (itself non-copyable), a
-	// heap Flux_SkeletonInstance, and a preview-slot claim keyed on `this` — a copy
-	// would produce a second object whose claim names the first one's address.
+	// heap Flux_SkeletonInstance whose address that controller caches, and the
+	// activation edge of one render view — a copy would give two objects one
+	// instance to delete and one view to raise and lower against each other.
 	Zenith_AnimationPreviewSession(const Zenith_AnimationPreviewSession&) = delete;
 	Zenith_AnimationPreviewSession& operator=(const Zenith_AnimationPreviewSession&) = delete;
 
@@ -97,20 +103,30 @@ public:
 	// Lifecycle
 	//-------------------------------------------------------------------------
 
-	// Deep-copies xClip, resolves the rig (see NeedsRigSelection) and CLAIMS the
-	// preview slot (last-opened-wins). strClipAssetPath is the clip's asset path —
-	// it is the key the remembered rig choice is stored under, and may be empty
-	// for a clip that has no file (nothing is then remembered).
+	// Deep-copies xClip and resolves the rig (see NeedsRigSelection).
+	// strClipAssetPath is the clip's asset path — it is the key the remembered rig
+	// choice is stored under, and may be empty for a clip that has no file
+	// (nothing is then remembered).
+	//
+	// The preview VIEW is not touched here: opening is not a frame, and the view
+	// is raised by the first UpdatePreviewView() a rigged session gets.
 	Zenith_AnimPreviewOpenResult Open(const Flux_AnimationClip& xClip, const std::string& strClipAssetPath);
 
-	// Re-copy the clip's contents WITHOUT disturbing the play head, the rig or the
-	// slot claim — what a panel calls when its document reports an edit. Refused
+	// Re-copy the clip's contents WITHOUT disturbing the play head or the rig —
+	// what a panel calls when its document reports an edit. Refused
 	// (false, nothing changes) when the session is not open. The clip NAME is
 	// re-applied from the source, so a Save As is a re-Open, not a refresh.
 	bool RefreshClipFrom(const Flux_AnimationClip& xClip);
 
-	// Stops playback, drops the clip and the rig, and RELEASES the preview slot if
-	// this session still holds it. Idempotent.
+	// Stops playback, drops the clip and the rig, and DEACTIVATES the animation
+	// preview view. Idempotent.
+	//
+	// ★ THE DEACTIVATION IS NOT TIDINESS. Nothing else can lower slot 6: the
+	// material preview's janitor (Flux_MaterialPreviewController::Update, run every
+	// frame from the GPU-scene sync) lowers slot 5 and only slot 5, and the panel
+	// stops calling into the session the moment it closes the clip. A view left
+	// active is a full per-view pass chain plus its transients rendered every frame
+	// for a preview nobody is looking at.
 	void Close();
 
 	bool IsOpen() const { return m_bOpen; }
@@ -322,24 +338,32 @@ public:
 	bool GetAutoKey() const { return m_bAutoKey; }
 
 	//-------------------------------------------------------------------------
-	// Preview slot (D32). The panel asks these three and draws a placeholder
-	// naming the owner when it does not have the slot; the placeholder UI itself
-	// is a later panel unit.
+	// The animation preview view (kuFluxViewSlotPreviewAnim).
+	//
+	// ★ THE PAIR IS EDGE-TRIGGERED AND BOTH HALVES ARE IDEMPOTENT, because the
+	// only thing either of them may do per frame is stage constants: the registry
+	// reports whether SetViewActive CHANGED the active set, and only a change
+	// costs a graph rebuild. So a panel may call either one every frame without
+	// asking itself which edge it is on — which is the only way the hidden-panel
+	// call site below can be correct, since a hidden panel has no idea whether it
+	// was hidden last frame too.
 	//-------------------------------------------------------------------------
 
-	bool HasPreviewSlot() const { return Flux_PreviewSlotArbiter::HasSlot(this); }
-	// The CURRENT owner's display name — for a dispossessed session that is the
-	// name of whoever took it. Empty when nobody owns the slot.
-	const std::string& GetPreviewSlotOwnerName() const { return Flux_PreviewSlotArbiter::GetOwnerName(); }
-	// Take the slot back. Dispossesses the current owner.
-	bool ReclaimPreviewSlot();
-
-	//-------------------------------------------------------------------------
-	// Per-frame view staging — activates the shared preview view and fills its
-	// ViewConstants from the orbit state, but ONLY while this session holds the
-	// slot. Safe to call with no renderer (headless unit runs): it returns early.
-	//-------------------------------------------------------------------------
+	// Per-frame staging: raises the view and fills its ViewConstants + target dims
+	// from the orbit state. A session that is not open, or whose rig did not
+	// resolve, LOWERS the view instead of staging into it — there is no pose to
+	// draw, and an active full-pipeline view is not free.
+	//
+	// A run with no Flux_GraphicsImpl (before Flux comes up, or after shutdown
+	// dropped it) returns early. That is NOT the headless case: the Null backend
+	// builds a graphics object like every other, and the boot unit batch runs with
+	// a live registry.
 	void UpdatePreviewView();
+
+	// Lower the view. Called by Close(), by the rig teardown, and by the PANEL
+	// above its own early returns — a hidden or unopened panel never reaches
+	// UpdatePreviewView, and nothing else in the engine lowers this slot.
+	void DeactivatePreviewView();
 
 	// Orbit camera, same clamps and the same pure builders as the material
 	// preview (Flux_PreviewClampPitch / Flux_PreviewApplyZoom).

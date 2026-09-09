@@ -37,6 +37,31 @@ bool Zenith_AnimationPreviewSession_ForceLink()
 
 namespace
 {
+	//-------------------------------------------------------------------------
+	// The two reaches into the engine singleton this file is allowed, wrapped so
+	// every caller below shares them.
+	//
+	// ★ THE NULL ANSWER IS "FLUX IS NOT UP", NOT "THIS IS HEADLESS". The Null
+	// backend builds a Flux_GraphicsImpl exactly like the Vulkan one, and the boot
+	// unit batch runs long after Zenith_Engine::Initialise has made it (the
+	// registry is a pure CPU fixed-slot array with no device dependency), so the
+	// units below DO stage real views. The null case is the window before Flux
+	// exists and the one after Shutdown has dropped it.
+	//-------------------------------------------------------------------------
+	Flux_RenderViewRegistry* TryGetPreviewViewRegistry()
+	{
+		Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
+		return (pxGraphics != nullptr) ? &pxGraphics->RenderViews() : nullptr;
+	}
+
+	// The ACTIVE VIEW SET changed: per-view transients and passes must be
+	// (de)declared, so the next frame recompiles the graph from scratch. Only
+	// called on a frame where the registry above resolved.
+	void RequestPreviewGraphRebuild()
+	{
+		g_xEngine.FluxRenderer().RequestGraphRebuild();
+	}
+
 	bool EndsWithNoCase(const std::string& strValue, const char* szSuffix)
 	{
 		const size_t uSuffixLength = std::strlen(szSuffix);
@@ -137,11 +162,9 @@ Zenith_AnimPreviewOpenResult Zenith_AnimationPreviewSession::Open(
 		ResolveRig();
 	}
 
-	// Last-opened-wins (D32). The claim happens even when the rig did not resolve:
-	// the panel that was just opened is the one the user is looking at, and it
-	// still has a placeholder to draw.
-	Flux_PreviewSlotArbiter::Claim(this, m_strDisplayName);
-
+	// ★ NOTHING IS CLAIMED AND NO VIEW IS RAISED HERE. Opening is not a frame: the
+	// view goes up on the first UpdatePreviewView() a rigged session gets, which
+	// is also the first moment there is anything to put in it.
 	return (m_eRigStatus == ZENITH_ANIMPREVIEW_RIG_OK)
 		? ZENITH_ANIMPREVIEW_OPEN_OK
 		: ZENITH_ANIMPREVIEW_OPEN_NEEDS_RIG;
@@ -190,8 +213,6 @@ bool Zenith_AnimationPreviewSession::RefreshClipFrom(const Flux_AnimationClip& x
 
 void Zenith_AnimationPreviewSession::Close()
 {
-	Flux_PreviewSlotArbiter::Release(this);
-
 	m_xController.Stop();
 	// ★ NOT GetClipCollection().Clear() ANY MORE. That emptied the borrowed clip
 	// pointers and left every asset handle the controller had taken — the skeleton
@@ -201,6 +222,10 @@ void Zenith_AnimationPreviewSession::Close()
 	// is a write into freed memory that only ASSERTS when the freed word happens to
 	// read zero. ReleaseAssetReferences drops the handles and the collection as one.
 	m_xController.ReleaseAssetReferences();
+	// ★ AND THIS IS WHAT LOWERS THE PREVIEW VIEW — see ReleaseRig. The rig and the
+	// view have ONE lifetime between them (an active view with no pose in it is
+	// the state this session must never leave behind), so the deactivation lives
+	// with the teardown that ends the pose rather than being repeated here.
 	ReleaseRig();
 
 	m_xClip = Flux_AnimationClip();
@@ -254,6 +279,14 @@ void Zenith_AnimationPreviewSession::ReleaseRig()
 	m_xSkeleton.Clear();
 	m_xPreviewMesh.Clear();
 	m_xPreviewModel.Clear();
+
+	// ★ NO RIG MEANS NO VIEW, AND THIS IS THE ONLY PLACE THAT CAN SAY SO. The
+	// panel returns at its rig prompt WITHOUT calling UpdatePreviewView, so a
+	// session whose rig stops resolving would otherwise leave slot 6 raised over
+	// nothing until it was closed. A resolve that succeeds raises it again on the
+	// next staged frame, and a rebuild request is a latched bool the compile
+	// consumes once, so the down-up pair a re-resolve makes costs one rebuild.
+	DeactivatePreviewView();
 
 	// The pick shapes describe an instance that no longer exists.
 	MarkPickSetDirty();
@@ -621,17 +654,8 @@ void Zenith_AnimationPreviewSession::EndBoneDrag()
 }
 
 //-----------------------------------------------------------------------------
-// Preview slot + view staging
+// The animation preview view
 //-----------------------------------------------------------------------------
-
-bool Zenith_AnimationPreviewSession::ReclaimPreviewSlot()
-{
-	if (!m_bOpen)
-	{
-		return false;
-	}
-	return Flux_PreviewSlotArbiter::Claim(this, m_strDisplayName) || HasPreviewSlot();
-}
 
 void Zenith_AnimationPreviewSession::OrbitCamera(float fDeltaYaw, float fDeltaPitch)
 {
@@ -653,44 +677,34 @@ void Zenith_AnimationPreviewSession::GetCameraOrbit(float& fOutYaw, float& fOutP
 
 void Zenith_AnimationPreviewSession::UpdatePreviewView()
 {
-	// Headless unit runs (and any run before Flux is up) have no registry to stage
-	// into. TryGetFluxGraphics is the one accessor that answers that without a
-	// separate Has* call.
-	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
-	if (pxGraphics == nullptr)
+	Flux_RenderViewRegistry* pxViews = TryGetPreviewViewRegistry();
+	if (pxViews == nullptr)
 	{
 		return;
 	}
 
-	Flux_RenderViewRegistry& xViews = pxGraphics->RenderViews();
-
-	if (!m_bOpen || !HasPreviewSlot())
+	// ★ NOTHING TO DRAW LOWERS THE VIEW, IT DOES NOT SKIP THE FRAME. There is no
+	// second claimant on slot 6 to flicker off any more — the session that stages
+	// it is the only thing that ever stages it — so the old "deactivate only when
+	// NOBODY owns the slot" rule has nothing left to protect and would just leave
+	// a full per-view pass chain running over an empty pose.
+	if (!m_bOpen || m_eRigStatus != ZENITH_ANIMPREVIEW_RIG_OK)
 	{
-		// ★ A DISPOSSESSED SESSION MUST NOT DEACTIVATE THE VIEW. The slot is shared;
-		// whoever holds it is very likely staging into it this same frame, and
-		// tearing the view down from here would flicker their preview off. Only a
-		// frame in which NOBODY owns the slot is safe to deactivate on.
-		if (Flux_PreviewSlotArbiter::GetOwner() == nullptr)
-		{
-			if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, false))
-			{
-				g_xEngine.FluxRenderer().RequestGraphRebuild();
-			}
-		}
+		DeactivatePreviewView();
 		return;
 	}
 
-	if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, true))
+	if (pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, true))
 	{
-		// The active view set changed: per-view transients and passes must be
-		// (de)declared, so the next frame recompiles the graph from scratch.
-		g_xEngine.FluxRenderer().RequestGraphRebuild();
+		RequestPreviewGraphRebuild();
 	}
 
-	// Staged exactly the way Flux_MaterialPreviewController stages it, through the
-	// SAME pure builders — two different fills of one slot's constants would make
-	// the preview's framing depend on which editor last touched it.
-	Flux_RenderView& xView = xViews.View(kuFluxViewSlotPreviewMaterial);
+	// Staged through the SAME pure builders Flux_MaterialPreviewController uses.
+	// The two previews now fill two different slots' constants, so they can no
+	// longer overwrite each other — but they still share the builders, because the
+	// two editors framing their subject differently would be a difference nobody
+	// asked for.
+	Flux_RenderView& xView = pxViews->View(kuFluxViewSlotPreviewAnim);
 	xView.m_xTargetDims = Zenith_Maths::UVector2(kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
 
 	Flux_ViewConstants& xVC = xView.m_xConstants;
@@ -698,9 +712,11 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 	xVC.m_xSunDir_Pad    = Zenith_Maths::Vector4(Flux_PreviewLightDir(0.8f, 0.7f), 0.0f);
 	xVC.m_xSunColour_Pad = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 3.0f);
 	xVC.m_uViewFlags     = 0u;
-	// The MATERIAL preview's slot, shared with the material editor through the
-	// arbiter until D3 moves this session onto kuFluxViewSlotPreviewAnim.
-	xVC.m_uViewSlot      = kuFluxViewSlotPreviewMaterial;
+	// ★ THE SLOT IS STAGED INTO ITS OWN CONSTANTS. Every per-view consumer reads
+	// m_uViewSlot back out to find its resources, so a payload written into slot 6
+	// carrying slot 5's number would send this preview's draws at the material
+	// editor's targets.
+	xVC.m_uViewSlot      = kuFluxViewSlotPreviewAnim;
 	// The preview view never jitters and never runs velocity/TAA, but the GPU cull
 	// reads m_xViewProjMatNoJitter for EVERY active view — so stage it.
 	xVC.m_xViewProjMatNoJitter     = xVC.m_xViewProjMat;
@@ -715,7 +731,27 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 	// instance with, so submitting through it today would draw the mesh frozen at
 	// bind pose while the session's rig animated underneath, which looks like a
 	// broken clip rather than a missing feature. Extending that struct means
-	// editing Flux_RendererImpl.h, which this unit does not own.
+	// editing Flux_RendererImpl.h, which this unit does not own. Until something
+	// records into it, the slot's persistent LDR simply samples as its cleared
+	// contents — see the list in Flux_Graphics.cpp, which builds it regardless.
+}
+
+void Zenith_AnimationPreviewSession::DeactivatePreviewView()
+{
+	Flux_RenderViewRegistry* pxViews = TryGetPreviewViewRegistry();
+	if (pxViews == nullptr)
+	{
+		return;
+	}
+
+	// ★ IDEMPOTENT BY CONSTRUCTION, WHICH IS WHAT MAKES THE PANEL'S CALL SITE
+	// LEGAL. SetViewActive answers "did the ACTIVE SET change", so the rebuild is
+	// requested on the falling edge and nowhere else; a hidden panel calling this
+	// every frame costs one comparison per frame and requests exactly one rebuild.
+	if (pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, false))
+	{
+		RequestPreviewGraphRebuild();
+	}
 }
 
 #ifdef ZENITH_TESTING

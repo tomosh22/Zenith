@@ -12,35 +12,79 @@
 //   3. SCRUBBING TO t AND PLAYING TO t PRODUCE THE SAME POSE — the one property
 //      that makes a play head trustworthy, and the reason the tick and the seek
 //      share SampleDirectPlayPoseAtCurrentTime rather than each sampling;
-//   4. the shared preview slot is last-opened-wins and reclaimable;
+//   4. the session raises and lowers ITS OWN render view (kuFluxViewSlotPreviewAnim)
+//      and never touches the material editor's — three tests, one per edge;
 //   5. a clip with no rig asks for one, and the answer is remembered per clip;
 //   6. a seek MOVES the event bookkeeping mark even though it emits nothing, so
 //      the next forward tick does not replay the skipped span as a burst (D40).
 //
-// All of it is CPU-only and runs headless under the Null backend: the rig and the
-// preview mesh are tiny assets written into a private temp directory, the clips
-// are plain data, and nothing here touches a device or a UI. None of these is
-// requiresGraphics. UpdatePreviewView() is deliberately NOT exercised — it is the
-// one entry point that needs a live renderer, and it early-outs without one.
+// ★ UpdatePreviewView() IS EXERCISED HERE, and the note that used to say it could
+// not be was wrong on its premise. It needs a Flux_GraphicsImpl, not a GPU: the
+// view registry is a pure CPU fixed-slot array, the Null backend builds a graphics
+// object exactly like the Vulkan one, and Zenith_Engine::Initialise creates it long
+// before the boot batch runs these units. Everything else here is CPU-only too —
+// the rig and the preview mesh are tiny assets written into a private temp
+// directory, the clips are plain data, and nothing touches a device or a UI. None
+// of these is requiresGraphics.
 //------------------------------------------------------------------------------
 
 #include "Core/Zenith_TestFramework.h"
 #include "UnitTests/Zenith_UnitTests.h"
+// The session no longer includes the arbiter — it is not one of its claimants any
+// more — but the one test below that still covers the arbiter does.
+#include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 
 #include <filesystem>
 
 namespace
 {
 	//--------------------------------------------------------------------------
+	// The live view registry, through the SAME accessor the session stages with
+	// (TryGetPreviewViewRegistry, in this TU's anonymous namespace above). Asking
+	// for it the same way is deliberate: a test that reached the registry by some
+	// other route could pass while the session was staging into a different one.
+	//
+	// Null only in a run with no Flux_GraphicsImpl at all. The boot unit batch is
+	// not that run — see the file header — so every test below asserts it is here
+	// rather than skipping, which is how a graphics-gated test rots.
+	//--------------------------------------------------------------------------
+	Flux_RenderViewRegistry* AnimPreview_Views()
+	{
+		return TryGetPreviewViewRegistry();
+	}
+
+	// Fixture teardown/setup half — see the fixture note below.
+	void LowerTheAnimationPreviewView()
+	{
+		Flux_RenderViewRegistry* pxViews = AnimPreview_Views();
+		if (pxViews != nullptr)
+		{
+			pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, false);
+		}
+	}
+
+	//--------------------------------------------------------------------------
 	// Fixture — the shape Zenith_AnimationDocument.Tests.inl established: a
 	// private temp directory removed on the way out, plus a ForceUnload of every
 	// registry path the test caused to be loaded so a throwaway asset never
 	// lingers in the live registry the suite runs inside.
 	//
-	// ★ IT ALSO RESETS THE PREVIEW-SLOT ARBITER at BOTH ends. The arbiter is
-	// process-level state (there is one preview view slot in one renderer), so a
-	// unit that left it claimed would hand its claim to the next unit — and the
-	// symptom would be an unrelated test reporting the wrong slot owner.
+	// ★ IT ALSO RESTORES TWO PIECES OF PROCESS-LEVEL STATE at BOTH ends, and both
+	// are process-level because the resources are: ONE render-view registry and
+	// ONE arbiter inside ONE renderer.
+	//
+	//   - The ANIMATION PREVIEW VIEW (slot 6). These units raise a real view in the
+	//     live registry; a unit that left it raised would hand a rendering preview
+	//     to every test after it, and to the automation run that follows the batch.
+	//     Nothing else lowers this slot — the material preview's per-frame janitor
+	//     owns slot 5 and only slot 5.
+	//   - The PREVIEW-SLOT ARBITER. The session is no longer a claimant, but the
+	//     arbiter test below is, and a unit that left it claimed would have an
+	//     unrelated test reporting the wrong owner.
+	//
+	// Slot 5 is deliberately NOT touched here: one of the tests asserts that the
+	// session leaves it exactly as it found it, which a fixture that reset it would
+	// make unfalsifiable.
 	//
 	// ★ DECLARE THE FIXTURE BEFORE ANY SESSION IN EVERY TEST. A session pins the
 	// rig assets with owning handles; ForceUnload deletes them regardless of
@@ -56,6 +100,7 @@ namespace
 		explicit AnimPreviewFixture(const char* szLeafDirectory)
 		{
 			Flux_PreviewSlotArbiter::ResetForTesting();
+			LowerTheAnimationPreviewView();
 
 			std::error_code xError;
 			std::filesystem::path xRoot = std::filesystem::temp_directory_path(xError);
@@ -110,6 +155,7 @@ namespace
 			std::error_code xError;
 			std::filesystem::remove_all(m_xDirectory, xError);
 			Flux_PreviewSlotArbiter::ResetForTesting();
+			LowerTheAnimationPreviewView();
 		}
 
 		AnimPreviewFixture(const AnimPreviewFixture&) = delete;
@@ -342,106 +388,331 @@ ZENITH_TEST(AnimationPreview, SeekProducesTheSamePoseAsPlayingToThatTime)
 }
 
 //------------------------------------------------------------------------------
-// (4) The shared preview slot: last-opened-wins, and reclaimable.
+// (4a) A staged frame RAISES the session's own view, and slot 5 is not its
+// business.
+//
+// ★ THE SLOT-5 HALF IS THE POINT OF THE UNIT. Before D3 this session drove the
+// material editor's view, and every symptom of that was invisible to a test that
+// only looked at "is a preview view up": the animation editor opening blanked the
+// material editor's preview, and the two took turns filling one payload. Recording
+// slot 5 before and after is what makes "it moved onto its own slot" a checkable
+// fact rather than a claim in a comment.
 //------------------------------------------------------------------------------
-ZENITH_TEST(AnimationPreview, PreviewSlotIsLastOpenedWinsAndReclaimable)
+ZENITH_TEST(AnimationPreview, AStagedFrameRaisesSlotSixAndNeverTouchesSlotFive)
 {
-	AnimPreviewFixture xFixture("zenith_animpreview_slot");
+	AnimPreviewFixture xFixture("zenith_animpreview_slotsix");
 
-	Zenith_AnimationPreviewSession xFirst("Walk.zanim");
-	Zenith_AnimationPreviewSession xSecond("Run.zanim");
-	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+	Flux_RenderViewRegistry* pxViews = AnimPreview_Views();
+	ZENITH_ASSERT_NOT_NULL(pxViews, "the unit batch runs with a live Flux_GraphicsImpl — the registry is CPU-only");
+	if (pxViews == nullptr)
+	{
+		return;
+	}
 
-	// Nothing owns the slot before anything opens.
-	ZENITH_ASSERT_FALSE(xFirst.HasPreviewSlot(), "an unopened session holds nothing");
-	ZENITH_ASSERT_TRUE(xFirst.GetPreviewSlotOwnerName().empty(), "an unowned slot has no owner name");
+	// ★ A GUARD ON THIS TEST'S OWN PREMISE. Everything below assumes slot 6 is a
+	// full-pipeline PREVIEW view the registry constructed for this purpose; if a
+	// later slot-layout change moved that, the assertions would still pass while
+	// measuring the wrong view.
+	ZENITH_ASSERT_TRUE(pxViews->View(kuFluxViewSlotPreviewAnim).m_bFullPipeline,
+		"slot 6 is a full-pipeline view");
+	ZENITH_ASSERT_TRUE(pxViews->View(kuFluxViewSlotPreviewAnim).m_eType == FLUX_RENDER_VIEW_PREVIEW,
+		"and a PREVIEW-typed one");
 
-	xFirst.Open(xClip, "game:Anims/Walk.zanim");
-	ZENITH_ASSERT_TRUE(xFirst.HasPreviewSlot(), "the first session to open takes the slot");
-	ZENITH_ASSERT_TRUE(xFirst.GetPreviewSlotOwnerName() == "Walk.zanim", "and is named as its owner");
-
-	xSecond.Open(xClip, "game:Anims/Run.zanim");
-	ZENITH_ASSERT_TRUE(xSecond.HasPreviewSlot(), "the LAST opened wins");
-	ZENITH_ASSERT_FALSE(xFirst.HasPreviewSlot(), "the first is dispossessed");
-	// ★ THE DISPOSSESSED SESSION LEARNS WHO TOOK IT. This is what its placeholder
-	// says; "the preview is unavailable" with no name is the version of this UI
-	// that leaves a user hunting for the panel to close.
-	ZENITH_ASSERT_TRUE(xFirst.GetPreviewSlotOwnerName() == "Run.zanim", "the dispossessed session names the new owner");
-
-	ZENITH_ASSERT_TRUE(xFirst.ReclaimPreviewSlot(), "the reclaim button takes it back");
-	ZENITH_ASSERT_TRUE(xFirst.HasPreviewSlot(), "the first session holds it again");
-	ZENITH_ASSERT_FALSE(xSecond.HasPreviewSlot(), "and the second is now the dispossessed one");
-	ZENITH_ASSERT_TRUE(xSecond.GetPreviewSlotOwnerName() == "Walk.zanim", "which names the first");
-
-	// Reclaiming what you already hold is a no-op that still reports success.
-	ZENITH_ASSERT_TRUE(xFirst.ReclaimPreviewSlot(), "reclaiming an owned slot succeeds");
-	ZENITH_ASSERT_TRUE(xFirst.HasPreviewSlot(), "and keeps it");
-
-	// ★ A DISPOSSESSED SESSION CLOSING MUST NOT FREE THE SLOT — it does not own it,
-	// and releasing here would blank the live preview of whoever does.
-	xSecond.Close();
-	ZENITH_ASSERT_TRUE(xFirst.HasPreviewSlot(), "a dispossessed session's close leaves the owner alone");
-
-	xFirst.Close();
-	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "the owner's close frees the slot");
-	ZENITH_ASSERT_TRUE(xFirst.GetPreviewSlotOwnerName().empty(), "and clears the owner name");
-}
-
-//------------------------------------------------------------------------------
-// (4b) The OTHER claimant. Both editors go through the same arbiter, which is why
-// it sits in Flux/RenderViews rather than in Editor/ — Flux_MaterialPreviewController
-// could not have reached it there.
-//------------------------------------------------------------------------------
-ZENITH_TEST(AnimationPreview, MaterialEditorAndSessionArbitrateTheSamePreviewSlot)
-{
-	AnimPreviewFixture xFixture("zenith_animpreview_arbitration");
+	const bool bMaterialBefore = pxViews->IsViewActive(kuFluxViewSlotPreviewMaterial);
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim),
+		"the fixture starts every test with the animation view down");
 
 	Zenith_AnimationPreviewSession xSession("Walk.zanim");
 	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
-	xSession.Open(xClip, "game:Anims/Walk.zanim");
-	ZENITH_ASSERT_TRUE(xSession.HasPreviewSlot(), "opening the animation preview takes the slot");
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
 
-	// ★ THE REAL MATERIAL-EDITOR PATH, NOT A STAND-IN OWNER. SetActive is exactly
-	// what the Material Editor panel calls every frame it is visible, and it is
-	// pure CPU state plus the arbiter claim, so it runs headless. (Update() is the
-	// part that needs a renderer; it is deliberately not called here.)
+	// ★ OPENING IS NOT A FRAME. The old session CLAIMED on open, which is why this
+	// used to be the moment the other editor's preview went dark.
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "Open() alone raises nothing");
+
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "the first staged frame raises slot 6");
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewMaterial) == bMaterialBefore,
+		"and slot 5's active flag is exactly where the session found it");
+
+	// The payload names its OWN slot: every per-view consumer reads m_uViewSlot
+	// back out to find its resources.
+	const Flux_RenderView& xAnimView = pxViews->View(kuFluxViewSlotPreviewAnim);
+	ZENITH_ASSERT_EQ(xAnimView.m_xConstants.m_uViewSlot, kuFluxViewSlotPreviewAnim,
+		"the staged constants carry the ANIMATION slot");
+	ZENITH_ASSERT_EQ(xAnimView.m_xTargetDims.x, kuFLUX_PREVIEW_VIEW_SIZE, "staged at the preview view size");
+	ZENITH_ASSERT_EQ(xAnimView.m_xTargetDims.y, kuFLUX_PREVIEW_VIEW_SIZE, "square");
+
+	// A second staged frame is not a second edge — it just refills the payload.
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_FALSE(pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, true),
+		"the view is already up, so raising it again changes no active set");
+}
+
+//------------------------------------------------------------------------------
+// (4b) Closing LOWERS it, and so does losing the rig.
+//
+// ★ NOTHING ELSE IN THE ENGINE CAN. The material preview's janitor
+// (Flux_MaterialPreviewController::Update, run every frame from the GPU-scene
+// sync) lowers slot 5 and only slot 5, and the panel stops calling the session the
+// moment the clip closes — so if this path is wrong the symptom is a preview view
+// rendering for the rest of the process with nothing looking at it, which no
+// existing assertion anywhere would notice.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, CloseAndAnUnresolvedRigBothLowerSlotSix)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_slotsixdown");
+
+	Flux_RenderViewRegistry* pxViews = AnimPreview_Views();
+	ZENITH_ASSERT_NOT_NULL(pxViews, "the unit batch runs with a live Flux_GraphicsImpl");
+	if (pxViews == nullptr)
+	{
+		return;
+	}
+
+	Zenith_AnimationPreviewSession xSession("Walk.zanim");
+	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "raised");
+
+	xSession.Close();
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "Close lowers it");
+
+	// Re-opening is a fresh rising edge — the state is per-frame, not per-object.
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "reopen");
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "raised again");
+
+	// ★ AND A RIG THAT STOPS RESOLVING LOWERS IT TOO, which is the path the PANEL
+	// cannot cover: RenderPreviewPane returns at its rig prompt without ever
+	// reaching UpdatePreviewView, so a session left rigless with the view up would
+	// never get another chance to lower it.
+	ZENITH_ASSERT_FALSE(xSession.SetRigOverride("", ""), "an empty rig does not resolve");
+	ZENITH_ASSERT_TRUE(xSession.NeedsRigSelection(), "the session is asking for a rig");
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim),
+		"and the view went down with the rig — there is no pose left to draw");
+
+	// A staged frame on a rigless session must not put it back up.
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim),
+		"staging a session with no rig lowers rather than raises");
+}
+
+//------------------------------------------------------------------------------
+// (4c) The panel's hidden-frame call: idempotent in both directions.
+//
+// The panel drives this from ABOVE its early returns (Zenith_EditorPanel_Animation
+// ::Render, both the !m_bShow return and the collapsed/unselected-tab one), where
+// it has no idea whether it was hidden last frame too — so "lower it" has to be
+// safe to say on every frame, and "show it again" has to work afterwards.
+//
+// ★ NOT DRIVEN THROUGH THE PANEL FIXTURE. That fixture lives in
+// Zenith_EditorPanel_Animation.Tests.inl, which is included into a DIFFERENT TU;
+// nothing here can reach it. The session-level call is the whole of what the panel
+// contributes at those two sites, so this is the same fact one layer down.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, DeactivateIsIdempotentAndAStagedFrameRecovers)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_slotsixhidden");
+
+	Flux_RenderViewRegistry* pxViews = AnimPreview_Views();
+	ZENITH_ASSERT_NOT_NULL(pxViews, "the unit batch runs with a live Flux_GraphicsImpl");
+	if (pxViews == nullptr)
+	{
+		return;
+	}
+
+	Zenith_AnimationPreviewSession xSession("Walk.zanim");
+	const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+	ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+
+	// A deactivate before anything was ever raised is legal and changes nothing —
+	// the panel's first hidden frame may well precede its first visible one.
+	xSession.DeactivatePreviewView();
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "still down");
+
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "a visible frame raises it");
+
+	xSession.DeactivatePreviewView();
+	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "the panel hid: down on the falling edge");
+	xSession.DeactivatePreviewView();
+	xSession.DeactivatePreviewView();
+	ZENITH_ASSERT_FALSE(pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, false),
+		"and every hidden frame after it is a no-op — there is no edge left to spend");
+
+	// The session is still open all along, so becoming visible again just works.
+	ZENITH_ASSERT_TRUE(xSession.IsOpen(), "hiding a panel does not close its clip");
+	xSession.UpdatePreviewView();
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim), "and the next visible frame puts it back");
+}
+
+//------------------------------------------------------------------------------
+// (4d) TWO PREVIEWS, TWO PAYLOADS. The property the whole slot split exists for.
+//
+// Slot 5's ViewConstants are hand-staged here with a camera nothing else would
+// produce, and must come back byte-identical after the session has run a frame.
+//
+// ★ Flux_MaterialPreviewController::Update() IS DELIBERATELY NOT RUN. It needs
+// procedural mesh assets, a material table and the external-item submission seam —
+// device work this batch does not do — so the material editor's half of the
+// property is represented by the payload it would have staged, not by the call
+// that stages it. What is being measured is that the SESSION does not write there,
+// and a hand-staged payload measures that exactly.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, EachPreviewStagesItsOwnConstants)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_ownconstants");
+
+	Flux_RenderViewRegistry* pxViews = AnimPreview_Views();
+	ZENITH_ASSERT_NOT_NULL(pxViews, "the unit batch runs with a live Flux_GraphicsImpl");
+	if (pxViews == nullptr)
+	{
+		return;
+	}
+
+	// Slot 5 belongs to the material editor, so whatever it holds is put back on
+	// the way out — this unit is a guest there.
+	Flux_RenderView& xMaterialView = pxViews->View(kuFluxViewSlotPreviewMaterial);
+	const Flux_ViewConstants xMaterialConstantsOnEntry = xMaterialView.m_xConstants;
+	const Zenith_Maths::UVector2 xMaterialDimsOnEntry = xMaterialView.m_xTargetDims;
+
+	// A camera the session's own defaults could never produce, so "unchanged" and
+	// "overwritten with something similar" cannot be confused.
+	Flux_PreviewBuildViewConstants(-2.9f, -1.1f, 5.75f, xMaterialView.m_xConstants);
+	xMaterialView.m_xConstants.m_uViewSlot = kuFluxViewSlotPreviewMaterial;
+	xMaterialView.m_xTargetDims = Zenith_Maths::UVector2(64u, 32u);
+
+	// ★ THE SNAPSHOT IS TAKEN WITH memcpy, NOT WITH A COPY-CONSTRUCTION. An implicit
+	// copy is member-wise and says nothing about the struct's padding bytes, so a
+	// byte comparison against a copied object could report a difference nothing
+	// wrote. memcpy takes the object representation, which is what "byte-unchanged"
+	// has to mean.
+	unsigned char aucMaterialBytes[sizeof(Flux_ViewConstants)];
+	std::memcpy(aucMaterialBytes, &xMaterialView.m_xConstants, sizeof(aucMaterialBytes));
+
+	{
+		Zenith_AnimationPreviewSession xSession("Walk.zanim");
+		const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+		ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+
+		// Orbit somewhere of its own, so the two payloads genuinely differ.
+		xSession.OrbitCamera(1.3f, 0.2f);
+		xSession.ZoomCamera(-4.0f);
+		xSession.UpdatePreviewView();
+
+		// ★ SLOT 5 IS BYTE-UNCHANGED. A field-by-field comparison would only cover
+		// the fields somebody remembered to name; the payload is a standard-layout
+		// block of spine constants, so the whole thing is comparable at once.
+		ZENITH_ASSERT_EQ(std::memcmp(&xMaterialView.m_xConstants, aucMaterialBytes, sizeof(aucMaterialBytes)), 0,
+			"the animation session wrote nothing into the material preview's constants");
+		ZENITH_ASSERT_EQ(xMaterialView.m_xTargetDims.x, 64u, "nor into its target dims");
+		ZENITH_ASSERT_EQ(xMaterialView.m_xTargetDims.y, 32u, "either half");
+
+		const Flux_RenderView& xAnimView = pxViews->View(kuFluxViewSlotPreviewAnim);
+		ZENITH_ASSERT_EQ(xAnimView.m_xConstants.m_uViewSlot, kuFluxViewSlotPreviewAnim,
+			"and slot 6 carries its own slot number");
+		ZENITH_ASSERT_EQ(xAnimView.m_xTargetDims.x, kuFLUX_PREVIEW_VIEW_SIZE, "at the preview view size");
+		ZENITH_ASSERT_TRUE(
+			std::memcmp(&xAnimView.m_xConstants, aucMaterialBytes, sizeof(aucMaterialBytes)) != 0,
+			"the two payloads are genuinely different, so the comparison above means something");
+
+		// The session's camera is the one the pure builder makes from ITS orbit.
+		float fYaw = 0.0f;
+		float fPitch = 0.0f;
+		float fDistance = 0.0f;
+		xSession.GetCameraOrbit(fYaw, fPitch, fDistance);
+		Flux_ViewConstants xExpectedAnim;
+		Flux_PreviewBuildViewConstants(fYaw, fPitch, fDistance, xExpectedAnim);
+		ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(xAnimView.m_xConstants.m_xCamPos_Pad),
+			Zenith_Maths::Vector3(xExpectedAnim.m_xCamPos_Pad), 1e-4f,
+			"slot 6 holds the SESSION's orbit camera");
+	}
+
+	xMaterialView.m_xConstants = xMaterialConstantsOnEntry;
+	xMaterialView.m_xTargetDims = xMaterialDimsOnEntry;
+}
+
+//------------------------------------------------------------------------------
+// (4e) The arbiter, which the session is NO LONGER A CLAIMANT OF.
+//
+// ★ THIS TEST IS IN THE WRONG FILE AND IS HERE ON PURPOSE. Its subject is
+// Flux_PreviewSlotArbiter plus Flux_MaterialPreviewController::SetActive, and it
+// belongs beside the orbit maths in Flux_MaterialPreviewController.Tests.inl.
+// D3 does not own that file, and the arbiter's ONLY coverage was the two session
+// tests D3 deletes — so it moves here rather than evaporating. Relocating it is a
+// one-file follow-up with no behaviour in it.
+//
+// The rising-edge rule is what the coverage is FOR: SetActive(true) runs every
+// frame the material panel is visible, and a claim per frame would make the
+// material editor impossible to dispossess — last-opened-wins would quietly become
+// last-drawn-wins. With one real claimant left, the second one here is a bare
+// address: the arbiter is owner-agnostic by construction and never dereferences
+// the identity it stores.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, TheArbiterClaimsOnTheRisingEdgeOnlyAndTheSessionIsNotAClaimant)
+{
+	AnimPreviewFixture xFixture("zenith_animpreview_arbiter");
+
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "the fixture reset leaves nobody owning it");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName().empty(), "and no owner name");
+
+	// ★ OPENING AND STAGING A SESSION IS NOT A CLAIM ANY MORE. This is the whole of
+	// R5 in one assertion: the animation editor left the arbitration, so a session
+	// running a frame cannot dispossess the material editor.
+	{
+		Zenith_AnimationPreviewSession xSession("Walk.zanim");
+		const Flux_AnimationClip xClip = xFixture.MakeClip("Walk", 2.0f, true);
+		ZENITH_ASSERT_TRUE(xSession.Open(xClip, "game:Anims/Walk.zanim") == ZENITH_ANIMPREVIEW_OPEN_OK, "session opens");
+		xSession.UpdatePreviewView();
+		ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr,
+			"a session that opened AND staged a frame still owns nothing");
+	}
+
 	Flux_MaterialPreviewController xMaterialPreview;
 	xMaterialPreview.SetActive(true);
+	ZENITH_ASSERT_TRUE(xMaterialPreview.HasPreviewSlot(), "the material editor opening claims the slot");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName() == "Material Editor", "under its own name");
 
-	ZENITH_ASSERT_TRUE(xMaterialPreview.HasPreviewSlot(), "the material editor, opened last, wins");
-	ZENITH_ASSERT_FALSE(xSession.HasPreviewSlot(), "the animation session is dispossessed");
-	ZENITH_ASSERT_TRUE(xSession.GetPreviewSlotOwnerName() == "Material Editor",
-		"and the session names the material editor as the owner");
+	// The second claimant: a bare address standing in for whatever claims the
+	// material slot next (the --preview-test-view diagnostic claims exactly like
+	// this, under its own name). The arbiter stores an IDENTITY it never
+	// dereferences, so a local is a complete claimant.
+	const int iOtherClaimant = 0;
 
-	// ★ ACTIVE AND DISPOSSESSED ARE DIFFERENT THINGS, and that pair IS the
-	// placeholder state. The DP automation asserts IsActive() stays true for the
-	// whole time the panel is open, so arbitration must not touch it.
-	ZENITH_ASSERT_TRUE(xMaterialPreview.IsActive(), "claiming/losing the slot does not move the liveness flag");
+	// ★ ACTIVE AND DISPOSSESSED ARE STILL DIFFERENT THINGS. The DP automation
+	// asserts IsActive() stays true for the whole time the panel is open, so
+	// arbitration must not touch the liveness flag.
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::Claim(&iOtherClaimant, "Preview Test View"), "the owner changed");
+	ZENITH_ASSERT_FALSE(xMaterialPreview.HasPreviewSlot(), "the material editor is dispossessed");
+	ZENITH_ASSERT_TRUE(xMaterialPreview.IsActive(), "but its panel is still open");
+	ZENITH_ASSERT_TRUE(xMaterialPreview.GetPreviewSlotOwnerName() == "Preview Test View", "and it is told who took it");
 
-	ZENITH_ASSERT_TRUE(xSession.ReclaimPreviewSlot(), "the session's reclaim button takes it back");
-	ZENITH_ASSERT_TRUE(xSession.HasPreviewSlot(), "the session holds it again");
-	ZENITH_ASSERT_FALSE(xMaterialPreview.HasPreviewSlot(), "and the material editor is now dispossessed");
-	ZENITH_ASSERT_TRUE(xMaterialPreview.GetPreviewSlotOwnerName() == "Walk.zanim",
-		"which names the session");
-
-	// ★ THE PER-FRAME REFRESH MUST NOT RE-STEAL. SetActive(true) runs every frame
-	// the material panel is visible; if it claimed unconditionally the material
-	// editor could never be dispossessed at all and last-opened-wins would quietly
-	// become last-drawn-wins.
+	// THE RISING EDGE IS THE ONLY EDGE. These are the per-frame liveness refreshes.
 	xMaterialPreview.SetActive(true);
 	xMaterialPreview.SetActive(true);
 	ZENITH_ASSERT_FALSE(xMaterialPreview.HasPreviewSlot(), "a liveness refresh is not a claim");
-	ZENITH_ASSERT_TRUE(xSession.HasPreviewSlot(), "the session still holds it");
 
-	// A dispossessed panel closing must not free someone else's slot.
+	// A dispossessed claimant closing must not free somebody else's slot.
 	xMaterialPreview.SetActive(false);
-	ZENITH_ASSERT_TRUE(xSession.HasPreviewSlot(), "a dispossessed close leaves the owner alone");
-	ZENITH_ASSERT_TRUE(xSession.GetPreviewSlotOwnerName() == "Walk.zanim", "the session is still the owner");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == &iOtherClaimant, "a dispossessed close frees nothing");
 
-	// ...and reopening it wins again, because that IS a rising edge.
+	// ...and re-opening IS a rising edge, so it wins.
 	xMaterialPreview.SetActive(true);
-	ZENITH_ASSERT_TRUE(xMaterialPreview.HasPreviewSlot(), "reopening the material editor wins the slot");
-	ZENITH_ASSERT_FALSE(xSession.HasPreviewSlot(), "and dispossesses the session again");
+	ZENITH_ASSERT_TRUE(xMaterialPreview.HasPreviewSlot(), "reopening claims again");
+
+	// The falling edge of the OWNER releases.
+	xMaterialPreview.SetActive(false);
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "the owner's close frees the slot");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName().empty(), "and clears the owner name");
+
+	// The reset is what every fixture in the suite leans on.
+	Flux_PreviewSlotArbiter::Claim(&iOtherClaimant, "Leftover");
+	Flux_PreviewSlotArbiter::ResetForTesting();
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "ResetForTesting clears the owner");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName().empty(), "and the name with it");
 }
 
 //------------------------------------------------------------------------------

@@ -100,6 +100,16 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 
 	if (!m_bShow)
 	{
+		// ★ A HIDDEN PANEL LOWERS ITS PREVIEW VIEW, AND THIS IS THE ONLY PLACE THAT
+		// CAN. Nothing else in the engine deactivates the animation preview slot —
+		// the material preview's per-frame janitor lowers slot 5 and only slot 5 —
+		// and every other call into the session is below this return, so a panel
+		// hidden with a clip still open would leave a full per-view pass chain
+		// rendering a preview nobody can see. The call is idempotent (see
+		// Zenith_AnimationPreviewSession::DeactivatePreviewView), so calling it on
+		// every hidden frame requests exactly one graph rebuild.
+		m_xSession.DeactivatePreviewView();
+
 		// ★ A GESTURE CANNOT SURVIVE THE PANEL BEING HIDDEN. The mouse-up that
 		// would have ended it is delivered to whatever is on screen now, so a drag
 		// left in flight here would apply itself to a later, unrelated release.
@@ -149,6 +159,11 @@ void Zenith_EditorPanel_Animation::Render(float fDtSeconds)
 	const ImGuiWindowFlags uFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 	if (!ImGui::Begin(szEDITOR_WINDOW_ANIMATION_EDITOR, &m_bShow, uFlags))
 	{
+		// Collapsed, or an unselected dock tab — the panel is shown but nothing of
+		// it is on screen, and the preview pane below is never reached. Same rule
+		// and same idempotent call as the !m_bShow return above: a preview that
+		// costs a per-view pass chain per frame must not outlive being looked at.
+		m_xSession.DeactivatePreviewView();
 		ImGui::End();
 		return;
 	}
@@ -812,24 +827,12 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
 	const float fPreviewSize = Zenith_EditorUI::Px(fSHEET_PREVIEW_SIZE_1X);
 
-	// ---- dispossessed (D32) -------------------------------------------------
-	if (!m_xSession.HasPreviewSlot())
-	{
-		// There is exactly ONE preview view slot, shared last-opened-wins. The
-		// dispossessed panel says WHO has it rather than showing a stale or black
-		// image, and must NOT deactivate the view — that would tear down what the
-		// current owner is staging into the same frame.
-		const std::string& strOwner = m_xSession.GetPreviewSlotOwnerName();
-		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(xPalette.m_uTextDim));
-		ImGui::TextWrapped("The shared preview view is currently held by '%s'.",
-			strOwner.empty() ? "(nobody)" : strOwner.c_str());
-		ImGui::PopStyleColor();
-		if (ImGui::Button("Reclaim preview"))
-		{
-			m_xSession.ReclaimPreviewSlot();
-		}
-		return;
-	}
+	// ★ NO DISPOSSESSED STATE EXISTS ANY MORE (R5). This pane used to open with a
+	// placeholder naming whoever held the one shared preview view, plus a Reclaim
+	// button. The animation editor has its OWN view slot now
+	// (kuFluxViewSlotPreviewAnim) with its own persistent LDR, and nothing else
+	// stages it — so there is no owner to name and nothing to reclaim, and a
+	// button for a state that cannot occur is worse than no button.
 
 	// ---- no rig (D31) -------------------------------------------------------
 	if (m_xSession.NeedsRigSelection())
@@ -881,10 +884,10 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 		// an invalid handle, which is why the draw below is gated rather than
 		// asserted.
 		const Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
-			// The MATERIAL preview's LDR for now — the animation preview shares
-			// that view until D3 moves it onto kuFluxViewSlotPreviewAnim, whose
-			// own LDR already exists and is built at Initialise.
-			pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewMaterial).SRV(), pxGraphics->m_xClampSampler);
+			// THE ANIMATION PREVIEW'S OWN LDR — built at Flux_Graphics::Initialise
+			// for this slot whether or not the view is active, which is what lets
+			// the registration happen on the first frame the pane is drawn.
+			pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewAnim).SRV(), pxGraphics->m_xClampSampler);
 		m_ulPreviewImageHandle = xHandle.AsUInt64();
 		m_bPreviewImageRegistered = true;
 	}
