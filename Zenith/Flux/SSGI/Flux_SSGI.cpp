@@ -9,6 +9,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/SSGI.h" // typed binding handles
 #include "Flux/Flux_BackendTypes.h"
@@ -192,9 +193,10 @@ void Flux_SSGIImpl::ShutdownImpl()
 // Pulled out of UpdateSSGIConstants so the executes can build a per-frame
 // snapshot without mutating the debug-var-bound storage (which the ImGui UI
 // reads/writes every frame). The base value is the user-tuned 1080p target;
-// the effective value is bumped for higher VIEW resolutions and clamped
-// (slot 0 = the swapchain width captured at setup, so the main view is
-// unchanged; the preview's 512 base never bumps).
+// the effective value is bumped for higher VIEW resolutions and clamped. The
+// width it scales from is whatever GetViewSetupDims gave that slot when its
+// chain was built, so a view narrower than 1920 simply never bumps — no slot
+// number is named or special-cased here.
 u_int Flux_SSGIImpl::ComputeEffectiveBinarySearchIterations(u_int uViewSlot) const
 {
 	const u_int uBase = dbg_xSSGIConstants.m_uBinarySearchIterations;
@@ -375,25 +377,63 @@ static void ExecuteSSGIDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 
 void Flux_SSGIImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// The graph back-ref is per-BUILD, not per-view — every view's attachment
+	// accessors resolve their transients through it — so it is set once, first,
+	// and outside the walk.
 	m_pxGraph = &xGraph;
 
-	// Main view at swapchain dims (byte-equivalent to the historical
-	// single-view path), then the preview view at its own dims — only while
-	// active, so its transients exist exactly when its passes do (the graph's
-	// unused-transient validation demands this). Both come from GetViewSetupDims,
-	// the ONE derivation SetupTransients sized each view's G-buffer/depth with, so
-	// these passes can never disagree with the targets they read; the preview slot
-	// is active inside this branch, hence its dims are staged.
+	// Snapshot BOTH graph-shaping choices ONCE, BEFORE the walk. The denoise
+	// toggle drives the H/V enable bits and which handle each view commits; the
+	// (clamped) divisor sizes every view's raymarch transient. Both are
+	// view-independent, so every view must be built from the SAME value — read
+	// per view, a UI change landing mid-setup would size one view's raymarch
+	// target from one divisor and the next from another while both commit a
+	// selection claiming they agree. m_uLastResolutionDivisor records the value
+	// THIS build used, so it is written here, once, rather than once per view.
+	const Flux_SSGISelection xSelection{
+		Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled,
+		m_uRayMarchResolutionDivisor < 2u ? 2u : m_uRayMarchResolutionDivisor
+	};
+	m_uLastResolutionDivisor = xSelection.m_uDivisor;
+
+	// ONE chain per ACTIVE FULL-PIPELINE view, in ascending slot order. The
+	// registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies (active + full-pipeline from construction), the
+	// preview slot joins while its owner has it up (so its transients exist
+	// exactly when its passes do — the graph's unused-transient validation
+	// demands that), and depth-only shadow cascades are never full-pipeline and
+	// never get a chain. Today that set is exactly {main} ∪ {preview if active},
+	// which is what the two hand-written calls this replaced produced.
+	//
+	// Every view's dims come from GetViewSetupDims — the ONE derivation
+	// SetupTransients sized that view's G-buffer and depth with — so an SSGI
+	// chain can never disagree with the targets it reads. Slot 0 resolves to the
+	// render dims, which is exactly the GetRenderWidth/GetRenderHeight pair the
+	// hand-written main call passed.
+	//
+	// The callback is a CAPTURELESS LAMBDA written here rather than a file-static
+	// free function on purpose: SetupViewPasses is private, and a closure declared
+	// inside a member body inherits the class's access. Being captureless (so it
+	// converts to the registry's plain fn-pointer), `this`, the graph, the hoisted
+	// graphics reference and the snapshot all travel through pCtx.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	SetupViewPasses(xGraph, kuFluxViewSlotMain, xGraphics.GetRenderWidth(), xGraphics.GetRenderHeight());
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	struct SetupCtx
 	{
-		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
-		SetupViewPasses(xGraph, kuFluxViewSlotPreview, xPreviewDims.x, xPreviewDims.y);
-	}
+		Flux_SSGIImpl*            m_pxThis;
+		Flux_RenderGraph*         m_pxGraph;
+		Flux_GraphicsImpl*        m_pxGraphics;
+		const Flux_SSGISelection* m_pxSelection;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics, &xSelection };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		const Zenith_Maths::UVector2 xDims = xSetup.m_pxGraphics->GetViewSetupDims(uSlot);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, xDims.x, xDims.y, *xSetup.m_pxSelection);
+	}, &xCtx);
 }
 
-void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
+void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight, const Flux_SSGISelection& xSelection)
 {
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 
@@ -401,13 +441,14 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 	// resolution bump from this at record time.
 	m_auViewWidths[uViewSlot] = uWidth;
 
-	// Raymarch target resolution = view base / m_uRayMarchResolutionDivisor.
-	// Track the value used so ApplyDenoiseSelectionToGraph can detect runtime
-	// changes (the divisor is view-independent).
-	const u_int uDivisor    = m_uRayMarchResolutionDivisor < 2u ? 2u : m_uRayMarchResolutionDivisor;
-	m_uLastResolutionDivisor = uDivisor;
-	const u_int uRayWidth   = uWidth  / uDivisor;
-	const u_int uRayHeight  = uHeight / uDivisor;
+	// Raymarch target resolution = this view's base dims / the committed
+	// divisor. The divisor comes from the pre-walk snapshot, never from the
+	// live debug variable, so every view in one build agrees. Clamp to at least
+	// 1 texel: the divisor can exceed a small view's dimension (SSAO and SSR
+	// clamp their own derived dims for the same reason) and a zero-sized
+	// transient is not a legal image.
+	const u_int uRayWidth  = std::max(1u, uWidth  / xSelection.m_uDivisor);
+	const u_int uRayHeight = std::max(1u, uHeight / xSelection.m_uDivisor);
 
 	// Raw result is at the divisor's resolution; resolved / denoised are full-res.
 	Flux_TransientTextureDesc xRayDesc;
@@ -426,13 +467,15 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 	m_axDenoiseHHandles[uViewSlot] = xGraph.CreateTransient(xFull);
 	m_axDenoisedHandles[uViewSlot] = xGraph.CreateTransient(xFull);
 
-	// Pass names must be per-view unique + static-lifetime (duplicate names
-	// are a hard assert). View 0 keeps the historical names (profiling /
-	// FindPass stability).
-	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
+	// Pass names must be per-view unique + static-lifetime (a duplicate name is
+	// a hard assert), so they come from the interning pool rather than a second
+	// literal table: Flux_ViewPassName hands slot 0 the base pointer ITSELF, so
+	// the main view's names stay byte-for-byte the historical ones that
+	// profiling labels and FindPass key off, and every other slot gets an
+	// interned, static-lifetime "<base> (<suffix>)".
 
 	// RayMarch pass (half-res) — reads G-Buffer + HiZ, writes raw result.
-	xGraph.AddPass(bMainView ? "SSGI RayMarch" : "SSGI RayMarch (Preview)", ExecuteSSGIRayMarch)
+	xGraph.AddPass(Flux_ViewPassName("SSGI RayMarch", uViewSlot), ExecuteSSGIRayMarch)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -443,7 +486,7 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 		.WritesTransient(m_axRawResultHandles[uViewSlot],                                 RESOURCE_ACCESS_WRITE_RTV);
 
 	// Upsample pass — half→full res bilateral upsample.
-	xGraph.AddPass(bMainView ? "SSGI Upsample" : "SSGI Upsample (Preview)", ExecuteSSGIUpsample)
+	xGraph.AddPass(Flux_ViewPassName("SSGI Upsample", uViewSlot), ExecuteSSGIUpsample)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot), RESOURCE_ACCESS_READ_SRV)
@@ -454,7 +497,7 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 	// sub-passes. Registered unconditionally; the enable bits track
 	// m_bSSGIDenoiseEnabled (ApplyDenoiseSelectionToGraph forces a rebuild when
 	// the toggle changes).
-	const Flux_PassHandle xDenoisePassH = xGraph.AddPass(bMainView ? "SSGI Denoise H" : "SSGI Denoise H (Preview)", ExecuteSSGIDenoiseH)
+	const Flux_PassHandle xDenoisePassH = xGraph.AddPass(Flux_ViewPassName("SSGI Denoise H", uViewSlot), ExecuteSSGIDenoiseH)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -463,7 +506,7 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 		.ReadsTransient (m_axResolvedHandles[uViewSlot],                                  RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_axDenoiseHHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV);
 
-	const Flux_PassHandle xDenoisePassV = xGraph.AddPass(bMainView ? "SSGI Denoise V" : "SSGI Denoise V (Preview)", ExecuteSSGIDenoiseV)
+	const Flux_PassHandle xDenoisePassV = xGraph.AddPass(Flux_ViewPassName("SSGI Denoise V", uViewSlot), ExecuteSSGIDenoiseV)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -472,9 +515,11 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 		.ReadsTransient (m_axDenoiseHHandles[uViewSlot],                                  RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_axDenoisedHandles[uViewSlot],                                  RESOURCE_ACCESS_WRITE_RTV);
 
-	const bool bDenoise = Zenith_GraphicsOptions::Get().m_bSSGIDenoiseEnabled;
-	xGraph.SetEnabled(xDenoisePassH, bDenoise);
-	xGraph.SetEnabled(xDenoisePassV, bDenoise);
+	// The enable bits come from the pre-walk snapshot, not from the live option:
+	// the toggle a view's passes were enabled with MUST be the one its selector
+	// commits, or the deferred consumer reads a handle no enabled pass wrote.
+	xGraph.SetEnabled(xDenoisePassH, xSelection.m_bDenoise);
+	xGraph.SetEnabled(xDenoisePassV, xSelection.m_bDenoise);
 
 	// Commit the handle the deferred pass will now read for this view.
 	// GetSSGIHandle resolves to this value — any runtime toggle without a
@@ -482,7 +527,7 @@ void Flux_SSGIImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u
 	// point of the mistake. The composite selection captures BOTH the denoise
 	// toggle and the (clamped) resolution divisor, so a divisor change also
 	// forces a rebuild.
-	m_axSSGISelectors[uViewSlot].Commit(m_axDenoisedHandles[uViewSlot], m_axResolvedHandles[uViewSlot], bDenoise, Flux_SSGISelection{ bDenoise, uDivisor });
+	m_axSSGISelectors[uViewSlot].Commit(m_axDenoisedHandles[uViewSlot], m_axResolvedHandles[uViewSlot], xSelection.m_bDenoise, xSelection);
 }
 
 void Flux_SSGIImpl::ApplyDenoiseSelectionToGraph(Flux_RenderGraph& /*xGraph*/)

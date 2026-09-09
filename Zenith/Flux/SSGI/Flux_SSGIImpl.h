@@ -31,10 +31,13 @@ struct Flux_SSGISelection
 
 // Phase 9: state + behaviour for SSGI subsystem.
 //
-// S5b: the whole SSGI chain (transients + committed-handle selector) is
-// per-render-view — slot 0 (main) at swapchain dims as before; the preview
-// view at 512² when active. uViewSlot defaults keep single-view callers
-// unchanged.
+// The whole SSGI chain (transients + committed-handle selector) is
+// per-render-view. SetupRenderGraph builds one chain per ACTIVE FULL-PIPELINE
+// view by driving Flux_RenderViewRegistry::ForEachActiveFullPipelineView, each
+// at that view's Flux_GraphicsImpl::GetViewSetupDims (slot 0 resolves to the
+// render dims; every other qualifying slot to its own). No slot number is
+// special-cased anywhere in the walk. uViewSlot defaults keep single-view
+// callers unchanged.
 class Flux_SSGIImpl : public Flux_ScreenSpaceEffectBase<Flux_SSGIImpl>
 {
 public:
@@ -57,8 +60,8 @@ public:
 	// Promoted from file-static free functions; cross-subsystem deps are reached
 	// via g_xEngine at point of use.
 	// Public because the static graph-execute trampolines call them.
-	// The iteration bump scales with the VIEW's base width (slot 0 = swapchain,
-	// preview = kuFLUX_PREVIEW_VIEW_SIZE) captured at setup.
+	// The iteration bump scales with the VIEW's base width — whatever
+	// GetViewSetupDims gave that slot when its chain was built.
 	u_int ComputeEffectiveBinarySearchIterations(u_int uViewSlot = kuFluxViewSlotMain) const;
 	void UpdateSSGIConstants();
 
@@ -78,13 +81,20 @@ public:
 	Flux_TransientHandle m_axDenoiseHHandles[FLUX_MAX_RENDER_VIEWS];
 	Flux_TransientHandle m_axDenoisedHandles[FLUX_MAX_RENDER_VIEWS];
 
-	// Per-view base widths captured at setup (slot 0 = swapchain, preview =
-	// kuFLUX_PREVIEW_VIEW_SIZE) — ComputeEffectiveBinarySearchIterations scales
-	// its bump from these.
+	// Per-view base widths captured at setup — whatever GetViewSetupDims
+	// returned for that slot during the ForEachActiveFullPipelineView walk.
+	// ComputeEffectiveBinarySearchIterations scales its bump from these, so a
+	// slot never built this frame keeps its last-built width and no live
+	// swapchain query is needed at record time.
 	u_int                m_auViewWidths[FLUX_MAX_RENDER_VIEWS] = {};
 
 	// SSGI-only raymarch resolution divisor (full / divisor), shared by every
 	// view. Stays in the derived — SSR has no equivalent.
+	//
+	// m_uRayMarchResolutionDivisor is the LIVE debug variable. Setup never reads
+	// it per view: SetupRenderGraph clamps it once into the pre-walk
+	// Flux_SSGISelection every view is built from, and records that clamped
+	// value here — once per graph build, not once per view.
 	u_int                m_uRayMarchResolutionDivisor = 4u;
 	u_int                m_uLastResolutionDivisor     = 4u;
 
@@ -96,9 +106,11 @@ public:
 	Flux_CommittedHandleSelector<Flux_SSGISelection> m_axSSGISelectors[FLUX_MAX_RENDER_VIEWS];
 
 private:
-	// Per-view transients + RayMarch/Upsample/DenoiseH/DenoiseV pass chain
-	// (S5b): called for the main view at swapchain dims, then for the preview
-	// view at kuFLUX_PREVIEW_VIEW_SIZE² only while it is active — so the main
-	// path stays byte-equivalent.
-	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight);
+	// Per-view transients + RayMarch/Upsample/DenoiseH/DenoiseV pass chain.
+	// Called once per ACTIVE FULL-PIPELINE view by SetupRenderGraph's
+	// ForEachActiveFullPipelineView walk, in ascending slot order, at the dims
+	// GetViewSetupDims returns for that slot. xSelection is the ONE snapshot
+	// taken before the walk, so no two views can commit different denoise
+	// toggles or raymarch divisors.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight, const Flux_SSGISelection& xSelection);
 };

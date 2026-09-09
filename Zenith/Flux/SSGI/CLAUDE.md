@@ -29,6 +29,25 @@ The render graph schedules these passes via Read/Write declarations; there is no
 | SSGI denoise V | SSGI denoise intermediate, depth | SSGI final |
 | Deferred shading | SSGI final, G-buffer, IBL | HDR scene |
 
+### Per-view setup and naming
+
+`SetupRenderGraph` stores the per-BUILD graph back-ref, snapshots **both**
+graph-shaping choices once into a `Flux_SSGISelection` (the denoise toggle and
+the clamped raymarch divisor — reading either per view would let a mid-setup UI
+change size one view's raymarch target differently from the next), then drives
+`Flux_RenderViewRegistry::ForEachActiveFullPipelineView` — one four-pass chain
+per active full-pipeline view, in ascending slot order, at that view's
+`Flux_GraphicsImpl::GetViewSetupDims` (slot 0 resolves to the render dims). The
+registry decides membership by view **properties**, never by slot number, so no
+`uViewSlot == kuFluxViewSlotMain` branch survives here; the walk's callback is a
+captureless lambda inside the member body (`SetupViewPasses` is private) and
+carries `this`, the graph, the hoisted `Flux_GraphicsImpl&` and the snapshot
+through `void* pCtx`. Pass names come from `Flux_ViewPassName(base, uViewSlot)`
+(`Flux/RenderViews/Flux_ViewPassNames.h`) over the four bases `"SSGI RayMarch"`,
+`"SSGI Upsample"`, `"SSGI Denoise H"`, `"SSGI Denoise V"`: slot 0 gets the base
+pointer back by identity, so its historical names are byte-for-byte unchanged,
+and any other slot gets an interned `"<base> (<suffix>)"`.
+
 ### Files
 
 | File | Purpose |
