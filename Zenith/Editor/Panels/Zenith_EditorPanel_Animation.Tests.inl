@@ -2596,6 +2596,69 @@ namespace
 	{
 		return Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_ROTATION);
 	}
+
+	// ★ A BENT PROBE, BECAUSE AnimPanelWriteProbe IS COLLINEAR AND CANNOT SEE AN
+	// AUTO. y = 0 / 1 / 3 at t = 0 / 1 / 2: the centred slope at the middle key is
+	// 1.5, while the two segments' own slopes are 1 and 2 — so LINEAR, AUTO and FLAT
+	// all produce DIFFERENT derivatives there. On the collinear probe the
+	// Catmull-Rom slope is exactly the segment slope, so an Auto that never reached
+	// the sampler would measure identical to Linear and the test would pass on a
+	// mode that did nothing.
+	void AnimPanelWriteBentProbe(const std::string& strPath)
+	{
+		Flux_AnimationClip xClip;
+		xClip.SetName("BentProbe");
+		xClip.SetDuration(2.0f);
+		xClip.GetMetadata().m_bGenerated = false;
+		xClip.GetMetadata().m_uAuthoredFrameRate = 30u;
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f));
+		xHip.SortKeyframes();
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+
+		xClip.Export(strPath);
+	}
+
+	// The y-RATE the position sampler actually produces between two times, by finite
+	// difference.
+	//
+	// ★ THE THIRD COPY OF THIS MEASUREMENT, AND IT HAS TO BE ONE. The other two —
+	// Flux_AnimationClip.Tests.inl's TanMeasurePositionRateX and
+	// Zenith_AnimationDocument.Tests.inl's AnimDocMeasureHipRateY — each live in an
+	// ANONYMOUS namespace in a different TU, so neither is linkable from here, and
+	// promoting one to a shared header would put a test helper in the engine's
+	// public surface. It is four lines of finite difference; the thing that must not
+	// be duplicated is the FORMULA under test, and this measures the sampler rather
+	// than restating it.
+	//
+	// ★ AND IT MUST BE A RATE, NOT A SAMPLED VALUE. A mode is a claim about the
+	// DERIVATIVE at a key; the values either side of a key agree by construction
+	// however wrong the slope is, so comparing positions cannot see a FLAT end at
+	// all.
+	float AnimPanelMeasureHipRateY(const Zenith_EditorPanel_Animation& xPanel, float fFrom, float fTo)
+	{
+		const Flux_BoneChannel* pxHip = xPanel.Document().GetClip().GetBoneChannel("Hip");
+		if (pxHip == nullptr)
+		{
+			return 0.0f;
+		}
+		return (pxHip->SamplePosition(fTo).y - pxHip->SamplePosition(fFrom).y) / (fTo - fFrom);
+	}
+
+	// The sampled VALUE, beside the rate — a tangent bends a segment and must never
+	// move a key, and that half of the claim is a position and not a derivative.
+	float AnimPanelSampleHipY(const Zenith_EditorPanel_Animation& xPanel, float fTimeSeconds)
+	{
+		const Flux_BoneChannel* pxHip = xPanel.Document().GetClip().GetBoneChannel("Hip");
+		if (pxHip == nullptr)
+		{
+			return 0.0f;
+		}
+		return pxHip->SamplePosition(fTimeSeconds).y;
+	}
 }
 
 //==============================================================================
@@ -2649,10 +2712,29 @@ ZENITH_TEST(AnimPanel, TheCurveViewReplacesTheRowsAndCostsTheSheetNoHeight)
 	ZENITH_ASSERT_EQ(xPanel.GetRecordedCurvePointCount(), 0u, "and no curve points");
 	ZENITH_ASSERT_TRUE(xPanel.GetRowTrackRect(xTrack, xUnused), "while the dope-sheet ROW rect is recorded");
 
+	// ★ B3's MODE BOXES ARE ASSERTED DIRECTLY, NOT INFERRED FROM GEOMETRY. They
+	// record no rect and cost no height by design, so "they were not drawn" and
+	// "they were drawn" look IDENTICAL to every measurement in this test — which is
+	// exactly the shape of failure that would leave the control missing with the
+	// suite green.
+	ZENITH_ASSERT_FALSE(xPanel.WasCurveModeControlDrawnLastFrame(),
+		"★ with the curve view OFF the mode boxes are not emitted at all");
+
 	// ---- switch to curves ----------------------------------------------------
+	// A key is selected first: the boxes show and set the mode of the PRIMARY
+	// selected key, so with an empty selection there is no mode for them to name.
+	const u_int uKeyForMode = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
+	ZENITH_ASSERT_NE(uKeyForMode, uINVALID_ANIM_KEY_ID, "the midpoint key resolves to an id");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, uKeyForMode, ZENITH_ANIMSELECT_REPLACE),
+		"and one key is selected for the mode boxes to address");
+
 	ZENITH_ASSERT_TRUE(xPanel.Action_SetCurveView(true), "the view switches on");
 	ZENITH_ASSERT_TRUE(xPanel.IsCurveViewShown(), "and says so");
 	AnimPanelRenderFrames(xPanel, 2u);
+
+	ZENITH_ASSERT_TRUE(xPanel.WasCurveModeControlDrawnLastFrame(),
+		"★ and with it ON they ARE — so the height equality below is measured with the control actually "
+		"on the row, not with a control that quietly failed to draw");
 
 	Zenith_AnimPanelRect xCurveView;
 	ZENITH_ASSERT_TRUE(xPanel.GetCurveViewRect(xCurveView), "the curve area was recorded");
@@ -2665,10 +2747,8 @@ ZENITH_TEST(AnimPanel, TheCurveViewReplacesTheRowsAndCostsTheSheetNoHeight)
 	// the same failure the off-screen gate exists for, one view over.
 	ZENITH_ASSERT_FALSE(xPanel.GetRowTrackRect(xTrack, xUnused),
 		"★ the dope-sheet row rects are NOT recorded while the curve view is up");
-	const u_int uKeyAtOne = AnimPanelKeyIdAtTime(xPanel.Document(), xTrack, 1.0f);
-	ZENITH_ASSERT_NE(uKeyAtOne, uINVALID_ANIM_KEY_ID, "the midpoint key resolves to an id");
-	ZENITH_ASSERT_FALSE(xPanel.GetKeyRect(xTrack, uKeyAtOne, xUnused), "and neither are the key diamonds");
-	ZENITH_ASSERT_TRUE(xPanel.GetCurveKeyRect(xTrack, uKeyAtOne, 1u, xUnused),
+	ZENITH_ASSERT_FALSE(xPanel.GetKeyRect(xTrack, uKeyForMode, xUnused), "and neither are the key diamonds");
+	ZENITH_ASSERT_TRUE(xPanel.GetCurveKeyRect(xTrack, uKeyForMode, 1u, xUnused),
 		"but that key's y-component CURVE POINT is");
 
 	Zenith_AnimPanelRect xTrackAreaOn;
@@ -2683,6 +2763,9 @@ ZENITH_TEST(AnimPanel, TheCurveViewReplacesTheRowsAndCostsTheSheetNoHeight)
 	ZENITH_ASSERT_FALSE(xPanel.GetCurveViewRect(xUnused), "and draws nothing again");
 	ZENITH_ASSERT_EQ(xPanel.GetRecordedCurvePointCount(), 0u, "recording no curve points");
 	ZENITH_ASSERT_TRUE(xPanel.GetRowTrackRect(xTrack, xUnused), "with the rows back");
+	ZENITH_ASSERT_FALSE(xPanel.WasCurveModeControlDrawnLastFrame(),
+		"★ and the mode boxes are gone with it, WITH THE SAME KEY STILL SELECTED — so this is the view "
+		"toggle answering, not an empty selection");
 
 	Zenith_AnimPanelRect xTrackAreaRestored;
 	ZENITH_ASSERT_TRUE(xPanel.GetTrackAreaRect(xTrackAreaRestored), "the canvas was recorded again");
@@ -2896,14 +2979,16 @@ ZENITH_TEST(AnimPanel, SelectionAutoIsTheSlopeLinearZeroesAndEachIsOneUndoStep)
 			"and Catmull-Rom through three collinear keys IS the line's slope, at both ends too");
 	}
 
-	// The displayed mode follows the numbers, which is all the wire can carry.
-	Zenith_AnimCurveTangentMode eMode = ZENITH_ANIMCURVE_TANGENT_LINEAR;
-	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, 1), eMode),
-		"the mode reads back");
-	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
-		"★ a key Auto just wrote STORES Flux_TangentMode::AUTO (B2) and DISPLAYS as Custom, because this "
-		"panel's mode enum still has only two values — an under-statement, not a lie, and the widening "
-		"is its own unit");
+	// The displayed mode is the STORED one, and Auto is one of the four words it
+	// can be (B3).
+	Flux_TangentMode eMode = Flux_TangentMode::LINEAR;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, 1),
+		ZENITH_ANIM_TANGENT_END_BOTH, eMode), "the mode reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::AUTO,
+		"★ a key Auto just wrote STORES Flux_TangentMode::AUTO on both ends (B2) and now DISPLAYS 'Auto' "
+		"— which is what makes the difference between provenance the document MAINTAINS and a hand-dragged "
+		"handle visible to the person who has to choose between them");
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(eMode), "Auto", "in exactly that word");
 
 	ZENITH_ASSERT_TRUE(xPanel.Action_SetSelectionTangentsLinear(), "Linear on the same selection");
 	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u, "is one more compound");
@@ -2948,51 +3033,80 @@ ZENITH_TEST(AnimPanel, SelectionAutoIsTheSlopeLinearZeroesAndEachIsOneUndoStep)
 }
 
 //==============================================================================
-// (C5) The DISPLAYED mode is "Linear" for an unset pair and "Custom" for
-// anything else — and it is the ONLY mode a reader can derive.
+// (C5) The DISPLAYED mode is the STORED mode, PER END (B3).
 //
-// ★ THE LABELS ARE THE POINT OF THIS TEST, NOT THE ENUM. It is a PROJECTION of the
-// four-valued Flux_TangentMode the clip stores per end
-// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*) onto the two this panel
-// displays. FLAT and AUTO ARE authorable since B2 and they land in the Custom
-// bucket — so "Flat" would be the wrong label for a bucket that also holds every
-// hand-dragged handle. Widening the display is its own unit; what this test pins is
-// that the projection reads the stored MODE and never re-derives one from the
-// numbers.
+// ★ WHAT THIS TEST PINS IS THAT THERE IS NO SECOND ANSWER. The clip stores a
+// four-valued Flux_TangentMode on each end of each key
+// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*), the display names exactly
+// that value, and the two ends are read SEPARATELY — a key that is IN=Linear /
+// OUT=Flat is legal since B2, and the old two-valued projection had to call it
+// "Custom", which was wrong about both ends at once.
+//
+// ★ AND "MIXED" IS THE BOOL, NOT A FIFTH MODE. Asking BOTH about such a key is
+// refused rather than answered, because every possible answer would be a lie about
+// one end the user can see on screen.
 //==============================================================================
-ZENITH_TEST(AnimPanel, TheDisplayedTangentModeIsLinearForUnsetAndCustomOtherwise)
+ZENITH_TEST(AnimPanel, TheDisplayedTangentModeIsTheStoredModePerEnd)
 {
-	// Pure first — no clip needed to pin what the two words mean.
+	// Pure first — no clip needed to pin what the four words mean. The labels are
+	// asserted here and nowhere else, so the toolbar, the tooltip and these
+	// assertions cannot drift apart.
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(Flux_TangentMode::LINEAR), "Linear",
+		"the sampler's linear branch — the segment's own slope");
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(Flux_TangentMode::FLAT), "Flat",
+		"★ and 'Flat' IS a word this display may say now (schema 3, B2): it is the same zero vector as "
+		"LINEAR, told apart by the stored mode alone");
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(Flux_TangentMode::AUTO), "Auto",
+		"AUTO is a stored, MAINTAINED provenance — not an operation that happened once");
+	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(Flux_TangentMode::CUSTOM), "Custom",
+		"and CUSTOM is the hand-dragged handle");
+
+	Flux_TangentMode eMode = Flux_TangentMode::CUSTOM;
+
 	Flux_KeyTangents xUnset;
-	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xUnset) == ZENITH_ANIMCURVE_TANGENT_LINEAR,
-		"a pair whose two ends are both LINEAR displays as LINEAR");
-	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(ZENITH_ANIMCURVE_TANGENT_LINEAR), "Linear",
-		"★ and the word is 'Linear' — never 'Flat', which since B2 names a DIFFERENT stored mode that "
-		"this two-valued display cannot tell from a hand-dragged handle");
-	ZENITH_ASSERT_STREQ(Zenith_AnimCurveTangentModeLabel(ZENITH_ANIMCURVE_TANGENT_CUSTOM), "Custom",
-		"anything that is not two LINEAR ends displays as Custom");
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xUnset, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"a pair whose two ends agree answers for BOTH");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR, "and the default pair is LINEAR on both ends");
 
-	// ★ ONE END IS ENOUGH, AND THE MODE IS WHAT IS READ. The struct is put through
-	// the legacy derivation here only to produce the CUSTOM-over-a-tiny-vector pair
-	// cheaply; the projection itself never looks at a number.
-	Flux_KeyTangents xOneHalf;
-	xOneHalf.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 1.0e-6f, 0.0f);
-	Flux_DeriveTangentModesFromVectors(xOneHalf);
-	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xOneHalf) == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
-		"★ ONE non-zero half is enough, and the legacy derivation's compare is EXACT — a tolerance would "
-		"swallow a deliberately tiny authored tangent and report it as untouched");
-
-	// ★ AND THE PROJECTION READS THE MODE, NOT THE NUMBERS. A pair whose vectors are
-	// zero but whose ends are FLAT is not LINEAR: it samples as an ease. Since B2 a
-	// user can author exactly that, which is what makes reading the stored mode
-	// load-bearing rather than merely tidy — a display that re-derived from the
-	// vectors would call this key "Linear" and be silently wrong about the pose.
+	// ★ FLAT OVER EXACT ZEROES READS "Flat". This is the case the old projection got
+	// wrong: the numbers are indistinguishable from an untouched key, so anything
+	// that re-derived a mode from the vectors would call this LINEAR — and be
+	// silently wrong about the pose, because the segment eases.
 	Flux_KeyTangents xFlatWithZeroes;
 	xFlatWithZeroes.m_eInMode = Flux_TangentMode::FLAT;
 	xFlatWithZeroes.m_eOutMode = Flux_TangentMode::FLAT;
-	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xFlatWithZeroes) == ZENITH_ANIMCURVE_TANGENT_CUSTOM,
-		"★ FLAT ends over zero vectors display as Custom, not Linear — an under-statement rather than "
-		"a lie, which is the failure this ordering picks on purpose");
+	ZENITH_ASSERT_TRUE(xFlatWithZeroes.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+		&& xFlatWithZeroes.m_xOutTangent == Zenith_Maths::Vector3(0.0f),
+		"fixture: NOT ONE NUMBER separates this pair from the unset one above");
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xFlatWithZeroes, ZENITH_ANIM_TANGENT_END_IN, eMode),
+		"the IN end answers");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT, "★ with FLAT, read from the MODE and not the numbers");
+
+	// ★ AND THE TWO ENDS ARE READ SEPARATELY. IN=LINEAR / OUT=FLAT is exactly what
+	// the document's per-end verb makes reachable (B2), and it is the key no single
+	// answer describes.
+	Flux_KeyTangents xMixed;
+	xMixed.m_eInMode = Flux_TangentMode::LINEAR;
+	xMixed.m_eOutMode = Flux_TangentMode::FLAT;
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xMixed, ZENITH_ANIM_TANGENT_END_IN, eMode), "IN answers");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR, "with the IN end's own mode");
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xMixed, ZENITH_ANIM_TANGENT_END_OUT, eMode), "OUT answers");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT, "with the OUT end's own, which is a different one");
+	eMode = Flux_TangentMode::CUSTOM;
+	ZENITH_ASSERT_FALSE(Zenith_AnimCurveTangentModeOf(xMixed, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"★ and BOTH is REFUSED for a mixed key — 'mixed' is the bool, never a fifth enum value");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::CUSTOM,
+		"with the caller's variable left exactly as it was, so a refusal cannot be read as a mode");
+
+	// A CUSTOM end still reads CUSTOM, and the vector beside it is irrelevant to the
+	// reading — which is the whole difference from the derivation this replaced.
+	Flux_KeyTangents xCustom;
+	xCustom.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 1.0e-6f, 0.0f);
+	Flux_DeriveTangentModesFromVectors(xCustom);
+	ZENITH_ASSERT_TRUE(Zenith_AnimCurveTangentModeOf(xCustom, ZENITH_ANIM_TANGENT_END_OUT, eMode), "OUT answers");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::CUSTOM,
+		"a tiny authored tangent is CUSTOM — the legacy derivation's compare is EXACT, and a tolerance "
+		"would have reported it as untouched");
 
 	// ---- and through the panel, against a real clip ---------------------------
 	AnimPanelFixture xFixture("zenith_animpanel_curvemode");
@@ -3004,28 +3118,164 @@ ZENITH_TEST(AnimPanel, TheDisplayedTangentModeIsLinearForUnsetAndCustomOtherwise
 	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
 	const u_int uKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 1);
 
-	Zenith_AnimCurveTangentMode eMode = ZENITH_ANIMCURVE_TANGENT_CUSTOM;
-	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, eMode), "the mode reads back");
-	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_LINEAR,
+	eMode = Flux_TangentMode::CUSTOM;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"the mode reads back through the panel");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR,
 		"a key of a clip nobody authored a tangent on is LINEAR — which is every clip in the tree");
+
+	// FLAT on ONE end, through the panel's own mode verb: the key is now the mixed
+	// one the pure section above only constructed by hand.
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_OUT,
+		Flux_TangentMode::FLAT), "the OUT end goes FLAT");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_OUT, eMode), "OUT reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT, "as Flat");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_IN, eMode), "IN reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR,
+		"★ while the IN end was NOT touched — the two ends are addressed separately all the way from the "
+		"toolbar box to the file");
+	ZENITH_ASSERT_FALSE(xPanel.GetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"and BOTH refuses on the real key too");
 
 	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangents(xTrack, uKeyId,
 		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)),
-		"one tangent edit");
-	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, eMode), "the mode reads back");
-	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_CUSTOM, "and it displays as Custom");
+		"one VECTOR edit, which is a different gesture");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"BOTH answers again");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::CUSTOM,
+		"because a vector edit claims BOTH ends as CUSTOM — which is right for a drag and is exactly why "
+		"the per-end control must never route through it");
 
-	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "undo it");
-	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, eMode), "the mode reads back");
-	ZENITH_ASSERT_TRUE(eMode == ZENITH_ANIMCURVE_TANGENT_LINEAR,
-		"★ and it is Linear again — which is only true because the undo restored EXACT zeroes");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "undo the vector edit");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uKeyId, ZENITH_ANIM_TANGENT_END_OUT, eMode), "OUT reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT,
+		"★ and it is FLAT again — the MODE was restored, not merely the numbers, which never moved");
 
 	// A root-motion track has no tangents at all, so it has no mode either.
 	const Zenith_AnimTrackId xRoot = Zenith_AnimTrackId::RootMotion(FLUX_ANIM_TRACK_POSITION);
 	const u_int uRootKeyId = xPanel.Document().InsertKey(xRoot, 0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
 	ZENITH_ASSERT_NE(uRootKeyId, uINVALID_ANIM_KEY_ID, "a root-motion key exists");
-	ZENITH_ASSERT_FALSE(xPanel.GetKeyTangentMode(xRoot, uRootKeyId, eMode),
+	ZENITH_ASSERT_FALSE(xPanel.GetKeyTangentMode(xRoot, uRootKeyId, ZENITH_ANIM_TANGENT_END_IN, eMode),
 		"★ but it has no tangents (D17), so it has no MODE — refused rather than reported as Linear");
+	ZENITH_ASSERT_FALSE(xPanel.Action_SetKeyTangentMode(xRoot, uRootKeyId, ZENITH_ANIM_TANGENT_END_IN,
+		Flux_TangentMode::FLAT), "and the mode verb refuses it as well, rather than storing one nothing reads");
+
+	xPanel.Shutdown();
+}
+
+//==============================================================================
+// (C5b) B3 — SETTING A MODE THROUGH THE PANEL IS ONE UNDO ENTRY AND REACHES THE
+// SAMPLED DERIVATIVE.
+//
+// ★ THE PROBE IS BENT, AND THAT IS THE WHOLE DESIGN OF THIS TEST. On the
+// collinear probe every other curve unit uses, the Catmull-Rom slope IS the
+// segment slope — so an AUTO that never reached the sampler would measure exactly
+// like LINEAR and this test would pass on a control that did nothing. y = 0/1/3
+// gives three different answers at the middle key: 1 arriving (LINEAR), 0 (FLAT)
+// and 1.5 (AUTO, the centred slope).
+//
+// ★ AND THE MEASUREMENT IS A RATE. A mode is a claim about the DERIVATIVE at a
+// key; the sampled VALUES either side of it agree by construction however wrong
+// the slope is, which is why a value comparison cannot see a FLAT end at all.
+//==============================================================================
+ZENITH_TEST(AnimPanel, SettingAModeThroughThePanelIsOneUndoEntryAndReachesTheDerivative)
+{
+	AnimPanelFixture xFixture("zenith_animpanel_curvemodeedit");
+	AnimPanelWriteBentProbe(xFixture.m_strPath);
+
+	Zenith_EditorPanel_Animation xPanel;
+	ZENITH_ASSERT_TRUE(xPanel.OpenClip(xFixture.m_strPath), "the bent probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimPanelHipPosition();
+	const u_int uMiddleId = xPanel.Document().GetKeyIdAtIndex(xTrack, 1);
+	ZENITH_ASSERT_NE(uMiddleId, uINVALID_ANIM_KEY_ID, "the middle key resolves");
+
+	// ★ HALF the step the document's own FLAT unit uses, because this probe is
+	// STEEPER. A finite difference's truncation is f''·h/2, and the second segment's
+	// curvature here is four times that probe's — at 2e-3 the "leaves flat" reading
+	// would land at 8e-3 against a 1e-2 tolerance, which is a pass by 20%. At 1e-3
+	// the worst truncation is ~4e-3 and float noise (values of order 3, divided by
+	// h) stays around 3e-4, so the margin is real on both sides.
+	const float fH = 1.0e-3f;
+
+	// ---- the control ---------------------------------------------------------
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f - fH, 1.0f), 1.0f, 1e-2f,
+		"fixture: the curve ARRIVES at the middle key on the first segment's slope of 1");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f, 1.0f + fH), 2.0f, 1e-2f,
+		"and LEAVES it on the second's slope of 2 — the bend that makes the three modes distinguishable");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 0u, "with nothing on the undo stack yet");
+
+	// ---- FLAT on both ends ---------------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "the panel's mode verb lands");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "★ as EXACTLY ONE undo entry for both ends");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f - fH, 1.0f), 0.0f, 1e-2f,
+		"★ and the curve now arrives with a ZERO derivative — FLAT is not LINEAR, and the difference is "
+		"visible only in the rate");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f, 1.0f + fH), 0.0f, 1e-2f, "and leaves with one");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelSampleHipY(xPanel, 1.0f), 1.0f, 1e-5f,
+		"while the key itself is exactly where it was authored — a mode bends a segment and moves no key");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "re-stating the mode is SATISFIED");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u,
+		"★ and pushes NOTHING — the action reports the document's assignment contract, so the invariant "
+		"worth asserting is the stack DEPTH and never the bool");
+
+	// ---- AUTO on the IN end only ---------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_IN,
+		Flux_TangentMode::AUTO), "the IN end alone goes AUTO");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u, "as one more entry");
+
+	Flux_TangentMode eMode = Flux_TangentMode::LINEAR;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_IN, eMode), "IN reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::AUTO, "as AUTO");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_OUT, eMode), "OUT reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT,
+		"★ still FLAT — setting IN left OUT's MODE exactly alone, which is the whole reason this control "
+		"cannot route through Action_SetKeyTangents (CUSTOM on both) or SetKeyTangentsAuto (AUTO on both)");
+
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f - fH, 1.0f), 1.5f, 1e-2f,
+		"★ and the arrival is now the CENTRED slope through the key's own neighbours — 1.5, which is "
+		"neither the segment's 1 nor FLAT's 0, so all three modes are told apart by measurement");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f, 1.0f + fH), 0.0f, 1e-2f,
+		"while the departure is still the FLAT one this call did not name");
+
+	// ---- and the same verb over a SELECTION, as one compound -----------------
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_TRUE(xPanel.Action_SelectKey(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, u),
+			u == 0u ? ZENITH_ANIMSELECT_REPLACE : ZENITH_ANIMSELECT_ADD), "select all three keys");
+	}
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 3u, "three keys selected");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetSelectionTangentMode(ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "FLAT on both ends of the selection");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 3u,
+		"★ is ONE compound — three keys, one Ctrl+Z");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, xPanel.Document().GetKeyIdAtIndex(xTrack, 0),
+		ZENITH_ANIM_TANGENT_END_OUT, eMode), "the FIRST key's OUT end reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT,
+		"★ so the compound reached a key the mode boxes were not showing — the control acts on the "
+		"SELECTION, not on the one key its preview names");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetSelectionTangentMode(ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "re-stating it over the selection is satisfied");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 3u,
+		"and an EMPTY compound pushes nothing, so a selection already in this mode costs no undo step");
+
+	// ---- undo, back to the bend ----------------------------------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "one Ctrl+Z");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_IN, eMode), "IN reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::AUTO, "with the AUTO the compound overwrote restored");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "a second");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Undo(), "and a third");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"the key is back to one mode on both ends");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR, "LINEAR, which is what the file carried");
+	ZENITH_ASSERT_EQ_FLOAT(AnimPanelMeasureHipRateY(xPanel, 1.0f - fH, 1.0f), 1.0f, 1e-2f,
+		"★ and the sampled derivative is the bend's own again — the MODE was restored, not merely the "
+		"numbers, which never moved through any of it");
 
 	xPanel.Shutdown();
 }

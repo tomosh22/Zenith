@@ -214,32 +214,50 @@ float Zenith_AnimCurveTangentFromPixel(const Zenith_AnimTimelineView& xTimeView,
 	return CurveIsFinite(fTangent) ? fTangent : 0.0f;
 }
 
-const char* Zenith_AnimCurveTangentModeLabel(Zenith_AnimCurveTangentMode eMode)
+const char* Zenith_AnimCurveTangentModeLabel(Flux_TangentMode eMode)
 {
-	// ★ "Linear", NEVER "Flat" — for a different reason than before B2. A flat
-	// handle IS representable now (Flux_TangentMode::FLAT, schema 3), but this
-	// two-valued display cannot tell one from a hand-authored pair, so a "Flat"
-	// label here would name the wrong one of the two states it collapses.
-	return eMode == ZENITH_ANIMCURVE_TANGENT_LINEAR ? "Linear" : "Custom";
+	// ★ A TOTAL SWITCH OVER THE WIRE ENUM, with no default: adding a fifth mode to
+	// Flux_TangentMode would fail the build HERE, on the one function that turns a
+	// mode into the word a user reads, rather than quietly labelling it "Custom".
+	switch (eMode)
+	{
+	case Flux_TangentMode::LINEAR: return "Linear";
+	case Flux_TangentMode::FLAT:   return "Flat";
+	case Flux_TangentMode::AUTO:   return "Auto";
+	case Flux_TangentMode::CUSTOM: return "Custom";
+	}
+	// Unreachable for a value the enum has; a corrupt byte never gets this far
+	// (Flux_ReadKeyTangents refuses one above uFLUX_TANGENT_MODE_MAX).
+	return "Custom";
 }
 
-Zenith_AnimCurveTangentMode Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents& xTangents)
+bool Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents& xTangents,
+	Zenith_AnimTangentEnd eEnd, Flux_TangentMode& eOut)
 {
-	// ★ A PROJECTION OF THE STORED Flux_TangentMode ONTO THE TWO THIS ENUM HAS
-	// (B1), not a re-derivation from the vectors. The clip now says what each end
-	// IS, and the display must not answer that question a second way — a projection
-	// that read the numbers would disagree with the stored mode the moment FLAT or
-	// AUTO became authorable, and it would disagree silently.
-	//
-	// LINEAR only when BOTH ends are; anything else is Custom. FLAT and AUTO ARE
-	// authorable since schema 3 (B2), and they land in the Custom bucket — an
-	// UNDER-STATEMENT rather than a lie, which is the failure this ordering picks
-	// on purpose. Widening the display to four values is its own unit; until then a
-	// flat key reads "Custom", which is wrong about the word and right about "this
-	// is not the untouched linear default".
-	return (xTangents.m_eInMode == Flux_TangentMode::LINEAR && xTangents.m_eOutMode == Flux_TangentMode::LINEAR)
-		? ZENITH_ANIMCURVE_TANGENT_LINEAR
-		: ZENITH_ANIMCURVE_TANGENT_CUSTOM;
+	// ★ THE STORED MODE, READ — never a re-derivation from the vectors. The clip
+	// says what each end IS, and a display that answered that question a second way
+	// would disagree with the file the moment a FLAT end sat over the same zeroes a
+	// LINEAR one does, and it would disagree SILENTLY.
+	switch (eEnd)
+	{
+	case ZENITH_ANIM_TANGENT_END_IN:
+		eOut = xTangents.m_eInMode;
+		return true;
+	case ZENITH_ANIM_TANGENT_END_OUT:
+		eOut = xTangents.m_eOutMode;
+		return true;
+	case ZENITH_ANIM_TANGENT_END_BOTH:
+		// ★ MIXED IS REPORTED THROUGH THE BOOL, NEVER AS A FIFTH VALUE. IN=LINEAR /
+		// OUT=FLAT is a legal key since B2, and any single answer for one is wrong
+		// about an end the user can see.
+		if (xTangents.m_eInMode != xTangents.m_eOutMode)
+		{
+			return false;
+		}
+		eOut = xTangents.m_eInMode;
+		return true;
+	}
+	return false;
 }
 
 //=============================================================================
@@ -282,15 +300,17 @@ bool Zenith_EditorPanel_Animation::GetCurveHandleRect(const Zenith_AnimTrackId& 
 }
 
 bool Zenith_EditorPanel_Animation::GetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
-	Zenith_AnimCurveTangentMode& eOut) const
+	Zenith_AnimTangentEnd eEnd, Flux_TangentMode& eOut) const
 {
 	Flux_KeyTangents xTangents;
 	if (!m_xDocument.GetKeyTangents(xTrack, uKeyId, xTangents))
 	{
+		// The key does not resolve, or the track is root motion — which has no
+		// tangent array at all (D17) and therefore no mode, refused rather than
+		// answered with LINEAR.
 		return false;
 	}
-	eOut = Zenith_AnimCurveTangentModeOf(xTangents);
-	return true;
+	return Zenith_AnimCurveTangentModeOf(xTangents, eEnd, eOut);
 }
 
 //=============================================================================
@@ -828,6 +848,14 @@ bool Zenith_EditorPanel_Animation::HandleCurveInput(const SheetLayout& xLayout, 
 
 void Zenith_EditorPanel_Animation::RenderCurveToolbarItems()
 {
+	// ★ CLEARED HERE — the one place it is cleared, and RenderCurveTangentModeCombo
+	// below is the one place it is raised. A frame in which this function ran and
+	// emitted no combo must report "not drawn" rather than what the last frame with
+	// a selected key drew; the hidden and collapsed cases — where this function is
+	// never reached at all — are filtered by the canvas flag inside
+	// WasCurveModeControlDrawnLastFrame.
+	m_bCurveModeControlDrawn = false;
+
 	ImGui::SameLine();
 	bool bShowCurves = m_bShowCurveView;
 	if (ImGui::Checkbox("Curves", &bShowCurves))
@@ -856,8 +884,9 @@ void Zenith_EditorPanel_Animation::RenderCurveToolbarItems()
 	}
 	if (ImGui::IsItemHovered())
 	{
-		ImGui::SetTooltip("Catmull-Rom tangents on every selected key, from its own neighbours. "
-			"An OPERATION, not a stored mode: nothing re-applies it when a neighbour moves.");
+		ImGui::SetTooltip("Catmull-Rom tangents on BOTH ends of every selected key, from its own "
+			"neighbours. Stored AS Auto and MAINTAINED: the document recomputes an Auto end whenever "
+			"the track changes shape. For one end only, use the In / Out mode boxes.");
 	}
 
 	ImGui::SameLine();
@@ -867,10 +896,13 @@ void Zenith_EditorPanel_Animation::RenderCurveToolbarItems()
 	}
 	if (ImGui::IsItemHovered())
 	{
-		// ★ THE WORDING MATTERS. Zero IS the linear tangent; a flat/eased handle is
-		// not representable, so this control may never be labelled "Flat".
+		// ★ THE WORDING STILL MATTERS, FOR THE OTHER HALF OF THE OLD REASON. A flat
+		// handle IS storable (Flux_TangentMode::FLAT, schema 3), and it is the SAME
+		// six zero floats — so the two are told apart by the MODE alone and this
+		// control may never be labelled "Flat".
 		ImGui::SetTooltip("Clear the selected keys' tangents. An unset tangent is the LINEAR one — "
-			"the segment's own slope — not a flat handle, which this format cannot store.");
+			"the segment's own slope — not a flat handle, which is the same zeroes under a different "
+			"MODE and is set from the In / Out mode boxes.");
 	}
 
 	ImGui::SameLine();
@@ -891,17 +923,92 @@ void Zenith_EditorPanel_Animation::RenderCurveToolbarItems()
 		Action_FitCurveViewToSelection();
 	}
 
-	// The displayed MODE of the primary selected key, which is the one thing about
-	// a tangent a user cannot read off the picture.
+	// ★ THE MODE CONTROL, WHICH IS ALSO THE MODE READOUT. It REPLACED the
+	// TextDisabled("tangents: %s") that used to sit here rather than being added
+	// beside it: this row already runs wider than a 900 px window, a second toolbar
+	// LINE would come straight out of the sheet's canvas (whose last row is the
+	// events row), and a widget that shows a mode and a widget that sets one are the
+	// same widget. Two combos, one per END, because since B2 the two ends are
+	// separately stored and a single box could not show an IN=Linear / OUT=Flat key.
 	Zenith_AnimTrackId xPrimaryTrack;
 	u_int uPrimaryKeyId = uINVALID_ANIM_KEY_ID;
-	Zenith_AnimCurveTangentMode eMode = ZENITH_ANIMCURVE_TANGENT_LINEAR;
-	if (ResolvePrimarySelectedKey(xPrimaryTrack, uPrimaryKeyId)
-	 && GetKeyTangentMode(xPrimaryTrack, uPrimaryKeyId, eMode))
+	if (ResolvePrimarySelectedKey(xPrimaryTrack, uPrimaryKeyId))
 	{
-		ImGui::SameLine();
-		ImGui::TextDisabled("tangents: %s", Zenith_AnimCurveTangentModeLabel(eMode));
+		RenderCurveTangentModeCombo(xPrimaryTrack, uPrimaryKeyId, ZENITH_ANIM_TANGENT_END_IN);
+		RenderCurveTangentModeCombo(xPrimaryTrack, uPrimaryKeyId, ZENITH_ANIM_TANGENT_END_OUT);
 	}
+}
+
+void Zenith_EditorPanel_Animation::RenderCurveTangentModeCombo(const Zenith_AnimTrackId& xTrack,
+	u_int uKeyId, Zenith_AnimTangentEnd eEnd)
+{
+	const bool bIn = (eEnd == ZENITH_ANIM_TANGENT_END_IN);
+
+	Flux_TangentMode eCurrent = Flux_TangentMode::LINEAR;
+	if (!GetKeyTangentMode(xTrack, uKeyId, eEnd, eCurrent))
+	{
+		// A root-motion key has no mode to show and no mode to set (D17). Nothing is
+		// emitted, and WasCurveModeControlDrawnLastFrame says so — a DISABLED combo
+		// would be a control explaining nothing on a row with no width to spare.
+		return;
+	}
+
+	char acPreview[32];
+	snprintf(acPreview, sizeof(acPreview), "%s: %s", bIn ? "In" : "Out",
+		Zenith_AnimCurveTangentModeLabel(eCurrent));
+
+	ImGui::SameLine();
+	// Wide enough for "Out: Custom" and no wider: every pixel here is a pixel the
+	// row does not have.
+	ImGui::SetNextItemWidth(Zenith_EditorUI::Px(96.0f));
+	const bool bComboOpen = ImGui::BeginCombo(bIn ? "##AnimCurveInMode" : "##AnimCurveOutMode", acPreview,
+		ImGuiComboFlags_HeightSmall);
+	// ★ HOVER IS READ HERE, BEFORE THE POPUP'S OWN ITEMS. Past EndCombo the "last
+	// item" is whatever the popup submitted, so a tooltip hung off IsItemHovered
+	// down there would follow the list rather than the box.
+	const bool bComboHovered = ImGui::IsItemHovered();
+	if (bComboOpen)
+	{
+		// ★ THE FOUR WIRE MODES, IN WIRE ORDER, LABELLED BY THE ONE LABEL FUNCTION.
+		// A hand-typed word here is how the toolbar and the units start disagreeing.
+		constexpr Flux_TangentMode aeMODES[] =
+		{
+			Flux_TangentMode::LINEAR,
+			Flux_TangentMode::FLAT,
+			Flux_TangentMode::AUTO,
+			Flux_TangentMode::CUSTOM,
+		};
+		for (u_int u = 0; u < sizeof(aeMODES) / sizeof(aeMODES[0]); ++u)
+		{
+			const Flux_TangentMode eMode = aeMODES[u];
+			const bool bSelected = (eMode == eCurrent);
+			if (ImGui::Selectable(Zenith_AnimCurveTangentModeLabel(eMode), bSelected))
+			{
+				// ★ THE SELECTION, NOT THE PRIMARY KEY ALONE. The combo READS the
+				// primary key — a box has to show one value — but the gesture a user
+				// performs after box-selecting six keys is "make these flat", and
+				// applying it to one of them would be a control that silently ignores
+				// five. One compound either way, so a single-key selection behaves
+				// exactly as the per-key verb does.
+				Action_SetSelectionTangentMode(eEnd, eMode);
+			}
+			if (bSelected)
+			{
+				ImGui::SetItemDefaultFocus();
+			}
+		}
+		ImGui::EndCombo();
+	}
+	if (bComboHovered)
+	{
+		ImGui::SetTooltip("The stored tangent mode of the %s end of every selected key, and how to set "
+			"it. Linear = the segment's own slope; Flat = a zero derivative at the key (the same zero "
+			"vector, told apart by this mode); Auto = Catmull-Rom, RECOMPUTED whenever the track changes "
+			"shape; Custom = the hand-dragged handle. The other end is not touched.",
+			bIn ? "IN" : "OUT");
+	}
+
+	m_bCurveModeControlDrawn = true;
 }
 
 //=============================================================================
@@ -1019,6 +1126,66 @@ bool Zenith_EditorPanel_Animation::Action_SetSelectionTangentsLinear()
 		bAnyResolved = m_xDocument.SetKeyTangents(xEntry.m_xTrack, xEntry.m_uKeyId, xZero) || bAnyResolved;
 	}
 	m_xDocument.EndCompound("Linear Tangents", /*bKeep*/ true);
+	if (bAnyResolved)
+	{
+		NotifyDocumentEdited();
+	}
+	return bAnyResolved;
+}
+
+//------------------------------------------------------------------------------
+// The MODE verbs (B3).
+//
+// ★ THROUGH Zenith_AnimationDocument::SetKeyTangentMode AND NOTHING ELSE. The two
+// neighbouring verbs both write BOTH ends — Action_SetKeyTangents claims CUSTOM on
+// each (it is a vector edit) and SetKeyTangentsAuto forces AUTO on each — so either
+// one, used here, would rewrite the end the user did not name. That is invisible in
+// the picture: the far handle keeps its number and quietly loses its provenance.
+//------------------------------------------------------------------------------
+
+bool Zenith_EditorPanel_Animation::Action_SetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+	Zenith_AnimTangentEnd eEnd, Flux_TangentMode eMode)
+{
+	const bool bOk = m_xDocument.SetKeyTangentMode(xTrack, uKeyId, eEnd, eMode);
+	if (bOk)
+	{
+		NotifyDocumentEdited();
+	}
+	// The document's ASSIGNMENT contract, unchanged: true means the mode asked for
+	// is on that end, and a re-statement pushes nothing — so the invariant a test
+	// asserts on is the undo-stack depth, not this bool.
+	return bOk;
+}
+
+bool Zenith_EditorPanel_Animation::Action_SetSelectionTangentMode(Zenith_AnimTangentEnd eEnd,
+	Flux_TangentMode eMode)
+{
+	if (!m_xDocument.IsOpen() || m_axSelectedKeys.GetSize() == 0u)
+	{
+		return false;
+	}
+	if (!m_xDocument.BeginCompound())
+	{
+		return false;
+	}
+	bool bAnyResolved = false;
+	for (u_int u = 0; u < m_axSelectedKeys.GetSize(); ++u)
+	{
+		const Zenith_AnimSelectedKey& xEntry = m_axSelectedKeys.Get(u);
+		// A root-motion key in a mixed selection is SKIPPED, exactly as the two
+		// preset verbs above skip it: box-selecting across those rows is ordinary,
+		// and failing the whole gesture over one of them reads as a broken panel.
+		if (xEntry.m_xTrack.m_bRootMotion)
+		{
+			continue;
+		}
+		bAnyResolved = m_xDocument.SetKeyTangentMode(xEntry.m_xTrack, xEntry.m_uKeyId, eEnd, eMode)
+			|| bAnyResolved;
+	}
+	// An EMPTY group pushes nothing, so a selection already in this mode leaves the
+	// undo stack exactly where it was rather than adding a step that reverses
+	// nothing.
+	m_xDocument.EndCompound("Tangent Mode", /*bKeep*/ true);
 	if (bAnyResolved)
 	{
 		NotifyDocumentEdited();

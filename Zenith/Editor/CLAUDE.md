@@ -604,8 +604,9 @@ presets. A **"Curves"** checkbox on the toolbar's existing first row (beside
 **★ IT REPLACES THE SHEET'S ROW AREA; IT IS NOT A SECOND STRIP.** When it is on,
 the canvas paints curves in exactly the rectangle the rows would have used —
 same `InvisibleButton`, same ruler above it, same playhead, same
-`Zenith_AnimTimelineMath` X mapping — and its five controls sit on toolbar rows
-that already exist. So the curve view costs the sheet **zero height either way**,
+`Zenith_AnimTimelineMath` X mapping — and its controls (Curves / Auto / Linear /
+Unified / Fit Curves, plus B3's two per-end mode boxes) all sit on the toolbar row
+that already exists. So the curve view costs the sheet **zero height either way**,
 which is this panel's standing "NOTHING SHOWN DRAWS NOTHING" rule taken to its
 conclusion rather than merely obeyed: a curve editor drawn as an extra block
 would have taken every pixel it occupied out of a canvas whose LAST ROW is the
@@ -615,7 +616,10 @@ requires) with a sensitivity check that grows the window, and with the rect
 population changing over: `GetCurveViewRect` is recorded only while the view is
 up, and the dope-sheet row / key / event rects are **not recorded at all** while
 it is — those rows were not painted, and handing out a coordinate for one would
-be a click into a row nobody can see.
+be a click into a row nobody can see. Since B3 the same test also asserts
+`WasCurveModeControlDrawnLastFrame()` in both states, so the height equality is
+measured with the mode boxes genuinely ON the row rather than with a control that
+silently failed to draw.
 
 **★ ONE SELECTION, TWO VIEWS.** The curve view shares the panel's key selection
 — the same `(track, key id)` set — and switching views only changes which rects
@@ -656,14 +660,36 @@ production sites hold a compound open around these verbs. When one is already op
 the refresh's commands are adopted through `PushCommand`, exactly like every other
 verb's.
 
-`Zenith_AnimCurveTangentModeOf` is still a **projection** of the four stored modes
-onto the two this panel displays — **Linear** when both ends are
-`Flux_TangentMode::LINEAR`, **Custom** otherwise — never a second derivation from
-the numbers. So a `FLAT` or `AUTO` key currently reads "Custom": an under-statement
-rather than a lie, which is the direction this projection was built to fail in.
-Widening the display enum, its labels and the `ANIM_CURVE_*` automation verbs
-beside them is its own unit; until then the label stays "Linear"/"Custom", because
-"Flat" would name the wrong one of the states Custom collapses.
+**★ THE DISPLAY NAMES THE STORED MODE, PER END (B3), AND THERE IS NO SECOND
+ENUM.** `Zenith_AnimCurveTangentModeOf(pair, end, out)` reads
+`Flux_TangentMode` straight off the end asked for and
+`Zenith_AnimCurveTangentModeLabel` is a TOTAL switch over the wire enum —
+"Linear" / "Flat" / "Auto" / "Custom", one definition, so the toolbar, the tooltip
+and the units cannot disagree. The two-valued `Zenith_AnimCurveTangentMode` that
+projected all four onto Linear/Custom is **deleted**: it could not tell a `FLAT`
+key from a hand-dragged one, and it displayed a `MAINTAINED` `AUTO` key as neither
+— which a control that SETS a mode cannot live with, because the user could not
+see what they had just chosen.
+
+**★ "MIXED" IS THE BOOL, NEVER A FIFTH VALUE.** Asking
+`ZENITH_ANIM_TANGENT_END_BOTH` about a key whose ends carry different modes —
+`IN=LINEAR / OUT=FLAT` is legal since B2 — is **refused**, leaving the caller's
+variable untouched. Any single answer would be a lie about one end the user can see
+on screen. `Zenith_EditorPanel_Animation::GetKeyTangentMode` folds three refusals
+into that one `false` (unresolved key, root-motion track, mixed ends); a caller
+that needs them apart asks each end separately, which is what the toolbar does.
+
+**★ THE MODE CONTROL IS TWO COMBOS ON THE EXISTING ROW ("In: Linear ▾" /
+"Out: Flat ▾"), AND IT REPLACED THE `tangents: %s` READOUT.** Not added beside it:
+that row already runs wider than a 900 px window, a new toolbar LINE comes straight
+out of the sheet's canvas whose last row is the events row, and a widget that shows
+a mode and a widget that sets one are the same widget. Two boxes rather than one
+because the ends are separately stored. They read the PRIMARY selected key and
+apply to the whole SELECTION (one compound), so a box-select of six keys followed by
+"Flat" does what it looks like it does. `WasCurveModeControlDrawnLastFrame()` exists
+because this control records no rect and costs no height — its absence is
+indistinguishable from its presence by every geometric measurement, so it is
+asserted directly.
 
 **★ THE VALUE AXIS IS A SECOND, PURE MAPPING — the X axis is untouched.**
 `Zenith_AnimCurveValueView` + `Zenith_AnimCurveValueToPixel` / `PixelToValue` /
@@ -743,9 +769,19 @@ never heard of a root-motion track.
 
 **Actions** — `Action_SetCurveView` / `SetTangentsUnified` / `SetKeyTangents` /
 `SetSelectionTangentsAuto` / `SetSelectionTangentsLinear` /
-`DragTangentHandleToPixel` / `FitCurveViewToSelection`, the same three rules as
+`DragTangentHandleToPixel` / `FitCurveViewToSelection`, plus B3's
+`Action_SetKeyTangentMode(track, key, end, mode)` and
+`Action_SetSelectionTangentMode(end, mode)` — the same three rules as
 every other action here (bool-returning, reading no ImGui state, every mutation
-through a document verb). The two toggles are **assignments** rather than
+through a document verb). ★ **The two mode actions go through
+`Zenith_AnimationDocument::SetKeyTangentMode` and nothing else**:
+`Action_SetKeyTangents` claims CUSTOM on BOTH ends (it is a vector edit) and
+`SetKeyTangentsAuto` forces AUTO on both, so either one used here would rewrite the
+end the user did not name — invisibly, because the far handle keeps its number and
+only loses its provenance. The per-key one reports the document's ASSIGNMENT
+contract (re-stating a mode succeeds and pushes nothing); the selection one is one
+compound reporting `bAnyResolved`, skipping root-motion keys exactly as the two
+preset verbs do. The two toggles are **assignments** rather than
 `Action_SetAutoKey`'s "the value CHANGED", so the `ANIM_CURVE_*` automation
 family is checked wholesale with no exception list for a later verb to be
 forgotten from. `Action_DragTangentHandleToPixel` **commits** — one call is one
@@ -758,7 +794,13 @@ read there as a click on empty space.
 
 The `AddStep_AnimCurve*` family (the `ANIM_CURVE_*` block, the **seventh**
 animation range) calls exactly these twins, naming a key by (bone, track, INDEX)
-and resolving the stable id at execution time as the `ANIM_*` block does.
+and resolving the stable id at execution time as the `ANIM_*` block does. B3's
+`AddStep_AnimTangent*` family (the `ANIM_TANGENT_*` block, the **eighth**) does the
+same for the two mode actions plus an `ExpectKeyMode` assertion, and it has its own
+prefix rather than three more `ANIM_CURVE_*` verbs because it addresses a different
+thing: an `ANIM_CURVE_*` step names a VECTOR or a pixel, an `ANIM_TANGENT_*` step
+names an END and a MODE (`iEnd` 0 In / 1 Out / 2 Both, `iMode` 0 Linear / 1 Flat /
+2 Auto / 3 Custom, both validated at execution rather than cast).
 
 ### Behaviour Graph Editor Panel (`Panels/Zenith_EditorPanel_GraphEditor`)
 
@@ -1403,14 +1445,14 @@ asserts at boot via `GrassTypeActionChecked`. `GrassTypesSave` writes
 `game:Vegetation/GrassTypes.zdata` through `Zenith_GrassTypeTableAsset` and then
 applies, so a file that reached disk but never took effect cannot go unnoticed.
 
-### The split dispatcher: nineteen contiguous ranges
+### The split dispatcher: twenty contiguous ranges
 
 `ExecuteAction` is a **router, not a switch**. Before its (now small) main switch
-it forwards **nineteen CONTIGUOUS enum ranges** to nineteen sub-executors
-(`Zenith_EditorAutomation.cpp:4281..4441`), which is what keeps the dispatcher
+it forwards **twenty CONTIGUOUS enum ranges** to twenty sub-executors
+(`Zenith_EditorAutomation.cpp:4438..4608`), which is what keeps the dispatcher
 inside the complexity gate. The table below is the **twelve non-animation**
-ranges, in router order; the seven animation ranges follow them and are described
-under "SEVEN ANIMATION ranges" below:
+ranges, in router order; the eight animation ranges follow them and are described
+under "EIGHT ANIMATION ranges" below:
 
 | Range | Sub-executor |
 |---|---|
@@ -1427,8 +1469,8 @@ under "SEVEN ANIMATION ranges" below:
 | `SET_TERRAIN_MATERIAL` .. `SET_TERRAIN_SPLATMAP_PATH` | `ExecuteTerrainMaterialAction` |
 | `CREATE_PREFAB_FROM_SELECTED` .. `INSTANTIATE_PREFAB` | `ExecutePrefabAction` |
 
-...and the seven animation ranges that follow them, in router order
-(`:4376..:4441`):
+...and the eight animation ranges that follow them, in router order
+(`:4533..:4608`):
 
 | Range | Sub-executor |
 |---|---|
@@ -1439,6 +1481,7 @@ under "SEVEN ANIMATION ranges" below:
 | `ANIM_LAYER_ADD` .. `ANIM_LAYER_EXPECT_ORDER` | `ExecuteAnimLayerAction` |
 | `ANIM_BLEND_SET_TREE_KIND` .. `ANIM_BLEND_EXPECT_POINT_POSITION` | `ExecuteAnimBlendAction` |
 | `ANIM_CURVE_SET_VIEW` .. `ANIM_CURVE_EXPECT_KEY_TANGENT` | `ExecuteAnimCurveAction` |
+| `ANIM_TANGENT_SET_KEY_MODE` .. `ANIM_TANGENT_EXPECT_KEY_MODE` | `ExecuteAnimTangentAction` |
 
 **Ranges are COMPARED, never numbered.** Each row is a pair of `>=` / `<=` tests
 against its block's first and last member, so:
@@ -1454,28 +1497,29 @@ member. **Every block added since is pinned twice** — a `static_assert` on its
 WIDTH in `Zenith_EditorAutomation.h`, and a unit test on each member's POSITION
 plus both neighbouring boundaries, so a reorder that preserves the width fails
 naming the member that moved instead of at boot inside a neighbour's `default:`
-assert — eight of them now: `Automation, GrassTypesEnumBlockIsContiguous`,
+assert — nine of them now: `Automation, GrassTypesEnumBlockIsContiguous`,
 `… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous`,
 `… AnimSmEnumBlockIsContiguous`, `… AnimMaskEnumBlockIsContiguous`,
-`… AnimLayerEnumBlockIsContiguous`, `… AnimBlendEnumBlockIsContiguous` and
-`… AnimCurveEnumBlockIsContiguous`.
+`… AnimLayerEnumBlockIsContiguous`, `… AnimBlendEnumBlockIsContiguous`,
+`… AnimCurveEnumBlockIsContiguous` and `… AnimTangentEnumBlockIsContiguous`.
 
-**SEVEN ANIMATION ranges sit at the end of the enum, and they are seven rather
+**EIGHT ANIMATION ranges sit at the end of the enum, and they are eight rather
 than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet),
 `ANIM_POSE_*` (WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the
 animator-controller state machine), `ANIM_MASK_*` (WU-7.1, the bone-mask
 sub-panel), `ANIM_LAYER_*` (WU-7.2, the layer strip), `ANIM_BLEND_*` (WU-7.3, the
-blend-tree strip) and `ANIM_CURVE_*` (WU-8.2, the curve view) each route to their
+blend-tree strip), `ANIM_CURVE_*` (WU-8.2, the curve view) and `ANIM_TANGENT_*`
+(B3, the per-end tangent MODE) each route to their
 own sub-executor, and each new family was APPENDED as its own block rather than
 added to the one before it — because appending into an existing block moves its
 LAST member, which is the upper bound both the router's range test and the
 header's `static_assert` compare against and which that block's unit pins by
-position. `SET_NAVMESH_ASSET` follows all seven and must stay outside every range;
-`AnimCurveEnumBlockIsContiguous` is where that is now pinned — the assertion has
-been re-pointed six times (off `ANIM`'s unit, then `ANIM_POSE`'s, then `ANIM_SM`'s,
-then `ANIM_MASK`'s, then `ANIM_LAYER`'s, then `ANIM_BLEND`'s: WU-4.3, WU-6.5,
-WU-7.1, WU-7.2, WU-7.3, WU-8.2) rather than deleted, which is the mechanism
-working.
+position. `SET_NAVMESH_ASSET` follows all eight and must stay outside every range;
+`AnimTangentEnumBlockIsContiguous` is where that is now pinned — the assertion has
+been re-pointed seven times (off `ANIM`'s unit, then `ANIM_POSE`'s, then
+`ANIM_SM`'s, then `ANIM_MASK`'s, then `ANIM_LAYER`'s, then `ANIM_BLEND`'s, then
+`ANIM_CURVE`'s: WU-4.3, WU-6.5, WU-7.1, WU-7.2, WU-7.3, WU-8.2, B3) rather than
+deleted, which is the mechanism working.
 
 ## Selection System
 

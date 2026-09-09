@@ -1349,6 +1349,58 @@ void Zenith_EditorAutomation::AddStep_AnimCurveExpectKeyTangent(const char* szBo
 	m_axActions.PushBack(xAction);
 }
 
+//------------------------------------------------------------------------------
+// TANGENT-MODE authoring (B3), the ANIM_TANGENT_* block. The packing contract,
+// stated ONCE here and read back by ExecuteAnimTangentAction:
+//
+//   szArg1    — the BONE name, on the per-KEY verbs. EMPTY would mean root
+//               motion, which has no tangent array at all (D17)
+//   aiArgs[0] — the Flux_AnimTrack
+//   aiArgs[1] — the KEY INDEX, resolved to a stable id at execution time
+//   aiArgs[2] — the END (Zenith_AnimTangentEnd: 0 In, 1 Out, 2 Both)
+//   aiArgs[3] — the MODE (Flux_TangentMode: 0 Linear, 1 Flat, 2 Auto, 3 Custom)
+//
+// ★ [2] AND [3] RATHER THAN m_bArg AND A FLOAT. m_bArg carries bIn on the curve
+// family, which is a TWO-valued end — and an end is three-valued here, because
+// "both, as one undo step" is the gesture a user actually performs. aiArgs[3] was
+// free on every step in the file; the struct did not have to grow.
+//------------------------------------------------------------------------------
+
+void Zenith_EditorAutomation::AddStep_AnimTangentSetKeyMode(const char* szBone, int iTrack, int iKeyIndex,
+	int iEnd, int iMode)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_TANGENT_SET_KEY_MODE;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_aiArgs[2] = iEnd;
+	xAction.m_aiArgs[3] = iMode;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimTangentSetSelectionMode(int iEnd, int iMode)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_TANGENT_SET_SELECTION_MODE;
+	xAction.m_aiArgs[2] = iEnd;
+	xAction.m_aiArgs[3] = iMode;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimTangentExpectKeyMode(const char* szBone, int iTrack, int iKeyIndex,
+	int iEnd, int iExpectedMode)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = ActionType::ANIM_TANGENT_EXPECT_KEY_MODE;
+	xAction.m_szArg1 = SafeStr(szBone);
+	xAction.m_aiArgs[0] = iTrack;
+	xAction.m_aiArgs[1] = iKeyIndex;
+	xAction.m_aiArgs[2] = iEnd;
+	xAction.m_aiArgs[3] = iExpectedMode;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -4011,6 +4063,111 @@ static void ExecuteAnimCurveAction(const Zenith_EditorAction& xAction)
 	}
 }
 
+//-----------------------------------------------------------------------------
+// TANGENT-MODE authoring (B3): ANIM_TANGENT_SET_KEY_MODE ..
+// ANIM_TANGENT_EXPECT_KEY_MODE. The two mutating cases end in
+// Zenith_EditorPanel_Animation::Action_SetKeyTangentMode /
+// Action_SetSelectionTangentMode — the SAME calls the curve toolbar's mode boxes
+// make — so a recipe and a human's gesture run one code path.
+//
+// ★ NEITHER OF THEM GOES NEAR Action_SetKeyTangents OR SetKeyTangentsAuto. Those
+// write BOTH ends, and a per-end verb that used one would silently rewrite the end
+// the recipe did not name.
+//-----------------------------------------------------------------------------
+namespace
+{
+	void AnimTangentActionChecked(bool bOk, const char* szAction, const char* szArg)
+	{
+		Zenith_Assert(bOk, "EditorAutomation tangent step %s('%s') failed", szAction, szArg ? szArg : "");
+		(void)bOk; (void)szAction; (void)szArg;
+	}
+
+	// ★ VALIDATED, NOT CAST. An int outside the enum's range would otherwise reach
+	// a switch as a value no case handles, and the failure would be a mode that was
+	// never set with every gate green — so a bad number fails HERE, on the step
+	// that carries it, naming what it was.
+	bool AnimTangentEndFromInt(int iEnd, Zenith_AnimTangentEnd& eOut)
+	{
+		switch (iEnd)
+		{
+		case 0: eOut = ZENITH_ANIM_TANGENT_END_IN;   return true;
+		case 1: eOut = ZENITH_ANIM_TANGENT_END_OUT;  return true;
+		case 2: eOut = ZENITH_ANIM_TANGENT_END_BOTH; return true;
+		default: break;
+		}
+		return false;
+	}
+
+	bool AnimTangentModeFromInt(int iMode, Flux_TangentMode& eOut)
+	{
+		if (iMode < 0 || iMode > static_cast<int>(uFLUX_TANGENT_MODE_MAX))
+		{
+			return false;
+		}
+		eOut = static_cast<Flux_TangentMode>(static_cast<uint8_t>(iMode));
+		return true;
+	}
+}
+
+static void ExecuteAnimTangentAction(const Zenith_EditorAction& xAction)
+{
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+
+	Zenith_AnimTangentEnd eEnd = ZENITH_ANIM_TANGENT_END_BOTH;
+	Flux_TangentMode eMode = Flux_TangentMode::LINEAR;
+	const bool bArgsValid = AnimTangentEndFromInt(xAction.m_aiArgs[2], eEnd)
+		&& AnimTangentModeFromInt(xAction.m_aiArgs[3], eMode);
+	if (!bArgsValid)
+	{
+		Zenith_Assert(false, "EditorAutomation tangent step: end %d / mode %d is not a legal pair "
+			"(end 0 In, 1 Out, 2 Both; mode 0 Linear, 1 Flat, 2 Auto, 3 Custom)",
+			xAction.m_aiArgs[2], xAction.m_aiArgs[3]);
+		return;
+	}
+
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE:
+	{
+		const Zenith_AnimTrackId xTrack = AnimCurveTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		AnimTangentActionChecked(uKeyId != uINVALID_ANIM_KEY_ID
+			&& xPanel.Action_SetKeyTangentMode(xTrack, uKeyId, eEnd, eMode),
+			"AnimTangentSetKeyMode", xAction.m_szArg1.c_str());
+		break;
+	}
+
+	case Zenith_EditorActionType::ANIM_TANGENT_SET_SELECTION_MODE:
+		AnimTangentActionChecked(xPanel.Action_SetSelectionTangentMode(eEnd, eMode),
+			"AnimTangentSetSelectionMode", nullptr);
+		break;
+
+	case Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE:
+	{
+		const Zenith_AnimTrackId xTrack = AnimCurveTrackFromAction(xAction);
+		const u_int uKeyId = AnimResolveKeyId(xPanel.Document(), xTrack, xAction.m_aiArgs[1]);
+		Flux_TangentMode eActual = Flux_TangentMode::LINEAR;
+		// ★ THROUGH THE PANEL'S OWN READ-BACK, which answers false for a key that
+		// does not resolve, for a root-motion track, AND — with Both — for a key
+		// whose two ends DISAGREE. All three are "there is no single mode here",
+		// which is exactly what this expectation is denying.
+		const bool bResolved = uKeyId != uINVALID_ANIM_KEY_ID
+			&& xPanel.GetKeyTangentMode(xTrack, uKeyId, eEnd, eActual);
+		Zenith_Assert(bResolved && eActual == eMode,
+			"EditorAutomation AnimTangentExpectKeyMode: '%s' key %d end %d expected mode %d, found %d "
+			"(resolved %d)",
+			xAction.m_szArg1.c_str(), xAction.m_aiArgs[1], xAction.m_aiArgs[2], xAction.m_aiArgs[3],
+			bResolved ? static_cast<int>(eActual) : -1, bResolved ? 1 : 0);
+		(void)bResolved; (void)eActual;
+		break;
+	}
+
+	default:
+		Zenith_Assert(false, "Non-tangent action routed to ExecuteAnimTangentAction");
+		break;
+	}
+}
+
 // Particle field edits (SET_PARTICLE_CONFIG .. SET_PARTICLE_EMITTING).
 static void ExecuteParticleAction(const Zenith_EditorAction& xAction)
 {
@@ -4439,6 +4596,16 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		xAction.m_eType <= Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT)
 	{
 		ExecuteAnimCurveAction(xAction);
+		return;
+	}
+
+	// Tangent-MODE authoring (B3). An EIGHTH animation range, for the reason the
+	// seventh exists: appending into the block above would move the bound both that
+	// line and the header's static_assert compare against.
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE)
+	{
+		ExecuteAnimTangentAction(xAction);
 		return;
 	}
 

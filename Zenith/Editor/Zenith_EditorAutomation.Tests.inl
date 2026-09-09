@@ -3543,8 +3543,9 @@ ZENITH_TEST(Automation, AnimLayerEnumBlockIsContiguous)
 	// WU-7.2, and now this). What it pins is that the ANIM_LAYER range ENDS where
 	// the router thinks it does; the successor being a sixth animation block
 	// instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's own
-	// "must stay outside every range" is pinned by AnimBlendEnumBlockIsContiguous
-	// below, which is where its neighbour now is.
+	// "must stay outside every range" is pinned by the unit for whichever block is
+	// YOUNGEST — AnimTangentEnumBlockIsContiguous as of B3, which is where its
+	// neighbour now is.
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER), 1,
 		"the ANIM_BLEND block must start immediately after the ANIM_LAYER range ends — inside it, the "
@@ -3583,8 +3584,9 @@ ZENITH_TEST(Automation, AnimBlendEnumBlockIsContiguous)
 	// WU-7.2, WU-7.3, and now this). What it pins is that the ANIM_BLEND range
 	// ENDS where the router thinks it does; the successor being a seventh
 	// animation block instead of the navmesh verb does not weaken that.
-	// SET_NAVMESH_ASSET's own "must stay outside every range" is pinned by
-	// AnimCurveEnumBlockIsContiguous below, which is where its neighbour now is.
+	// SET_NAVMESH_ASSET's own "must stay outside every range" is pinned by the unit
+	// for whichever block is YOUNGEST — AnimTangentEnumBlockIsContiguous as of B3,
+	// which is where its neighbour now is.
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION), 1,
 		"the ANIM_CURVE block must start immediately after the ANIM_BLEND range ends — inside it, the "
@@ -3593,9 +3595,9 @@ ZENITH_TEST(Automation, AnimBlendEnumBlockIsContiguous)
 
 ZENITH_TEST(Automation, AnimCurveEnumBlockIsContiguous)
 {
-	// The youngest block (WU-8.2), pinned the way every block before it is: the
-	// header static_asserts the WIDTH, and this pins each member's POSITION so a
-	// reorder that preserves the width fails here naming the member that moved
+	// The SEVENTH animation block (WU-8.2), pinned the way every block before it
+	// is: the header static_asserts the WIDTH, and this pins each member's POSITION
+	// so a reorder that preserves the width fails here naming the member that moved
 	// rather than at boot inside a neighbour's `default:` assert.
 	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW);
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_UNIFIED) - iFirst, 1,
@@ -3613,16 +3615,44 @@ ZENITH_TEST(Automation, AnimCurveEnumBlockIsContiguous)
 	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT) - iFirst, 7,
 		"ANIM_CURVE_EXPECT_KEY_TANGENT must END the block — the router compares against it");
 
-	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
-	// reaching ExecuteAction's own switch: swallowed into this range it would land
-	// in ExecuteAnimCurveAction's `default:` assert at boot, which is a run-time
-	// failure for a compile-time mistake.
+	// Both boundaries, from this side.
 	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION), 1,
 		"the ANIM_CURVE block must start immediately after the ANIM_BLEND range ends");
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+	// ★ THIS LINE USED TO NAME SET_NAVMESH_ASSET, and it MOVED with B3 rather than
+	// being deleted — the SEVENTH time it has moved (WU-4.3, WU-6.5, WU-7.1, WU-7.2,
+	// WU-7.3, WU-8.2, and now this). What it pins is that the ANIM_CURVE range ENDS
+	// where the router thinks it does; the successor being an eighth animation block
+	// instead of the navmesh verb does not weaken that. SET_NAVMESH_ASSET's own
+	// "must stay outside every range" is pinned by AnimTangentEnumBlockIsContiguous
+	// below, which is where its neighbour now is.
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE) -
 		static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT), 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_CURVE range — inside it, the "
-		"router would hand it to ExecuteAnimCurveAction's default: assert");
+		"the ANIM_TANGENT block must start immediately after the ANIM_CURVE range ends — inside it, the "
+		"router would hand a tangent verb to ExecuteAnimCurveAction's default: assert");
+}
+
+ZENITH_TEST(Automation, AnimTangentEnumBlockIsContiguous)
+{
+	// The youngest block (B3), pinned the way every block before it is: the header
+	// static_asserts the WIDTH, and this pins each member's POSITION so a reorder
+	// that preserves the width fails here naming the member that moved rather than
+	// at boot inside a neighbour's `default:` assert.
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_SELECTION_MODE) - iFirst, 1,
+		"ANIM_TANGENT_SET_SELECTION_MODE must be the second member of the block");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE) - iFirst, 2,
+		"ANIM_TANGENT_EXPECT_KEY_MODE must END the block — the router compares against it");
+
+	// Both boundaries. SET_NAVMESH_ASSET is a STANDALONE verb that has to keep
+	// reaching ExecuteAction's own switch: swallowed into this range it would land
+	// in ExecuteAnimTangentAction's `default:` assert at boot, which is a run-time
+	// failure for a compile-time mistake.
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT), 1,
+		"the ANIM_TANGENT block must start immediately after the ANIM_CURVE range ends");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+		static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 1,
+		"SET_NAVMESH_ASSET must sit immediately after the ANIM_TANGENT range — inside it, the "
+		"router would hand it to ExecuteAnimTangentAction's default: assert");
 }
 
 ZENITH_TEST(Automation, AnimCurveStepsPackTheirPayloads)
@@ -3666,6 +3696,54 @@ ZENITH_TEST(Automation, AnimCurveStepsPackTheirPayloads)
 	ZENITH_ASSERT_EQ_FLOAT(xExpect.m_afArgs[6], 1.0e-3f, 1e-9f,
 		"afArgs[6] is the tolerance, clear of the six tangent slots");
 	ZENITH_ASSERT_FALSE(xExpect.m_bArg, "and m_bArg picks the OUT tangent here");
+
+	xAuto.Reset();
+}
+
+ZENITH_TEST(Automation, AnimTangentStepsPackTheirPayloads)
+{
+	// The queue is drained MUCH later than it is built, so every argument has to
+	// survive as an OWNED copy in the action struct. This asserts the packing
+	// contract the executor reads back; the two halves are written from the same
+	// comment block in the .cpp, and this is what stops them drifting.
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimTangentSetKeyMode("Hip", 0 /* translation */, 1,
+		1 /* Out */, 1 /* Flat */);
+	xAuto.AddStep_AnimTangentSetSelectionMode(2 /* Both */, 2 /* Auto */);
+	xAuto.AddStep_AnimTangentExpectKeyMode("Hip", 0, 1, 0 /* In */, 3 /* Custom */);
+
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 3u, "three steps queued");
+
+	const Zenith_EditorAction& xKeyMode = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xKeyMode.m_eType == Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE,
+		"step 0 is ANIM_TANGENT_SET_KEY_MODE");
+	ZENITH_ASSERT_STREQ(xKeyMode.m_szArg1.c_str(), "Hip", "the BONE name is OWNED by the action, not aliased");
+	ZENITH_ASSERT_EQ(xKeyMode.m_aiArgs[0], 0, "aiArgs[0] carries the Flux_AnimTrack");
+	ZENITH_ASSERT_EQ(xKeyMode.m_aiArgs[1], 1, "aiArgs[1] carries the KEY INDEX — resolved to an id at execution");
+	ZENITH_ASSERT_EQ(xKeyMode.m_aiArgs[2], 1,
+		"★ aiArgs[2] carries the END, and it is an INT rather than the curve family's m_bArg because an "
+		"end is THREE-valued here — In, Out and Both, which is the one-undo-step gesture a user performs");
+	ZENITH_ASSERT_EQ(xKeyMode.m_aiArgs[3], 1,
+		"★ and aiArgs[3] carries the MODE — the last free int on every step in the file, so the payload "
+		"struct did not have to grow for this block");
+	ZENITH_ASSERT_FALSE(xKeyMode.m_bArg, "m_bArg is untouched: this family never means bIn by it");
+
+	const Zenith_EditorAction& xSelection = xAuto.m_axActions.Get(1);
+	ZENITH_ASSERT_TRUE(xSelection.m_eType == Zenith_EditorActionType::ANIM_TANGENT_SET_SELECTION_MODE,
+		"step 1 is ANIM_TANGENT_SET_SELECTION_MODE");
+	ZENITH_ASSERT_STREQ(xSelection.m_szArg1.c_str(), "",
+		"which names NO bone — the selection is the address, and a bone here would be a second one");
+	ZENITH_ASSERT_EQ(xSelection.m_aiArgs[2], 2, "the END rides the SAME slot on every verb of the block");
+	ZENITH_ASSERT_EQ(xSelection.m_aiArgs[3], 2, "and so does the MODE");
+
+	const Zenith_EditorAction& xExpectMode = xAuto.m_axActions.Get(2);
+	ZENITH_ASSERT_TRUE(xExpectMode.m_eType == Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE,
+		"step 2 is ANIM_TANGENT_EXPECT_KEY_MODE");
+	ZENITH_ASSERT_EQ(xExpectMode.m_aiArgs[1], 1,
+		"the assertion step addresses by INDEX like the mutating ones");
+	ZENITH_ASSERT_EQ(xExpectMode.m_aiArgs[3], 3, "with the EXPECTED mode in the mode slot");
 
 	xAuto.Reset();
 }
@@ -4042,6 +4120,116 @@ ZENITH_TEST(Automation, AnimAuthoringStepsDriveTheDopeSheet)
 	// it — so this unit drives the EDITOR'S single panel into a visible state and
 	// has to put it back. Left set, every game would boot with the dope sheet
 	// open over its viewport, caused by a unit test.
+	xPanel.ShowFlag() = false;
+
+	xAuto.Reset();
+	Zenith_AssetRegistry::ForceUnload(strPath);
+	std::filesystem::remove_all(xDirectory, xError);
+	Flux_PreviewSlotArbiter::ResetForTesting();
+}
+
+//=============================================================================
+// Tangent-MODE authoring steps (B3)
+//=============================================================================
+
+ZENITH_TEST(Automation, AnimTangentStepsRoundTripThroughTheDispatcher)
+{
+	// ★ THE ONE THAT PROVES THE EIGHTH ROUTE EXISTS. The contiguity and packing
+	// units above read the QUEUE; this is the only one that shows a queued
+	// ANIM_TANGENT_* step reaching Zenith_EditorPanel_Animation and changing a
+	// stored mode — the enum value, the router range, the executor case and the
+	// panel call in one line of evidence. No ImGui frame is needed: every Action_*
+	// on this path is pure document work.
+	//
+	// ★★ AND EVERY EXPECT STEP HAS A DIRECT READ-BACK BESIDE IT. An expect step's
+	// failure path is Zenith_Assert -> Zenith_DebugBreak, which does NOT fail a
+	// ZENITH_TEST — so an expectation ALONE is fail-open, and a route that quietly
+	// asserted nothing would look exactly like this test passing.
+	Flux_PreviewSlotArbiter::ResetForTesting();
+
+	std::error_code xError;
+	std::filesystem::path xRoot = std::filesystem::temp_directory_path(xError);
+	if (xError)
+	{
+		xRoot = ".";
+	}
+	const std::filesystem::path xDirectory = xRoot / "zenith_automation_animtangent";
+	std::filesystem::remove_all(xDirectory, xError);
+	std::filesystem::create_directories(xDirectory, xError);
+	const std::string strPath = (xDirectory / "modes.zanim").generic_string();
+	AutomationWriteAnimProbe(strPath);
+
+	Zenith_EditorAutomation& xAuto = g_xEngine.EditorAutomation();
+	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
+	xAuto.Reset();
+
+	xAuto.AddStep_AnimOpenClip(strPath.c_str());
+	xAuto.AddStep_AnimTangentSetKeyMode("Hip", FLUX_ANIM_TRACK_POSITION, 1,
+		1 /* Out */, 1 /* Flat */);
+	xAuto.AddStep_AnimTangentExpectKeyMode("Hip", FLUX_ANIM_TRACK_POSITION, 1, 1 /* Out */, 1 /* Flat */);
+	xAuto.AddStep_AnimSelectKey("Hip", FLUX_ANIM_TRACK_POSITION, 0, ZENITH_ANIMSELECT_REPLACE);
+	xAuto.AddStep_AnimTangentSetSelectionMode(2 /* Both */, 2 /* Auto */);
+	xAuto.AddStep_AnimTangentExpectKeyMode("Hip", FLUX_ANIM_TRACK_POSITION, 0, 2 /* Both */, 2 /* Auto */);
+	xAuto.AddStep_AnimCloseClip();
+	xAuto.Begin();
+
+	const Zenith_AnimTrackId xTrack = Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_POSITION);
+
+	xAuto.ExecuteNextStep();	// open
+	ZENITH_ASSERT_TRUE(xPanel.IsOpen(), "AnimOpenClip opened the probe");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetKeyCount(xTrack), 3u, "with its three Hip position keys");
+
+	const u_int uFirstKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 0u);
+	const u_int uMiddleKeyId = xPanel.Document().GetKeyIdAtIndex(xTrack, 1u);
+	ZENITH_ASSERT_NE(uMiddleKeyId, uINVALID_ANIM_KEY_ID, "the middle key has a stable id");
+
+	Flux_TangentMode eMode = Flux_TangentMode::CUSTOM;
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleKeyId, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"the middle key's mode reads back before anything is authored");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR, "as LINEAR, which is what the file carries");
+
+	xAuto.ExecuteNextStep();	// set the OUT end FLAT, by key INDEX
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleKeyId, ZENITH_ANIM_TANGENT_END_OUT, eMode),
+		"the OUT end reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT,
+		"★ FLAT — a queued step reached the panel's mode verb, and index 1 resolved to the STABLE id");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleKeyId, ZENITH_ANIM_TANGENT_END_IN, eMode),
+		"the IN end reads back too");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::LINEAR,
+		"★ still LINEAR: the step named ONE end and the other was not touched, all the way through the "
+		"dispatcher");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "as exactly one undo entry");
+
+	xAuto.ExecuteNextStep();	// expect (Out, Flat) — asserted directly above, because an expect is fail-open
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 1u, "an assertion step mutates nothing");
+
+	xAuto.ExecuteNextStep();	// select the first key
+	ZENITH_ASSERT_EQ(xPanel.GetSelectedKeyCount(), 1u, "one key selected for the selection verb");
+	ZENITH_ASSERT_TRUE(xPanel.IsKeySelected(xTrack, uFirstKeyId), "and it is the first one");
+
+	xAuto.ExecuteNextStep();	// AUTO on both ends of the selection
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uFirstKeyId, ZENITH_ANIM_TANGENT_END_BOTH, eMode),
+		"the selected key answers for BOTH ends");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::AUTO,
+		"★ AUTO on both — the selection verb went through the panel's compound and stored the MODE, not "
+		"merely a vector");
+	ZENITH_ASSERT_TRUE(xPanel.GetKeyTangentMode(xTrack, uMiddleKeyId, ZENITH_ANIM_TANGENT_END_OUT, eMode),
+		"and the UNSELECTED middle key reads back");
+	ZENITH_ASSERT_TRUE(eMode == Flux_TangentMode::FLAT,
+		"★ with its FLAT intact — a selection verb touches the selection and nothing else");
+	ZENITH_ASSERT_EQ(xPanel.Document().GetUndoStackSize(), 2u, "and it is ONE more undo entry, being one compound");
+
+	xAuto.ExecuteNextStep();	// expect (Both, Auto)
+	xAuto.ExecuteNextStep();	// close
+	ZENITH_ASSERT_FALSE(xPanel.IsOpen(), "AnimCloseClip closed the document");
+
+	// A leaked asset reference fails HERE, on every run, rather than at atexit —
+	// see AnimAuthoringStepsDriveTheDopeSheet for the full account.
+	Zenith_AssetRegistry::UnloadUnused();
+	ZENITH_ASSERT_FALSE(Zenith_AssetRegistry::IsLoaded(strPath),
+		"nothing still holds a reference to the clip asset after AnimCloseClip");
+
+	// AnimOpenClip SHOWS the editor's single panel, so this unit has to put it back.
 	xPanel.ShowFlag() = false;
 
 	xAuto.Reset();

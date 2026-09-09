@@ -532,6 +532,36 @@ enum class Zenith_EditorActionType
 	ANIM_CURVE_FIT_TO_SELECTION,
 	ANIM_CURVE_EXPECT_KEY_TANGENT,	// END of the contiguous ANIM_CURVE range (see ANIM_CURVE_SET_VIEW)
 
+	// TANGENT-MODE authoring (B3). An EIGHTH animation block with its OWN prefix,
+	// appended for the reason the second through seventh exist: adding a verb
+	// INSIDE the ANIM_CURVE block above would move ANIM_CURVE_EXPECT_KEY_TANGENT,
+	// which is the upper bound BOTH the router's range test and the header's
+	// static_assert compare against, and which
+	// `Automation, AnimCurveEnumBlockIsContiguous` pins by position.
+	//
+	// ★ ITS OWN PREFIX RATHER THAN MORE ANIM_CURVE_*, because these verbs address
+	// a different thing. An ANIM_CURVE_* step names a VECTOR (or a pixel); an
+	// ANIM_TANGENT_* step names an END and a MODE — the four-valued
+	// Flux_TangentMode the clip stores per end, on the wire since schema 3 (B2) —
+	// and it never touches the other end.
+	//
+	// iEnd is a Zenith_AnimTangentEnd (0 = In, 1 = Out, 2 = Both) and iMode a
+	// Flux_TangentMode (0 = Linear, 1 = Flat, 2 = Auto, 3 = Custom), both passed
+	// as ints so this header needs neither the clip nor the document header. An
+	// out-of-range value asserts at BOOT on the step that is wrong.
+	//
+	// A typical authoring sequence:
+	//   AnimOpenClip("game:Animations/Sway.zanim") -> AnimCurveSetView(true) ->
+	//   AnimSelectKey("Hip", 0, 1, 0) -> AnimTangentSetSelectionMode(2, 1) ->
+	//   AnimTangentExpectKeyMode("Hip", 0, 1, 0, 1).
+	//
+	// NOTE: this block must stay CONTIGUOUS (ExecuteAction routes the whole range
+	// to ExecuteAnimTangentAction by a pair of comparisons against its first and
+	// last member).
+	ANIM_TANGENT_SET_KEY_MODE,
+	ANIM_TANGENT_SET_SELECTION_MODE,
+	ANIM_TANGENT_EXPECT_KEY_MODE,	// END of the contiguous ANIM_TANGENT range (see ANIM_TANGENT_SET_KEY_MODE)
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -615,16 +645,22 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_LAYER_EXPECT_ORDER)
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_EXPECT_POINT_POSITION) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_BLEND_SET_TREE_KIND) == 8,
 	"the ANIM_BLEND block must stay CONTIGUOUS and nine wide — ExecuteAction routes it by range");
-// And the same pin for the ANIM_CURVE block (WU-8.2), the SEVENTH animation range
-// and now the youngest block in the enum. Width here; the
-// `Automation, AnimCurveEnumBlockIsContiguous` unit pins each member's POSITION
-// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
-// range", whose neighbour this block has become (it was ANIM_BLEND's until this
-// one was appended; that assertion has now been re-pointed six times, which is
-// the mechanism working rather than a smell).
+// And the same pin for the ANIM_CURVE block (WU-8.2), the SEVENTH animation range.
+// Width here; the `Automation, AnimCurveEnumBlockIsContiguous` unit pins each
+// member's POSITION and both boundaries.
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TANGENT) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_SET_VIEW) == 7,
 	"the ANIM_CURVE block must stay CONTIGUOUS and eight wide — ExecuteAction routes it by range");
+// And the same pin for the ANIM_TANGENT block (B3), the EIGHTH animation range
+// and now the youngest block in the enum. Width here; the
+// `Automation, AnimTangentEnumBlockIsContiguous` unit pins each member's POSITION
+// and both boundaries — including SET_NAVMESH_ASSET's "must stay outside every
+// range", whose neighbour this block has become (it was ANIM_CURVE's until this
+// one was appended; that assertion has now been re-pointed seven times, which is
+// the mechanism working rather than a smell).
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE) == 2,
+	"the ANIM_TANGENT block must stay CONTIGUOUS and three wide — ExecuteAction routes it by range");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1589,9 +1625,12 @@ void AddStep_AnimCurveSetUnified(bool bUnified);
 void AddStep_AnimCurveSetKeyTangents(const char* szBone, int iTrack, int iKeyIndex,
 	float fInX, float fInY, float fInZ, float fOutX, float fOutY, float fOutZ);
 
-	// The SELECTION, one compound each. Auto is per-key Catmull-Rom; Linear zeroes
-	// both halves — which is the sampler's LINEAR branch and NOT a flat handle
-	// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*).
+	// The SELECTION, one compound each, and BOTH ends of every key it names.
+	// Auto stores the per-key Catmull-Rom vector AS Flux_TangentMode::AUTO, which
+	// the document then MAINTAINS across a retime; Linear stores exact zeroes as
+	// LINEAR — the sampler's linear branch, which is NOT a flat handle even though
+	// a FLAT end carries the same zeroes (Flux/MeshAnimation/CLAUDE.md → *Tangent
+	// sampling*). For ONE end, or for FLAT, use the ANIM_TANGENT_* verbs below.
 void AddStep_AnimCurveSetSelectionAuto();
 void AddStep_AnimCurveSetSelectionLinear();
 
@@ -1610,6 +1649,37 @@ void AddStep_AnimCurveFitToSelection();
 	// restore exactly.
 void AddStep_AnimCurveExpectKeyTangent(const char* szBone, int iTrack, int iKeyIndex, bool bIn,
 	float fExpectedX, float fExpectedY, float fExpectedZ, float fTolerance);
+
+	//--------------------------------------------------------------------------
+	// TANGENT-MODE authoring (B3), the ANIM_TANGENT_* block.
+	//
+	// One step per Zenith_EditorPanel_Animation mode Action_*, each routed through
+	// a checked wrapper that asserts on `false` — so an authoring typo (a key index
+	// past the end of a track, a root-motion track, an Auto on a track that cannot
+	// answer, a mode set with nothing selected) fires at BOOT on the step that is
+	// wrong.
+	//
+	// ★ THESE NAME AN END AND A MODE, WHICH IS WHY THEY ARE NOT ANIM_CURVE_*
+	// VERBS. The mode is what the clip STORES per end (schema 3, B2): LINEAR and
+	// FLAT are the same six zero floats told apart by it, AUTO is provenance the
+	// document maintains across a retime, and CUSTOM claims the vector already
+	// there. A recipe that could only state vectors could not author any of that.
+	//
+	// iEnd is a Zenith_AnimTangentEnd (0 = In, 1 = Out, 2 = Both) and iMode a
+	// Flux_TangentMode (0 = Linear, 1 = Flat, 2 = Auto, 3 = Custom).
+	//--------------------------------------------------------------------------
+
+	// ONE key, addressed by (bone, track, INDEX) like every other animation verb.
+void AddStep_AnimTangentSetKeyMode(const char* szBone, int iTrack, int iKeyIndex, int iEnd, int iMode);
+	// The SELECTION, as ONE compound. Root-motion keys in it are SKIPPED.
+void AddStep_AnimTangentSetSelectionMode(int iEnd, int iMode);
+
+	// ---- assertion step ------------------------------------------------------
+	// The STORED mode of the named end. With iEnd = Both this asserts the two ends
+	// agree AND carry the expected mode — a mixed key fails it, because "both ends
+	// are Flat" is a different claim from "each end is something".
+void AddStep_AnimTangentExpectKeyMode(const char* szBone, int iTrack, int iKeyIndex, int iEnd,
+	int iExpectedMode);
 
 	//--------------------------------------------------------------------------
 	// Scene Loading Step Helpers

@@ -420,35 +420,33 @@ float Zenith_AnimCurveTangentFromPixel(const Zenith_AnimTimelineView& xTimeView,
 constexpr float fANIM_CURVE_MIN_HANDLE_SECONDS = 1.0e-3f;
 
 //-----------------------------------------------------------------------------
-// The tangent MODE the editor DISPLAYS. Two values, and it is now a PROJECTION of
-// the four-valued Flux_TangentMode the clip stores per end
-// (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*) rather than something
-// re-derived from the numbers — the clip says what each end IS, and a display that
-// answered that question a second way would disagree with it silently.
+// THE DISPLAYED TANGENT MODE IS THE STORED ONE, PER END (B3). There is no
+// second, narrower editor enum: the clip stores a four-valued Flux_TangentMode on
+// each end of each key (Flux/MeshAnimation/CLAUDE.md → *Tangent sampling*), the
+// mode bytes are on the wire from schema 3 (B2), and the display names exactly
+// that value.
 //
-// ★ THE MODE BYTES ARE ON THE WIRE NOW (B2, schema 3), SO FLAT AND AUTO ARE REAL
-// STORED STATES AND THIS ENUM HAS NOT CAUGHT UP. It still projects the four onto
-// two, and a FLAT or an AUTO key therefore displays as "Custom" — an
-// UNDER-STATEMENT rather than a lie, which is the direction this projection was
-// deliberately built to fail in. Widening it (and the labels, and the automation
-// verbs beside them) is its own unit; nothing here is wrong, it is incomplete.
+// ★ THE PROJECTION ONTO TWO VALUES IS GONE, AND WITH IT THE ONE THING IT COULD
+// NOT SAY. Zenith_AnimCurveTangentMode had LINEAR and CUSTOM, so a FLAT key and a
+// hand-dragged one displayed as the same word and an AUTO key — which the document
+// now MAINTAINS across a retime — displayed as neither. A control that sets a mode
+// has to be able to read one back, or the user cannot see what they just chose.
 //-----------------------------------------------------------------------------
-enum Zenith_AnimCurveTangentMode : u_int
-{
-	// BOTH ends are Flux_TangentMode::LINEAR. The sampler runs its pre-WU-8.1
-	// lerp/slerp branch for a segment bounded by two of these, which is what every
-	// clip in the tree does today.
-	ZENITH_ANIMCURVE_TANGENT_LINEAR,
-	// Anything else: CUSTOM, and — until this enum is widened — FLAT and AUTO too.
-	ZENITH_ANIMCURVE_TANGENT_CUSTOM,
-};
 
-// The label the UI shows. ONE definition, so the toolbar, the tooltip and the
-// units cannot disagree — and so "Flat" cannot be typed in by accident.
-const char* Zenith_AnimCurveTangentModeLabel(Zenith_AnimCurveTangentMode eMode);
+// The label the UI shows, over the WIRE enum, as a TOTAL switch. ONE definition,
+// so the toolbar, the tooltip and the units cannot disagree — and so "Flat" cannot
+// be typed in by accident beside a mode that is not one.
+const char* Zenith_AnimCurveTangentModeLabel(Flux_TangentMode eMode);
 
-// PURE: the mode a stored pair DISPLAYS as.
-Zenith_AnimCurveTangentMode Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents& xTangents);
+// PURE: the mode a stored pair displays for ONE end.
+//
+// ★ BOTH ANSWERS ONLY WHEN THE TWO ENDS AGREE, and reports "mixed" through the
+// BOOL rather than through a fifth enum value. Since B2 a key can legally be
+// IN=LINEAR / OUT=FLAT, and a single four-valued answer for such a key would have
+// to lie about one of its ends; a display that cannot say "these two differ" would
+// invent a mode the file does not contain. False leaves eOut untouched.
+bool Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents& xTangents,
+	Zenith_AnimTangentEnd eEnd, Flux_TangentMode& eOut);
 
 //=============================================================================
 // The panel.
@@ -1203,11 +1201,14 @@ public:
 	const Zenith_AnimCurveValueView& CurveValueView() const { return m_xCurveValueView; }
 	void SetCurveValueView(const Zenith_AnimCurveValueView& xView) { m_xCurveValueView = xView; }
 
-	// The displayed mode of one key — "Linear" when BOTH tangents are unset,
-	// "Custom" otherwise. False when the key does not resolve, or on a
-	// root-motion track (which has no tangents to have a mode).
+	// The STORED mode of one END of one key (B3). False when the key does not
+	// resolve, on a root-motion track (which has no tangents to have a mode), and
+	// — for ZENITH_ANIM_TANGENT_END_BOTH — when the two ends carry DIFFERENT
+	// modes. All three are "there is no single mode to name here"; a caller that
+	// needs to tell them apart asks each end separately, which is what the toolbar
+	// does.
 	bool GetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
-		Zenith_AnimCurveTangentMode& eOut) const;
+		Zenith_AnimTangentEnd eEnd, Flux_TangentMode& eOut) const;
 
 	//------------------------------------------------------------------------
 	// Curve hit rects — the SAME off-screen contract as every other rect on this
@@ -1233,6 +1234,19 @@ public:
 	u_int GetDrawnCurveTrackCount() const { return m_uCurveTracksDrawn; }
 	u_int GetRecordedCurvePointCount() const { return m_xCurveKeyRects.GetSize(); }
 
+	// Were the per-END mode combos emitted last frame (B3)? The mode control is
+	// the one curve control with nothing to measure — it records no rect and costs
+	// no height — so its ABSENCE has to be readable directly rather than inferred
+	// from geometry that would look identical either way. False while the curve
+	// view is off, with no clip open, with no selected key to name a mode for, and
+	// for a frame in which this panel drew nothing at all.
+	//
+	// The "drew nothing at all" half is the sheet's own flag rather than a second
+	// clear: RenderCurveToolbarItems is what resets this, and a hidden or collapsed
+	// panel never reaches it — so a stale true is filtered here, where the two
+	// facts are both in hand.
+	bool WasCurveModeControlDrawnLastFrame() const { return m_bCurveModeControlDrawn && m_bCanvasRectValid; }
+
 	// The tracks the curve view WOULD draw, in row order: the ones the key
 	// selection names, or — with an empty selection — every bone track carrying a
 	// key, capped at uANIM_CURVE_MAX_UNSELECTED_TRACKS. Exposed so a unit and the
@@ -1244,7 +1258,7 @@ public:
 	// bool-returning, reading no ImGui state, every mutation through a DOCUMENT
 	// verb.
 	//
-	// ★ THE THREE TOGGLES ARE ASSIGNMENTS — true means "the value you asked for
+	// ★ THE TWO TOGGLES ARE ASSIGNMENTS — true means "the value you asked for
 	// is in place", whether or not this call changed it — which is the
 	// animator-controller panel's rule and NOT Action_SetAutoKey's. That is
 	// deliberate: it means the ANIM_CURVE_* automation family can be checked
@@ -1269,6 +1283,27 @@ public:
 	// the root-motion rows did not ask for the whole gesture to fail.
 	bool Action_SetSelectionTangentsAuto();
 	bool Action_SetSelectionTangentsLinear();
+
+	//------------------------------------------------------------------------
+	// THE MODE VERBS (B3) — one END of one key, and the same end across the
+	// selection.
+	//
+	// ★ THEY GO THROUGH Zenith_AnimationDocument::SetKeyTangentMode AND NOTHING
+	// ELSE. Action_SetKeyTangents writes CUSTOM on BOTH ends (it is a vector
+	// edit), and SetKeyTangentsAuto forces AUTO on both — so routing a per-end
+	// mode through either would silently rewrite the end the user did not name.
+	//
+	// ★ AND THE RETURN IS THE DOCUMENT'S ASSIGNMENT CONTRACT, not the selection
+	// verbs' bAnyResolved: true means "the mode you asked for is on that end",
+	// whether or not this call changed it, so re-stating a mode SUCCEEDS and
+	// pushes nothing. The invariant to assert on is the undo-stack DEPTH.
+	//------------------------------------------------------------------------
+	bool Action_SetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+		Zenith_AnimTangentEnd eEnd, Flux_TangentMode eMode);
+	// The selection, as ONE compound — root-motion keys SKIPPED, exactly as the
+	// two preset verbs above skip them. False when nothing in the selection could
+	// take the mode.
+	bool Action_SetSelectionTangentMode(Zenith_AnimTangentEnd eEnd, Flux_TangentMode eMode);
 
 	// ★ THE DRAG VERB, AND IT COMMITS. One call is one undo step, so the pointer
 	// handler calls it exactly ONCE — on release — and previews the intermediate
@@ -1575,9 +1610,21 @@ private:
 	// The sampled extent of everything the curve view is drawing, across the
 	// VISIBLE time range. False when there is nothing drawn to measure.
 	bool ComputeCurveValueRange(float& fOutMin, float& fOutMax) const;
-	// "Curves", "Auto", "Linear", "Unified" and "Fit" — drawn on the toolbar rows
-	// that already exist, so the curve view costs the sheet no height at all.
+	// "Curves", "Auto", "Linear", "Unified", "Fit Curves" and B3's two per-END
+	// mode combos — all drawn on the toolbar row that already exists, so the curve
+	// view costs the sheet no height at all.
+	//
+	// ★ THE MODE COMBOS REPLACED THE "tangents: %s" READOUT rather than being
+	// added beside it, and that is a height rule and not a tidiness one: this row
+	// already runs wider than a 900 px window, a new toolbar LINE comes straight
+	// out of the sheet's canvas, and the events row is the sheet's last row. A
+	// control that shows a mode and a control that sets one are the same control.
 	void RenderCurveToolbarItems();
+	// ONE end's mode box, drawn twice by the function above. Emits nothing for a
+	// key that cannot have a mode, which is what makes
+	// WasCurveModeControlDrawnLastFrame a real answer rather than a constant.
+	void RenderCurveTangentModeCombo(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+		Zenith_AnimTangentEnd eEnd);
 	// The value the curve view plots for one component of one track at one time,
 	// sampled THROUGH the channel's own sampler. The single definition the draw,
 	// the key points and the fit all read.
@@ -1899,6 +1946,10 @@ private:
 	Zenith_AnimPanelRect m_xCurveViewRect;
 	bool m_bCurveViewRectValid = false;
 	u_int m_uCurveTracksDrawn = 0;
+	// B3's per-end mode combos: cleared at the top of RenderCurveToolbarItems and
+	// raised by RenderCurveTangentModeCombo, one place each — see
+	// WasCurveModeControlDrawnLastFrame for why it is not in ClearFrameRects.
+	bool m_bCurveModeControlDrawn = false;
 	// The row index each drawn curve track occupies, so a curve rect key and a
 	// dope-sheet key rect key cannot collide and GetCurveKeyRect can resolve a
 	// track the same way GetKeyRect does.
