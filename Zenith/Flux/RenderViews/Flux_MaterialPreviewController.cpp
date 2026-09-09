@@ -83,7 +83,7 @@ const Flux_ShaderResourceView& Flux_MaterialPreviewController::GetPreviewSRV()
 {
 	// The persistent preview LDR (written by the per-view tonemap pass) — NOT a
 	// transient, so the reference handed to ImGui stays valid across rebuilds.
-	return g_xEngine.FluxGraphics().GetPreviewLDR(kuFluxViewSlotPreview).SRV();
+	return g_xEngine.FluxGraphics().GetPreviewLDR(kuFluxViewSlotPreviewMaterial).SRV();
 }
 
 Zenith_Maths::Matrix4 Flux_MaterialPreviewController::GetActiveMeshModelMatrix() const
@@ -204,7 +204,7 @@ void Flux_MaterialPreviewController::Update()
 		// side follows (Zenith_AnimationPreviewSession::UpdatePreviewView).
 		if (Flux_PreviewSlotArbiter::GetOwner() == nullptr)
 		{
-			if (xViews.SetViewActive(kuFluxViewSlotPreview, false))
+			if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, false))
 			{
 				g_xEngine.FluxRenderer().RequestGraphRebuild();
 			}
@@ -212,7 +212,7 @@ void Flux_MaterialPreviewController::Update()
 		return;
 	}
 
-	if (xViews.SetViewActive(kuFluxViewSlotPreview, true))
+	if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, true))
 	{
 		// The active view set changed: per-view transients + passes must be
 		// (de)declared, so the next frame recompiles the graph from scratch.
@@ -222,7 +222,7 @@ void Flux_MaterialPreviewController::Update()
 	// Stage the preview view's constants from the orbit state: camera via the
 	// pure builder, then the per-view sun (colour (1,1,1,3) like the old
 	// preview), flags 0 (no shadows/clusters/scene content) and the fixed slot.
-	Flux_RenderView& xView = xViews.View(kuFluxViewSlotPreview);
+	Flux_RenderView& xView = xViews.View(kuFluxViewSlotPreviewMaterial);
 	xView.m_xTargetDims = Zenith_Maths::UVector2(kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
 
 	Flux_ViewConstants& xVC = xView.m_xConstants;
@@ -230,7 +230,7 @@ void Flux_MaterialPreviewController::Update()
 	xVC.m_xSunDir_Pad    = Zenith_Maths::Vector4(Flux_PreviewLightDir(m_fLightYaw, m_fLightPitch), 0.0f);
 	xVC.m_xSunColour_Pad = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 3.0f);
 	xVC.m_uViewFlags     = 0u;
-	xVC.m_uViewSlot      = kuFluxViewSlotPreview;
+	xVC.m_uViewSlot      = kuFluxViewSlotPreviewMaterial;
 	// TAA NoJitter: the preview view never jitters and never runs velocity/TAA, but the
 	// GPU cull reads m_xViewProjMatNoJitter for EVERY active view — so stage it to this
 	// view's own (unjittered) view-proj (prev == current; jitter UV = 0).
@@ -259,7 +259,10 @@ void Flux_MaterialPreviewController::Update()
 	xItem.m_xWorldMatrix   = GetActiveMeshModelMatrix();
 	xItem.m_pxMeshInstance = pxMesh;
 	xItem.m_pxMaterial     = pxMaterial;
-	xItem.m_uViewMask      = Flux_ViewMaskPreviewOnly();
+	// The MATERIAL preview's bit specifically. A preview-only mask helper used to
+	// spell this, and it could only ever mean one slot — read literally, the
+	// animation preview would have inherited the material editor's mesh.
+	xItem.m_uViewMask      = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial);
 	g_xEngine.FluxRenderer().SubmitExternalSceneItem(xItem);
 }
 

@@ -117,15 +117,15 @@ ZENITH_TEST(Graphics, ViewSetupDimsPreviewReadsStagedTargetDims)
 	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
 	if (pxGraphics == nullptr) { return; }
 
-	Flux_ScopedViewTargetDims xRestore(*pxGraphics, kuFluxViewSlotPreview);
+	Flux_ScopedViewTargetDims xRestore(*pxGraphics, kuFluxViewSlotPreviewMaterial);
 
-	pxGraphics->RenderViews().View(kuFluxViewSlotPreview).m_xTargetDims = Zenith_Maths::UVector2(512u, 512u);
-	Zenith_Maths::UVector2 xSetup = pxGraphics->GetViewSetupDims(kuFluxViewSlotPreview);
+	pxGraphics->RenderViews().View(kuFluxViewSlotPreviewMaterial).m_xTargetDims = Zenith_Maths::UVector2(512u, 512u);
+	Zenith_Maths::UVector2 xSetup = pxGraphics->GetViewSetupDims(kuFluxViewSlotPreviewMaterial);
 	ZENITH_ASSERT_EQ(xSetup.x, 512u, "the preview slot reads its staged target dims");
 	ZENITH_ASSERT_EQ(xSetup.y, 512u, "the preview slot reads its staged target dims");
 
-	pxGraphics->RenderViews().View(kuFluxViewSlotPreview).m_xTargetDims = Zenith_Maths::UVector2(256u, 128u);
-	xSetup = pxGraphics->GetViewSetupDims(kuFluxViewSlotPreview);
+	pxGraphics->RenderViews().View(kuFluxViewSlotPreviewMaterial).m_xTargetDims = Zenith_Maths::UVector2(256u, 128u);
+	xSetup = pxGraphics->GetViewSetupDims(kuFluxViewSlotPreviewMaterial);
 	ZENITH_ASSERT_EQ(xSetup.x, 256u, "it FOLLOWS the staged dims, non-square included");
 	ZENITH_ASSERT_EQ(xSetup.y, 128u, "it FOLLOWS the staged dims, non-square included");
 }
@@ -162,18 +162,29 @@ ZENITH_TEST(Graphics, PreviewLDRsAreDistinctAndBuilt)
 	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
 	if (pxGraphics == nullptr) { return; }
 
-	const Flux_RenderAttachment& xLDR5 = pxGraphics->GetPreviewLDR(kuFluxViewSlotPreview);
-	const Flux_RenderAttachment& xLDR6 = pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewAnim);
+	const Flux_RenderAttachment& xLDRMaterial = pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewMaterial);
+	const Flux_RenderAttachment& xLDRAnim     = pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewAnim);
 
-	ZENITH_ASSERT_TRUE(xLDR5.m_xVRAMHandle.IsValid(), "the material-preview LDR is built at Initialise");
-	ZENITH_ASSERT_TRUE(xLDR6.m_xVRAMHandle.IsValid(), "the animation-preview LDR is built at Initialise too");
-	ZENITH_ASSERT_TRUE(xLDR5.m_xVRAMHandle != xLDR6.m_xVRAMHandle, "the two LDRs are separate allocations");
-	ZENITH_ASSERT_TRUE(&xLDR5 != &xLDR6, "and separate array entries");
+	ZENITH_ASSERT_TRUE(xLDRMaterial.m_xVRAMHandle.IsValid(), "the material-preview LDR is built at Initialise");
+	ZENITH_ASSERT_TRUE(xLDRAnim.m_xVRAMHandle.IsValid(), "the animation-preview LDR is built at Initialise too");
+	ZENITH_ASSERT_TRUE(xLDRMaterial.m_xVRAMHandle != xLDRAnim.m_xVRAMHandle, "the two LDRs are separate allocations");
+	ZENITH_ASSERT_TRUE(&xLDRMaterial != &xLDRAnim, "and separate array entries");
 
-	ZENITH_ASSERT_EQ(xLDR5.m_xSurfaceInfo.m_uWidth,  kuFLUX_PREVIEW_VIEW_SIZE, "LDR 5 is the fixed preview size");
-	ZENITH_ASSERT_EQ(xLDR5.m_xSurfaceInfo.m_uHeight, kuFLUX_PREVIEW_VIEW_SIZE, "LDR 5 is the fixed preview size");
-	ZENITH_ASSERT_EQ(xLDR6.m_xSurfaceInfo.m_uWidth,  kuFLUX_PREVIEW_VIEW_SIZE, "LDR 6 is the fixed preview size");
-	ZENITH_ASSERT_EQ(xLDR6.m_xSurfaceInfo.m_uHeight, kuFLUX_PREVIEW_VIEW_SIZE, "LDR 6 is the fixed preview size");
+	ZENITH_ASSERT_EQ(xLDRMaterial.m_xSurfaceInfo.m_uWidth,  kuFLUX_PREVIEW_VIEW_SIZE, "the material-preview LDR is the fixed preview size");
+	ZENITH_ASSERT_EQ(xLDRMaterial.m_xSurfaceInfo.m_uHeight, kuFLUX_PREVIEW_VIEW_SIZE, "the material-preview LDR is the fixed preview size");
+	ZENITH_ASSERT_EQ(xLDRAnim.m_xSurfaceInfo.m_uWidth,      kuFLUX_PREVIEW_VIEW_SIZE, "the animation-preview LDR is the fixed preview size");
+	ZENITH_ASSERT_EQ(xLDRAnim.m_xSurfaceInfo.m_uHeight,     kuFLUX_PREVIEW_VIEW_SIZE, "the animation-preview LDR is the fixed preview size");
+
+	// EVERY slot of the preview range owns one, not just the two named above: the
+	// LDR list and the range are separate facts by design (see the note above
+	// kuFLUX_PREVIEW_LDR_SLOTS), and this is the clause that would notice a third
+	// preview slot typed into the registry with no allocation behind it.
+	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
+	{
+		const u_int uSlot = kuFluxViewSlotPreviewFirst + u;
+		ZENITH_ASSERT_TRUE(pxGraphics->GetPreviewLDR(uSlot).m_xVRAMHandle.IsValid(),
+			"preview slot %u owns a built persistent LDR", uSlot);
+	}
 }
 
 // A non-preview slot has no built entry, so asking for one is a caller bug. The
@@ -192,6 +203,6 @@ ZENITH_TEST(Graphics, PreviewLDRMainSlotAsserts)
 		pxFallback = &pxGraphics->GetPreviewLDR(kuFluxViewSlotMain);
 		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "a non-preview slot asserts exactly once");
 	}
-	ZENITH_ASSERT_TRUE(pxFallback == &pxGraphics->GetPreviewLDR(kuFluxViewSlotPreview),
+	ZENITH_ASSERT_TRUE(pxFallback == &pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewMaterial),
 		"the fall-through returns the material-preview slot's attachment");
 }

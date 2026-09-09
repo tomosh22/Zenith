@@ -10,10 +10,12 @@
 
 #include <cstring> // strcmp — FindPass + force-disable overlay membership tests
 
-// Hard cap on pass count. Chosen to be generous (current engine sits around
-// 60 passes); a runaway loop registering passes trips the assert before it
-// chews all of heap / the topo-sort adjacency vectors blow up.
-static constexpr u_int kMaxPassCount = 256;
+// Hard cap on passes per graph build. It is NOT a bit-width or an index budget (pass indices are
+// u_int; the only consumer is the assert in AddPass) -- it exists so a runaway per-view loop fails
+// at its cause. Sized for the main view plus every preview view carrying the full pipeline: the
+// oracle's sample C (main + material preview + animation preview) declares 176 + 43 + 43 = 262
+// passes, which the previous cap of 256 refused at 'LDR Transition (AnimPreview)'.
+static constexpr u_int kMaxPassCount = 512;
 
 // Monotonic graph-instance ID counter. Starts at 1 so 0 stays reserved as the
 // "no graph" sentinel on default-constructed handles. Bumped by the

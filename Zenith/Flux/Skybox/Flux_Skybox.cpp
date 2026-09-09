@@ -48,17 +48,18 @@ u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 // preview LDRs in Flux_Graphics.cpp.
 //
 // It is these three rather than all eight because a LUT is only ever written by a
-// FULL-PIPELINE view's sky-view pass: slot 0 is always one, slot 5 is the material
-// preview, and slot 6 is the animation preview D2-a adds (its LDR is already built
-// ahead of that unit for the same reason). Slots 1-4 are depth-only shadow cascades
-// and can never be full-pipeline; slot 7 has no owner. SetupViewPasses asserts that
-// the slot it was handed HAS a LUT, so adding a full-pipeline view without adding it
-// here fails loudly instead of writing an unbuilt attachment.
+// FULL-PIPELINE view's sky-view pass: the MAIN view always is one, and both slots
+// of the PREVIEW range are (the material preview and the animation preview).
+// The cascade slots are depth-only and can never be full-pipeline; the last fixed
+// slot has no owner. SetupViewPasses asserts that the slot it was handed HAS a
+// LUT, so adding a full-pipeline view without adding it here fails loudly instead
+// of writing an unbuilt attachment.
 //
-// Slot 6 is spelled `6u` because kuFluxViewSlotPreviewAnim does not exist yet —
-// D2-a adds it (Flux_Graphics.cpp:40-49 and Flux_ViewPassNames.cpp:17-23 carry the
-// same note).
-static constexpr u_int kuFLUX_SKYVIEW_LUT_SLOTS[] = { kuFluxViewSlotMain, kuFluxViewSlotPreview, 6u };
+// The list is spelled through the named constants, never through literals: the
+// row for the animation preview used to be a bare `6u` and would have kept
+// pointing at whatever slot 6 became.
+//
+static constexpr u_int kuFLUX_SKYVIEW_LUT_SLOTS[] = { kuFluxViewSlotMain, kuFluxViewSlotPreviewMaterial, kuFluxViewSlotPreviewAnim };
 static constexpr u_int kuFLUX_NUM_SKYVIEW_LUT_SLOTS =
 	sizeof(kuFLUX_SKYVIEW_LUT_SLOTS) / sizeof(kuFLUX_SKYVIEW_LUT_SLOTS[0]);
 static_assert(kuFLUX_SKYVIEW_LUT_SLOTS[kuFLUX_NUM_SKYVIEW_LUT_SLOTS - 1u] < FLUX_MAX_RENDER_VIEWS,

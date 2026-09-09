@@ -592,7 +592,7 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 // validity (m_bAutoExposure=0 skips the read).
 //
 // The VIEW comes from the recording pass's declared slot, never from a
-// hard-coded kuFluxViewSlotPreview: ONE callback serves every preview-class
+// hard-coded kuFluxViewSlotPreviewMaterial: ONE callback serves every preview-class
 // view the registry walk instantiates this pass for (mirrors the bloom
 // trampolines above and the HiZ per-view conversion).
 static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)

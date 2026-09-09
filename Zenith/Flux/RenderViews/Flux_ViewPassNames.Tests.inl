@@ -68,7 +68,7 @@ ZENITH_TEST(ViewPassNames, UniqueAcrossAllSlots)
 		}
 	}
 
-	ZENITH_ASSERT_STREQ(aszNames[kuFluxViewSlotPreview], "X (Preview)", "the material-preview slot's suffix");
+	ZENITH_ASSERT_STREQ(aszNames[kuFluxViewSlotPreviewMaterial], "X (Preview)", "the material-preview slot's suffix");
 	ZENITH_ASSERT_STREQ(aszNames[kuFluxViewSlotPreviewAnim], "X (AnimPreview)", "the animation-preview slot's suffix");
 }
 
@@ -80,10 +80,10 @@ ZENITH_TEST(ViewPassNames, UniqueAcrossAllSlots)
 ZENITH_TEST(ViewPassNames, PointerStable)
 {
 	const char* const szBase = "X";
-	const char* szFirst = Flux_ViewPassName(szBase, kuFluxViewSlotPreview);
+	const char* szFirst = Flux_ViewPassName(szBase, kuFluxViewSlotPreviewMaterial);
 	for (u_int u = 0; u < 8u; u++)
 	{
-		ZENITH_ASSERT_TRUE(Flux_ViewPassName(szBase, kuFluxViewSlotPreview) == szFirst,
+		ZENITH_ASSERT_TRUE(Flux_ViewPassName(szBase, kuFluxViewSlotPreviewMaterial) == szFirst,
 			"repeated calls must return the SAME pointer");
 	}
 	// A different slot on the same base is a different, equally stable entry.
@@ -107,8 +107,8 @@ ZENITH_TEST(ViewPassNames, ContentKeyed)
 	const char acSourceBase[] = "ViewPassNamesContentKey";
 	memcpy(acRuntimeBase, acSourceBase, sizeof(acSourceBase));
 
-	const char* szFromBuffer  = Flux_ViewPassName(acRuntimeBase, kuFluxViewSlotPreview);
-	const char* szFromLiteral = Flux_ViewPassName("ViewPassNamesContentKey", kuFluxViewSlotPreview);
+	const char* szFromBuffer  = Flux_ViewPassName(acRuntimeBase, kuFluxViewSlotPreviewMaterial);
+	const char* szFromLiteral = Flux_ViewPassName("ViewPassNamesContentKey", kuFluxViewSlotPreviewMaterial);
 	ZENITH_ASSERT_TRUE(szFromBuffer == szFromLiteral,
 		"a runtime-built base and the identical literal must intern to ONE entry");
 
@@ -159,8 +159,8 @@ ZENITH_TEST(ViewPassNames, CapacityAsserts)
 	u_int       uHitsFill  = 0u;
 	{
 		Zenith_AssertCaptureScope xCapture;
-		szNameOne = xSmall.Name(szOne, kuFluxViewSlotPreview);
-		szNameTwo = xSmall.Name(szTwo, kuFluxViewSlotPreview);
+		szNameOne = xSmall.Name(szOne, kuFluxViewSlotPreviewMaterial);
+		szNameTwo = xSmall.Name(szTwo, kuFluxViewSlotPreviewMaterial);
 		uHitsFill = xCapture.GetHitCount();
 	}
 	ZENITH_ASSERT_EQ(uHitsFill, 0u, "filling the pool exactly to capacity asserts nothing");
@@ -172,7 +172,7 @@ ZENITH_TEST(ViewPassNames, CapacityAsserts)
 	u_int       uHitsOverflow = 0u;
 	{
 		Zenith_AssertCaptureScope xCapture;
-		szDegraded    = xSmall.Name(szThree, kuFluxViewSlotPreview);
+		szDegraded    = xSmall.Name(szThree, kuFluxViewSlotPreviewMaterial);
 		uHitsOverflow = xCapture.GetHitCount();
 	}
 	ZENITH_ASSERT_EQ(uHitsOverflow, 1u, "one base past capacity asserts EXACTLY once");
@@ -202,11 +202,11 @@ ZENITH_TEST(ViewPassNames, CapacityAsserts)
 // ----------------------------------------------------------------------------
 ZENITH_TEST(ViewPassNames, LegacyRow)
 {
-	ZENITH_ASSERT_STREQ(Flux_ViewPassName("LDR Transition", kuFluxViewSlotPreview), "Preview LDR Transition",
+	ZENITH_ASSERT_STREQ(Flux_ViewPassName("LDR Transition", kuFluxViewSlotPreviewMaterial), "Preview LDR Transition",
 		"the historical prefix spelling is preserved for the preview slot");
 	ZENITH_ASSERT_STREQ(Flux_ViewPassName("LDR Transition", kuFluxViewSlotPreviewAnim), "LDR Transition (AnimPreview)",
 		"the animation-preview slot has no legacy row — it composes generically");
-	ZENITH_ASSERT_STREQ(Flux_ViewPassName("HDR_ToneMapping", kuFluxViewSlotPreview), "HDR_ToneMapping (Preview)",
+	ZENITH_ASSERT_STREQ(Flux_ViewPassName("HDR_ToneMapping", kuFluxViewSlotPreviewMaterial), "HDR_ToneMapping (Preview)",
 		"a genuine <base> (Preview) pair must NOT be treated as legacy");
 }
 
@@ -290,7 +290,7 @@ ZENITH_TEST(ViewPassNames, EveryHistoricalPreviewNameReproduced)
 	for (u_int u = 0; u < uNumRows; u++)
 	{
 		const ViewPassNameHistoricalRow& xRow = s_axHistoricalPreviewNames[u];
-		const char* szProduced = Flux_ViewPassName(xRow.m_szBase, kuFluxViewSlotPreview);
+		const char* szProduced = Flux_ViewPassName(xRow.m_szBase, kuFluxViewSlotPreviewMaterial);
 		ZENITH_ASSERT_TRUE(strcmp(szProduced, xRow.m_szPreviewLiteral) == 0,
 			"base '%s' must produce '%s', produced '%s'", xRow.m_szBase, xRow.m_szPreviewLiteral, szProduced);
 	}

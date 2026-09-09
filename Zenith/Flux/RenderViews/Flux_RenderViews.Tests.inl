@@ -21,12 +21,17 @@ ZENITH_TEST(RenderViews, FixedSlotLayoutAndDefaults)
 		ZENITH_ASSERT_TRUE(!xV.m_bActive, "cascades start inactive");
 		ZENITH_ASSERT_TRUE(!xV.m_bFullPipeline, "cascades are depth-only");
 	}
-	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreview).m_eType == FLUX_RENDER_VIEW_PREVIEW, "slot 5 is the MATERIAL preview");
-	ZENITH_ASSERT_TRUE(!xReg.IsViewActive(kuFluxViewSlotPreview), "the material preview starts inactive");
-	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreview).m_bFullPipeline, "the material preview is full-pipeline");
-	// Slot 6 is the ANIMATION preview: exactly slot 5's shape, and INACTIVE — the
-	// default registry must still have precisely one active full-pipeline view.
-	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewAnim).m_eType == FLUX_RENDER_VIEW_PREVIEW, "slot 6 is the ANIMATION preview");
+	// The FIRST slot of the preview range is the MATERIAL preview. Spelled through
+	// the named constant rather than a number: the range's base is free to move
+	// with kuFluxViewNumShadowSlots and this clause must move with it.
+	ZENITH_ASSERT_TRUE(kuFluxViewSlotPreviewMaterial == kuFluxViewSlotPreviewFirst,
+		"the material preview is the first slot of the preview range");
+	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewMaterial).m_eType == FLUX_RENDER_VIEW_PREVIEW, "the material-preview slot is PREVIEW-typed");
+	ZENITH_ASSERT_TRUE(!xReg.IsViewActive(kuFluxViewSlotPreviewMaterial), "the material preview starts inactive");
+	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewMaterial).m_bFullPipeline, "the material preview is full-pipeline");
+	// The ANIMATION preview: exactly the material preview's shape, and INACTIVE —
+	// the default registry must still have precisely one active full-pipeline view.
+	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewAnim).m_eType == FLUX_RENDER_VIEW_PREVIEW, "the animation-preview slot is PREVIEW-typed");
 	ZENITH_ASSERT_TRUE(!xReg.IsViewActive(kuFluxViewSlotPreviewAnim), "the animation preview starts inactive");
 	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewAnim).m_bFullPipeline, "the animation preview is full-pipeline");
 	ZENITH_ASSERT_EQ(xReg.View(kuFluxViewSlotPreviewAnim).m_uViewFlags, 0u, "the animation preview carries no view flags");
@@ -36,10 +41,10 @@ ZENITH_TEST(RenderViews, ActivationChangeDetection)
 {
 	Flux_RenderViewRegistry xReg;
 	// Activating an inactive slot reports a change; re-activating does not.
-	ZENITH_ASSERT_TRUE(xReg.SetViewActive(kuFluxViewSlotPreview, true), "inactive->active is a change");
-	ZENITH_ASSERT_TRUE(!xReg.SetViewActive(kuFluxViewSlotPreview, true), "active->active is not a change");
-	ZENITH_ASSERT_TRUE(xReg.SetViewActive(kuFluxViewSlotPreview, false), "active->inactive is a change");
-	ZENITH_ASSERT_TRUE(!xReg.SetViewActive(kuFluxViewSlotPreview, false), "inactive->inactive is not a change");
+	ZENITH_ASSERT_TRUE(xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, true), "inactive->active is a change");
+	ZENITH_ASSERT_TRUE(!xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, true), "active->active is not a change");
+	ZENITH_ASSERT_TRUE(xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, false), "active->inactive is a change");
+	ZENITH_ASSERT_TRUE(!xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, false), "inactive->inactive is not a change");
 	// MAIN can never be deactivated (the request is ignored, no change reported).
 	ZENITH_ASSERT_TRUE(!xReg.SetViewActive(kuFluxViewSlotMain, true), "MAIN already active");
 }
@@ -57,9 +62,9 @@ ZENITH_TEST(RenderViews, ActiveMaskAndCount)
 	// Preview active with cascades OFF: the count must still span the preview's
 	// fixed slot (view-major GPU slices are indexed by slot, holes skipped by mask).
 	for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++) { xReg.SetViewActive(kuFluxViewSlotShadowFirst + u, false); }
-	xReg.SetViewActive(kuFluxViewSlotPreview, true);
-	ZENITH_ASSERT_TRUE(xReg.HighestActiveSlotPlusOne() == kuFluxViewSlotPreview + 1u, "count spans the preview slot despite the cascade hole");
-	ZENITH_ASSERT_TRUE(xReg.ActiveViewMask() == ((1u << kuFluxViewSlotMain) | Flux_ViewMaskPreviewOnly()), "mask has the cascade hole");
+	xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, true);
+	ZENITH_ASSERT_TRUE(xReg.HighestActiveSlotPlusOne() == kuFluxViewSlotPreviewMaterial + 1u, "count spans the preview slot despite the cascade hole");
+	ZENITH_ASSERT_TRUE(xReg.ActiveViewMask() == (Flux_ViewMaskForSlot(kuFluxViewSlotMain) | Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial)), "mask has the cascade hole");
 }
 
 ZENITH_TEST(RenderViews, ViewMaskHelpers)
@@ -71,8 +76,49 @@ ZENITH_TEST(RenderViews, ViewMaskHelpers)
 	{
 		ZENITH_ASSERT_TRUE((uOn & (1u << (kuFluxViewSlotShadowFirst + u))) != 0u, "scene mask has every cascade when shadows on");
 	}
-	ZENITH_ASSERT_TRUE((uOn & Flux_ViewMaskPreviewOnly()) == 0u, "scene content NEVER defaults into the preview view");
-	ZENITH_ASSERT_TRUE(Flux_ViewMaskPreviewOnly() == (1u << kuFluxViewSlotPreview), "preview mask is exactly the preview slot bit");
+	// Restated over EVERY preview slot, not over "the preview view". The singular
+	// form of this clause was true and useless the moment there were two: it would
+	// have stayed green with scene content leaking into the animation preview.
+	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
+	{
+		const u_int uPreviewSlot = kuFluxViewSlotPreviewFirst + u;
+		ZENITH_ASSERT_TRUE((uOn & Flux_ViewMaskForSlot(uPreviewSlot)) == 0u,
+			"scene content NEVER defaults into preview slot %u", uPreviewSlot);
+		ZENITH_ASSERT_TRUE((Flux_ViewMaskAllSceneViews(false) & Flux_ViewMaskForSlot(uPreviewSlot)) == 0u,
+			"shadows off: scene content NEVER defaults into preview slot %u", uPreviewSlot);
+	}
+}
+
+// Flux_ViewMaskForSlot replaced the preview-only mask helper, so it is now the
+// ONE helper every per-slot mask is built from — which makes "one bit, the right bit,
+// and never a scene bit for a preview slot" a property of the helper rather than
+// of each call site. Total over u_int: an out-of-range slot must answer 0 rather
+// than shift by more than the mask is wide.
+ZENITH_TEST(RenderViews, ViewMaskForSlotIsTotalAndDisjoint)
+{
+	u_int uUnion = 0u;
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		const u_int uMask = Flux_ViewMaskForSlot(u);
+		ZENITH_ASSERT_EQ(uMask, 1u << u, "slot %u's mask is exactly its own bit", u);
+		ZENITH_ASSERT_EQ(uMask & uUnion, 0u, "slot %u's bit overlaps a lower slot's", u);
+		uUnion |= uMask;
+	}
+	ZENITH_ASSERT_EQ(uUnion, (1u << FLUX_MAX_RENDER_VIEWS) - 1u, "the eight slot masks tile the whole mask exactly");
+
+	// Out of range is 0, not a wrapped shift.
+	ZENITH_ASSERT_EQ(Flux_ViewMaskForSlot(FLUX_MAX_RENDER_VIEWS), 0u, "a slot past the registry has no bit");
+	ZENITH_ASSERT_EQ(Flux_ViewMaskForSlot(~0u), 0u, "the helper is total — no wraparound yields a bit");
+
+	// And the scene mask overlaps no preview slot's bit, in either shadow state.
+	const u_int uSceneOn  = Flux_ViewMaskAllSceneViews(true);
+	const u_int uSceneOff = Flux_ViewMaskAllSceneViews(false);
+	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
+	{
+		const u_int uPreviewMask = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewFirst + u);
+		ZENITH_ASSERT_EQ(uSceneOn & uPreviewMask,  0u, "shadows on: the scene mask carries no preview bit");
+		ZENITH_ASSERT_EQ(uSceneOff & uPreviewMask, 0u, "shadows off: the scene mask carries no preview bit");
+	}
 }
 
 namespace
@@ -93,12 +139,12 @@ ZENITH_TEST(RenderViews, ForEachActiveFullPipelineView)
 	for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++) { xReg.SetViewActive(kuFluxViewSlotShadowFirst + u, true); }
 	RenderViewsIterCtx xCtx;
 	xReg.ForEachActiveFullPipelineView(RenderViewsCountFullPipeline, &xCtx);
-	ZENITH_ASSERT_TRUE(xCtx.m_uCount == 1u && xCtx.m_uMask == (1u << kuFluxViewSlotMain), "only MAIN is full-pipeline by default");
+	ZENITH_ASSERT_TRUE(xCtx.m_uCount == 1u && xCtx.m_uMask == Flux_ViewMaskForSlot(kuFluxViewSlotMain), "only MAIN is full-pipeline by default");
 
-	xReg.SetViewActive(kuFluxViewSlotPreview, true);
+	xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, true);
 	xCtx = RenderViewsIterCtx();
 	xReg.ForEachActiveFullPipelineView(RenderViewsCountFullPipeline, &xCtx);
-	ZENITH_ASSERT_TRUE(xCtx.m_uCount == 2u && (xCtx.m_uMask & Flux_ViewMaskPreviewOnly()) != 0u, "active preview joins the full-pipeline walk");
+	ZENITH_ASSERT_TRUE(xCtx.m_uCount == 2u && (xCtx.m_uMask & Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial)) != 0u, "active preview joins the full-pipeline walk");
 }
 
 // ----------------------------------------------------------------------------
@@ -120,8 +166,8 @@ namespace
 	{
 		Flux_RenderViewRegistry xReg;
 		for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++) { xReg.SetViewActive(kuFluxViewSlotShadowFirst + u, true); }
-		xReg.SetViewActive(kuFluxViewSlotPreview,     bMaterialActive);
-		xReg.SetViewActive(kuFluxViewSlotPreviewAnim, bAnimActive);
+		xReg.SetViewActive(kuFluxViewSlotPreviewMaterial, bMaterialActive);
+		xReg.SetViewActive(kuFluxViewSlotPreviewAnim,     bAnimActive);
 		RenderViewsIterCtx xCtx;
 		xReg.ForEachActiveFullPipelineView(RenderViewsCountFullPipeline, &xCtx);
 		return xCtx;
@@ -130,9 +176,9 @@ namespace
 
 ZENITH_TEST(RenderViews, FullPipelineWalkYieldsExactlyTheActivePreviewSet)
 {
-	const u_int uMain     = 1u << kuFluxViewSlotMain;
-	const u_int uMaterial = 1u << kuFluxViewSlotPreview;
-	const u_int uAnim     = 1u << kuFluxViewSlotPreviewAnim;
+	const u_int uMain     = Flux_ViewMaskForSlot(kuFluxViewSlotMain);
+	const u_int uMaterial = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial);
+	const u_int uAnim     = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim);
 
 	// {0} — neither preview active. This is the default registry's shape, and it
 	// is the clause that makes slot 6 a NO-OP for every walk landed before D2-a.
@@ -161,7 +207,13 @@ ZENITH_TEST(RenderViews, FullPipelineWalkYieldsExactlyTheActivePreviewSet)
 
 ZENITH_TEST(RenderViews, SceneViewMaskExcludesBothPreviewSlots)
 {
-	const u_int uPreviewBits = (1u << kuFluxViewSlotPreview) | (1u << kuFluxViewSlotPreviewAnim);
+	// Built by walking the RANGE, so a third preview slot is covered here the
+	// moment kuFluxViewNumPreviewSlots moves — an enumerated pair would not be.
+	u_int uPreviewBits = 0u;
+	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++) { uPreviewBits |= Flux_ViewMaskForSlot(kuFluxViewSlotPreviewFirst + u); }
+	ZENITH_ASSERT_EQ(uPreviewBits,
+		Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial) | Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim),
+		"the preview range covers exactly the two NAMED preview slots");
 
 	const u_int uShadowsOn = Flux_ViewMaskAllSceneViews(true);
 	ZENITH_ASSERT_EQ(uShadowsOn & uPreviewBits, 0u, "shadows on: scene content reaches NEITHER preview slot");
@@ -208,8 +260,8 @@ ZENITH_TEST(RenderViews, IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes)
 	// The range's ENDS, pinned at compile time — the runtime walk above only
 	// covers 0..FLUX_MAX_RENDER_VIEWS-1, and the predicate is total over u_int.
 	static_assert(!Flux_IsPreviewViewSlot(kuFluxViewSlotMain), "slot 0 is not a preview slot");
-	static_assert(!Flux_IsPreviewViewSlot(kuFluxViewSlotPreview - 1u), "the last cascade is not a preview slot");
-	static_assert(Flux_IsPreviewViewSlot(kuFluxViewSlotPreview), "the material preview is a preview slot");
+	static_assert(!Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewFirst - 1u), "the last cascade is not a preview slot");
+	static_assert(Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewMaterial), "the material preview is a preview slot");
 	static_assert(Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewAnim), "the animation preview is a preview slot");
 	static_assert(!Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewAnim + 1u), "the preview range ENDS at the animation preview");
 	static_assert(!Flux_IsPreviewViewSlot(FLUX_MAX_RENDER_VIEWS), "an out-of-range slot is not a preview slot");

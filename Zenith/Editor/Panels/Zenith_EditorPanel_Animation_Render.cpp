@@ -881,9 +881,10 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 		// an invalid handle, which is why the draw below is gated rather than
 		// asserted.
 		const Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
-			// Slot 5 for now — the animation preview shares the material preview's
-			// view until D3 moves it onto slot 6, whose LDR already exists.
-			pxGraphics->GetPreviewLDR(kuFluxViewSlotPreview).SRV(), pxGraphics->m_xClampSampler);
+			// The MATERIAL preview's LDR for now — the animation preview shares
+			// that view until D3 moves it onto kuFluxViewSlotPreviewAnim, whose
+			// own LDR already exists and is built at Initialise.
+			pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewMaterial).SRV(), pxGraphics->m_xClampSampler);
 		m_ulPreviewImageHandle = xHandle.AsUInt64();
 		m_bPreviewImageRegistered = true;
 	}

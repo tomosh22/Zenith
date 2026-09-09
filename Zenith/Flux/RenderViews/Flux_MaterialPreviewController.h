@@ -98,7 +98,7 @@ inline void Flux_PreviewBuildViewConstants(float fYaw, float fPitch, float fDist
 }
 
 // TOOLS-only controller behind the Material Editor's live preview (UE-style):
-// drives the PREVIEW render view (slot kuFluxViewSlotPreview) through the real
+// drives the PREVIEW render view (slot kuFluxViewSlotPreviewMaterial) through the real
 // per-view render pipeline. Replaces the retired offscreen MaterialPreview
 // renderer (own passes/pipelines/targets) with pure per-frame staging:
 //   - activates/deactivates the preview view (graph rebuild on change),

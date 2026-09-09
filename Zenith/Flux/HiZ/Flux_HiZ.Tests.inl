@@ -53,7 +53,7 @@ ZENITH_TEST(HiZ, BaseNamesAreTheTwelveHistoricalLiterals)
 
 		// The preview slot must compose the historical spelling, character for
 		// character — this is the typo guard the suffix table alone cannot give.
-		const char* const szPreview = Flux_ViewPassName(s_aszHiZPassNames[uMip], kuFluxViewSlotPreview);
+		const char* const szPreview = Flux_ViewPassName(s_aszHiZPassNames[uMip], kuFluxViewSlotPreviewMaterial);
 		ZENITH_ASSERT_STREQ(szPreview, s_aszExpectedPreview[uMip],
 			"preview name for mip %u matches the deleted preview table", uMip);
 
@@ -61,7 +61,7 @@ ZENITH_TEST(HiZ, BaseNamesAreTheTwelveHistoricalLiterals)
 		// the SAME pointer, which is what makes it legal to hand the graph and the
 		// GPU timer table a pointer they keep for the life of the process. The two
 		// calls are separate statements so nothing may fold them together.
-		const char* const szPreviewAgain = Flux_ViewPassName(s_aszHiZPassNames[uMip], kuFluxViewSlotPreview);
+		const char* const szPreviewAgain = Flux_ViewPassName(s_aszHiZPassNames[uMip], kuFluxViewSlotPreviewMaterial);
 		ZENITH_ASSERT_TRUE(szPreviewAgain == szPreview,
 			"repeated preview lookups for mip %u return one stable pointer", uMip);
 	}

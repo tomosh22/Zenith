@@ -19,10 +19,15 @@ Flux_RenderViewRegistry::Flux_RenderViewRegistry()
 	{
 		m_axViews[kuFluxViewSlotShadowFirst + u].m_eType = FLUX_RENDER_VIEW_SHADOW_CASCADE;
 	}
-	m_axViews[kuFluxViewSlotPreview].m_eType             = FLUX_RENDER_VIEW_PREVIEW;
-	m_axViews[kuFluxViewSlotPreview].m_bFullPipeline     = true;
-	m_axViews[kuFluxViewSlotPreviewAnim].m_eType         = FLUX_RENDER_VIEW_PREVIEW;
-	m_axViews[kuFluxViewSlotPreviewAnim].m_bFullPipeline = true;
+	// Typed from the RANGE, not from the two named constants: the predicate
+	// Flux_IsPreviewViewSlot reads the same range, and the RenderViews unit
+	// IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes holds this loop against
+	// it slot by slot, so the two cannot drift.
+	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
+	{
+		m_axViews[kuFluxViewSlotPreviewFirst + u].m_eType         = FLUX_RENDER_VIEW_PREVIEW;
+		m_axViews[kuFluxViewSlotPreviewFirst + u].m_bFullPipeline = true;
+	}
 }
 
 Flux_RenderView& Flux_RenderViewRegistry::View(u_int uSlot)

@@ -16,16 +16,15 @@ namespace
 {
 	// One suffix per view slot, total over FLUX_MAX_RENDER_VIEWS.
 	//
-	//   0 (kuFluxViewSlotMain)        nullptr — identity, no suffix is ever composed
-	//   1..4 (kuFluxViewSlotShadowFirst + c)
-	//                                 present for totality but NEVER USED today: the
+	//   kuFluxViewSlotMain            nullptr — identity, no suffix is ever composed
+	//   kuFluxViewSlotShadowFirst + c present for totality but NEVER USED today: the
 	//                                 cascades keep their hand-named "Shadow Cascade N"
 	//                                 passes (Flux/Shadows/Flux_Shadows.cpp:180-187) and
 	//                                 nothing routes a cascade pass through this pool.
-	//   5 (kuFluxViewSlotPreview)     "Preview" — the 44 historical "<base> (Preview)" names
-	//   6 (kuFluxViewSlotPreviewAnim) "AnimPreview"
-	//   7                             "View7" — the last fixed slot, unassigned today
-	const char* const s_aszViewSlotSuffixes[FLUX_MAX_RENDER_VIEWS] =
+	//   kuFluxViewSlotPreviewMaterial "Preview" — the 44 historical "<base> (Preview)" names
+	//   kuFluxViewSlotPreviewAnim     "AnimPreview"
+	//   the last slot                 "View7" — unassigned today
+	constexpr const char* const s_aszViewSlotSuffixes[FLUX_MAX_RENDER_VIEWS] =
 	{
 		nullptr,
 		"Shadow 0",
@@ -38,13 +37,31 @@ namespace
 	};
 	static_assert(FLUX_MAX_RENDER_VIEWS == 8u,
 		"s_aszViewSlotSuffixes has one row per view slot — add/remove rows with FLUX_MAX_RENDER_VIEWS");
-	// The table is positional, so both preview rows are pinned to their index: a
-	// slot constant that moved without the rows moving would hand every one of
-	// that view's passes another view's suffix, which reads as a plausible name.
-	static_assert(kuFluxViewSlotPreview == 5u,
-		"the suffix table's row comments describe slot 5 as the material preview");
-	static_assert(kuFluxViewSlotPreviewAnim == 6u,
-		"the suffix table's row comments describe slot 6 as the animation preview");
+
+	// The table is POSITIONAL, so each preview row has to be pinned to the slot
+	// constant that indexes it: a slot constant that moved without the rows moving
+	// would hand every one of that view's passes another view's suffix, which
+	// reads as a perfectly plausible name.
+	//
+	// The pin is the row's TEXT, not its index. Asserting the slot constant
+	// against a hard-coded number would have said the same thing in a way that
+	// re-introduces the bare literal this unit is removing, and it would not have
+	// caught two rows being swapped with each other.
+	// [[maybe_unused]]: it is odr-used ONLY from the static_asserts below, and a
+	// compile-time-only function in an anonymous namespace is exactly the shape
+	// MSVC reports as C4505 — which is an error here (warnings-as-errors).
+	[[maybe_unused]] constexpr bool ViewSlotSuffixIs(const char* szRow, const char* szExpected)
+	{
+		if (szRow == nullptr || szExpected == nullptr) { return szRow == szExpected; }
+		while (*szRow != '\0' && *szRow == *szExpected) { ++szRow; ++szExpected; }
+		return *szRow == *szExpected;
+	}
+	static_assert(ViewSlotSuffixIs(s_aszViewSlotSuffixes[kuFluxViewSlotPreviewMaterial], "Preview"),
+		"the material-preview slot must index the \"Preview\" row of the suffix table");
+	static_assert(ViewSlotSuffixIs(s_aszViewSlotSuffixes[kuFluxViewSlotPreviewAnim], "AnimPreview"),
+		"the animation-preview slot must index the \"AnimPreview\" row of the suffix table");
+	static_assert(s_aszViewSlotSuffixes[kuFluxViewSlotMain] == nullptr,
+		"slot 0 is pointer identity — it must have no suffix row");
 
 	// The legacy table: names that are NOT of the generic "<base> (<suffix>)"
 	// form and must keep their historical spelling so no existing pass literal
@@ -60,8 +77,8 @@ namespace
 	// than from a literal, and the pass records on the preview slot instead of
 	// falling through to slot 0.
 	//
-	// Slot 6 is deliberately NOT a row: it falls through to the generic form and
-	// yields "LDR Transition (AnimPreview)".
+	// The ANIMATION preview is deliberately NOT a row: it falls through to the
+	// generic form and yields "LDR Transition (AnimPreview)".
 	//
 	// Keyed by CONTENT (strcmp), never by pointer — MSVC /GF pools identical
 	// literals, so a pointer key would match in one TU and miss in another.
@@ -74,7 +91,7 @@ namespace
 
 	const ViewPassNameLegacyRow s_axViewPassNameLegacyRows[] =
 	{
-		{ "LDR Transition", kuFluxViewSlotPreview, "Preview LDR Transition" },
+		{ "LDR Transition", kuFluxViewSlotPreviewMaterial, "Preview LDR Transition" },
 	};
 
 	const char* FindLegacyName(const char* szBase, u_int uViewSlot)

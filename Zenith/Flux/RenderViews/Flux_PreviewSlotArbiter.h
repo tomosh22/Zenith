@@ -9,15 +9,34 @@
 #include <string>
 
 //=============================================================================
-// Flux_PreviewSlotArbiter — LAST-OPENED-WINS ownership of the single shared
-// preview render view (kuFluxViewSlotPreview).
+// Flux_PreviewSlotArbiter — LAST-OPENED-WINS ownership of the MATERIAL preview
+// render view (kuFluxViewSlotPreviewMaterial).
 //
-// There is exactly ONE preview view slot and the constant is hard-coded in 18
-// render features, so adding a second is not a small change. Two editors that
-// both want a live preview therefore have to take turns, and the rule that reads
-// best to a user is the one a tabbed editor already implies: the thing you
-// opened most recently is the thing you are looking at. The dispossessed owner
-// is told WHO took it (by name) so its panel can say so and offer a reclaim.
+// ★ THE PREMISE THIS WAS WRITTEN ON IS GONE. It used to read "there is exactly
+// ONE preview view slot and the constant is hard-coded in 18 render features, so
+// adding a second is not a small change". Neither half survives. The preview
+// class is now a RANGE of kuFluxViewNumPreviewSlots contiguous slots
+// (kuFluxViewSlotPreviewMaterial and kuFluxViewSlotPreviewAnim); and no render
+// feature hard-codes a preview slot into its PASS CHAIN any more — every one of
+// the thirteen instantiates its chain per slot from
+// ForEachActiveFullPipelineView, so a preview view added to the registry
+// acquires the whole pipeline with no feature edit. What is left is two
+// per-slot RESOURCE lists that name the slots they own an allocation for
+// (Flux_Graphics.cpp's preview LDRs, Flux_Skybox.cpp's sky-view LUTs) and
+// Flux_Translucency's external-item routing, which targets the material preview
+// because that is where the material editor's item goes.
+//
+// So this class is NOT what makes two previews possible; it is what decides who
+// owns ONE OF THEM while two editors want the same one. It arbitrates a single
+// named slot — the material preview — and the animation editor participates only
+// for as long as it shares that slot. When an owner is moved onto a slot of its
+// own the right change is to arbitrate PER SLOT (an owner per range index), not
+// to widen this to "the preview view" again.
+//
+// The rule that reads best to a user is the one a tabbed editor already implies:
+// the thing you opened most recently is the thing you are looking at. The
+// dispossessed owner is told WHO took it (by name) so its panel can say so and
+// offer a reclaim.
 //
 // ★ IT LIVES IN Flux/RenderViews, NOT IN Editor/, AND THAT IS FORCED. Both
 // claimants are on opposite sides of a layer boundary: Flux_MaterialPreviewController

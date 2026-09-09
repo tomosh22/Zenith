@@ -48,16 +48,29 @@ enum FluxRenderViewType : u_int
 inline constexpr u_int kuFluxViewNumShadowSlots  = 4u;
 inline constexpr u_int kuFluxViewSlotMain        = 0u;
 inline constexpr u_int kuFluxViewSlotShadowFirst = 1u;
-inline constexpr u_int kuFluxViewSlotPreview     = 1u + kuFluxViewNumShadowSlots;
-static_assert(kuFluxViewSlotPreview < FLUX_MAX_RENDER_VIEWS,
-	"FLUX_MAX_RENDER_VIEWS must fit main + all shadow cascades + the preview view");
 
+// The editor's MATERIAL preview view — the first of the PREVIEW class.
+inline constexpr u_int kuFluxViewSlotPreviewMaterial = 1u + kuFluxViewNumShadowSlots;
 // The editor's ANIMATION preview view. Same shape as the material preview — a
 // full-pipeline PREVIEW-typed view, INACTIVE until its owner activates it — and
 // deliberately the NEXT slot up, so the preview class stays a contiguous range.
-inline constexpr u_int kuFluxViewSlotPreviewAnim = kuFluxViewSlotPreview + 1u;
-static_assert(kuFluxViewSlotPreviewAnim < FLUX_MAX_RENDER_VIEWS,
-	"FLUX_MAX_RENDER_VIEWS must fit main + all shadow cascades + BOTH preview views");
+inline constexpr u_int kuFluxViewSlotPreviewAnim     = kuFluxViewSlotPreviewMaterial + 1u;
+
+// The PREVIEW class as a RANGE, which is the form anything DERIVED should read.
+// No name here means "the preview slot" any more, and that is the point of the
+// rename: a singular constant is silently correct while there is one preview view
+// and silently WRONG the day there are two, in every caller at once and with no
+// diagnostic. The predicate above, the persistent-LDR list in Flux_Graphics.cpp
+// and the sky-view-LUT list in Flux_Skybox.cpp are all expressed over the range
+// or over the two NAMED slots; nothing spells a preview slot as a number.
+inline constexpr u_int kuFluxViewSlotPreviewFirst = kuFluxViewSlotPreviewMaterial;
+inline constexpr u_int kuFluxViewNumPreviewSlots  = 2u;
+static_assert(kuFluxViewSlotPreviewFirst + kuFluxViewNumPreviewSlots <= FLUX_MAX_RENDER_VIEWS,
+	"FLUX_MAX_RENDER_VIEWS must fit main + all shadow cascades + every preview view");
+// The named members and the range are ONE fact: adding a third preview slot means
+// bumping the count AND naming it, and forgetting either half fails here.
+static_assert(kuFluxViewSlotPreviewAnim == kuFluxViewSlotPreviewFirst + kuFluxViewNumPreviewSlots - 1u,
+	"the animation preview is the LAST slot of the preview range");
 
 // True iff uSlot is one of the PREVIEW-class views. DERIVED from the contiguous
 // range above and NOT a second list: an enumerated list is a place a later slot
@@ -68,7 +81,8 @@ static_assert(kuFluxViewSlotPreviewAnim < FLUX_MAX_RENDER_VIEWS,
 // (out-of-range slots are simply not preview slots).
 inline constexpr bool Flux_IsPreviewViewSlot(u_int uSlot)
 {
-	return uSlot >= kuFluxViewSlotPreview && uSlot <= kuFluxViewSlotPreviewAnim;
+	return uSlot >= kuFluxViewSlotPreviewFirst
+		&& uSlot < kuFluxViewSlotPreviewFirst + kuFluxViewNumPreviewSlots;
 }
 
 // The preview views' fixed square target size.
@@ -131,7 +145,17 @@ inline constexpr u_int Flux_ViewMaskAllSceneViews(bool bShadowsEnabled)
 	}
 	return uMask;
 }
-inline constexpr u_int Flux_ViewMaskPreviewOnly() { return 1u << kuFluxViewSlotPreview; }
+// The mask carrying exactly one view slot's bit. TOTAL over u_int: an
+// out-of-range slot answers 0 (no view at all) rather than shifting past the
+// width of the mask, which is undefined and would otherwise be reachable from any
+// caller that computed a slot. It replaces the preview-only mask helper that
+// stood here, which named ONE slot inside its own identifier and so could not
+// express "this preview view" once there were two — every caller that asked for
+// a preview mask silently got the material one.
+inline constexpr u_int Flux_ViewMaskForSlot(u_int uSlot)
+{
+	return (uSlot < FLUX_MAX_RENDER_VIEWS) ? (1u << uSlot) : 0u;
+}
 
 struct Flux_RenderView
 {

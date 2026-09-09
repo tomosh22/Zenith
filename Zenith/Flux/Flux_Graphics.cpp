@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <cstring>   // std::strcmp — --taa= CLI scan in UpdateVelocityTargetSelection
 #include <cstdlib>   // std::atof — --taa-render-scale= CLI parse
+#include <cstdio>    // snprintf — the preview LDRs' debug names, composed from the slot
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -41,24 +42,23 @@
 // Initialise builder and the Shutdown release walk THIS list, so a slot can never
 // be built without a matching destroy. The animation preview's LDR is built here
 // whether or not its view is active, so the animation panel can register it; until
-// something records into slot 6 NOTHING WRITES IT — that is expected, not a bug.
-// An unwritten persistent attachment simply samples as its cleared contents; it is
+// something records into it NOTHING WRITES IT — that is expected, not a bug. An
+// unwritten persistent attachment simply samples as its cleared contents; it is
 // not a graph transient, so the unused-transient validation never sees it.
 //
 // This list is kept EXPLICIT rather than derived from Flux_IsPreviewViewSlot: the
 // two answer different questions (which slots are preview-TYPED versus which own a
 // persistent allocation), and collapsing them would make a future preview slot
 // silently allocate a 512x512 target it never uses.
-static constexpr u_int kuFLUX_PREVIEW_LDR_SLOTS[]  = { kuFluxViewSlotPreview, kuFluxViewSlotPreviewAnim };
-// Parallel to the slot list — the backend's only handle on which LDR is which in a
-// capture, so each name carries its SLOT rather than its role (slot 6 has no role
-// until D1-e wires one).
-static const char* const kaszFLUX_PREVIEW_LDR_NAMES[] = { "Preview View LDR 5", "Preview View LDR 6" };
+static constexpr u_int kuFLUX_PREVIEW_LDR_SLOTS[]  = { kuFluxViewSlotPreviewMaterial, kuFluxViewSlotPreviewAnim };
 static constexpr u_int kuFLUX_NUM_PREVIEW_LDR_SLOTS = sizeof(kuFLUX_PREVIEW_LDR_SLOTS) / sizeof(kuFLUX_PREVIEW_LDR_SLOTS[0]);
-static_assert(sizeof(kaszFLUX_PREVIEW_LDR_NAMES) / sizeof(kaszFLUX_PREVIEW_LDR_NAMES[0]) == kuFLUX_NUM_PREVIEW_LDR_SLOTS,
-	"one debug name per preview-LDR slot");
 static_assert(kuFLUX_PREVIEW_LDR_SLOTS[kuFLUX_NUM_PREVIEW_LDR_SLOTS - 1u] < FLUX_MAX_RENDER_VIEWS,
 	"every preview-LDR slot must index m_axPreviewLDR[FLUX_MAX_RENDER_VIEWS]");
+// The debug names are COMPOSED FROM THE SLOT at build time rather than kept in a
+// parallel literal table. The table had to be re-indexed by hand whenever the slot
+// list changed, and a mis-ordered pair is invisible: both names are plausible, the
+// capture is simply mislabelled and every gate stays green.
+static constexpr u_int kuFLUX_PREVIEW_LDR_NAME_LEN = 32u;
 
 // True iff the slot owns one of the persistent preview LDRs above.
 static bool Flux_SlotHasPreviewLDR(u_int uSlot)
@@ -260,12 +260,14 @@ void Flux_GraphicsImpl::Initialise()
 	for (u_int u = 0; u < kuFLUX_NUM_PREVIEW_LDR_SLOTS; u++)
 	{
 		const u_int uSlot = kuFLUX_PREVIEW_LDR_SLOTS[u];
+		char acDebugName[kuFLUX_PREVIEW_LDR_NAME_LEN] = {};
+		snprintf(acDebugName, sizeof(acDebugName), "Preview View LDR %u", uSlot);
 		Flux_RenderAttachmentBuilder xBuilder;
 		xBuilder.m_uWidth       = kuFLUX_PREVIEW_VIEW_SIZE;
 		xBuilder.m_uHeight      = kuFLUX_PREVIEW_VIEW_SIZE;
 		xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 		xBuilder.m_eFormat      = FINAL_RT_FORMAT;
-		xBuilder.BuildColour(m_axPreviewLDR[uSlot], kaszFLUX_PREVIEW_LDR_NAMES[u]);
+		xBuilder.BuildColour(m_axPreviewLDR[uSlot], acDebugName);
 	}
 
 	// Render targets are graph-owned transients, created in SetupTransients.
@@ -890,7 +892,7 @@ Flux_RenderAttachment& Flux_GraphicsImpl::GetPreviewLDR(u_int uViewSlot)
 	// getter in this file uses (see GetMRTAttachment).
 	const bool bHasLDR = Flux_SlotHasPreviewLDR(uViewSlot);
 	Zenith_Assert(bHasLDR, "Flux_Graphics::GetPreviewLDR: view slot %u owns no persistent LDR (preview-class slots only)", uViewSlot);
-	return m_axPreviewLDR[bHasLDR ? uViewSlot : kuFluxViewSlotPreview];
+	return m_axPreviewLDR[bHasLDR ? uViewSlot : kuFluxViewSlotPreviewMaterial];
 }
 
 // --- Temporal upscaling: the render/output resolution split (Stage 5) ---------

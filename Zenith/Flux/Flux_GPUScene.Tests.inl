@@ -693,11 +693,15 @@ ZENITH_TEST(GPUScene, IncrementalBuildMixesItemsAndInstances)
 ZENITH_TEST(GPUScene, DrawItemViewMaskPackAndTest)
 {
 	// Low 16 bits stay item flags; high 16 carry the per-view-slot mask.
-	const u_int uPacked = Flux_PackDrawItemViewMask(0x2u, Flux_ViewMaskPreviewOnly());
+	const u_int uPacked = Flux_PackDrawItemViewMask(0x2u, Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial));
 	ZENITH_ASSERT_EQ(uPacked & 0xFFFFu, 0x2u, "low flag bits preserved");
-	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotPreview), "preview-only item visible in the preview slot");
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotPreviewMaterial), "preview-only item visible in the material-preview slot");
 	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotMain), "preview-only item invisible to the camera");
 	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotShadowFirst), "preview-only item invisible to cascades");
+	// The mask names ONE preview slot, so the OTHER preview view must not see it —
+	// the clause the singular helper could not state, and the one that would catch
+	// a per-slot mask that had degraded back to "any preview view".
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPacked, kuFluxViewSlotPreviewAnim), "a material-preview item is invisible to the animation preview");
 
 	const u_int uScene = Flux_PackDrawItemViewMask(0u, Flux_ViewMaskAllSceneViews(true));
 	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotMain), "scene item visible to the camera");
@@ -705,7 +709,11 @@ ZENITH_TEST(GPUScene, DrawItemViewMaskPackAndTest)
 	{
 		ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotShadowFirst + u), "scene item visible to every cascade");
 	}
-	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotPreview), "scene item never leaks into the preview");
+	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
+	{
+		ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uScene, kuFluxViewSlotPreviewFirst + u),
+			"scene item never leaks into preview slot %u", kuFluxViewSlotPreviewFirst + u);
+	}
 }
 
 ZENITH_TEST(GPUScene, BuildersDefaultToAllSceneViews)
@@ -726,7 +734,7 @@ ZENITH_TEST(GPUScene, BuildersDefaultToAllSceneViews)
 
 	// Preview-exclusive override rides the source item.
 	Flux_GPUSceneSourceItem xPreviewItem;
-	xPreviewItem.m_uViewMask = Flux_ViewMaskPreviewOnly();
+	xPreviewItem.m_uViewMask = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial);
 	xPreviewItem.m_xSubmeshes.PushBack(GPUScene_MakeSub(3u, uFLUX_GPUSCENE_CULL_ONE_SIDED, 300u, 0u));
 	Flux_AppendGPUSceneItem(xPreviewItem, xReg, xOut);
 
@@ -734,10 +742,11 @@ ZENITH_TEST(GPUScene, BuildersDefaultToAllSceneViews)
 
 	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotMain), "snapshot item defaults into the camera view");
 	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotShadowFirst), "snapshot item defaults into the cascades");
-	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotPreview), "snapshot item stays out of the preview");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotPreviewMaterial), "snapshot item stays out of the material preview");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(0).m_uFlags, kuFluxViewSlotPreviewAnim), "snapshot item stays out of the animation preview");
 	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(1).m_uFlags, kuFluxViewSlotMain), "instance defaults into the camera view");
 	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotMain), "preview-only item stays out of the camera view");
-	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotPreview), "preview-only item lands in the preview slot");
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotPreviewMaterial), "preview-only item lands in the material-preview slot");
 }
 
 ZENITH_TEST(GPUScene, UnifiedAddressingAtMaxViewSlots)

@@ -416,9 +416,9 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 	// sort key is measured against each TARGET view's camera so the shared
 	// comparator sorts every packet consistently.
 	const Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
-	const bool bPreviewActive = xViews.IsViewActive(kuFluxViewSlotPreview);
+	const bool bPreviewActive = xViews.IsViewActive(kuFluxViewSlotPreviewMaterial);
 	const Zenith_Maths::Vector3 xPreviewCamPos =
-		Zenith_Maths::Vector3(xViews.View(kuFluxViewSlotPreview).m_xConstants.m_xCamPos_Pad);
+		Zenith_Maths::Vector3(xViews.View(kuFluxViewSlotPreviewMaterial).m_xConstants.m_xCamPos_Pad);
 
 	const Zenith_Vector<Flux_RendererImpl::Flux_ExternalSceneItem>& xExternalItems =
 		g_xEngine.FluxRenderer().GetExternalTranslucentItems();
@@ -433,9 +433,9 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 		{
 			xPacket.PushBack(BuildTranslucentDrawItem(xExt.m_pxMeshInstance, xExt.m_pxMaterial, xExt.m_xWorldMatrix, xCameraPos));
 		}
-		if (bPreviewActive && ((xExt.m_uViewMask >> kuFluxViewSlotPreview) & 1u))
+		if (bPreviewActive && ((xExt.m_uViewMask >> kuFluxViewSlotPreviewMaterial) & 1u))
 		{
-			m_axDrawPackets[kuFluxViewSlotPreview].PushBack(
+			m_axDrawPackets[kuFluxViewSlotPreviewMaterial].PushBack(
 				BuildTranslucentDrawItem(xExt.m_pxMeshInstance, xExt.m_pxMaterial, xExt.m_xWorldMatrix, xPreviewCamPos));
 		}
 	}

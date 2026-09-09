@@ -128,7 +128,8 @@ inline void Flux_BuildGPUSceneDrawItem(Flux_GPUSceneDrawItem& xOut, u_int uObjec
 // Scene content passes Flux_ViewMaskAllSceneViews(true) (camera + every cascade
 // slot — inactive cascades are skipped by the cull's ACTIVE-view mask, so the
 // item mask needn't track the shadows toggle); the material-preview mesh passes
-// Flux_ViewMaskPreviewOnly(). Low 16 bits stay reserved for item flags.
+// Flux_ViewMaskForSlot(kuFluxViewSlotPreviewMaterial). Low 16 bits stay reserved
+// for item flags.
 inline constexpr u_int uFLUX_GPUSCENE_DRAWITEM_VIEWMASK_SHIFT = 16u;
 static_assert(FLUX_MAX_RENDER_VIEWS <= 16u,
 	"the draw-item view mask packs one bit per view slot into the high 16 flag bits");
@@ -299,8 +300,8 @@ struct Flux_GPUSceneSourceItem
 	u_int   m_uVATAnimPacked   = 0u;   // VAT animIndex|frameCount (0 = none)
 	u_int   m_uVATAnimTimeBits = 0u;   // VAT normalised time (float bits)
 	// Which render-view slots this item's draw-items participate in (see the
-	// view-mask helpers above). Scene content defaults to camera + cascades;
-	// the preview injection overrides with Flux_ViewMaskPreviewOnly().
+	// view-mask helpers above). Scene content defaults to camera + cascades; a
+	// preview injection overrides with Flux_ViewMaskForSlot(<its own slot>).
 	u_int   m_uViewMask        = Flux_ViewMaskAllSceneViews(true);
 	Zenith_Vector<Flux_GPUSceneSourceSubmesh> m_xSubmeshes;
 };

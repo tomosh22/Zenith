@@ -34,11 +34,15 @@
 // This test reads the LIVE compiled graph and states the law out loud, in
 // eight named clauses, against four samples of the view set:
 //
-//   A  main view only                          (the preview view inactive)
-//   B  main + the material-preview view (slot 5, kuFluxViewSlotPreview)
-//   C  main + slot 5 + the animation-preview view (slot 6)  — STAGED, see
-//      kbSampleCEnabled below; slot 6 does not exist yet.
+//   A  main view only                          (both preview views inactive)
+//   B  main + the material-preview view        (kuFluxViewSlotPreviewMaterial)
+//   C  main + BOTH preview views               (+ kuFluxViewSlotPreviewAnim)
 //   D  both preview views off again, settled   (the graph must return to A)
+//
+// Sample C is LIVE as of unit D2-b: slot 6 is a constructed PREVIEW-typed
+// full-pipeline view, it owns its own persistent LDR, and every clause below runs
+// over it. It was staged behind two constants while the slot did not exist; both
+// are now true and the staging is gone.
 //
 // Every clause runs and reports on EVERY run (the Test_TennisBrainContract
 // accumulator shape), so one failing run names every clause that moved rather
@@ -172,52 +176,56 @@ namespace
 	// Zenith_EditorPanel_MaterialEditor.cpp:522 are stale narration and are NOT
 	// sources). The count is taken from sizeof below; it is never hand-typed.
 	//
-	// Trailing comment = the feature that owns the AddPass call.
+	// Trailing comment = THE SYMBOL that owns the AddPass call, not a file:line.
+	// The line numbers this list carried were stale within three units of being
+	// written (D1 moved every per-view AddPass into a walk callback), and a stale
+	// citation is worse than none: it sends a reader to an unrelated line and
+	// reads as evidence while doing it. A function name survives the file moving.
 	// ------------------------------------------------------------------
 	const char* const kaszPERVIEW_BASES[] =
 	{
-		"Unified Mesh GBuffer",         // UnifiedMesh   (Flux_UnifiedMesh.cpp:493 / :553) — ONE space each side
-		"Skybox Sky-View LUT",          // Skybox        (Flux_Skybox.cpp:552 / :619)
-		"Skybox",                       // Skybox        (Flux_Skybox.cpp:568 / :626)
-		"Decal Normals Copy",           // Decals        (Flux_Decals.cpp:539 / :583)
-		"Decal Apply",                  // Decals        (Flux_Decals.cpp:548 / :589)
-		"SSAO Generate",                // SSAO          (Flux_SSAO.cpp:387)
-		"SSAO Blur Legacy",             // SSAO          (Flux_SSAO.cpp:394)
-		"SSAO Blur H",                  // SSAO          (Flux_SSAO.cpp:403)
-		"SSAO Blur",                    // SSAO          (Flux_SSAO.cpp:413)
-		"HiZ Mip 0",                    // HiZ           (Flux_HiZ.cpp:234) — 10 rows at 512^2,
-		"HiZ Mip 1",                    // HiZ             ComputeMipCount(512,512) = 10; the main view's
-		"HiZ Mip 2",                    // HiZ             chain is 11 on the fixed 1280x720 Null swapchain
-		"HiZ Mip 3",                    // HiZ
-		"HiZ Mip 4",                    // HiZ
-		"HiZ Mip 5",                    // HiZ
-		"HiZ Mip 6",                    // HiZ
-		"HiZ Mip 7",                    // HiZ
-		"HiZ Mip 8",                    // HiZ
-		"HiZ Mip 9",                    // HiZ
-		"SSR RayMarch",                 // SSR           (Flux_SSR.cpp:647)
-		"SSR Upsample",                 // SSR           (Flux_SSR.cpp:663)
-		"SSR DenoiseH",                 // SSR           (Flux_SSR.cpp:682) — no space, unlike SSGI's
-		"SSR DenoiseV",                 // SSR           (Flux_SSR.cpp:698)
-		"SSGI RayMarch",                // SSGI          (Flux_SSGI.cpp:428)
-		"SSGI Upsample",                // SSGI          (Flux_SSGI.cpp:439)
-		"SSGI Denoise H",               // SSGI          (Flux_SSGI.cpp:450) — space, unlike SSR's
-		"SSGI Denoise V",               // SSGI          (Flux_SSGI.cpp:459)
-		"Apply Lighting",               // DeferredShading (Flux_DeferredShading.cpp:274) — ONE per-view site
-		"Fog_Simple",                   // Fog           (Flux_Fog.cpp:293 / :341)
-		"Particles",                    // Particles     (Flux_Particles.cpp:394 / :426)
-		"SDFs",                         // SDFs          (Flux_SDFs.cpp:142 / :153)
-		"Translucency",                 // Translucency  (Flux_Translucency.cpp:201 / :235)
-		"HDR_BloomThreshold",           // HDR           (Flux_HDR.cpp:658)
-		"HDR_BloomDownsample Mip1",     // HDR           (Flux_HDR.cpp:664-671)
-		"HDR_BloomDownsample Mip2",     // HDR
-		"HDR_BloomDownsample Mip3",     // HDR
-		"HDR_BloomDownsample Mip4",     // HDR
-		"HDR_BloomUpsample Mip3",       // HDR           (Flux_HDR.cpp:682-689) — declared high mip first
-		"HDR_BloomUpsample Mip2",       // HDR
-		"HDR_BloomUpsample Mip1",       // HDR
-		"HDR_BloomUpsample Mip0",       // HDR
-		"HDR_ToneMapping",              // HDR           (Flux_HDR.cpp:730 / :750)
+		"Unified Mesh GBuffer",         // DeclareUnifiedGBufferPass (Flux_UnifiedMesh.cpp) — ONE space each side
+		"Skybox Sky-View LUT",          // Flux_SkyboxImpl::SetupViewPasses
+		"Skybox",                       // Flux_SkyboxImpl::SetupViewPasses
+		"Decal Normals Copy",           // Flux_DecalsImpl::SetupViewPasses — ONE per-view site
+		"Decal Apply",                  // Flux_DecalsImpl::SetupViewPasses — ONE per-view site
+		"SSAO Generate",                // Flux_SSAOImpl::SetupViewPasses
+		"SSAO Blur Legacy",             // Flux_SSAOImpl::SetupViewPasses
+		"SSAO Blur H",                  // Flux_SSAOImpl::SetupViewPasses
+		"SSAO Blur",                    // Flux_SSAOImpl::SetupViewPasses
+		"HiZ Mip 0",                    // Flux_HiZImpl::SetupViewPasses — 10 rows at 512^2,
+		"HiZ Mip 1",                    //   ComputeMipCount(512,512) = 10; the main view's
+		"HiZ Mip 2",                    //   chain is 11 on the fixed 1280x720 Null swapchain
+		"HiZ Mip 3",                    //
+		"HiZ Mip 4",                    //
+		"HiZ Mip 5",                    //
+		"HiZ Mip 6",                    //
+		"HiZ Mip 7",                    //
+		"HiZ Mip 8",                    //
+		"HiZ Mip 9",                    //
+		"SSR RayMarch",                 // Flux_SSRImpl::SetupViewPasses
+		"SSR Upsample",                 // Flux_SSRImpl::SetupViewPasses
+		"SSR DenoiseH",                 // Flux_SSRImpl::SetupViewPasses — no space, unlike SSGI's
+		"SSR DenoiseV",                 // Flux_SSRImpl::SetupViewPasses
+		"SSGI RayMarch",                // Flux_SSGIImpl::SetupViewPasses
+		"SSGI Upsample",                // Flux_SSGIImpl::SetupViewPasses
+		"SSGI Denoise H",               // Flux_SSGIImpl::SetupViewPasses — space, unlike SSR's
+		"SSGI Denoise V",               // Flux_SSGIImpl::SetupViewPasses
+		"Apply Lighting",               // Flux_DeferredShadingImpl::SetupViewPasses — ONE per-view site
+		"Fog_Simple",                   // Flux_FogImpl::SetupViewPasses
+		"Particles",                    // Flux_ParticlesImpl::SetupViewPasses
+		"SDFs",                         // Flux_SDFsImpl::SetupViewPasses
+		"Translucency",                 // Flux_TranslucencyImpl::SetupViewPasses
+		"HDR_BloomThreshold",           // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomDownsample Mip1",     // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomDownsample Mip2",     // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomDownsample Mip3",     // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomDownsample Mip4",     // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomUpsample Mip3",       // Flux_HDRImpl::SetupBloomViewPasses — declared high mip first
+		"HDR_BloomUpsample Mip2",       // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomUpsample Mip1",       // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_BloomUpsample Mip0",       // Flux_HDRImpl::SetupBloomViewPasses
+		"HDR_ToneMapping",              // Flux_HDRImpl::SetupPreviewViewPasses
 	};
 	constexpr u_int kuPERVIEW_BASE_COUNT =
 		static_cast<u_int>(sizeof(kaszPERVIEW_BASES) / sizeof(kaszPERVIEW_BASES[0]));
@@ -244,11 +252,12 @@ namespace
 	// base is "LDR Transition". Clause 4 pins exactly that below — the literal is
 	// absent from slot 0 and present once on the preview slot.
 	//
-	// kszPREVIEW_ONLY_BASE / IsPreviewOnlyBase stay as D2-a scaffolding: clause 2
+	// kszPREVIEW_ONLY_BASE / IsPreviewOnlyBase are LIVE as of D2-b. Clause 2
 	// short-circuits on the literal before it ever strips a suffix, so the base
-	// spelling is not on any live path today. It becomes live the moment a
-	// preview-class slot WITHOUT a legacy row (slot 6) declares the pass, which
-	// composes "LDR Transition (AnimPreview)".
+	// spelling was unreachable while only the material preview existed; the
+	// animation preview has NO legacy row, so its transition pass composes
+	// "LDR Transition (AnimPreview)", strips to this base, and is owed no slot-0
+	// twin. That is the path IsPreviewOnlyBase exists for.
 	const char* const kszPREVIEW_ONLY_LITERAL = "Preview LDR Transition";
 	const char* const kszPREVIEW_ONLY_BASE    = "LDR Transition";
 
@@ -260,24 +269,29 @@ namespace
 	}
 
 	// ------------------------------------------------------------------
-	// Sample C staging. D2-a adds the animation-preview view (slot 6,
-	// kuFluxViewSlotPreviewAnim) and D0-B adds GetPreviewLDR(u_int uSlot); until
-	// then sample C is skipped with a log line rather than deleted, so enabling
-	// it is a one-constant edit.
+	// Sample C. Both switches were staging while the animation-preview view did
+	// not exist; D2-a constructed the slot and D0-B gave it its own persistent
+	// LDR, so both are TRUE and sample C is part of the contract.
 	//
-	// kbSampleCEnabled       — run sample C at all (the D2-a spike contract:
-	//                          compiled, no duplicates, violations 0).
-	// kbSampleCFullClauses   — additionally hold clauses 2/3/5 over slot 6 (D2-b).
+	// They are kept as named constants rather than deleted because they are what
+	// the two halves of the contract are called in the phase machine below:
+	// kbSampleCEnabled is "run the phase at all", kbSampleCFullClauses is "hold
+	// the naming law (2), the slot-0 stability (3) and the per-view inventory (5)
+	// over the animation preview as well". Turning either off is how you bisect a
+	// failure onto the second preview view; neither is a place to park one.
 	// ------------------------------------------------------------------
-	constexpr bool kbSampleCEnabled = false;
-	constexpr bool kbSampleCFullClauses = false;
+	constexpr bool kbSampleCEnabled = true;
+	constexpr bool kbSampleCFullClauses = true;
+	static_assert(kbSampleCEnabled || !kbSampleCFullClauses,
+		"the full clauses are held over sample C — they cannot be on while the sample is off");
 
-	// Slot 6 spelled out because kuFluxViewSlotPreviewAnim does not exist yet
-	// (the same note Flux_ViewPassNames.cpp:23 carries). Flux_ViewSlotSuffix(6)
-	// ALREADY returns "AnimPreview", so the naming law is expressible today.
-	constexpr u_int kuViewSlotPreviewAnimProvisional = kuFluxViewSlotPreview + 1u;
-	static_assert(kuViewSlotPreviewAnimProvisional < FLUX_MAX_RENDER_VIEWS,
-		"the animation-preview slot must fit the fixed view registry");
+	// The animation preview's slot comes from the registry's own constant. This
+	// file used to compute it as "the material preview's slot + 1" while the real
+	// constant did not exist; that provisional is gone and there is one spelling.
+	static_assert(Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewAnim),
+		"sample C drives a slot the registry must agree is PREVIEW-class");
+	static_assert(kuFluxViewNumPreviewSlots == 2u,
+		"sample C is written for exactly two preview views — a third needs its own phase");
 
 	// ------------------------------------------------------------------
 	// Per-sample capture. Pass names are static-lifetime literals (the graph only
@@ -311,13 +325,13 @@ namespace
 		u_int m_uMainHiZMipCount = 0u;
 		u_int m_uOverflowed = 0u;      // passes dropped because a capture array filled
 		// Passes on a slot this sampler cannot classify: a non-main slot whose
-		// registered view type is neither SHADOW_CASCADE nor PREVIEW. ZERO today —
-		// slots 6 and 7 exist but nothing declares a pass on them. It is counted
+		// registered view type is neither SHADOW_CASCADE nor PREVIEW. It is counted
 		// (and asserted zero) rather than ignored because that is EXACTLY the shape
-		// D2-a will arrive in if it adds slot-6 passes without setting the slot's
-		// m_eType: Flux_RenderViews.cpp:5-22 leaves 6/7 at the FLUX_RENDER_VIEW_MAIN
-		// default, so the passes would be invisible to clause 2 and the naming law
-		// would silently stop covering them.
+		// a new preview slot arrives in if the registry constructor does not TYPE
+		// it: a default-constructed Flux_RenderView is FLUX_RENDER_VIEW_MAIN, so its
+		// passes would be invisible to clause 2 and the naming law would silently
+		// stop covering them. The animation preview is typed (D2-a), which is what
+		// lets sample C see its passes at all.
 		u_int m_uUnclassified = 0u;
 
 		// EVERY slot-0 pass name, duplicates included (clause 4 counts them).
@@ -349,7 +363,6 @@ namespace
 	ViewStructureSample s_axSamples[VIEW_STRUCTURE_PHASE_COUNT];
 	ViewStructurePhase  s_ePhase = VIEW_STRUCTURE_PHASE_A_MAIN_ONLY;
 	u_int               s_uPhaseFrame = 0u;
-	bool                s_bSampleCSkipLogged = false;
 
 	// Frames per phase, and the earliest in-phase frame a sample may be taken.
 	// Both are settle counts, not schedule points — see the header note.
@@ -519,8 +532,8 @@ namespace
 		xSample.m_bCompiled = xGraph.Compile();
 
 		const Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
-		xSample.m_bPreviewViewActive     = xViews.IsViewActive(kuFluxViewSlotPreview);
-		xSample.m_bPreviewAnimViewActive = xViews.IsViewActive(kuViewSlotPreviewAnimProvisional);
+		xSample.m_bPreviewViewActive     = xViews.IsViewActive(kuFluxViewSlotPreviewMaterial);
+		xSample.m_bPreviewAnimViewActive = xViews.IsViewActive(kuFluxViewSlotPreviewAnim);
 		xSample.m_uMainHiZMipCount       = g_xEngine.HiZ().GetMipCount(kuFluxViewSlotMain);
 		xSample.m_uViolations            = xGraph.GetProducerBeforeConsumerViolationCount();
 		xSample.m_uExecutionOrderSize    = xGraph.GetExecutionOrder().GetSize();
@@ -600,7 +613,6 @@ namespace
 		ResetResults();
 		s_ePhase = VIEW_STRUCTURE_PHASE_A_MAIN_ONLY;
 		s_uPhaseFrame = 0u;
-		s_bSampleCSkipLogged = false;
 
 		for (u_int u = 0; u < VIEW_STRUCTURE_PHASE_COUNT; u++)
 		{
@@ -617,7 +629,17 @@ namespace
 		// process left open, drop it. The liveness grace would do this within 8
 		// rendered frames anyway; being explicit makes phase A's "preview view
 		// inactive" assertion mean what it says.
+		//
+		// BOTH preview views, not just the material one. The animation preview has
+		// no liveness grace and no controller — whoever activates it must
+		// deactivate it — so a previous test that left it up would make phase A's
+		// "no PREVIEW pass exists" clause fail for a reason that has nothing to do
+		// with this run.
 		g_xEngine.MaterialPreview().SetActive(false);
+		if (g_xEngine.FluxGraphics().RenderViews().SetViewActive(kuFluxViewSlotPreviewAnim, false))
+		{
+			g_xEngine.FluxRenderer().RequestGraphRebuild();
+		}
 	}
 
 	bool Step_RenderGraphViewStructure(int iFrame)
@@ -625,27 +647,10 @@ namespace
 		(void)iFrame;
 		if (s_ePhase >= VIEW_STRUCTURE_PHASE_DONE) { return false; }
 
-		// Sample C is staged: skip the whole phase until D2-a lands slot 6.
-		// `if constexpr` rather than a plain `if` so the constant condition is not
-		// a C4127 at /W4.
-		if constexpr (!kbSampleCEnabled)
-		{
-			if (s_ePhase == VIEW_STRUCTURE_PHASE_C_PREVIEW_ANIM)
-			{
-				if (!s_bSampleCSkipLogged)
-				{
-					s_bSampleCSkipLogged = true;
-					Zenith_Log(LOG_CATEGORY_RENDERER,
-						"[ViewStructure] SAMPLE C SKIPPED: the animation-preview view (slot %u) does not exist yet "
-						"(unit D2-a adds kuFluxViewSlotPreviewAnim; D0-B adds GetPreviewLDR(uSlot)). "
-						"Flip kbSampleCEnabled to run the spike contract, kbSampleCFullClauses for clauses 2/3/5.",
-						kuViewSlotPreviewAnimProvisional);
-				}
-				s_ePhase = VIEW_STRUCTURE_PHASE_D_SETTLED_OFF;
-				s_uPhaseFrame = 0u;
-			}
-		}
-
+		// Sample C is live; the skip-and-log branch that stood here while the
+		// animation-preview slot did not exist is gone rather than left switched
+		// off. `if constexpr` is still used below so a constant condition is not a
+		// C4127 at /W4.
 		switch (s_ePhase)
 		{
 		case VIEW_STRUCTURE_PHASE_A_MAIN_ONLY:
@@ -661,28 +666,21 @@ namespace
 		case VIEW_STRUCTURE_PHASE_C_PREVIEW_ANIM:
 			if constexpr (kbSampleCEnabled)
 			{
-				// Keep slot 5 alive, then stage slot 6 exactly as a session would:
-				// dims + activate + rebuild. Every call here exists TODAY; the one
-				// piece that does not is D0-B's GetPreviewLDR(uSlot), left as the
-				// TODO below rather than referenced.
+				// Keep the material preview alive (it self-deactivates 8 frames
+				// after its last refresh), then stage the animation preview exactly
+				// as a session would: dims + activate + rebuild. The registry
+				// already TYPES the slot PREVIEW/full-pipeline, so nothing here has
+				// to say so — which is the point of D2-a having done it in the
+				// constructor rather than at the call site.
 				g_xEngine.MaterialPreview().SetActive(true);
 
 				Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
-				xViews.View(kuViewSlotPreviewAnimProvisional).m_xTargetDims =
+				xViews.View(kuFluxViewSlotPreviewAnim).m_xTargetDims =
 					Zenith_Maths::UVector2(kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
-				if (xViews.SetViewActive(kuViewSlotPreviewAnimProvisional, true))
+				if (xViews.SetViewActive(kuFluxViewSlotPreviewAnim, true))
 				{
 					g_xEngine.FluxRenderer().RequestGraphRebuild();
 				}
-
-				// TODO(D2-a / D0-B), enable together with kbSampleCEnabled:
-				//   * View(6).m_eType must be FLUX_RENDER_VIEW_PREVIEW and
-				//     m_bFullPipeline true, or clause 2 will not SEE slot-6 passes
-				//     at all — Flux_RenderViews.cpp:5-22 leaves slots 6/7 at the
-				//     FLUX_RENDER_VIEW_MAIN default today.
-				//   * the reduced spike contract additionally asserts
-				//     &GetPreviewLDR(6) != &GetPreviewLDR(5) — a distinct target
-				//     per preview view, which is D0-B's deliverable.
 			}
 			break;
 
@@ -693,7 +691,7 @@ namespace
 				if constexpr (kbSampleCEnabled)
 				{
 					Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
-					if (xViews.SetViewActive(kuViewSlotPreviewAnimProvisional, false))
+					if (xViews.SetViewActive(kuFluxViewSlotPreviewAnim, false))
 					{
 						g_xEngine.FluxRenderer().RequestGraphRebuild();
 					}
@@ -873,14 +871,14 @@ namespace
 		// the material-preview slot. Checking only the first half would pass for
 		// a pass that had vanished entirely.
 		CheckEqInt(static_cast<int>(CountName(xB.m_aszSlot0Names, xB.m_uSlot0Count, kszPREVIEW_ONLY_LITERAL)), 0,
-			"'Preview LDR Transition' still records at SLOT 0 — it must carry .View(kuFluxViewSlotPreview)");
+			"'Preview LDR Transition' still records at SLOT 0 — it must carry .View(kuFluxViewSlotPreviewMaterial)");
 
 		u_int uOnPreviewSlot = 0u;
 		for (u_int u = 0; u < xB.m_uPreviewCount; u++)
 		{
 			if (xB.m_aszPreviewNames[u] != nullptr
 				&& std::strcmp(xB.m_aszPreviewNames[u], kszPREVIEW_ONLY_LITERAL) == 0
-				&& xB.m_auPreviewSlots[u] == kuFluxViewSlotPreview)
+				&& xB.m_auPreviewSlots[u] == kuFluxViewSlotPreviewMaterial)
 			{
 				++uOnPreviewSlot;
 			}
@@ -889,20 +887,27 @@ namespace
 			"'Preview LDR Transition' must record EXACTLY ONCE on the material-preview slot");
 	}
 
-	// 5. The per-view base inventory equals kaszPERVIEW_BASES EXACTLY.
+	// 5. The per-view base inventory equals kaszPERVIEW_BASES EXACTLY, FOR ONE
+	//    SLOT AT A TIME.
 	//
-	// ★ SCOPE, when sample C is enabled: the sample's preview set is the UNION over
-	// every preview-typed slot, so this states "the union of the preview views'
-	// bases is exactly the golden list", not "each preview view instantiates all
-	// 42". Splitting it per slot is D2-b's job (kbSampleCFullClauses).
-	void Clause5_PerViewInventory(const ViewStructureSample& xSample)
+	// ★ IT IS PER SLOT, AND THAT IS THE WHOLE POINT OF SAMPLE C. The sample's
+	// preview capture is the UNION over every preview-typed slot, so a clause
+	// written over the union would state "between them, the preview views
+	// instantiate the golden list" — which is satisfied by the material preview
+	// alone and would go green with the animation preview instantiating NOTHING.
+	// That is precisely the failure a second preview view introduces, so the
+	// clause is parameterised by slot and run once per ACTIVE preview view.
+	void Clause5_PerViewInventory(const ViewStructureSample& xSample, u_int uOnlySlot)
 	{
 		bool abGoldenSeen[kuPERVIEW_BASE_COUNT] = {};
+		u_int uConsidered = 0u;
 
 		for (u_int u = 0; u < xSample.m_uPreviewCount; u++)
 		{
 			const char* szName = xSample.m_aszPreviewNames[u];
 			const u_int uSlot  = xSample.m_auPreviewSlots[u];
+			if (uSlot != uOnlySlot) { continue; }
+			++uConsidered;
 			if (std::strcmp(szName, kszPREVIEW_ONLY_LITERAL) == 0) { continue; }
 
 			char acBase[kuBASE_BUFFER_LEN] = {};
@@ -921,9 +926,17 @@ namespace
 			CheckTrueNamed(bMatched, "preview view instantiated a base that is NOT in the golden list", acBase);
 		}
 
+		// A slot with no passes at all would otherwise report only "base X missing"
+		// once per golden base, which reads as kuPERVIEW_BASE_COUNT separate
+		// defects rather than as one view that was never instantiated.
+		CheckTrue(uConsidered > 0u, "the preview slot under test declared NO passes at all");
+		Zenith_Log(LOG_CATEGORY_RENDERER, "[ViewStructure] clause 5: slot %u (%s) declared %u passes",
+			uOnlySlot, Flux_ViewSlotSuffix(uOnlySlot) != nullptr ? Flux_ViewSlotSuffix(uOnlySlot) : "<none>",
+			uConsidered);
+
 		for (u_int g = 0; g < kuPERVIEW_BASE_COUNT; g++)
 		{
-			CheckTrueNamed(abGoldenSeen[g], "golden per-view base was NOT instantiated for the preview view",
+			CheckTrueNamed(abGoldenSeen[g], "golden per-view base was NOT instantiated for this preview view",
 				kaszPERVIEW_BASES[g]);
 		}
 
@@ -933,11 +946,12 @@ namespace
 			bool bFound = false;
 			for (u_int p = 0; p < xSample.m_uPreviewCount && !bFound; p++)
 			{
+				if (xSample.m_auPreviewSlots[p] != uOnlySlot) { continue; }
 				char acBase[kuBASE_BUFFER_LEN] = {};
 				if (!TryStripViewSuffix(xSample.m_aszPreviewNames[p], xSample.m_auPreviewSlots[p], acBase, kuBASE_BUFFER_LEN)) { continue; }
 				if (std::strcmp(acBase, kaszALWAYS_ON[u]) == 0) { bFound = true; }
 			}
-			CheckTrueNamed(bFound, "always-on base missing from the preview view", kaszALWAYS_ON[u]);
+			CheckTrueNamed(bFound, "always-on base missing from this preview view", kaszALWAYS_ON[u]);
 		}
 	}
 
@@ -973,6 +987,26 @@ namespace
 		}
 	}
 
+	// 9. One persistent preview LDR per preview view, and no two the same object.
+	//    O(n^2) over kuFluxViewNumPreviewSlots (two today) and written as a walk
+	//    over the RANGE so a third preview slot is covered with no edit here.
+	void Clause9_PreviewLDRsAreDistinct()
+	{
+		Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+		for (u_int uA = 0; uA < kuFluxViewNumPreviewSlots; uA++)
+		{
+			const u_int uSlotA = kuFluxViewSlotPreviewFirst + uA;
+			const void* pxA = &xGraphics.GetPreviewLDR(uSlotA);
+			for (u_int uB = uA + 1u; uB < kuFluxViewNumPreviewSlots; uB++)
+			{
+				const u_int uSlotB = kuFluxViewSlotPreviewFirst + uB;
+				const void* pxB = &xGraphics.GetPreviewLDR(uSlotB);
+				CheckTrue(pxA != pxB,
+					"two preview views share ONE persistent LDR — the second would overwrite the first's image");
+			}
+		}
+	}
+
 	bool Verify_RenderGraphViewStructure()
 	{
 		const ViewStructureSample& xA = s_axSamples[VIEW_STRUCTURE_PHASE_A_MAIN_ONLY];
@@ -985,13 +1019,17 @@ namespace
 		CheckTrue(xA.m_bTaken, "sample A was never taken (the graph never settled undirty in phase A)");
 		CheckTrue(xB.m_bTaken, "sample B was never taken (the graph never settled undirty in phase B)");
 		CheckTrue(xD.m_bTaken, "sample D was never taken (the graph never settled undirty in phase D)");
-		CheckTrue(!xA.m_bPreviewViewActive, "the preview view was ACTIVE during sample A");
-		CheckTrue(xB.m_bPreviewViewActive, "the preview view was NOT active during sample B");
-		CheckTrue(!xD.m_bPreviewViewActive, "the preview view was still ACTIVE during sample D");
+		CheckTrue(!xA.m_bPreviewViewActive, "the material-preview view was ACTIVE during sample A");
+		CheckTrue(!xA.m_bPreviewAnimViewActive, "the animation-preview view was ACTIVE during sample A");
+		CheckTrue(xB.m_bPreviewViewActive, "the material-preview view was NOT active during sample B");
+		CheckTrue(!xB.m_bPreviewAnimViewActive, "the animation-preview view was ACTIVE during sample B — B is the ONE-preview shape");
+		CheckTrue(!xD.m_bPreviewViewActive, "the material-preview view was still ACTIVE during sample D");
+		CheckTrue(!xD.m_bPreviewAnimViewActive, "the animation-preview view was still ACTIVE during sample D");
 		if constexpr (kbSampleCEnabled)
 		{
 			CheckTrue(xC.m_bTaken, "sample C was never taken");
 			CheckTrue(xC.m_bPreviewAnimViewActive, "the animation-preview view was NOT active during sample C");
+			CheckTrue(xC.m_bPreviewViewActive, "the material-preview view was NOT active during sample C — C is BOTH previews at once");
 		}
 		EndClause();
 
@@ -1039,12 +1077,24 @@ namespace
 		BeginClause("5");
 		Zenith_Log(LOG_CATEGORY_RENDERER, "[ViewStructure] golden per-view base count = %u (from sizeof)",
 			kuPERVIEW_BASE_COUNT);
-		if (xB.m_bTaken) { Clause5_PerViewInventory(xB); }
+		if (xB.m_bTaken) { Clause5_PerViewInventory(xB, kuFluxViewSlotPreviewMaterial); }
 		else { CheckTrue(false, "clause 5 needs sample B"); }
 		if (xA.m_bTaken) { Clause5_AlwaysOnAtSlot0(xA); }
 		if (xB.m_bTaken) { Clause5_AlwaysOnAtSlot0(xB); }
 		if (xD.m_bTaken) { Clause5_AlwaysOnAtSlot0(xD); }
-		if constexpr (kbSampleCEnabled && kbSampleCFullClauses) { if (xC.m_bTaken) { Clause5_PerViewInventory(xC); } }
+		if constexpr (kbSampleCEnabled && kbSampleCFullClauses)
+		{
+			// ONCE PER PREVIEW SLOT, not once over the union — with both views up,
+			// a union check is satisfied by the material preview alone. The walk is
+			// over the RANGE, so a third preview view is covered without an edit.
+			if (xC.m_bTaken)
+			{
+				for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
+				{
+					Clause5_PerViewInventory(xC, kuFluxViewSlotPreviewFirst + u);
+				}
+			}
+		}
 		EndClause();
 
 		// --- 6 ---
@@ -1095,6 +1145,23 @@ namespace
 		if constexpr (kbSampleCEnabled) { if (xC.m_bTaken) { Clause8_ShadowSlots(xC); } }
 		EndClause();
 
+		// --- 9 ---
+		// EVERY preview view owns a DISTINCT persistent LDR. This was a TODO on the
+		// sample-C driver ("the reduced spike contract additionally asserts
+		// &GetPreviewLDR(6) != &GetPreviewLDR(5)"); it is a permanent clause now,
+		// and it is UNCONDITIONAL — it reads the graphics object, not a sample, so
+		// it holds whether or not the phase machine ever settled.
+		//
+		// It is a structural clause, not a rig check: the two tonemap passes name
+		// their target through GetPreviewLDR(uViewSlot), so if two preview slots
+		// resolved to ONE attachment the graph would still compile, still carry no
+		// duplicate pass names and still satisfy every clause above — while the
+		// second view silently overwrote the first view's image every frame. No
+		// clause 1-8 can see that, because none of them look at resources.
+		BeginClause("9");
+		Clause9_PreviewLDRsAreDistinct();
+		EndClause();
+
 		// xC is named unconditionally so it is referenced even when sample C is
 		// staged off (an `if constexpr`-discarded reference is not a use MSVC's
 		// unreferenced-local analysis is obliged to see).
@@ -1119,7 +1186,7 @@ namespace
 		if constexpr (kbSampleCEnabled)
 		{
 			Flux_RenderViewRegistry& xViews = g_xEngine.FluxGraphics().RenderViews();
-			if (xViews.SetViewActive(kuViewSlotPreviewAnimProvisional, false))
+			if (xViews.SetViewActive(kuFluxViewSlotPreviewAnim, false))
 			{
 				g_xEngine.FluxRenderer().RequestGraphRebuild();
 			}

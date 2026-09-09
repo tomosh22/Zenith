@@ -25,7 +25,7 @@ not exist.)
 |---|---|---|
 | Nothing existing can address a bone | **TRUE** | `Flux_GizmosImpl::SetTargetEntity(Zenith_Entity*)` — `Zenith/Flux/Gizmos/Flux_GizmosImpl.h:128`, `Zenith/Flux/Gizmos/Flux_Gizmos.cpp:374`. The target member is `Zenith_Entity* m_pxTargetEntity` (`Flux_GizmosImpl.h:206`) and all eight interaction sites resolve it through `GetGizmoTargetWithTransform()` (`Flux_Gizmos.cpp:130`, called at 237, 413, 749, 800, 837, 881). `Zenith_SelectionSystem::RaycastSelect` returns a `Zenith_EntityID` (`Zenith/Editor/Zenith_SelectionSystem.h:56`), caches by `Zenith_EntityID` (`:73`) and tests through `Zenith_ModelComponent*` (`:65`). |
 | Authoring writes bone-local rotations | **TRUE** | `Flux_SkeletonPose::SampleFromClip` writes `m_axLocalPoses[i].m_xRotation` (`Zenith/Flux/MeshAnimation/Flux_BonePose.cpp:257`); the controller copies those into the instance with `SetBoneLocalTransform` (`Flux_AnimationController.cpp:346`). |
-| `kuFluxViewSlotPreview == 5` | **TRUE** | `1u + kuFluxViewNumShadowSlots`, `kuFluxViewNumShadowSlots = 4u` — `Zenith/Flux/RenderViews/Flux_RenderViews.h:45,48`. |
+| `kuFluxViewSlotPreviewMaterial == 5` | **TRUE** | `1u + kuFluxViewNumShadowSlots`, `kuFluxViewNumShadowSlots = 4u` — `Zenith/Flux/RenderViews/Flux_RenderViews.h`. (The constant carried a singular preview name when this premise was checked; unit D2-b renamed it when the animation preview became a second PREVIEW-class slot.) |
 | The controller invokes `Solve` inside `ApplyOutputPoseToSkeleton`, and the header warns game code off | **TRUE** | `Zenith/Flux/MeshAnimation/Flux_AnimationController.cpp:334-340`; warning at `Flux_InverseKinematics.h:170-176`. |
 | Phase-3 gives key times in **SECONDS** | **CONTRADICTED by the tree at design time.** See §5.2. **Corrected after implementation (2026-09-06): the tree was fixed before Phase 4 needed it — key times ARE seconds everywhere now, and the Phase-3 premise this row disputed turned out to be correct once the fix landed.** | `Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, …)` (`Flux_AnimationClip.h:89-91`) and `SampleFromClip` multiplies seconds by ticks-per-second before sampling (`Flux_BonePose.cpp:168`, `:201`) — this was the state of the tree when the row was written. Channel storage is now **seconds**; see `Zenith/Flux/MeshAnimation/CLAUDE.md` ("KEY TIMES ARE SECONDS … D3") and §5.2. |
 | `Zenith_AnimationDocument`, `Zenith_AnimationPreviewSession`, `Zenith_EditorPanel_Animation`, `Flux_BoneChannel::InsertKeyframeAt` / `RemoveKeyframe` / `SetKeyframeTime` / `SetKeyframeValue`, `m_uAuthoredFrameRate`, `fANIM_TIME_EPSILON` | **Corrected after implementation (2026-09-06): ALL PRESENT NOW.** At the time this note was written none of these existed; Phases 1–4 (WU-4.1 `36e1c4c4`, WU-4.2 `3acce596`, WU-4.3 `f69e4c1d`, WU-4.4 `da697fce`) landed every one of them. | `Zenith_AnimationDocument.h`, `Zenith_AnimationPreviewSession.h` (`Zenith/Editor/`, **not** `Editor/Animation/` — see §7), `Zenith/Editor/Panels/Zenith_EditorPanel_Animation.h`, `Zenith/Flux/MeshAnimation/Flux_AnimationClip.h` (the four `Flux_BoneChannel` mutators), `Flux_AnimationClipMetadata::m_uAuthoredFrameRate` (`Flux_AnimationClip.h:120`, D6), `fANIM_TIME_EPSILON` (`Flux_AnimationClip.h`, D9) |
@@ -38,7 +38,7 @@ as re-plan corrections, confirmed shipped):
   (`Flux_Gizmos.cpp:369-371`). `Flux_PrimitivesImpl` has the same limitation — it writes the
   main G-buffer MRTs (`Zenith/Flux/Primitives/Flux_Primitives.cpp:571-575`).
 - **The preview slot already has an owner.** `Flux_MaterialPreviewController` activates and
-  stages slot `kuFluxViewSlotPreview` from its own liveness window
+  stages slot `kuFluxViewSlotPreviewMaterial` from its own liveness window
   (`Zenith/Flux/RenderViews/Flux_MaterialPreviewController.h:144,156-161`). Two panels open
   at once contend for one slot.
 
@@ -935,7 +935,7 @@ reasons:
 2. **It draws in the wrong view, and that is the harder half.** Its one pass writes
    `GetFinalRenderTarget()` with no `.View(slot)` (`Flux_Gizmos.cpp:369-371`), so it
    renders with the MAIN camera's constants, over the main viewport. The preview session
-   renders into `kuFluxViewSlotPreview`. Making the gizmo per-view is a render-graph change
+   renders into `kuFluxViewSlotPreviewMaterial`. Making the gizmo per-view is a render-graph change
    (a second pass, preview-view transients, a `.View()` selection) that is not in any of
    the four briefs. `Flux_PrimitivesImpl` is no help — it writes the main G-buffer MRTs
    (`Flux_Primitives.cpp:571-575`).

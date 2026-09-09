@@ -672,7 +672,7 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 		// frame in which NOBODY owns the slot is safe to deactivate on.
 		if (Flux_PreviewSlotArbiter::GetOwner() == nullptr)
 		{
-			if (xViews.SetViewActive(kuFluxViewSlotPreview, false))
+			if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, false))
 			{
 				g_xEngine.FluxRenderer().RequestGraphRebuild();
 			}
@@ -680,7 +680,7 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 		return;
 	}
 
-	if (xViews.SetViewActive(kuFluxViewSlotPreview, true))
+	if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, true))
 	{
 		// The active view set changed: per-view transients and passes must be
 		// (de)declared, so the next frame recompiles the graph from scratch.
@@ -690,7 +690,7 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 	// Staged exactly the way Flux_MaterialPreviewController stages it, through the
 	// SAME pure builders — two different fills of one slot's constants would make
 	// the preview's framing depend on which editor last touched it.
-	Flux_RenderView& xView = xViews.View(kuFluxViewSlotPreview);
+	Flux_RenderView& xView = xViews.View(kuFluxViewSlotPreviewMaterial);
 	xView.m_xTargetDims = Zenith_Maths::UVector2(kuFLUX_PREVIEW_VIEW_SIZE, kuFLUX_PREVIEW_VIEW_SIZE);
 
 	Flux_ViewConstants& xVC = xView.m_xConstants;
@@ -698,7 +698,9 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 	xVC.m_xSunDir_Pad    = Zenith_Maths::Vector4(Flux_PreviewLightDir(0.8f, 0.7f), 0.0f);
 	xVC.m_xSunColour_Pad = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 3.0f);
 	xVC.m_uViewFlags     = 0u;
-	xVC.m_uViewSlot      = kuFluxViewSlotPreview;
+	// The MATERIAL preview's slot, shared with the material editor through the
+	// arbiter until D3 moves this session onto kuFluxViewSlotPreviewAnim.
+	xVC.m_uViewSlot      = kuFluxViewSlotPreviewMaterial;
 	// The preview view never jitters and never runs velocity/TAA, but the GPU cull
 	// reads m_xViewProjMatNoJitter for EVERY active view — so stage it.
 	xVC.m_xViewProjMatNoJitter     = xVC.m_xViewProjMat;
