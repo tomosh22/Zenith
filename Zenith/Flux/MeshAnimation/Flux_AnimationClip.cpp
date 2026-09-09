@@ -2239,4 +2239,6 @@ void Flux_AnimationClipCollection::ReadFromDataStream(Zenith_DataStream& xStream
 	}
 }
 
+#ifdef ZENITH_TESTING
 #include "Flux/MeshAnimation/Flux_AnimationClip.Tests.inl"
+#endif
