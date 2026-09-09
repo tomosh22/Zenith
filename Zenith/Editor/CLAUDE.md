@@ -836,22 +836,52 @@ of those shows `BlendTreeRefusalText()` on its node and in the inspector.
 Assigning a clip to any of the three — a nest **or** a blend space — is refused,
 because it would delete the whole sub-graph and report success.
 
-**★ LIVE HIGHLIGHTING RUNS ON A PANEL-OWNED PREVIEW CONTROLLER, NOT ON THE
-SELECTED ENTITY'S.** The obvious design is "highlight when the selection holds a
-`Zenith_AnimatorComponent` built from THIS asset path". When this panel was
-written there was **no path to compare** —
-`Zenith_AnimatorComponent::LoadControllerAsset` acquired the asset, called
-`BuildFromControllerDef` and recorded nothing — and matching on anything else
-available (a layer count, a state name) would ring a *different* character's
-graph and look right. So the panel builds its own controller from the working def
-and ticks it.
+**★ LIVE HIGHLIGHTING HAS TWO SOURCES, AND THE SELECTED ENTITY'S CONTROLLER WINS.**
+`ResolveLiveMachine` takes the editor's primary selected entity, looks for a
+`Zenith_AnimatorComponent` on it, and compares that component's
+`GetControllerAssetPath()` against the document's `GetAssetPath()`. Both come out
+of `Zenith_AssetRegistry::NormalizeAssetPath`, so the comparison is a plain
+byte-for-byte one and an **empty** path on either side matches nothing rather
+than everything. No match — no selection, no animator, a different asset — and
+the panel's own preview controller drives the ring exactly as it did before.
+`IsHighlightLive()` / `GetLiveHighlightEntityName()` say which, and the toolbar
+prints **`Live: <entity name>`** or **`Preview`**: the two sources paint the
+identical ring on the identical canvas, so a ring from the wrong controller is
+otherwise indistinguishable from a correct one.
 
-**That premise is SUPERSEDED as of C2**, and the code here has not moved yet:
-the component now records the normalized path and exposes
-`GetControllerAssetPath()`, so the selection-driven highlight is buildable. It is
-C3's, not this unit's — until C3 lands, the panel still previews its own
-controller, and the paragraph above describes what the panel DOES rather than
-what is possible.
+This is what the panel could not do when it was written — `LoadControllerAsset`
+acquired the asset, called `BuildFromControllerDef` and recorded nothing, so
+there was **no path to compare**, and matching on anything weaker (a layer count,
+a state name) would ring a *different* character's graph and look right. C2 added
+the recorded path; C3 consumes it.
+
+**★ IT IS NOT GATED ON `EditorMode::Playing`, unlike
+`Zenith_EditorPanel_GraphEditor::FindLiveGraphForHighlight`** — which is the
+panel this one otherwise copies. A Behaviour Graph *instance* only exists while
+the graph executes, so that panel genuinely has nothing to read when the editor
+is stopped; an animator's `Flux_AnimationController` is built by
+`LoadControllerAsset` and is addressable in **every** mode, sitting in whatever
+state it was left in. A mode gate here would blank the ring on a stopped
+character for a reason nothing on screen explains.
+
+**★ ONCE THE ENTITY HAS MATCHED THERE IS NO FALLING BACK.** If the machine the
+canvas is showing has no counterpart on the live controller — which is exactly
+what an *unsaved, not-yet-applied* new layer looks like — the highlight is
+**empty** and `IsHighlightLive()` stays true. Silently reading the preview's
+machine instead would ring a state belonging to a different controller and look
+entirely correct.
+
+**★ THE REFRESH IS PER-FRAME AND SITS OUTSIDE `Render`'s
+`m_bPreviewEnabled && fDtSeconds > 0` GATE.** The live source is driven by the
+GAME: the selection can change, and the controller can move state, in frames
+where the preview is off or `dt` is 0. Inside the gate, a selection-driven ring
+would update only while the panel's own preview happened to be running. (Every
+unit renders with `dt` 0, which is what makes the misplacement fail rather than
+merely look wrong to a human.)
+
+**★ `Action_Apply` STILL TARGETS THE PREVIEW ONLY**, live highlighting or not.
+Pushing an unsaved document edit into a live entity's controller would be an edit
+to the SCENE made from a document nobody saved.
 
 **★ THE PREVIEW TICKS THE MACHINE, NOT THE CONTROLLER, AND NEEDS NO RIG.**
 `Flux_AnimationController::Update` returns on its first line without a

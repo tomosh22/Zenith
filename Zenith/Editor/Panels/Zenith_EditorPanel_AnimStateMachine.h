@@ -267,7 +267,10 @@ public:
 	bool GetNodePosition(const std::string& strStateName, Zenith_Maths::Vector2& xOut) const;
 
 	//-------------------------------------------------------------------------
-	// Selection. Pure panel state: none of these touches the document.
+	// Selection — of a STATE, a TRANSITION or the any-state pseudo-node. Pure
+	// panel state: none of these touches the document, and none of them is the
+	// EDITOR'S ENTITY selection, which this panel also reads (see LIVE
+	// ACTIVE-STATE HIGHLIGHTING below) and never writes.
 	//-------------------------------------------------------------------------
 
 	// False for a state the machine does not have — selecting one would leave a
@@ -415,32 +418,56 @@ public:
 	//
 	// Applies to the PANEL'S PREVIEW controller. There is no direct-play preview
 	// in this panel to re-arm — that is the dope sheet's, and it owns its own.
+	//
+	// ★ AND IT DOES NOT REACH THE SELECTED ENTITY'S CONTROLLER, even while that
+	// entity is driving the highlight (see LIVE ACTIVE-STATE HIGHLIGHTING below).
+	// Pushing an UNSAVED document edit into a live controller would be an edit to
+	// the SCENE made from a document nobody saved; Save is the verb that reaches
+	// the world, through the asset.
 	bool Action_Apply();
 
 	//=========================================================================
-	// LIVE ACTIVE-STATE HIGHLIGHTING.
+	// LIVE ACTIVE-STATE HIGHLIGHTING, FROM ONE OF TWO SOURCES.
 	//
-	// ★ IT RUNS ON A PANEL-OWNED PREVIEW CONTROLLER, NOT ON THE SELECTED
-	// ENTITY'S, AND THAT WAS A PREMISE CORRECTION RATHER THAN A CHOICE. The brief
-	// asked to highlight from a selected entity whose Zenith_AnimatorComponent
-	// was built FROM THIS ASSET PATH, "compare paths". There was no path to
-	// compare: Zenith_AnimatorComponent::LoadControllerAsset acquired the asset,
-	// called BuildFromControllerDef and RECORDED NOTHING — the component's only
-	// members were its parent entity and a cached controller pointer, and the
-	// controller keeps clip handles but no controller-asset reference. Matching
-	// on anything else available (a layer count, a state name) would highlight a
-	// DIFFERENT character's graph and look right, which is worse than not
-	// highlighting at all. Adding the field was an EntityComponent change that
-	// unit did not own.
+	// ★ THE SELECTED ENTITY'S OWN CONTROLLER WINS; THE PANEL-OWNED PREVIEW IS THE
+	// FALLBACK. ResolveLiveMachine asks the editor for its primary selected
+	// entity, looks for a Zenith_AnimatorComponent on it, and compares that
+	// component's GetControllerAssetPath() against this document's
+	// GetAssetPath(). Both strings are produced by
+	// Zenith_AssetRegistry::NormalizeAssetPath, so the comparison is a plain
+	// byte-for-byte one — and an EMPTY path on either side (a controller built in
+	// code, a document with no asset) matches nothing rather than everything.
+	// Matching on anything WEAKER than the path — a layer count, a state name —
+	// would ring a different character's graph and look correct, which is worse
+	// than not highlighting at all.
 	//
-	// ★ SUPERSEDED BY C2 — AND THIS PANEL HAS NOT MOVED. The component now
-	// records the normalized .zanimctrl it was built from and exposes
-	// Zenith_AnimatorComponent::GetControllerAssetPath(), so the path comparison
-	// the original brief wanted now EXISTS. Consuming it — highlighting from the
-	// selected entity's own controller when its recorded path matches the asset
-	// this panel is editing — is C3's work, not C2's. Until then the preview
-	// controller below is still what drives the highlight, and the paragraph
-	// above records why, not what is possible.
+	// ★ IT IS NOT GATED ON EditorMode::Playing, WHICH IS THE ONE PLACE IT
+	// DELIBERATELY DIFFERS FROM Zenith_EditorPanel_GraphEditor's
+	// FindLiveGraphForHighlight. A Behaviour Graph INSTANCE only exists while the
+	// graph is executing, so that panel genuinely has nothing to read when the
+	// editor is stopped. An animator's Flux_AnimationController is built by
+	// LoadControllerAsset and is addressable in EVERY editor mode — it simply
+	// sits in whatever state it was left in — so a mode gate here would blank the
+	// ring on a stopped character for a reason nobody could see on screen.
+	//
+	// ★ ONCE THE ENTITY HAS MATCHED, THERE IS NO FALLING BACK. If the machine the
+	// canvas is showing (GetSelectedMachineId — the top-level machine, or a
+	// layer) has no counterpart on the LIVE controller — exactly what an unsaved,
+	// not-yet-applied new layer looks like — the highlight is EMPTY and
+	// IsHighlightLive() stays true. Silently swapping to the preview's machine
+	// mid-edit would ring a state belonging to a different controller and look
+	// right, which is the failure this whole feature exists to avoid.
+	//
+	// ★ THE REFRESH IS PER-FRAME AND OUTSIDE THE PREVIEW'S TICK GATE. Render only
+	// ticks the preview when it is enabled AND fDtSeconds > 0; the live source is
+	// driven by the GAME, not by this panel, so the selected entity can change
+	// and its controller can move to another state in frames where this panel did
+	// nothing at all.
+	//
+	// ★ AND THE TOOLBAR SAYS WHICH SOURCE IT IS — "Live: <entity name>" against
+	// "Preview" — because the two paint the identical ring on the identical
+	// canvas, and a ring coming from the wrong controller is otherwise
+	// indistinguishable from a correct one.
 	//
 	// ★ THE PREVIEW TICKS THE MACHINE, NOT THE CONTROLLER, and it needs no rig.
 	// Flux_AnimationController::Update returns immediately without a
@@ -471,9 +498,22 @@ public:
 	bool Action_SetPreviewBool(const std::string& strName, bool bValue);
 	bool Action_SetPreviewTrigger(const std::string& strName);
 
-	// The state the preview is IN, or empty. This is what the canvas rings.
+	// The state the HIGHLIGHT SOURCE is in, or empty. This is what the canvas
+	// rings, and which of the two sources produced it is IsHighlightLive().
 	const std::string& GetHighlightedStateName() const { return m_strHighlightedState; }
-	// The preview's runtime machine for the CURRENT selection, or null.
+	// True when that source is the SELECTED ENTITY'S controller rather than the
+	// panel's preview. Stays true when the entity matched but the machine the
+	// canvas is showing has no live counterpart — "live, ringing nothing" and
+	// "previewing" are different facts and the badge shows different words for
+	// them. Recorded by ResolveLiveMachine on the last refresh.
+	bool IsHighlightLive() const { return m_bHighlightIsLive; }
+	// The name of the entity the live highlight is following, or empty when the
+	// highlight is not live. What the toolbar badge prints.
+	const std::string& GetLiveHighlightEntityName() const { return m_strLiveHighlightEntity; }
+	// The PREVIEW controller's runtime machine for the machine the CANVAS is
+	// showing (the document's GetSelectedMachineId), or null. This is the
+	// FALLBACK source, and the only one Action_TickPreview and Action_Apply
+	// touch — neither of them may reach the live one.
 	Flux_AnimationStateMachine* GetPreviewMachine();
 	Flux_AnimationController& PreviewController() { return m_xPreviewController; }
 
@@ -678,6 +718,21 @@ private:
 
 	// Ops helpers (Zenith_EditorPanel_AnimStateMachine_Ops.cpp).
 	void RefreshHighlightedState();
+	// The SELECTED ENTITY'S live machine for the machine the canvas is showing,
+	// or null.
+	//
+	// ★ IT ALSO RECORDS THE SOURCE, and that is not a smell — it is the only way
+	// to answer both halves from one resolution. "Did the selected entity match
+	// this asset" and "did its machine resolve" are DIFFERENT questions with
+	// different answers (a new layer that has not been applied yet matches on the
+	// first and fails the second), and m_bHighlightIsLive is the first. Resolving
+	// the selection twice to keep them apart would re-enter
+	// Zenith_Editor::GetSelectedEntity, whose result is a function-local static
+	// valid only until the next call.
+	Flux_AnimationStateMachine* ResolveLiveMachine();
+	// The live machine when the entity matched — INCLUDING when that is null —
+	// and the preview's otherwise. The one thing RefreshHighlightedState reads.
+	Flux_AnimationStateMachine* GetHighlightSourceMachine();
 	void DropPreview();
 	// ★ THE ONE PLACE THE DOPE SHEET IS TOLD WHICH LAYER A MASK WOULD LAND ON.
 	// Guarded: Zenith_EditorPanel_Animation::Instance() ASSERTS when the editor
@@ -740,6 +795,11 @@ private:
 	bool m_bPreviewEnabled = false;
 	bool m_bPreviewComplete = true;
 	std::string m_strHighlightedState;
+	// WHICH source produced m_strHighlightedState, and the entity it came from.
+	// Written by ResolveLiveMachine and by nothing else, so the badge, the
+	// accessors and the units cannot end up with three opinions about it.
+	bool m_bHighlightIsLive = false;
+	std::string m_strLiveHighlightEntity;
 
 	// Panel-side layout for states the def places at the origin. NOT written to
 	// the def — see GetNodePosition.

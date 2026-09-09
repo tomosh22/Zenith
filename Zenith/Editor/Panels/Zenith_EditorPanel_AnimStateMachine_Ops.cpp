@@ -12,6 +12,11 @@
 // setter would be the wrong trade.
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+// C3: the live highlight reads the SELECTED ENTITY'S animator. In the .cpp for
+// the same reason the dope sheet is — the panel's declarations name no component
+// type — and the precedent is Zenith_EditorPanel_GraphEditor.cpp, which includes
+// Zenith_GraphComponent.h for the identical job.
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 
 #include <cstdio>
 
@@ -31,6 +36,19 @@
 // every mutation has to mark dirty and push exactly one undo command in the
 // same breath, and a caller that reached past it would skip both.
 //=============================================================================
+
+namespace
+{
+	// ★ THE ONE REACH FOR THE EDITOR IN THIS TU, AND IT IS GUARDED. A unit builds
+	// this panel on the stack with no editor allocated at all, and
+	// Zenith_Engine::Editor() asserts in that case — so every caller here takes a
+	// pointer that is simply null when there is nothing to ask, rather than each
+	// one re-deriving the guard and one of them eventually forgetting.
+	Zenith_Editor* AnimSmTryGetEditor()
+	{
+		return g_xEngine.HasEditor() ? &g_xEngine.Editor() : nullptr;
+	}
+}
 
 //=============================================================================
 // Selection — pure panel state.
@@ -180,11 +198,12 @@ void Zenith_EditorPanel_AnimStateMachine::PushSelectedLayerBlendModeToMaskPanel(
 	// sheet, and a unit builds this panel on the stack with no editor allocated
 	// at all — an unguarded call would turn every such unit into an assert about
 	// a panel the test never asked for.
-	if (!g_xEngine.HasEditor())
+	Zenith_Editor* pxEditor = AnimSmTryGetEditor();
+	if (pxEditor == nullptr)
 	{
 		return;
 	}
-	Zenith_EditorPanel_Animation* pxDopeSheet = g_xEngine.Editor().TryGetAnimationPanel();
+	Zenith_EditorPanel_Animation* pxDopeSheet = pxEditor->TryGetAnimationPanel();
 	if (pxDopeSheet == nullptr)
 	{
 		return;
@@ -809,6 +828,14 @@ void Zenith_EditorPanel_AnimStateMachine::DropPreview()
 	m_bPreviewEnabled = false;
 	m_bPreviewComplete = true;
 	m_strHighlightedState.clear();
+	// The LIVE source's record goes with it. This is called from Shutdown() and
+	// from the destructor as well as from the Preview checkbox, and resolving the
+	// editor's selection at either of those is exactly what must not happen — so
+	// the fields are cleared rather than recomputed, and Render's per-frame
+	// refresh re-establishes them on the very next frame if a live source is
+	// still there.
+	m_bHighlightIsLive = false;
+	m_strLiveHighlightEntity.clear();
 }
 
 bool Zenith_EditorPanel_AnimStateMachine::Action_SetPreviewEnabled(bool bEnabled)
@@ -885,9 +912,107 @@ bool Zenith_EditorPanel_AnimStateMachine::Action_TickPreview(float fDtSeconds)
 	return true;
 }
 
+//=============================================================================
+// The LIVE highlight source (C3) — the selected entity's own controller.
+//
+// The header's LIVE ACTIVE-STATE HIGHLIGHTING block carries the reasoning; this
+// is the mechanism.
+//=============================================================================
+
+Flux_AnimationStateMachine* Zenith_EditorPanel_AnimStateMachine::ResolveLiveMachine()
+{
+	// Cleared FIRST, on every path. The two members below describe the LAST
+	// resolution, so leaving the previous frame's answer standing after a
+	// deselection would keep the badge naming an entity nothing is reading.
+	m_bHighlightIsLive = false;
+	m_strLiveHighlightEntity.clear();
+
+	// ★ AN EMPTY DOCUMENT PATH MATCHES NOTHING RATHER THAN EVERYTHING. A document
+	// opened fresh and never saved has a path, but a closed one has none — and an
+	// animator that was never given an asset also reports empty. Comparing the two
+	// empties would make every un-assetted entity in the scene "the" live source.
+	if (!m_xDocument.IsOpen() || m_xDocument.GetAssetPath().empty())
+	{
+		return nullptr;
+	}
+
+	Zenith_Editor* pxEditor = AnimSmTryGetEditor();
+	if (pxEditor == nullptr)
+	{
+		return nullptr;
+	}
+
+	// ★ NO EditorMode::Playing GATE, unlike Zenith_EditorPanel_GraphEditor's
+	// FindLiveGraphForHighlight. See the header: a graph INSTANCE only exists
+	// while it executes, an animator's controller exists in every mode.
+	//
+	// GetSelectedEntity returns a pointer to a function-local static that is only
+	// valid until the next call, so it is consumed entirely inside this function
+	// and never stored.
+	Zenith_Entity* pxSelected = pxEditor->GetSelectedEntity();
+	if (pxSelected == nullptr || !pxSelected->IsValid())
+	{
+		return nullptr;
+	}
+
+	Zenith_AnimatorComponent* pxAnimator = pxSelected->TryGetComponent<Zenith_AnimatorComponent>();
+	if (pxAnimator == nullptr)
+	{
+		return nullptr;
+	}
+
+	// ★ BYTE-FOR-BYTE, AND THAT IS SOUND BECAUSE BOTH SIDES CAME OUT OF THE SAME
+	// FUNCTION. Zenith_AnimatorComponent::LoadControllerAsset stores
+	// Zenith_AssetRegistry::NormalizeAssetPath(path) and
+	// Zenith_AnimControllerDocument::Open / OpenFresh / SaveAs store the result of
+	// the same call, so a second normalisation here would be a re-derivation that
+	// can only ever drift from them.
+	if (pxAnimator->GetControllerAssetPath() != m_xDocument.GetAssetPath())
+	{
+		return nullptr;
+	}
+
+	// From here the SOURCE is the entity, whatever the machine lookup below
+	// answers — see the header's "once the entity has matched" paragraph.
+	m_bHighlightIsLive = true;
+	m_strLiveHighlightEntity = pxSelected->GetName();
+
+	Flux_AnimationController& xController = pxAnimator->GetController();
+	const u_int uMachineId = m_xDocument.GetSelectedMachineId();
+	if (uMachineId == uANIMCTRL_TOP_LEVEL_MACHINE)
+	{
+		return xController.HasStateMachine() ? &xController.GetStateMachine() : nullptr;
+	}
+	// ★ BY ID, RESOLVED PER USE (WU-6.3 / D44), for the reason GetPreviewMachine
+	// gives: a Flux_AnimationLayer* dies at the next Build/ReloadFromControllerDef,
+	// and a live entity's controller is rebuilt by anything that reloads its asset.
+	Flux_AnimationLayer* pxLayer = xController.GetLayerById(uMachineId);
+	if (pxLayer == nullptr || pxLayer->GetStateMachinePtr() == nullptr)
+	{
+		// A layer the DOCUMENT has and the live controller does not — an unsaved,
+		// not-yet-applied new layer is exactly this. Null, and no fallback.
+		return nullptr;
+	}
+	return &pxLayer->GetStateMachine();
+}
+
+Flux_AnimationStateMachine* Zenith_EditorPanel_AnimStateMachine::GetHighlightSourceMachine()
+{
+	Flux_AnimationStateMachine* pxLive = ResolveLiveMachine();
+	if (m_bHighlightIsLive)
+	{
+		// ★ RETURNED EVEN WHEN IT IS NULL. The flag says the selected entity IS
+		// this asset's; handing back the preview's machine because the canvas is
+		// showing a machine that entity has not got yet would ring a state from a
+		// different controller and look entirely correct.
+		return pxLive;
+	}
+	return GetPreviewMachine();
+}
+
 void Zenith_EditorPanel_AnimStateMachine::RefreshHighlightedState()
 {
-	Flux_AnimationStateMachine* pxMachine = GetPreviewMachine();
+	Flux_AnimationStateMachine* pxMachine = GetHighlightSourceMachine();
 	if (pxMachine == nullptr)
 	{
 		m_strHighlightedState.clear();

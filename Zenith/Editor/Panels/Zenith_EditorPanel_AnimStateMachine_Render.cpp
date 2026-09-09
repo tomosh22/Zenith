@@ -151,6 +151,19 @@ void Zenith_EditorPanel_AnimStateMachine::Render(float fDtSeconds)
 		{
 			Action_TickPreview(fDtSeconds);
 		}
+		// ★ OUTSIDE THAT GATE, ON EVERY FRAME (C3), AND THAT PLACEMENT IS THE
+		// WHOLE FEATURE. The LIVE highlight source is the selected entity's own
+		// controller, which the GAME drives — the selection can change, and the
+		// controller can move to another state, in frames where the preview is off
+		// or fDtSeconds is 0. Inside the gate this would only ever refresh while
+		// the panel's own preview was running, so a selection-driven ring would
+		// update exactly when it is least wanted and never otherwise. (Every unit
+		// renders with dt 0, which is what makes the misplacement visible rather
+		// than a thing only a human would notice.)
+		//
+		// It is a second call on a preview frame — Action_TickPreview refreshes as
+		// part of ticking — and a cheap one: one selection resolve, one string.
+		RefreshHighlightedState();
 	}
 
 	if (m_bPlacementRequested)
@@ -340,6 +353,25 @@ void Zenith_EditorPanel_AnimStateMachine::RenderToolbar()
 	if (ImGui::Checkbox("Preview", &bPreview))
 	{
 		Action_SetPreviewEnabled(bPreview);
+	}
+
+	// ★ WHICH CONTROLLER THE RING IS COMING FROM (C3). The selected entity's live
+	// controller and the panel's preview paint the IDENTICAL ring on the IDENTICAL
+	// canvas, so without this badge a highlight driven by the wrong source is
+	// indistinguishable from a correct one — and the two disagree the moment the
+	// document has an edit that has not been applied. "Live" is drawn in the play
+	// colour, the same one the ring itself uses, so the badge and the ring read as
+	// one statement.
+	ImGui::SameLine();
+	if (IsHighlightLive())
+	{
+		const std::string& strEntity = GetLiveHighlightEntityName();
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(xPalette.m_uPlay), "Live: %s",
+			strEntity.empty() ? "<unnamed>" : strEntity.c_str());
+	}
+	else
+	{
+		ImGui::TextDisabled("Preview");
 	}
 
 	Zenith_EditorUI::ToolbarSeparator();

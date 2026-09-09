@@ -33,6 +33,11 @@
 // being spelled again as literals here.
 #include "Core/Zenith_DragDropPayloads.h"
 #include "FileAccess/Zenith_FileAccess.h"
+// C3: the live-highlight units need a real entity carrying a real animator, and
+// the editor's own entity selection to point at it.
+#include "UnitTests/Zenith_TempScene.h"
+#include "Editor/Zenith_Editor.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 
 #include "imgui.h"
 
@@ -199,6 +204,81 @@ namespace
 		AnimSmFixture(const AnimSmFixture&) = delete;
 		AnimSmFixture& operator=(const AnimSmFixture&) = delete;
 	};
+
+	//--------------------------------------------------------------------------
+	// C3's helpers.
+	//
+	// ★ THE ONE REACH FOR THE EDITOR IN THIS FILE, guarded for the reason every
+	// other reach here is: this panel is a STACK object in every unit below, and
+	// Zenith_Engine::Editor() asserts when no editor has been allocated.
+	//--------------------------------------------------------------------------
+	Zenith_Editor* AnimSmTestEditor()
+	{
+		return g_xEngine.HasEditor() ? &g_xEngine.Editor() : nullptr;
+	}
+
+	//--------------------------------------------------------------------------
+	// ★ THE EDITOR'S ENTITY SELECTION IS PROCESS-GLOBAL, AND THE SCENES THESE
+	// TESTS SELECT INTO ARE GONE BY THE TIME THE NEXT ONE RUNS. A selection left
+	// standing is read by every later panel Render — including the editor's own,
+	// after the batch — so it is cleared on the way IN as well as on the way out.
+	//
+	// RAII rather than a call at the bottom of each body: a ZENITH_SKIP or an
+	// early return would step over a hand-written one, and the damage would land
+	// in an unrelated test with nothing pointing back here.
+	//--------------------------------------------------------------------------
+	struct AnimSmSelectionScope
+	{
+		AnimSmSelectionScope() { Clear(); }
+		~AnimSmSelectionScope() { Clear(); }
+
+		AnimSmSelectionScope(const AnimSmSelectionScope&) = delete;
+		AnimSmSelectionScope& operator=(const AnimSmSelectionScope&) = delete;
+
+		static void Clear()
+		{
+			Zenith_Editor* pxEditor = AnimSmTestEditor();
+			if (pxEditor != nullptr)
+			{
+				pxEditor->ClearSelection();
+			}
+		}
+
+		static void Select(Zenith_Entity& xEntity)
+		{
+			Zenith_Editor* pxEditor = AnimSmTestEditor();
+			if (pxEditor != nullptr)
+			{
+				pxEditor->SelectEntity(xEntity.GetEntityID());
+			}
+		}
+	};
+
+	// The two-state, one-parameter fixture def every live-highlight unit shares:
+	// Idle -> Walk when Speed > 0.5, both states playing a real clip off disk, and
+	// SAVED — the panel's document has to have an asset path for anything to match
+	// against, and the entity's animator has to have a file to load.
+	void AnimSmAuthorAndSaveSpeedController(Zenith_EditorPanel_AnimStateMachine& xPanel,
+		AnimSmFixture& xFixture)
+	{
+		const std::string strIdleClip = xFixture.WriteClip("idle.zanim", "IdleClip");
+		const std::string strWalkClip = xFixture.WriteClip("walk.zanim", "WalkClip");
+
+		ZENITH_ASSERT_TRUE(xPanel.OpenAssetFresh(xFixture.m_strControllerPath), "a fresh controller opens");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strIdleClip), "idle clip");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddClipPath(strWalkClip), "walk clip");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddParameter("Speed", Flux_AnimationParameters::ParamType::Float, 0.0f),
+			"Speed is declared");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Idle"), "Idle");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Walk"), "Walk");
+		ZENITH_ASSERT_TRUE(xPanel.Action_SetStateClip("Idle", "IdleClip"), "Idle's clip");
+		ZENITH_ASSERT_TRUE(xPanel.Action_SetStateClip("Walk", "WalkClip"), "Walk's clip");
+		ZENITH_ASSERT_TRUE(xPanel.Action_SetDefaultState("Idle"), "Idle is the entry point");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddTransition("Idle", "Walk"), "Idle -> Walk");
+		ZENITH_ASSERT_TRUE(xPanel.Action_AddCondition("Idle", 0, "Speed",
+			Flux_TransitionCondition::CompareOp::Greater, 0.5f), "when Speed > 0.5");
+		ZENITH_ASSERT_TRUE(xPanel.Action_Save(), "and it is on disk for the entity to load");
+	}
 
 	bool AnimSmParseControllerFile(const std::string& strPath, Flux_AnimatorControllerDef& xOut)
 	{
@@ -694,8 +774,9 @@ ZENITH_TEST(AnimSmPanel, SelectingALayerSelectsItsMachineAndPushesItsBlendModeTo
 	// Guarded rather than assumed: this panel is a STACK object here, and
 	// Zenith_EditorPanel_Animation::Instance() asserts when the editor has not
 	// allocated its panels.
+	Zenith_Editor* pxEditorForDopeSheet = AnimSmTestEditor();
 	Zenith_EditorPanel_Animation* pxDopeSheet =
-		g_xEngine.HasEditor() ? g_xEngine.Editor().TryGetAnimationPanel() : nullptr;
+		(pxEditorForDopeSheet != nullptr) ? pxEditorForDopeSheet->TryGetAnimationPanel() : nullptr;
 	ZENITH_ASSERT_NOT_NULL(pxDopeSheet,
 		"the editor's dope sheet is reachable from the unit batch (it is allocated in "
 		"Zenith_Editor::Initialise, which runs long before RunAllTests)");
@@ -1527,6 +1608,372 @@ ZENITH_TEST(AnimSmPanel, ControllerPathDropAcceptsOnlyTheControllerPayload)
 	ZENITH_ASSERT_TRUE(xPanel.IsOpen(), "★ and the document really is open — the bool is OpenAsset's");
 	ZENITH_ASSERT_TRUE(xPanel.Document().HasState("Idle"),
 		"holding the state the file on disk carries, so it opened THAT file and not an empty one");
+
+	xPanel.CloseAsset();
+}
+
+//=============================================================================
+// C3 — the highlight follows the SELECTED ENTITY'S controller.
+//
+// ★ EVERY ONE OF THESE DECLARES FIXTURE -> PANEL -> Zenith_TempScene -> the
+// selection scope, and the order is load-bearing in both directions.
+// DESTRUCTION runs backwards: the selection is dropped first (nothing may be
+// left pointing at an entity in a scene about to go), then the scene unloads and
+// takes the entity's controller and its clip handles with it, then the panel
+// hands back its own preview handles, and only then does the fixture ForceUnload
+// the assets and delete the directory. Any other order releases an asset
+// somebody is still holding.
+//
+// ★ AND THE ENTITY'S MACHINE IS TICKED BY HAND. A rigless entity's
+// Zenith_AnimatorComponent::OnUpdate returns before it reaches the controller,
+// and Flux_AnimationController::Update returns on its first line with no
+// Flux_SkeletonInstance — so these drive the MACHINE directly against a
+// zero-bone Zenith_SkeletonAsset, exactly as the panel's own preview does and
+// for the same reason. Transition evaluation is what is under test; the pose is
+// not.
+//=============================================================================
+
+ZENITH_TEST(AnimSmPanel, LiveHighlightFollowsTheSelectedEntitysController)
+{
+	// ★ THE FLAGSHIP OF C3. The panel is editing an asset, an entity in the scene
+	// carries an animator BUILT FROM THAT ASSET, and the entity is selected.
+	// Nothing here ever enables the preview, so a ring that appears can only have
+	// come from the entity's own controller.
+	AnimSmFixture xFixture("zenith_animsm_livehighlight");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveHighlight");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	Zenith_Entity xEntity = xScene.CreateEntity("Hero");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_TRUE(xAnim.LoadControllerAsset(xFixture.m_strControllerPath),
+		"the entity builds its controller from the file the panel just saved");
+
+	// ★ NON-VACUITY FIRST. Everything below turns on a PATH MATCH, and a match
+	// between two empty strings — or a mismatch caused by normalisation rather
+	// than by the feature — would make the rest of this test prove nothing.
+	ZENITH_ASSERT_FALSE(xAnim.GetControllerAssetPath().empty(),
+		"the animator recorded a controller-asset path at all");
+	ZENITH_ASSERT_EQ(xAnim.GetControllerAssetPath(), xPanel.Document().GetAssetPath(),
+		"★ the entity's recorded path and the document's are the SAME string — both are "
+		"produced by Zenith_AssetRegistry::NormalizeAssetPath and the resolver compares them raw");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+
+	// Nothing selected yet, and no preview: there is no source at all.
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_GT(xPanel.GetRenderedFrameCount(), 0u, "the panel really rendered");
+	ZENITH_ASSERT_FALSE(xPanel.IsHighlightLive(), "with nothing selected the source is not live");
+
+	AnimSmSelectionScope::Select(xEntity);
+
+	// ---- the live source, at rest --------------------------------------------
+	Zenith_SkeletonAsset xStubSkeleton;
+	// Heap: a Flux_SkeletonPose is FLUX_MAX_BONES wide and the panel on the stack
+	// beside it already holds one of its own.
+	Flux_SkeletonPose* pxPose = new Flux_SkeletonPose();
+	ZENITH_ASSERT_TRUE(xAnim.HasStateMachine(), "the entity's controller has the top-level machine");
+	Flux_AnimationStateMachine& xMachine = xAnim.GetStateMachine();
+
+	xAnim.SetFloat("Speed", 0.0f);
+	xMachine.Update(1.0f / 60.0f, *pxPose, xStubSkeleton);
+
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_TRUE(xPanel.IsHighlightLive(),
+		"★ the selected entity's animator names this document's asset, so the source is LIVE");
+	ZENITH_ASSERT_FALSE(xPanel.GetLiveHighlightEntityName().empty(),
+		"and the toolbar badge has a name to print");
+	ZENITH_ASSERT_EQ(xPanel.GetLiveHighlightEntityName(), xEntity.GetName(),
+		"which is the entity it is following");
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Idle"),
+		"the ring is on the state the ENTITY's machine entered");
+	ZENITH_ASSERT_FALSE(xPanel.IsPreviewEnabled(),
+		"★ and no preview was ever built — this ring cannot have come from one");
+
+	// ---- and it FOLLOWS -------------------------------------------------------
+	xAnim.SetFloat("Speed", 1.0f);
+	xMachine.Update(1.0f / 60.0f, *pxPose, xStubSkeleton);   // starts the transition
+	xMachine.Update(0.5f, *pxPose, xStubSkeleton);           // and finishes it
+	ZENITH_ASSERT_EQ(xMachine.GetCurrentStateName(), std::string("Walk"),
+		"the entity's own machine really moved — without this the assertion below is vacuous");
+
+	// ★ RENDERED WITH dt 0, WHICH IS THE POINT. The refresh that has to pick this
+	// up sits OUTSIDE Render's `m_bPreviewEnabled && fDtSeconds > 0` gate; inside
+	// it, this line would still read "Idle" with every other fact above healthy.
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Walk"),
+		"★ the canvas's ring followed the ENTITY's controller across a frame with dt 0");
+
+	delete pxPose;
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, NonMatchingPathFallsBackToThePreview)
+{
+	AnimSmFixture xFixture("zenith_animsm_livemismatch");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveMismatch");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	// ★ THE SAME DEF, AT A DIFFERENT PATH, and identical content is deliberate: it
+	// leaves the PATH as the only thing the resolver could be matching on, so this
+	// cannot pass because the two controllers happened to differ in some other way.
+	// It also means a WRONG implementation would ring a real state rather than
+	// nothing, which is what makes the fallback assertion below sharp.
+	const std::string strOther = xFixture.PathFor("other.zanimctrl");
+	{
+		Flux_AnimatorControllerDef xCopy;
+		ZENITH_ASSERT_TRUE(AnimSmParseControllerFile(xFixture.m_strControllerPath, xCopy),
+			"the saved controller parses back off disk");
+		xCopy.Export(strOther);
+	}
+
+	Zenith_Entity xEntity = xScene.CreateEntity("Stranger");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_TRUE(xAnim.LoadControllerAsset(strOther),
+		"the entity builds from the OTHER controller");
+	ZENITH_ASSERT_FALSE(xAnim.GetControllerAssetPath().empty(),
+		"which it recorded (an empty path here would make the mismatch below vacuous)");
+	ZENITH_ASSERT_NE(xAnim.GetControllerAssetPath(), xPanel.Document().GetAssetPath(),
+		"★ and it is NOT the asset this panel is editing — that is the whole premise");
+
+	AnimSmSelectionScope::Select(xEntity);
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_FALSE(xPanel.IsHighlightLive(),
+		"★ a selected animator built from a DIFFERENT controller is not a live source, however "
+		"similar its graph is");
+	ZENITH_ASSERT_TRUE(xPanel.GetLiveHighlightEntityName().empty(),
+		"and the badge names nobody");
+
+	// ---- so the PREVIEW drives, exactly as it did before C3 -------------------
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewEnabled(true), "the preview builds cleanly");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewFloat("Speed", 1.0f), "drive Speed past the threshold");
+	ZENITH_ASSERT_TRUE(xPanel.Action_TickPreview(1.0f / 60.0f), "tick");
+	ZENITH_ASSERT_TRUE(xPanel.Action_TickPreview(0.5f), "and past the blend");
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Walk"),
+		"★ the fallback source is what the canvas rings");
+
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Walk"),
+		"and the per-frame refresh keeps reading the preview rather than blanking it");
+	ZENITH_ASSERT_FALSE(xPanel.IsHighlightLive(), "still not live");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, NoAnimatorFallsBack)
+{
+	AnimSmFixture xFixture("zenith_animsm_livenoanimator");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveNoAnimator");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	// A perfectly ordinary selected entity that simply has no animator on it —
+	// which is what most of a scene looks like.
+	Zenith_Entity xEntity = xScene.CreateEntity("Crate");
+	AnimSmSelectionScope::Select(xEntity);
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_GT(xPanel.GetRenderedFrameCount(), 0u, "the panel really rendered");
+	ZENITH_ASSERT_FALSE(xPanel.IsHighlightLive(),
+		"★ a selected entity with no Zenith_AnimatorComponent is not a live source");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewEnabled(true), "the preview builds cleanly");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewFloat("Speed", 1.0f), "Speed past the threshold");
+	ZENITH_ASSERT_TRUE(xPanel.Action_TickPreview(1.0f / 60.0f), "tick");
+	ZENITH_ASSERT_TRUE(xPanel.Action_TickPreview(0.5f), "and past the blend");
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Walk"),
+		"★ so the preview is what the canvas rings");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, NoSelectionFallsBack)
+{
+	AnimSmFixture xFixture("zenith_animsm_livenoselection");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveNoSelection");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	// An entity that WOULD match, deliberately left unselected: the resolver has
+	// to stop at "nothing is selected" rather than going looking for a candidate.
+	Zenith_Entity xEntity = xScene.CreateEntity("Hero");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_TRUE(xAnim.LoadControllerAsset(xFixture.m_strControllerPath),
+		"it is built from the very asset this panel is editing");
+	ZENITH_ASSERT_EQ(xAnim.GetControllerAssetPath(), xPanel.Document().GetAssetPath(),
+		"★ and its path matches — so the ONLY thing keeping it out is the selection");
+
+	AnimSmSelectionScope::Clear();
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_FALSE(xPanel.IsHighlightLive(),
+		"★ a matching animator nobody has selected drives nothing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewEnabled(true), "the preview builds cleanly");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewFloat("Speed", 1.0f), "Speed past the threshold");
+	ZENITH_ASSERT_TRUE(xPanel.Action_TickPreview(1.0f / 60.0f), "tick");
+	ZENITH_ASSERT_TRUE(xPanel.Action_TickPreview(0.5f), "and past the blend");
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Walk"),
+		"★ the preview is the source, and the unselected entity's controller is untouched");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, SelectionChangeReevaluates)
+{
+	// The resolution is per-FRAME, not per-open: changing the selection has to
+	// change the source with no verb called on the panel at all.
+	AnimSmFixture xFixture("zenith_animsm_livereselect");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveReselect");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	Zenith_Entity xMatch = xScene.CreateEntity("Matching");
+	Zenith_AnimatorComponent& xAnim = xMatch.AddComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_TRUE(xAnim.LoadControllerAsset(xFixture.m_strControllerPath),
+		"the first entity is built from this panel's asset");
+
+	// ★ NO SECOND ANIMATOR. A second component of the same type would relocate the
+	// per-scene pool and invalidate xAnim above; this one only has to be an entity
+	// the selection can move to.
+	Zenith_Entity xOther = xScene.CreateEntity("Bystander");
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+
+	AnimSmSelectionScope::Select(xMatch);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_TRUE(xPanel.IsHighlightLive(), "★ selecting the matching entity makes the source live");
+	ZENITH_ASSERT_EQ(xPanel.GetLiveHighlightEntityName(), xMatch.GetName(), "and names it");
+
+	AnimSmSelectionScope::Select(xOther);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_FALSE(xPanel.IsHighlightLive(),
+		"★ selecting something else drops straight back to the preview — no panel verb was called");
+	ZENITH_ASSERT_TRUE(xPanel.GetLiveHighlightEntityName().empty(),
+		"★ and the badge stops naming the entity it was following, rather than going stale");
+
+	AnimSmSelectionScope::Select(xMatch);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_TRUE(xPanel.IsHighlightLive(), "and selecting it back picks it up again");
+	ZENITH_ASSERT_EQ(xPanel.GetLiveHighlightEntityName(), xMatch.GetName(), "naming it once more");
+
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, MissingLayerOnTheLiveControllerRingsNothing)
+{
+	// ★ THE "NO FALLING BACK" CLAUSE. Once the selected entity has matched this
+	// asset, a machine the LIVE controller has not got is answered with an EMPTY
+	// highlight — never by quietly reading the preview's machine instead, which
+	// would ring a state belonging to a different controller and look correct.
+	AnimSmFixture xFixture("zenith_animsm_livemissinglayer");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveMissingLayer");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	Zenith_Entity xEntity = xScene.CreateEntity("Hero");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_TRUE(xAnim.LoadControllerAsset(xFixture.m_strControllerPath),
+		"the entity is built from the saved asset");
+	AnimSmSelectionScope::Select(xEntity);
+
+	Zenith_SkeletonAsset xStubSkeleton;
+	Flux_SkeletonPose* pxPose = new Flux_SkeletonPose();
+	xAnim.SetFloat("Speed", 0.0f);
+	xAnim.GetStateMachine().Update(1.0f / 60.0f, *pxPose, xStubSkeleton);
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_TRUE(xPanel.IsHighlightLive(), "the entity is the source");
+	ZENITH_ASSERT_EQ(xPanel.GetHighlightedStateName(), std::string("Idle"),
+		"and the TOP-LEVEL machine resolves live, so something is ringed to begin with");
+
+	// ---- a layer the LIVE controller has never heard of ------------------------
+	// Action_AddLayer appends it AND selects its machine onto the canvas. The
+	// entity's controller was built before it existed, nothing has been saved and
+	// nothing applied: the document has the layer and the live controller does not.
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddLayer("Upper"), "the document gains a layer");
+	ZENITH_ASSERT_NE(xPanel.GetSelectedLayerId(), uANIMCTRL_TOP_LEVEL_MACHINE,
+		"and the canvas is showing that layer's machine");
+
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_TRUE(xPanel.IsHighlightLive(),
+		"★ the SOURCE is still the entity — a machine that did not resolve is not a reason to "
+		"start reading a different controller");
+	ZENITH_ASSERT_TRUE(xPanel.GetHighlightedStateName().empty(),
+		"★ and it rings NOTHING rather than falling back to the preview's idea of the state");
+
+	delete pxPose;
+	xPanel.CloseAsset();
+}
+
+ZENITH_TEST(AnimSmPanel, ApplyStillTargetsThePreviewOnly)
+{
+	// ★ APPLY DID NOT MOVE, AND THAT IS A DECISION RATHER THAN AN OMISSION. It
+	// hands the working def to the PANEL'S preview controller; pushing an unsaved
+	// edit into a live entity's controller would be an edit to the SCENE made from
+	// a document nobody saved.
+	AnimSmFixture xFixture("zenith_animsm_liveapply");
+	Zenith_EditorPanel_AnimStateMachine xPanel;
+	Zenith_TempScene xScene("AnimSmLiveApply");
+	AnimSmSelectionScope xSelection;
+
+	AnimSmAuthorAndSaveSpeedController(xPanel, xFixture);
+
+	Zenith_Entity xEntity = xScene.CreateEntity("Hero");
+	Zenith_AnimatorComponent& xAnim = xEntity.AddComponent<Zenith_AnimatorComponent>();
+	ZENITH_ASSERT_TRUE(xAnim.LoadControllerAsset(xFixture.m_strControllerPath),
+		"the entity is built from the saved asset");
+	AnimSmSelectionScope::Select(xEntity);
+
+	xPanel.RequestWindowPlacement(20.0f, 20.0f, 1200.0f, 640.0f);
+	AnimSmRenderFrames(xPanel, 1);
+	ZENITH_ASSERT_TRUE(xPanel.IsHighlightLive(),
+		"the live source is in play — without that premise this test is about nothing");
+
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetPreviewEnabled(true), "the preview builds cleanly");
+	ZENITH_ASSERT_TRUE(xAnim.HasStateMachine(), "the entity has a machine");
+	Flux_AnimationStateMachine* pxLiveMachineBefore = &xAnim.GetStateMachine();
+	const u_int uLiveStatesBefore = xAnim.GetStateMachine().GetStates().GetSize();
+	ZENITH_ASSERT_EQ(uLiveStatesBefore, 2u, "holding the two states the file carries");
+
+	// An UNSAVED edit, and then Apply.
+	ZENITH_ASSERT_TRUE(xPanel.Action_AddState("Sprint"), "the document gains a third state");
+	ZENITH_ASSERT_TRUE(xPanel.Action_SetStateClip("Sprint", "WalkClip"), "playing a clip the def already lists");
+	ZENITH_ASSERT_TRUE(xPanel.Action_Apply(), "and Apply reloads");
+
+	// ★ THE PREVIEW MOVED. Without this the two assertions after it would pass
+	// just as well for an Apply that did nothing at all.
+	ZENITH_ASSERT_TRUE(xPanel.PreviewController().HasStateMachine(), "the preview still has its machine");
+	ZENITH_ASSERT_EQ(xPanel.PreviewController().GetStateMachine().GetStates().GetSize(), 3u,
+		"★ Apply really did carry the new state into the PREVIEW");
+
+	// ★ AND THE ENTITY DID NOT.
+	ZENITH_ASSERT_TRUE(&xAnim.GetStateMachine() == pxLiveMachineBefore,
+		"★ Apply did not rebuild the selected entity's controller — a reload deletes and "
+		"recreates the machine, so the pointer surviving is the evidence");
+	ZENITH_ASSERT_EQ(xAnim.GetStateMachine().GetStates().GetSize(), uLiveStatesBefore,
+		"★ and the entity's machine still holds only what its own asset load gave it: Apply "
+		"targets the preview, live highlighting or not");
 
 	xPanel.CloseAsset();
 }

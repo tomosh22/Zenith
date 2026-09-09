@@ -34,7 +34,7 @@ via `ZENITH_REGISTER_COMPONENT` semantics (the explicit set + order is installed
 | `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_GraphComponent` | Behaviour Graph host (designer-authored .bgraph logic; see below) |
 | `Zenith_UIComponent` | UI element support |
-| `Zenith_AnimatorComponent` | Skeletal animation state machine (separate from ModelComponent) |
+| `Zenith_AnimatorComponent` | Skeletal animation state machine (separate from ModelComponent). Records the `.zanimctrl` `LoadControllerAsset` was last given — normalized, serialized (schema 2), readable via `GetControllerAssetPath()`, and recorded on an INCOMPLETE build too (the bool is the completeness verdict; the getter is not). It is what the anim-state-machine editor matches the selected entity against to decide whether to highlight from that entity's live controller instead of its own preview — so a weaker match (a layer count, a state name) is not an option here |
 | `Zenith_TweenComponent` | Property tweening |
 | `Zenith_AttachmentComponent` | Reusable bone-attachment for held objects (e.g. weapons, rackets); follows a named bone on a different entity each frame in OnLateUpdate |
 | `Zenith_NavMeshComponent` | Baked-navmesh holder: carries a `.znavmesh` asset ref, loads it in `OnStart`, and OWNS the mesh for its own lifetime (see below) |
