@@ -4,8 +4,11 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
+#include "Flux/RenderViews/Flux_RenderViews.h"	// FLUX_MAX_RENDER_VIEWS (per-view sky-view LUTs)
 #include "Core/Zenith_EnvironmentAuthority.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+
+class Flux_GraphicsImpl;
 
 namespace AtmosphereConfig
 {
@@ -132,6 +135,16 @@ public:
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
+	// ONE view's "Skybox Sky-View LUT" + "Skybox" declaration. Driven once per
+	// ACTIVE FULL-PIPELINE view by SetupRenderGraph's
+	// ForEachActiveFullPipelineView walk, in ascending slot order. The three
+	// camera-independent / main-only passes ("Skybox Transmittance LUT", "Skybox
+	// Multi-Scatter LUT", "Skybox Velocity") are NOT in the walk — see
+	// SetupRenderGraph. The graphics reference is passed in rather than re-reached
+	// through g_xEngine: SetupRenderGraph already holds it hoisted, and this TU is
+	// over its singleton-allowlist baseline already.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics);
+
 	// Toggles the transmittance-LUT generation pass per frame. Called from
 	// Flux_RendererImpl::ApplySubsystemGraphSelections BEFORE Compile (like IBL):
 	// force-enables the writer on a dirty compile so the validator sees a writer
@@ -181,19 +194,23 @@ public:
 	Flux_RenderAttachment      m_xMultiScatterLUT;
 	bool                       m_bLUTNeedsUpdate = true;
 
-	// Sky-view LUT. Persistent (not a graph transient): the "Skybox" pass reads
-	// it unconditionally (so no mode-change rebuild), and in cubemap/solid mode
-	// the sky-view writer is disabled in steady state while the read still needs
-	// a stably-allocated target. ~192x108 RGBA16F (~166 KB) — trivial VRAM.
-	Flux_RenderAttachment      m_xSkyViewLUT;
-
-	// Preview-view sky-view LUT (S5c). The LUT is camera+sun dependent and the
-	// preview view owns its OWN sun, so it cannot share the main LUT. Same
-	// dims/format; persistent for the same reasons as m_xSkyViewLUT (and cheap
-	// enough to build unconditionally rather than churn on preview toggles).
-	// Written by "Skybox Sky-View LUT (Preview)" (whose .View(preview) makes the
-	// shader read the PREVIEW slot's g_xView sun); sampled by "Skybox (Preview)".
-	Flux_RenderAttachment      m_xPreviewSkyViewLUT;
+	// Sky-view LUT, ONE PER VIEW SLOT. Persistent (not graph transients): the
+	// "Skybox" pass reads its slot's LUT unconditionally (so no mode-change
+	// rebuild), and in cubemap/solid mode the sky-view writer is disabled in
+	// steady state while the read still needs a stably-allocated target.
+	//
+	// PER VIEW because the LUT is camera + sun dependent and a preview view owns
+	// its OWN sun: slot N's "Skybox Sky-View LUT" writer carries .View(N), so the
+	// shader raymarches from THAT slot's g_xView, and ExecuteSkybox binds by the
+	// RECORDING pass's slot.
+	//
+	// Only the slots in kuFLUX_SKYVIEW_LUT_SLOTS (Flux_Skybox.cpp) are built —
+	// every slot that can be a full-pipeline view — at the FIXED
+	// AtmosphereConfig::uSKYVIEW_LUT_WIDTH/HEIGHT, NOT at view dims: the raymarch
+	// resolution is a quality choice, not a function of the target it is sampled
+	// into. ~192x108 RGBA16F (~166 KB) each — trivial VRAM, which is why they are
+	// built unconditionally rather than churned on view (de)activation.
+	Flux_RenderAttachment      m_axSkyViewLUTs[FLUX_MAX_RENDER_VIEWS];
 
 	Flux_Pipeline              m_xCubemapPipeline;
 	Flux_Pipeline              m_xAtmospherePipeline;
@@ -222,12 +239,11 @@ public:
 	// sky samples, which don't affect transmittance).
 	Flux_PassHandle            m_xTransmittanceLUTPassHandle = {};
 	Flux_PassHandle            m_xMultiScatterLUTPassHandle  = {};
-	Flux_PassHandle            m_xSkyViewLUTPassHandle       = {};
-	// Preview sky-view LUT writer. Reset to invalid at the top of every
-	// SetupRenderGraph and (re)assigned only while the preview view is active
-	// that compile — UpdateGraphPassEnables gates on IsValid(), so it never
-	// touches a stale handle after the preview view deactivates.
-	Flux_PassHandle            m_xPreviewSkyViewLUTPassHandle = {};
+	// Sky-view LUT writers, one per view slot. EVERY entry is reset to invalid at
+	// the top of every SetupRenderGraph and (re)assigned only for the slots that
+	// build actually declared a pass for — UpdateGraphPassEnables gates on
+	// IsValid(), so it never touches a stale handle after a view deactivates.
+	Flux_PassHandle            m_axSkyViewLUTPassHandles[FLUX_MAX_RENDER_VIEWS] = {};
 	float                      m_fLastLUTRayleighScale      = 1.0f;
 	float                      m_fLastLUTMieScale           = 1.0f;
 	float                      m_fLastLUTRayleighScaleHeight = AtmosphereConfig::fRAYLEIGH_SCALE_HEIGHT;

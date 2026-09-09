@@ -3,6 +3,7 @@
 
 #include "Flux/Skybox/Flux_SkyboxImpl.h"
 #include "Flux/Skybox/Flux_AtmosphereTransmittance.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"   // per-view pass names — slot 0 returns the base literal by pointer identity
 #include "Core/Zenith_Engine.h"
 
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -40,6 +41,28 @@
 u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
 u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
 u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
+
+// The view slots that own a PERSISTENT sky-view LUT. Both CreateRenderTargets and
+// DestroyRenderTargets walk THIS list, so a slot can never be built without a
+// matching destroy — the same shape (and the same slot set) as the persistent
+// preview LDRs in Flux_Graphics.cpp.
+//
+// It is these three rather than all eight because a LUT is only ever written by a
+// FULL-PIPELINE view's sky-view pass: slot 0 is always one, slot 5 is the material
+// preview, and slot 6 is the animation preview D2-a adds (its LDR is already built
+// ahead of that unit for the same reason). Slots 1-4 are depth-only shadow cascades
+// and can never be full-pipeline; slot 7 has no owner. SetupViewPasses asserts that
+// the slot it was handed HAS a LUT, so adding a full-pipeline view without adding it
+// here fails loudly instead of writing an unbuilt attachment.
+//
+// Slot 6 is spelled `6u` because kuFluxViewSlotPreviewAnim does not exist yet —
+// D2-a adds it (Flux_Graphics.cpp:40-49 and Flux_ViewPassNames.cpp:17-23 carry the
+// same note).
+static constexpr u_int kuFLUX_SKYVIEW_LUT_SLOTS[] = { kuFluxViewSlotMain, kuFluxViewSlotPreview, 6u };
+static constexpr u_int kuFLUX_NUM_SKYVIEW_LUT_SLOTS =
+	sizeof(kuFLUX_SKYVIEW_LUT_SLOTS) / sizeof(kuFLUX_SKYVIEW_LUT_SLOTS[0]);
+static_assert(kuFLUX_SKYVIEW_LUT_SLOTS[kuFLUX_NUM_SKYVIEW_LUT_SLOTS - 1u] < FLUX_MAX_RENDER_VIEWS,
+	"every sky-view-LUT slot must index m_axSkyViewLUTs[FLUX_MAX_RENDER_VIEWS]");
 
 void Flux_SkyboxImpl::BuildPipelines()
 {
@@ -167,9 +190,11 @@ void Flux_SkyboxImpl::BuildPipelines()
 		Flux_SkyboxShaders::xSkyboxTransmittanceLUT, this->m_xTransmittanceLUT.m_xSurfaceInfo.m_eFormat);
 
 	// ========== Sky-view LUT generation pipeline (single RGBA16F RT) ==========
+	// ONE pipeline for every view's LUT — they are built from one builder at one
+	// format, so the main slot's is representative of all of them.
 	Flux_PipelineHelper::BuildFullscreenPipeline(
 		this->m_xSkyViewLUTShader, this->m_xSkyViewLUTPipeline,
-		Flux_SkyboxShaders::xSkyboxSkyViewLUT, this->m_xSkyViewLUT.m_xSurfaceInfo.m_eFormat);
+		Flux_SkyboxShaders::xSkyboxSkyViewLUT, this->m_axSkyViewLUTs[kuFluxViewSlotMain].m_xSurfaceInfo.m_eFormat);
 
 	// Multiple-scattering LUT bake (live medium; the IBL bakes its own copy from
 	// its frozen snapshot).
@@ -248,17 +273,24 @@ void Flux_SkyboxImpl::CreateRenderTargets()
 	xBuilder.m_uHeight = AtmosphereConfig::uMULTISCATTER_LUT_SIZE;
 	xBuilder.BuildColour(this->m_xMultiScatterLUT, "Skybox Multi-Scatter LUT");
 
-	// Sky-view LUT (low-res lat-long). Raymarched once per frame and sampled by
-	// the fullscreen sky pass. Same memory flags + format as the transmittance LUT.
+	// Sky-view LUTs (low-res lat-long), ONE PER FULL-PIPELINE-CAPABLE VIEW SLOT.
+	// Raymarched once per frame per view and sampled by that view's fullscreen sky
+	// pass. Same memory flags + format as the transmittance LUT, and the FIXED LUT
+	// dims on every slot — the raymarch resolution is a quality choice, not a
+	// function of the view's target size.
+	//
+	// The debug name comes from Flux_ViewPassName, the same table the passes name
+	// themselves from, so an attachment in a capture always carries the name of the
+	// pass that writes it: slot 0 gets the base literal back by pointer identity
+	// ("Skybox Sky-View LUT") and slot 5 composes "Skybox Sky-View LUT (Preview)" —
+	// byte-for-byte the two names this replaced.
 	xBuilder.m_uWidth = AtmosphereConfig::uSKYVIEW_LUT_WIDTH;
 	xBuilder.m_uHeight = AtmosphereConfig::uSKYVIEW_LUT_HEIGHT;
-	xBuilder.BuildColour(this->m_xSkyViewLUT, "Skybox Sky-View LUT");
-
-	// Preview-view sky-view LUT (S5c) — same dims/format. The LUT is camera+sun
-	// dependent and the preview view owns its own sun, so the main LUT cannot be
-	// shared. ~166 KB, so it is built unconditionally rather than churned on
-	// preview (de)activation.
-	xBuilder.BuildColour(this->m_xPreviewSkyViewLUT, "Skybox Sky-View LUT (Preview)");
+	for (u_int u = 0; u < kuFLUX_NUM_SKYVIEW_LUT_SLOTS; u++)
+	{
+		const u_int uSlot = kuFLUX_SKYVIEW_LUT_SLOTS[u];
+		xBuilder.BuildColour(this->m_axSkyViewLUTs[uSlot], Flux_ViewPassName("Skybox Sky-View LUT", uSlot));
+	}
 }
 
 void Flux_SkyboxImpl::DestroyRenderTargets()
@@ -278,17 +310,17 @@ void Flux_SkyboxImpl::DestroyRenderTargets()
 			this->m_xMultiScatterLUT.RTV().m_xImageViewHandle, this->m_xMultiScatterLUT.DSV().m_xImageViewHandle,
 			this->m_xMultiScatterLUT.SRV().m_xImageViewHandle, this->m_xMultiScatterLUT.UAV(0).m_xImageViewHandle);
 	}
-	if (this->m_xSkyViewLUT.m_xVRAMHandle.IsValid())
+	// One destroy per BUILT sky-view LUT, over the same slot list CreateRenderTargets
+	// built from — so the two can never disagree about which slots exist.
+	for (u_int u = 0; u < kuFLUX_NUM_SKYVIEW_LUT_SLOTS; u++)
 	{
-		xMemory.QueueVRAMDeletion(this->m_xSkyViewLUT.m_xVRAMHandle,
-			this->m_xSkyViewLUT.RTV().m_xImageViewHandle, this->m_xSkyViewLUT.DSV().m_xImageViewHandle,
-			this->m_xSkyViewLUT.SRV().m_xImageViewHandle, this->m_xSkyViewLUT.UAV(0).m_xImageViewHandle);
-	}
-	if (this->m_xPreviewSkyViewLUT.m_xVRAMHandle.IsValid())
-	{
-		xMemory.QueueVRAMDeletion(this->m_xPreviewSkyViewLUT.m_xVRAMHandle,
-			this->m_xPreviewSkyViewLUT.RTV().m_xImageViewHandle, this->m_xPreviewSkyViewLUT.DSV().m_xImageViewHandle,
-			this->m_xPreviewSkyViewLUT.SRV().m_xImageViewHandle, this->m_xPreviewSkyViewLUT.UAV(0).m_xImageViewHandle);
+		Flux_RenderAttachment& xLUT = this->m_axSkyViewLUTs[kuFLUX_SKYVIEW_LUT_SLOTS[u]];
+		if (xLUT.m_xVRAMHandle.IsValid())
+		{
+			xMemory.QueueVRAMDeletion(xLUT.m_xVRAMHandle,
+				xLUT.RTV().m_xImageViewHandle, xLUT.DSV().m_xImageViewHandle,
+				xLUT.SRV().m_xImageViewHandle, xLUT.UAV(0).m_xImageViewHandle);
+		}
 	}
 }
 
@@ -380,14 +412,15 @@ static void ExecuteSkybox(Flux_CommandBuffer* pxCommandList, void*)
 			Flux_ShaderBinder xBinder(*pxCommandList);
 			namespace SkyAtmos = Flux_Generated_Skybox::SkyboxAtmosphere;
 			xBinder.BindCBV(SkyAtmos::hAtmosphereConstants, &xSkybox.m_xAtmosphereConstantsBuffer.GetCBV());
-			// Per-view LUT select: the sky-view LUT is camera+sun dependent and
-			// the preview view raymarches its own copy from its own sun ("Skybox
-			// Sky-View LUT (Preview)"); the main view keeps m_xSkyViewLUT.
-			Flux_RenderAttachment& xSkyViewLUT =
-				(Flux_RenderGraph::GetCurrentRecordingPassViewSlot() == kuFluxViewSlotPreview)
-					? xSkybox.m_xPreviewSkyViewLUT
-					: xSkybox.m_xSkyViewLUT;
-			xBinder.BindSRV(SkyAtmos::hg_xSkyViewLUT, &xSkyViewLUT.SRV());
+			// Per-view LUT select: the sky-view LUT is camera+sun dependent and each
+			// view raymarches its own copy from its own sun, so the bind is INDEXED
+			// BY THE RECORDING SLOT rather than compared against one specific
+			// preview slot. That distinction is the whole point: an `== preview`
+			// test silently hands every OTHER non-main view the MAIN view's sky, and
+			// nothing downstream can tell (the LUT is a smooth gradient), so the
+			// second preview view D2-a adds would have shown the main sun.
+			const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
+			xBinder.BindSRV(SkyAtmos::hg_xSkyViewLUT, &xSkybox.m_axSkyViewLUTs[uViewSlot].SRV());
 		}
 
 		pxCommandList->DrawIndexed(6);
@@ -523,13 +556,89 @@ static void ExecuteSkyViewLUT(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->DrawIndexed(6);
 }
 
+void Flux_SkyboxImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics)
+{
+	// ONE view's sky pair: its own sky-view LUT bake, then its own sky draw. Every
+	// resource is indexed by uSlot and the only per-slot branch is the main-only
+	// Prepare below.
+	//
+	// The LUT this writes must EXIST — it is a persistent attachment built from
+	// kuFLUX_SKYVIEW_LUT_SLOTS, not a graph transient created here — so a view that
+	// became full-pipeline without joining that list would declare a write to an
+	// unbuilt target. That is exactly the kind of failure a Null run cannot see, so
+	// it is asserted rather than left to the backend.
+	Zenith_Assert(this->m_axSkyViewLUTs[uSlot].m_xVRAMHandle.IsValid(),
+		"Flux_Skybox: view slot %u is full-pipeline but owns no sky-view LUT — add it to kuFLUX_SKYVIEW_LUT_SLOTS", uSlot);
+
+	// Sky-view LUT generation. Reads the transmittance + multiple-scattering LUTs
+	// (both camera-independent singletons, shared by every view) and raymarches the
+	// atmosphere into THIS view's LUT. Its .View(uSlot) is what makes the shader
+	// read this slot's g_xView — i.e. this view's own sun. Enabled every frame in
+	// atmosphere mode (it tracks the moving sun); see UpdateGraphPassEnables.
+	//
+	// The names come from Flux_ViewPassName, which supplies the per-view uniqueness
+	// the graph's duplicate-name assert demands: slot 0 gets the base literals back
+	// by pointer identity, so the main rows are still exactly "Skybox Sky-View LUT"
+	// and "Skybox", and the preview slot composes "… (Preview)" — byte-for-byte the
+	// literals this replaced.
+	this->m_axSkyViewLUTPassHandles[uSlot] = xGraph.AddPass(Flux_ViewPassName("Skybox Sky-View LUT", uSlot), ExecuteSkyViewLUT)
+		.View  (uSlot)
+		.ClearTargets()
+		.Reads (this->m_xTransmittanceLUT,     RESOURCE_ACCESS_READ_SRV)
+		.Reads (this->m_xMultiScatterLUT,      RESOURCE_ACCESS_READ_SRV)
+		.Writes(this->m_axSkyViewLUTs[uSlot],  RESOURCE_ACCESS_WRITE_RTV);
+
+	// Sky render pass (writes this view's G-buffer MRTs). Registered AFTER the
+	// opaque geometry passes (see the Flux_FeatureRegistry setup walk) so the
+	// fullscreen sky draw depth-TESTS against scene depth and only shades pixels
+	// where sky is visible (depth still at the far-cleared 1.0), instead of shading
+	// the whole screen and being overdrawn. It still requests the clear
+	// (.ClearTargets()); the render graph assigns the actual clear to the FIRST
+	// opaque writer in execution order (CollectClearRequirements / AssignClearFlags),
+	// so geometry is cleared before it draws. In a view with no opaque geometry the
+	// skybox is the first/only writer and clears itself.
+	const Flux_PassHandle xSkyPass = xGraph.AddPass(Flux_ViewPassName("Skybox", uSlot), ExecuteSkybox)
+		.View  (uSlot)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE,       uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		// Depth is attached as WRITE_DSV so the clear-request floats up to the
+		// first opaque writer (depth -> 1.0). The skybox pipelines depth-TEST
+		// (LESSEQUAL) but disable depth WRITE, so this pass reads scene depth to
+		// reject occluded pixels without modifying it.
+		.Writes(xGraphics.GetDepthAttachment(uSlot),                         RESOURCE_ACCESS_WRITE_DSV)
+		// The atmosphere path samples the sky-view LUT baked above. Declared
+		// unconditionally (the cubemap/solid branches just don't sample it); the
+		// sky-view writer is force-enabled on any dirty compile so this read always
+		// has an enabled writer (see UpdateGraphPassEnables).
+		.Reads (this->m_axSkyViewLUTs[uSlot],                                RESOURCE_ACCESS_READ_SRV)
+		.ClearTargets();
+
+	// ★ THE CONSTANTS UPLOAD IS MAIN-ONLY, and `uSlot == kuFluxViewSlotMain` is the
+	// right discriminator here rather than a view PROPERTY, because what is being
+	// discriminated is OWNERSHIP of once-per-frame work: PreExecuteSkybox fills and
+	// uploads the ONE shared atmosphere / solid-colour constant buffer that every
+	// view's sky program reads, so a second Prepare would re-upload the same bytes
+	// over a buffer the first one already staged. Attached through SetPrepare rather
+	// than the builder's .Prepare because the builder temporary above died at its
+	// semicolon once the handle was captured.
+	if (uSlot == kuFluxViewSlotMain)
+	{
+		xGraph.SetPrepare(xSkyPass, PreExecuteSkybox);
+	}
+}
+
 void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
-	// Reset the preview sky-view LUT writer handle every setup: it must be valid
-	// ONLY when the pass exists in the CURRENT graph generation (it is assigned
-	// below only while the preview view is active), so UpdateGraphPassEnables'
-	// IsValid() gate can never touch a stale handle.
-	this->m_xPreviewSkyViewLUTPassHandle = {};
+	// Reset EVERY sky-view LUT writer handle every setup: a slot's handle must be
+	// valid ONLY when its pass exists in the CURRENT graph generation (the walk
+	// below assigns one per active full-pipeline view), so UpdateGraphPassEnables'
+	// IsValid() gate can never touch a stale handle after a view deactivates.
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
+	{
+		this->m_axSkyViewLUTPassHandles[u] = {};
+	}
 
 	// Transmittance LUT generation (256x64). Camera-independent; runs only when
 	// the LUT needs a refresh (gated by UpdateGraphPassEnables). Declared before
@@ -539,49 +648,57 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ClearTargets()
 		.Writes(this->m_xTransmittanceLUT, RESOURCE_ACCESS_WRITE_RTV);
 
-	// Sky-view LUT generation. Reads the transmittance LUT, raymarches the
-	// atmosphere once per frame into the low-res sky-view LUT. Enabled every frame
-	// in atmosphere mode (tracks the moving sun); see UpdateGraphPassEnables.
 	// Multiple-scattering LUT bake. Declared after the transmittance LUT (which
 	// it does NOT read -- it integrates the sun ray analytically) and before the
 	// sky-view LUT that samples it.
+	//
+	// ★ THIS PASS AND THE TRANSMITTANCE PASS ABOVE ARE DELIBERATELY OUTSIDE THE
+	// PER-VIEW WALK BELOW. Both bake CAMERA-INDEPENDENT properties of the ATMOSPHERE
+	// MEDIUM into ONE shared attachment each — nothing about either depends on a
+	// view — so a second instance would be a second writer of one resource in one
+	// frame, and a non-golden pass name on top. There is exactly one medium, and
+	// every view's sky-view bake reads its LUTs.
 	this->m_xMultiScatterLUTPassHandle = xGraph.AddPass("Skybox Multi-Scatter LUT", ExecuteMultiScatterLUT)
 		.ClearTargets()
 		.Writes(this->m_xMultiScatterLUT, RESOURCE_ACCESS_WRITE_RTV);
 
-	this->m_xSkyViewLUTPassHandle = xGraph.AddPass("Skybox Sky-View LUT", ExecuteSkyViewLUT)
-		.ClearTargets()
-		.Reads (this->m_xTransmittanceLUT, RESOURCE_ACCESS_READ_SRV)
-		.Reads (this->m_xMultiScatterLUT,  RESOURCE_ACCESS_READ_SRV)
-		.Writes(this->m_xSkyViewLUT,       RESOURCE_ACCESS_WRITE_RTV);
-
-	// Sky render pass (writes the G-buffer MRT). Registered AFTER the opaque
-	// geometry passes (see the Flux_FeatureRegistry setup walk) so the fullscreen
-	// sky draw depth-TESTS against scene depth and only shades pixels where sky is
-	// visible (depth still at the far-cleared 1.0), instead of shading the whole
-	// screen and being overdrawn. It still requests the clear (.ClearTargets());
-	// the render graph assigns the actual clear to the FIRST opaque writer in
-	// execution order (CollectClearRequirements / AssignClearFlags), so geometry is
-	// cleared before it draws. In a scene with no opaque geometry the skybox is the
-	// first/only writer and clears itself.
+	// ONE sky-view bake + ONE sky draw per ACTIVE FULL-PIPELINE view, in ascending
+	// slot order, each view's two passes adjacent. The registry decides membership
+	// by view PROPERTIES, never by slot number: slot 0 always qualifies (active +
+	// full-pipeline from construction), the preview slot joins while its owner has
+	// it up, and depth-only shadow cascades are never full-pipeline and never get a
+	// sky. Today that set is exactly {main} ∪ {preview if active} — which is what
+	// the hand-written pair plus its `if (IsViewActive(preview))` block produced.
+	//
+	// ★ ONE ORDERING DIFFERENCE, AND IT IS INERT. The preview pair used to be
+	// declared AFTER "Skybox Velocity" below; per-slot-then-per-pass now puts it
+	// before. Nothing can see the move: the preview pair's declarations are the
+	// PREVIEW slot's sky-view LUT, MRTs and depth, all disjoint from the main
+	// velocity attachment and main depth that "Skybox Velocity" touches, so no
+	// ordering edge between any two passes changes. The MAIN sky draw keeps its
+	// position relative to the velocity pass exactly, which is the one that matters
+	// (see that pass's comment — it must chain after the sky draw).
+	//
+	// The callback is a CAPTURELESS LAMBDA written inside the member body rather
+	// than a file-static free function, matching Flux_HiZImpl::SetupRenderGraph:
+	// being captureless it converts to the registry's plain fn-pointer, so `this`,
+	// the graph and the ALREADY-hoisted graphics reference all travel through pCtx.
+	// Nothing in the walk re-reaches g_xEngine — this TU is over its
+	// engine-singleton allowlist baseline already and the walk may not make that
+	// worse.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	xGraph.AddPass("Skybox", ExecuteSkybox)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),       RESOURCE_ACCESS_WRITE_RTV)
-		// Depth is attached as WRITE_DSV so the clear-request floats up to the
-		// first opaque writer (depth -> 1.0). The skybox pipelines depth-TEST
-		// (LESSEQUAL) but disable depth WRITE, so this pass reads scene depth to
-		// reject occluded pixels without modifying it.
-		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
-		// Atmosphere path samples the sky-view LUT generated above. Declared
-		// unconditionally (the cubemap/solid branches just don't sample it); the
-		// sky-view writer is force-enabled on any dirty compile so this read always
-		// has an enabled writer (see UpdateGraphPassEnables).
-		.Reads (this->m_xSkyViewLUT,                                  RESOURCE_ACCESS_READ_SRV)
-		.Prepare(PreExecuteSkybox)
-		.ClearTargets();
+	struct SetupCtx
+	{
+		Flux_SkyboxImpl*   m_pxThis;
+		Flux_RenderGraph*  m_pxGraph;
+		Flux_GraphicsImpl* m_pxGraphics;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, *xSetup.m_pxGraphics);
+	}, &xCtx);
 
 	// Sky TAA motion vectors — main view, and only while the velocity latch is on.
 	//
@@ -598,40 +715,18 @@ void Flux_SkyboxImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// motion vectors by the time this runs, and clearing would erase them.
 	// READ_DEPTH (not WRITE_DSV) is what gives the pass its read-only depth
 	// attachment, which is what makes the LESSEQUAL-at-z=1.0 sky test work.
+	//
+	// ★ MAIN-ONLY, AND OUTSIDE THE WALK ABOVE FOR A REASON THE OTHERS DO NOT SHARE:
+	// the velocity MRT is materialised for the MAIN view ONLY (Flux_GraphicsImpl.h:
+	// "Materialised only for the MAIN view, only while the velocity latch is on"), so
+	// a per-view instance would have no target of its own to write — it would either
+	// stamp the main view's velocity from a preview camera or write nothing. TAA runs
+	// on the main view.
 	if (xGraphics.IsVelocityMRTActive() && !Flux_TAA_SkyVelocityDisabled())
 	{
 		xGraph.AddPass("Skybox Velocity", ExecuteSkyboxVelocity)
 			.Writes(xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV)
 			.Reads (xGraphics.GetDepthAttachment(),    RESOURCE_ACCESS_READ_DEPTH);
-	}
-
-	// Preview view (S5a/S5c): the same sky draw over the preview view's G-buffer —
-	// the record callback reconstructs rays from the bound per-view g_xView, so
-	// the preview camera comes for free. The transmittance LUT stays shared
-	// (camera-independent); the sky-view LUT is per-view — the pass below
-	// regenerates the preview copy against the PREVIEW view's own sun (its
-	// .View(preview) selects that slot's g_xView in the shader), and
-	// ExecuteSkybox selects the LUT by recording view slot.
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
-	{
-		// Enabled with the same cadence as the main sky-view pass — see
-		// UpdateGraphPassEnables (which gates on this handle's validity).
-		this->m_xPreviewSkyViewLUTPassHandle = xGraph.AddPass("Skybox Sky-View LUT (Preview)", ExecuteSkyViewLUT)
-			.View(kuFluxViewSlotPreview)
-			.ClearTargets()
-			.Reads (this->m_xTransmittanceLUT,  RESOURCE_ACCESS_READ_SRV)
-			.Reads (this->m_xMultiScatterLUT,   RESOURCE_ACCESS_READ_SRV)
-			.Writes(this->m_xPreviewSkyViewLUT, RESOURCE_ACCESS_WRITE_RTV);
-
-		xGraph.AddPass("Skybox (Preview)", ExecuteSkybox)
-			.View(kuFluxViewSlotPreview)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetDepthAttachment(kuFluxViewSlotPreview),                         RESOURCE_ACCESS_WRITE_DSV)
-			.Reads (this->m_xPreviewSkyViewLUT,                                                  RESOURCE_ACCESS_READ_SRV)
-			.ClearTargets();
 	}
 }
 
@@ -683,21 +778,24 @@ void Flux_SkyboxImpl::UpdateGraphPassEnables(Flux_RenderGraph& xGraph)
 	// they describe.
 	xGraph.SetEnabled(m_xMultiScatterLUTPassHandle, m_bLUTNeedsUpdate);
 
-	// Sky-view LUT: regenerate EVERY frame in atmosphere mode (it tracks the
-	// moving sun). Also force-enable on a dirty compile so the "Skybox" pass's
-	// unconditional read of the sky-view LUT always has an enabled writer — even
-	// in cubemap/solid mode, where the LUT is generated once on recompile but
-	// never sampled.
+	// Sky-view LUTs: regenerate EVERY frame in atmosphere mode (they track the
+	// moving sun). Also force-enable on a dirty compile so each "Skybox" pass's
+	// unconditional read of its slot's LUT always has an enabled writer — even in
+	// cubemap/solid mode, where the LUTs are generated once on recompile but never
+	// sampled.
+	//
+	// EVERY view's writer rides the ONE cadence — the toggle is a property of the
+	// atmosphere and of the compile, not of a view. A slot's handle is valid ONLY
+	// when the CURRENT setup added a pass for it (every entry is reset at the top of
+	// SetupRenderGraph and assigned only by the walk), so this never touches a stale
+	// handle after a view deactivates.
 	const bool bRunSkyView = IsAtmosphereEnabled() || xGraph.IsDirty();
-	xGraph.SetEnabled(m_xSkyViewLUTPassHandle, bRunSkyView);
-
-	// Preview sky-view LUT writer: identical cadence to the main pass. The
-	// handle is valid ONLY when the pass was added by the CURRENT setup (it is
-	// reset at the top of SetupRenderGraph and assigned only while the preview
-	// view is active that compile), so this never touches a stale handle.
-	if (m_xPreviewSkyViewLUTPassHandle.IsValid())
+	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
 	{
-		xGraph.SetEnabled(m_xPreviewSkyViewLUTPassHandle, bRunSkyView);
+		if (m_axSkyViewLUTPassHandles[u].IsValid())
+		{
+			xGraph.SetEnabled(m_axSkyViewLUTPassHandles[u], bRunSkyView);
+		}
 	}
 }
 
