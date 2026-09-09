@@ -4,6 +4,7 @@
 #include "Flux/Flux_Buffers.h"
 
 class Flux_RenderGraph;
+class Flux_GraphicsImpl;
 
 // Phase 9: state + behaviour for SDFs subsystem.
 //
@@ -32,6 +33,13 @@ public:
 	void UploadSpheres();
 
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// ONE view's entire "SDFs" declaration. Driven once per ACTIVE FULL-PIPELINE
+	// view by SetupRenderGraph's ForEachActiveFullPipelineView walk, in ascending
+	// slot order. The graphics reference is passed in rather than re-reached
+	// through g_xEngine: SetupRenderGraph already holds it hoisted, and this
+	// subsystem sits at its singleton-allowlist ceiling.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, Flux_GraphicsImpl& xGraphics);
 
 	Flux_Shader                m_xShader;
 	Flux_Pipeline              m_xPipeline;
