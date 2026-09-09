@@ -145,7 +145,13 @@ private:
 
 //-----------------------------------------------------------------------------
 // A key's TANGENT PAIR changed (WU-8.2) — a curve-editor handle drag, one of the
-// two whole-track presets, or a per-key Auto.
+// three whole-track presets, a per-key Auto, a mode edit, or one entry of the AUTO
+// maintenance pass a key mutation triggers (B2).
+//
+// ★ THE PAIR INCLUDES BOTH Flux_TangentModes, and since B2 that is load-bearing
+// rather than tidy: a mode-only edit moves not one number, so a command carrying
+// only the six floats would record an identity and its undo would leave the key
+// eased forever with everything looking untouched.
 //
 // ★ IT STORES BOTH TANGENTS OF ONE KEY, NOT ONE HANDLE. A "unified" drag writes
 // both halves and a broken one writes a single half, and a command per HANDLE

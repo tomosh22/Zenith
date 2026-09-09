@@ -113,12 +113,13 @@ void Flux_ReadQuatKeys(Zenith_DataStream& xStream, Zenith_Vector<std::pair<Zenit
 // out-tangent xyz. A rotation channel's entries are ANGULAR velocities
 // (axis * rad/s), which is why one Vector3 pair serves all three channel types.
 //
-// ★ THE WRITER IS STILL SIX FLOATS PER RECORD, AND B1 DELIBERATELY DOES NOT
-// CHANGE THAT. Flux_TangentMode exists in memory and the READER below already
-// understands the schema-3 record, but the schema constant is still 2 and this
-// function still emits 24 bytes — so the 17 authored clips in the tree stay
-// byte-identical and the pin boot has nothing to migrate. The unit that moves
-// uZENITH_ANIMATION_SCHEMA_CURRENT to 3 is what adds the two bytes here.
+// ★ THE RECORD IS 26 BYTES AT SCHEMA 3 (B2): the six floats, then the IN mode
+// byte, then the OUT mode byte — the reader's order, stated once here and once in
+// Flux_ReadKeyTangents below, because a writer and a reader that disagree about
+// which byte comes first produce a file that parses cleanly into the wrong shape.
+// The two bytes are what make Flux_TangentMode::FLAT and ::AUTO authorable: before
+// them a mode that was not a function of the vector survived in memory, changed the
+// pose, and vanished on the next save.
 //=============================================================================
 void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents)
 {
@@ -131,6 +132,10 @@ void Flux_WriteKeyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_
 		xStream << xTangent.m_xOutTangent.x;
 		xStream << xTangent.m_xOutTangent.y;
 		xStream << xTangent.m_xOutTangent.z;
+		// A cast, not a reinterpret: Flux_TangentMode's four wire values are pinned by
+		// static_assert in the header, so the enumerator IS the byte.
+		xStream << static_cast<uint8_t>(xTangent.m_eInMode);
+		xStream << static_cast<uint8_t>(xTangent.m_eOutMode);
 	}
 }
 
@@ -186,9 +191,9 @@ void Flux_ReadKeyTangents(Zenith_DataStream& xStream, Zenith_Vector<Flux_KeyTang
 		}
 		else
 		{
-			// Schemas 1-2 carry no mode, so it is DERIVED — which is exactly what the
-			// channel setters do to an in-memory pair, so a round-tripped clip and a
-			// hand-built one are indistinguishable.
+			// Schemas 1-2 carry no mode, so it is DERIVED. This branch and the
+			// migrator's 2->3 step are the ONLY two callers of the derivation left
+			// (B2): everything that WRITES a tangent now stores the mode it was given.
 			Flux_DeriveTangentModesFromVectors(xTangent);
 		}
 
@@ -1163,33 +1168,27 @@ float Flux_BoneChannel::GetLastKeyTimeSeconds() const
 }
 
 //=============================================================================
-// ★ THE ONE PLACE THE SCHEMA-2 MODE INVARIANT IS MAINTAINED (B1).
+// ★ THE SETTERS STORE WHAT THEY ARE GIVEN, ALL FOUR FIELDS (B2).
 //
-// The mode is not on the wire at schema 2, so it has to be a FUNCTION of the
-// vector, and deriving it here — on the incoming copy, at the single write path
-// into the parallel arrays — is what makes that true everywhere at once:
+// They used to derive the mode from the vector on the way in, because at schema 2
+// the mode was not on the wire and a mode that was not a function of the vector
+// would have changed the pose and then vanished on the next save. The two mode
+// bytes are on the wire now, so deriving here would instead DESTROY the caller's
+// intent: a FLAT end is a zero vector with a non-zero meaning, and an AUTO end is a
+// computed vector that a later edit is allowed to recompute. Both are exactly the
+// pairs the derivation would have flattened.
 //
-//  • a clip built in memory is indistinguishable from one read back from a file,
-//    because both ends of the round trip run the same derivation;
-//  • a handle drag that returns a vector to exactly zero reads LINEAR again,
-//    rather than staying CUSTOM with a zero derivative it would then be sampled
-//    with;
-//  • ComputeAutoTangents / ComputeFlatTangents / the editor's presets need no mode
-//    logic of their own — they write vectors and get the matching mode for free.
-//
-// The VECTOR is stored EXACTLY. Nothing here clamps, normalises or tidies one:
-// that is the property the "an exact zero is what LINEAR means" comparison rests
-// on, and a tolerance anywhere on this path would swallow a deliberately tiny
-// authored tangent.
+// So the MODE IS SET AT THE DOOR by whoever knows the intent — ComputeAutoTangents
+// writes AUTO, ComputeFlatTangents writes FLAT, ComputeLinearTangents writes LINEAR,
+// a handle drag writes CUSTOM on the end it moved — and this layer is a plain,
+// range-checked store. Nothing here clamps, normalises or tidies a vector either.
 //=============================================================================
 void Flux_BoneChannel::SetPositionTangent(u_int uKeyIndex, const Flux_KeyTangents& xTangents)
 {
 	Zenith_Assert(uKeyIndex < m_xPositionTangents.GetSize(), "SetPositionTangent: key index %u out of range (%u keys)", uKeyIndex, m_xPositionTangents.GetSize());
 	if (uKeyIndex < m_xPositionTangents.GetSize())
 	{
-		Flux_KeyTangents xStored = xTangents;
-		Flux_DeriveTangentModesFromVectors(xStored);
-		m_xPositionTangents.Get(uKeyIndex) = xStored;
+		m_xPositionTangents.Get(uKeyIndex) = xTangents;
 	}
 }
 
@@ -1198,9 +1197,7 @@ void Flux_BoneChannel::SetRotationTangent(u_int uKeyIndex, const Flux_KeyTangent
 	Zenith_Assert(uKeyIndex < m_xRotationTangents.GetSize(), "SetRotationTangent: key index %u out of range (%u keys)", uKeyIndex, m_xRotationTangents.GetSize());
 	if (uKeyIndex < m_xRotationTangents.GetSize())
 	{
-		Flux_KeyTangents xStored = xTangents;
-		Flux_DeriveTangentModesFromVectors(xStored);
-		m_xRotationTangents.Get(uKeyIndex) = xStored;
+		m_xRotationTangents.Get(uKeyIndex) = xTangents;
 	}
 }
 
@@ -1209,35 +1206,9 @@ void Flux_BoneChannel::SetScaleTangent(u_int uKeyIndex, const Flux_KeyTangents& 
 	Zenith_Assert(uKeyIndex < m_xScaleTangents.GetSize(), "SetScaleTangent: key index %u out of range (%u keys)", uKeyIndex, m_xScaleTangents.GetSize());
 	if (uKeyIndex < m_xScaleTangents.GetSize())
 	{
-		Flux_KeyTangents xStored = xTangents;
-		Flux_DeriveTangentModesFromVectors(xStored);
-		m_xScaleTangents.Get(uKeyIndex) = xStored;
+		m_xScaleTangents.Get(uKeyIndex) = xTangents;
 	}
 }
-
-#ifdef ZENITH_TESTING
-void Flux_BoneChannel::SetTangentModesForTesting(Flux_AnimTrack eTrack, u_int uKeyIndex,
-	Flux_TangentMode eInMode, Flux_TangentMode eOutMode)
-{
-	// The one door past the derivation above — see the header for why it exists and
-	// why it is not a production verb.
-	Zenith_Vector<Flux_KeyTangents>* pxTangents = nullptr;
-	switch (eTrack)
-	{
-	case FLUX_ANIM_TRACK_POSITION: pxTangents = &m_xPositionTangents; break;
-	case FLUX_ANIM_TRACK_ROTATION: pxTangents = &m_xRotationTangents; break;
-	case FLUX_ANIM_TRACK_SCALE:    pxTangents = &m_xScaleTangents;    break;
-	}
-	Zenith_Assert(pxTangents != nullptr && uKeyIndex < pxTangents->GetSize(),
-		"SetTangentModesForTesting: key index %u out of range", uKeyIndex);
-	if (pxTangents == nullptr || uKeyIndex >= pxTangents->GetSize())
-	{
-		return;
-	}
-	pxTangents->Get(uKeyIndex).m_eInMode = eInMode;
-	pxTangents->Get(uKeyIndex).m_eOutMode = eOutMode;
-}
-#endif
 
 //=============================================================================
 // WU-8.1 — the two tangent PRESETS. Pure over the key arrays; the only thing they
@@ -1355,70 +1326,96 @@ bool Flux_BoneChannel::ComputeAutoTangentForKey(Flux_AnimTrack eTrack, u_int uKe
 	// broken pair is what a hand drag produces; the preset's whole job is the
 	// unbroken one.
 	xAuto.m_xOutTangent = xAuto.m_xInTangent;
-	// The modes the setters would derive, so a caller may compare this answer
-	// against a stored pair without going through a write first.
-	Flux_DeriveTangentModesFromVectors(xAuto);
+	// ★ AND THE MODE IS AUTO, ON BOTH ENDS (B2). It used to be whatever the vector
+	// derived to, which meant every "Auto" key came back CUSTOM and nothing could
+	// ever tell a computed slope from a hand-dragged handle — so nothing could
+	// re-apply Auto when a neighbour key moved. AUTO is the provenance that makes
+	// the document's maintenance pass possible; it reads the stored vector exactly
+	// as CUSTOM does.
+	//
+	// It is stated here even when the vector is zero (a track with fewer than two
+	// keys, or a non-positive span). An AUTO end over a zero vector samples exactly
+	// as a LINEAR one does — the resolver hands both the same number — and calling
+	// it LINEAR would silently opt the key out of ever being recomputed.
+	xAuto.m_eInMode  = Flux_TangentMode::AUTO;
+	xAuto.m_eOutMode = Flux_TangentMode::AUTO;
 	xOut = xAuto;
 	return true;
 }
 
-void Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack eTrack)
+// The one write path a whole-track preset uses: the range check and the
+// track-to-array selection stated once rather than three times per preset.
+void Flux_BoneChannel::SetTangentOnTrack(Flux_AnimTrack eTrack, u_int uKeyIndex, const Flux_KeyTangents& xTangents)
 {
 	switch (eTrack)
 	{
-	case FLUX_ANIM_TRACK_POSITION:
-		for (u_int u = 0; u < m_xPositions.GetSize(); ++u)
-		{
-			Flux_KeyTangents xTangent;
-			xTangent.m_xInTangent = Flux_AutoTangentVec3(m_xPositions, u);
-			xTangent.m_xOutTangent = xTangent.m_xInTangent;
-			SetPositionTangent(u, xTangent);
-		}
-		break;
+	case FLUX_ANIM_TRACK_POSITION: SetPositionTangent(uKeyIndex, xTangents); break;
+	case FLUX_ANIM_TRACK_ROTATION: SetRotationTangent(uKeyIndex, xTangents); break;
+	case FLUX_ANIM_TRACK_SCALE:    SetScaleTangent   (uKeyIndex, xTangents); break;
+	}
+}
 
-	case FLUX_ANIM_TRACK_ROTATION:
-		for (u_int u = 0; u < m_xRotations.GetSize(); ++u)
-		{
-			Flux_KeyTangents xTangent;
-			xTangent.m_xInTangent = Flux_AutoTangentQuat(m_xRotations, u);
-			xTangent.m_xOutTangent = xTangent.m_xInTangent;
-			SetRotationTangent(u, xTangent);
-		}
-		break;
+u_int Flux_BoneChannel::GetTangentCountOnTrack(Flux_AnimTrack eTrack) const
+{
+	switch (eTrack)
+	{
+	case FLUX_ANIM_TRACK_POSITION: return m_xPositionTangents.GetSize();
+	case FLUX_ANIM_TRACK_ROTATION: return m_xRotationTangents.GetSize();
+	case FLUX_ANIM_TRACK_SCALE:    return m_xScaleTangents.GetSize();
+	}
+	return 0u;
+}
 
-	case FLUX_ANIM_TRACK_SCALE:
-		for (u_int u = 0; u < m_xScales.GetSize(); ++u)
+void Flux_BoneChannel::ComputeAutoTangents(Flux_AnimTrack eTrack)
+{
+	// ★ THROUGH THE PER-KEY QUERY, so the centred-slope formula AND the "an Auto key
+	// is mode AUTO on both ends" statement each exist exactly once. The whole-track
+	// preset and the panel's per-key *Auto* are the same gesture at two
+	// granularities; two copies of either half is how they drift.
+	const u_int uCount = GetTangentCountOnTrack(eTrack);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		Flux_KeyTangents xTangent;
+		if (ComputeAutoTangentForKey(eTrack, u, xTangent))
 		{
-			Flux_KeyTangents xTangent;
-			xTangent.m_xInTangent = Flux_AutoTangentVec3(m_xScales, u);
-			xTangent.m_xOutTangent = xTangent.m_xInTangent;
-			SetScaleTangent(u, xTangent);
+			SetTangentOnTrack(eTrack, u, xTangent);
 		}
-		break;
+	}
+}
+
+void Flux_BoneChannel::ComputeLinearTangents(Flux_AnimTrack eTrack)
+{
+	// "Put this track back the way every clip in the tree already is": zero vectors
+	// AND mode LINEAR, which is the pair the sampler's bit-identical glm::mix /
+	// glm::slerp branch is selected by. This is the body ComputeFlatTangents used to
+	// have, under the name that says what the data means.
+	Flux_KeyTangents xLinear;
+	xLinear.m_eInMode  = Flux_TangentMode::LINEAR;
+	xLinear.m_eOutMode = Flux_TangentMode::LINEAR;
+
+	const u_int uCount = GetTangentCountOnTrack(eTrack);
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		SetTangentOnTrack(eTrack, u, xLinear);
 	}
 }
 
 void Flux_BoneChannel::ComputeFlatTangents(Flux_AnimTrack eTrack)
 {
-	// ★ ZERO, WHICH THE SETTERS DERIVE AS Flux_TangentMode::LINEAR — not as a FLAT
-	// handle, even though FLAT is now a mode this file understands. Writing FLAT here
-	// would re-time every track this preset touches into an ease. Read the
-	// Flux_TangentMode block in the header before naming a UI control after this.
-	const Flux_KeyTangents xZero;
+	// ★ AND THIS ONE REALLY IS FLAT NOW (B2). It carried the ComputeLinearTangents
+	// body under this name for as long as the mode had to be derived from the vector,
+	// which made the name a standing trap: a UI control wired to it promised an ease
+	// and delivered a straight line. A FLAT end is a genuine ZERO DERIVATIVE at the
+	// key — the classical ease handle — and the zero VECTOR beside it is ignored by
+	// the sampler, which reads the mode.
+	Flux_KeyTangents xFlat;
+	xFlat.m_eInMode  = Flux_TangentMode::FLAT;
+	xFlat.m_eOutMode = Flux_TangentMode::FLAT;
 
-	switch (eTrack)
+	const u_int uCount = GetTangentCountOnTrack(eTrack);
+	for (u_int u = 0; u < uCount; ++u)
 	{
-	case FLUX_ANIM_TRACK_POSITION:
-		for (u_int u = 0; u < m_xPositions.GetSize(); ++u) { SetPositionTangent(u, xZero); }
-		break;
-
-	case FLUX_ANIM_TRACK_ROTATION:
-		for (u_int u = 0; u < m_xRotations.GetSize(); ++u) { SetRotationTangent(u, xZero); }
-		break;
-
-	case FLUX_ANIM_TRACK_SCALE:
-		for (u_int u = 0; u < m_xScales.GetSize(); ++u) { SetScaleTangent(u, xZero); }
-		break;
+		SetTangentOnTrack(eTrack, u, xFlat);
 	}
 }
 

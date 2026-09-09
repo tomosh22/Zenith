@@ -16,6 +16,7 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "UnitTests/Zenith_UnitTests.h"
+#include "UnitTests/Zenith_AssertCapture.h"   // B2: proving the AUTO refresh does NOT assert
 #include "AssetHandling/Zenith_AssetTypeIds.h"
 
 #include <filesystem>
@@ -698,12 +699,20 @@ ZENITH_TEST(AnimDocument, TangentEditsAreOneStepEachAndUndoRestoresTheUnsetPairE
 	Flux_KeyTangents xTangents;
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "a key's tangent pair reads back");
 	ZENITH_ASSERT_TRUE(xTangents.m_eInMode == Flux_TangentMode::LINEAR,
-		"★ and every key of a clip nobody authored a tangent on is LINEAR, not flat");
+		"★ and every key of a clip nobody authored a tangent on is LINEAR — which since schema 3 is a "
+		"STORED byte rather than a fact inferred from two zeroes, and is genuinely distinct from the "
+		"FLAT the same zeroes could now be carrying");
 	ZENITH_ASSERT_TRUE(xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 
 	Flux_KeyTangents xEdited;
 	xEdited.m_xInTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
 	xEdited.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	// ★ THE CALLER STATES THE MODE (B2). SetKeyTangents stores all four fields
+	// verbatim, so a struct left on its LINEAR default would be an instruction to
+	// IGNORE the two numbers beside it — an edit that reached the file and never
+	// reached the pose.
+	xEdited.m_eInMode = Flux_TangentMode::CUSTOM;
+	xEdited.m_eOutMode = Flux_TangentMode::CUSTOM;
 	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xEdited), "one tangent edit lands");
 	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "as exactly ONE undo step");
 	ZENITH_ASSERT_TRUE(xDoc.IsDirty(), "and it dirties the document");
@@ -720,6 +729,9 @@ ZENITH_TEST(AnimDocument, TangentEditsAreOneStepEachAndUndoRestoresTheUnsetPairE
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xTangents), "and reads back");
 	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xInTangent.y, 5.0f, 1e-6f, "with the in tangent moved");
 	ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 2.0f, 1e-6f, "and the OUT one left exactly alone");
+	ZENITH_ASSERT_TRUE(xTangents.m_eInMode == Flux_TangentMode::CUSTOM,
+		"★ a DRAG marks the end it moved CUSTOM (B2) — the convenience fills the mode the caller has no "
+		"struct to state it in");
 
 	xDoc.Undo();
 	xDoc.Undo();
@@ -769,6 +781,10 @@ ZENITH_TEST(AnimDocument, AutoTangentsOnCollinearKeysAreTheSlopeAndLinearZeroesT
 			"the centred slope through a collinear key IS the line's slope — and so is the one-sided "
 			"slope at either end");
 		ZENITH_ASSERT_EQ_FLOAT(xTangents.m_xOutTangent.y, 1.0f, 1e-5f, "in == out: Auto is a SMOOTH key");
+		ZENITH_ASSERT_TRUE(xTangents.m_eInMode == Flux_TangentMode::AUTO
+			&& xTangents.m_eOutMode == Flux_TangentMode::AUTO,
+			"★ and the key reads back AUTO (B2), not CUSTOM — 'Auto' is a property this key HAS now, "
+			"which is what lets the document recompute it when a neighbour moves");
 	}
 
 	// Per-key Auto agrees with the whole-track preset. It has to: the panel's
@@ -786,11 +802,39 @@ ZENITH_TEST(AnimDocument, AutoTangentsOnCollinearKeysAreTheSlopeAndLinearZeroesT
 		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
 		ZENITH_ASSERT_TRUE(xTangents.m_xInTangent == Zenith_Maths::Vector3(0.0f)
 			&& xTangents.m_eInMode == Flux_TangentMode::LINEAR,
-			"★ Linear writes exact ZEROES and the setter derives Flux_TangentMode::LINEAR from them — "
-			"NOT Flux_TangentMode::FLAT, which is why the control may not be labelled 'Flat': at schema 2 "
-			"nothing on this path can author an ease");
+			"★ Linear writes exact ZEROES and the mode LINEAR beside them (B2) — the verb and the preset "
+			"it calls finally have the same name, and the mode is STATED rather than inferred from the "
+			"zeroes it happens to sit on");
 		ZENITH_ASSERT_TRUE(xTangents.m_eOutMode == Flux_TangentMode::LINEAR, "on both ends");
 	}
+
+	// ★★ AND Flat WRITES THE SAME SIX FLOATS AND MEANS THE OPPOSITE (B2). This verb
+	// did not exist while the mode was derived from the vector, because there was no
+	// way for it to differ from Linear by anything a file could carry.
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsFlat(xTrack), "the Flat preset runs");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 3u, "as one more compound");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_KeyTangents xTangents;
+		ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, u), xTangents), "reads back");
+		ZENITH_ASSERT_TRUE(xTangents.m_eInMode == Flux_TangentMode::FLAT
+			&& xTangents.m_eOutMode == Flux_TangentMode::FLAT,
+			"key %u is FLAT on both ends — a genuine zero derivative, the ease that used to be "
+			"unrepresentable", u);
+		ZENITH_ASSERT_TRUE(xTangents.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+			&& xTangents.m_xOutTangent == Zenith_Maths::Vector3(0.0f),
+			"with the VERY SAME zero vectors the Linear preset wrote, on key %u — which is why a mode-blind "
+			"comparison would have called this whole gesture a no-op", u);
+	}
+	// The pose is the proof the mode reached the sampler: on the probe's straight
+	// line (y = 0/1/2 at t = 0/1/2) a lerp reads 0.25 at t = 0.25 and a both-ends-flat
+	// Hermite reads 3u^2 - 2u^3 = 0.15625.
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocSampleHipY(&xDoc.GetClip(), 0.25f), 0.15625f, 1e-4f,
+		"★ and the FLAT track EASES — the same numbers as Linear, a different curve");
+
+	xDoc.Undo();
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocSampleHipY(&xDoc.GetClip(), 0.25f), 0.25f, 1e-4f,
+		"and one Ctrl+Z puts the track back on the straight line");
 
 	// ★ THE UNDO RESTORES EVERY KEY'S PREVIOUS PAIR, which is the whole reason the
 	// preset captures them per key instead of re-deriving Auto on the way back.
@@ -816,12 +860,13 @@ ZENITH_TEST(AnimDocument, AutoTangentsOnCollinearKeysAreTheSlopeAndLinearZeroesT
 // (15b) B1 — TangentsEqual SEES THE MODES, and re-stating an edit still pushes
 // nothing.
 //
-// ★ THE TWO HALVES ARE IN ONE TEST BECAUSE THEY PULL AGAINST EACH OTHER. Widening
-// the comparison to include the modes is what stops a mode-only edit reading as a
-// no-op — and it is also the change that would break the "SATISFIED, pushes
-// nothing" rule if the requested pair's modes were compared RAW instead of after
-// the same derivation the channel setter applies. A caller hands over vectors; its
-// mode fields are whatever the default constructor left there.
+// ★ THE COMPARISON IS AGAINST THE RAW REQUEST NOW (B2), AND THAT IS THE CHANGE.
+// It used to derive the modes on the requested pair first, because the channel
+// setter was about to do the same and the comparison had to predict what would
+// actually be stored. Nothing derives any more: what a caller asks for is what is
+// stored, so comparing the request as given IS comparing against the future state —
+// and a request whose modes differ from the stored ones is a REAL edit rather than
+// a struct that had not been tidied up yet.
 //==============================================================================
 ZENITH_TEST(AnimDocument, TangentsEqualSeesTheModesAndReStatingAnEditStillPushesNothing)
 {
@@ -852,7 +897,7 @@ ZENITH_TEST(AnimDocument, TangentsEqualSeesTheModesAndReStatingAnEditStillPushes
 	ZENITH_ASSERT_TRUE(Zenith_AnimationDocument::TangentsEqual(xSame, xCustomPair),
 		"two pairs agreeing on all four fields ARE equal");
 
-	// ---- and through the document, where the derivation has to happen first ----
+	// ---- and through the document, where the request is stored as given ----------
 	AnimDocFixture xFixture("zenith_animdoc_tangentmodes");
 	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
 
@@ -862,13 +907,14 @@ ZENITH_TEST(AnimDocument, TangentsEqualSeesTheModesAndReStatingAnEditStillPushes
 	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
 	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
 
-	// A caller's struct: vectors filled in, mode fields left at their LINEAR default
-	// — which is exactly what the curve panel's handle drag builds.
+	// A caller's struct with the mode STATED, which is what every production caller
+	// does since B2 — the curve panel's Action_SetKeyTangents fills CUSTOM on both
+	// ends, and its handle drag goes through SetKeyIn/OutTangent, which fills one.
 	Flux_KeyTangents xRequested;
 	xRequested.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
 	xRequested.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
-	ZENITH_ASSERT_TRUE(xRequested.m_eInMode == Flux_TangentMode::LINEAR,
-		"fixture: the REQUEST carries the default modes, which disagree with its own vectors");
+	xRequested.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xRequested.m_eOutMode = Flux_TangentMode::CUSTOM;
 
 	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xRequested), "the edit lands");
 	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "as one undo step");
@@ -877,18 +923,452 @@ ZENITH_TEST(AnimDocument, TangentsEqualSeesTheModesAndReStatingAnEditStillPushes
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xStored), "and reads back");
 	ZENITH_ASSERT_TRUE(xStored.m_eInMode == Flux_TangentMode::CUSTOM
 		&& xStored.m_eOutMode == Flux_TangentMode::CUSTOM,
-		"with the modes DERIVED from the vectors on the way in");
+		"★ with the modes STORED AS ASKED FOR (B2), not re-derived from the vectors on the way in");
 
-	// ★ RE-STATING THE VERY SAME REQUEST IS STILL SATISFIED AND STILL PUSHES
-	// NOTHING. This is the assertion that fails if the document compares the raw
-	// request against the stored pair instead of deriving first.
+	// ★ RE-STATING THE VERY SAME REQUEST IS SATISFIED AND PUSHES NOTHING. The
+	// assignment rule is unchanged by B2; what changed is that the comparison no
+	// longer has to predict a derivation to get here.
 	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xRequested), "re-stating it is SATISFIED");
-	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u,
-		"★ and pushes NOTHING — the request's default modes must not read as a change");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "★ and pushes NOTHING");
 
-	// And the round trip through the stored pair (modes already CUSTOM) is a no-op too.
+	// And the round trip through the stored pair is a no-op too.
 	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xStored), "so is re-stating what was read back");
 	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "still one step");
+
+	// ★★ AND A MODE-ONLY EDIT IS A REAL EDIT. Same vectors, one end moved from
+	// CUSTOM to FLAT: TangentsEqual has to see it, or the document would report the
+	// request as already-in-place, push nothing, and leave the user's ease
+	// unrecorded and unundoable.
+	Flux_KeyTangents xModeOnly = xStored;
+	xModeOnly.m_eOutMode = Flux_TangentMode::FLAT;
+	ZENITH_ASSERT_TRUE(xModeOnly.m_xInTangent == xStored.m_xInTangent
+		&& xModeOnly.m_xOutTangent == xStored.m_xOutTangent,
+		"fixture: NOT ONE NUMBER has moved between the two pairs");
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uMiddleId, xModeOnly), "the mode-only edit lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u, "★ as a second undo step, on identical vectors");
+}
+
+//==============================================================================
+// B2 helpers.
+//==============================================================================
+namespace
+{
+	// The y-RATE the position sampler actually produces between two times, by finite
+	// difference.
+	//
+	// ★ A COPY OF Flux_AnimationClip.Tests.inl's TanMeasurePositionRateX, AND IT HAS
+	// TO BE. That one is in an anonymous namespace in another TU, and this is the
+	// only shape of measurement that can see a MODE: a FLAT end is a statement about
+	// the DERIVATIVE at a key, and comparing sampled VALUES either side of the key
+	// cannot see one — they agree there by construction however wrong the slope is.
+	float AnimDocMeasureHipRateY(const Zenith_AnimationDocument& xDoc, float fFrom, float fTo)
+	{
+		const Flux_BoneChannel* pxHip = xDoc.GetClip().GetBoneChannel("Hip");
+		if (pxHip == nullptr)
+		{
+			return 0.0f;
+		}
+		return (pxHip->SamplePosition(fTo).y - pxHip->SamplePosition(fFrom).y) / (fTo - fFrom);
+	}
+
+	// Every AUTO end on the Hip POSITION track agrees with what
+	// Flux_BoneChannel::ComputeAutoTangentForKey answers about the track AS IT IS NOW.
+	//
+	// ★ THE ORACLE IS THE CLIP'S OWN FORMULA, ON PURPOSE. Re-typing the centred slope
+	// here would invent a second authority for the number and the two would drift; the
+	// claim under test is not "the arithmetic is right" (the clip's own units pin
+	// that) but "the stored value was BROUGHT UP TO DATE after the track changed
+	// shape". A hard number beside one call of this is what stops it being circular.
+	bool AnimDocAutoEndsMatchAFreshCompute(const Zenith_AnimationDocument& xDoc)
+	{
+		const Flux_BoneChannel* pxHip = xDoc.GetClip().GetBoneChannel("Hip");
+		if (pxHip == nullptr)
+		{
+			return false;
+		}
+		const Zenith_Vector<Flux_KeyTangents>& xTangents = pxHip->GetPositionTangents();
+		for (u_int u = 0; u < xTangents.GetSize(); ++u)
+		{
+			const Flux_KeyTangents& xStored = xTangents.Get(u);
+			const bool bInAuto  = xStored.m_eInMode  == Flux_TangentMode::AUTO;
+			const bool bOutAuto = xStored.m_eOutMode == Flux_TangentMode::AUTO;
+			if (!bInAuto && !bOutAuto)
+			{
+				continue;
+			}
+			Flux_KeyTangents xFresh;
+			if (!pxHip->ComputeAutoTangentForKey(FLUX_ANIM_TRACK_POSITION, u, xFresh))
+			{
+				return false;
+			}
+			if (bInAuto && glm::length(xStored.m_xInTangent - xFresh.m_xInTangent) > 1e-5f)
+			{
+				return false;
+			}
+			if (bOutAuto && glm::length(xStored.m_xOutTangent - xFresh.m_xOutTangent) > 1e-5f)
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+}
+
+//==============================================================================
+// (15c) B2 — A MODE-ONLY EDIT IS ONE UNDO STEP, DIRTIES, AND REACHES THE POSE.
+//
+// ★ NOT ONE NUMBER MOVES, AND THE CURVE CHANGES SHAPE. That is the whole of what
+// putting the mode on the wire bought: before it, the only way to change a
+// segment's shape was to change a vector, and "flat" was therefore unrepresentable
+// because its vector is the same zero "linear" already meant. The measurement is a
+// finite-difference RATE rather than a sampled value, because the two agree at the
+// key by construction.
+//==============================================================================
+ZENITH_TEST(AnimDocument, AModeOnlyEditIsOneUndoStepAndReachesTheSampledDerivative)
+{
+	AnimDocFixture xFixture("zenith_animdoc_modeedit");
+	// y = 0 / 1 / 2 at t = 0 / 1 / 2, so every honest slope on it is 1 unit/second
+	// and a FLAT end has an unmistakable zero to be told apart from.
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+
+	// The same step the clip's own FLAT units use: small enough that the O(h)
+	// truncation is ~1e-2, large enough that float noise stays orders below it.
+	const float fH = 2.0e-3f;
+
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocMeasureHipRateY(xDoc, 1.0f - fH, 1.0f), 1.0f, 1e-2f,
+		"the control: two LINEAR ends arrive at the segment slope");
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocMeasureHipRateY(xDoc, 1.0f, 1.0f + fH), 1.0f, 1e-2f, "and leave at it");
+
+	Flux_KeyTangents xBefore;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xBefore), "the key's pair reads back");
+	ZENITH_ASSERT_TRUE(xBefore.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+		&& xBefore.m_xOutTangent == Zenith_Maths::Vector3(0.0f),
+		"fixture: both vectors are exactly zero to begin with");
+
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "the mode verb lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "as exactly ONE undo step");
+	ZENITH_ASSERT_TRUE(xDoc.IsDirty(), "and it dirties the document");
+
+	Flux_KeyTangents xAfter;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xAfter), "and reads back");
+	ZENITH_ASSERT_TRUE(xAfter.m_eInMode == Flux_TangentMode::FLAT
+		&& xAfter.m_eOutMode == Flux_TangentMode::FLAT, "with both ends FLAT");
+	ZENITH_ASSERT_TRUE(xAfter.m_xInTangent == xBefore.m_xInTangent
+		&& xAfter.m_xOutTangent == xBefore.m_xOutTangent,
+		"★ and NOT ONE NUMBER MOVED — a vector comparison, a byte comparison of the six floats and a "
+		"content hash of the numbers alone would all call this a no-op");
+
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocMeasureHipRateY(xDoc, 1.0f - fH, 1.0f), 0.0f, 1e-2f,
+		"★ the curve now ARRIVES at the key with a zero derivative — an ease-in authored by a MODE");
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocMeasureHipRateY(xDoc, 1.0f, 1.0f + fH), 0.0f, 1e-2f,
+		"and LEAVES it with one");
+	// A tangent bends a segment and never moves a key.
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocSampleHipY(&xDoc.GetClip(), 1.0f), 1.0f, 1e-5f,
+		"the key itself is exactly where it was authored");
+
+	// The assignment rule holds for the mode verb too.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "re-stating the mode is SATISFIED");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "and pushes nothing");
+
+	// ★ ONE END ONLY, which is what makes a BROKEN key expressible as a mode.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangentMode(xTrack, uMiddleId, ZENITH_ANIM_TANGENT_END_IN,
+		Flux_TangentMode::LINEAR), "the IN end alone goes back to LINEAR");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u, "as one more step");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xAfter), "and reads back");
+	ZENITH_ASSERT_TRUE(xAfter.m_eInMode == Flux_TangentMode::LINEAR
+		&& xAfter.m_eOutMode == Flux_TangentMode::FLAT,
+		"★ with the OUT end left exactly as it was — the two ends are addressed separately");
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocMeasureHipRateY(xDoc, 1.0f - fH, 1.0f), 1.0f, 1e-2f,
+		"and the segment ARRIVING at the key is linear again while the one leaving it still eases");
+
+	xDoc.Undo();
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xAfter), "the key still resolves after both undos");
+	ZENITH_ASSERT_TRUE(xAfter.m_eInMode == Flux_TangentMode::LINEAR
+		&& xAfter.m_eOutMode == Flux_TangentMode::LINEAR,
+		"★ and the MODE is restored, not merely the numbers — which never moved and so could not have "
+		"told anyone anything");
+	ZENITH_ASSERT_EQ_FLOAT(AnimDocMeasureHipRateY(xDoc, 1.0f, 1.0f + fH), 1.0f, 1e-2f,
+		"with the pose back on the linear branch");
+}
+
+//==============================================================================
+// (15d) B2 — FLAT AND AUTO SURVIVE A SAVE AND A REOPEN.
+//
+// ★ THIS IS THE ONE THE SCHEMA BUMP EXISTS FOR. Every other assertion about FLAT
+// and AUTO in this file is about an in-MEMORY clip, and an in-memory mode was
+// exactly what B1 already had: the failure it could not rule out was a mode that
+// changed the pose in the editor and was gone the next time the file was opened,
+// with no data visibly wrong.
+//==============================================================================
+ZENITH_TEST(AnimDocument, FlatAndAutoSurviveASaveAndAReopen)
+{
+	AnimDocFixture xFixture("zenith_animdoc_moderoundtrip");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const u_int uFirstId  = xDoc.GetKeyIdAtIndex(xTrack, 0);
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangentMode(xTrack, uFirstId, ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "key 0 is made FLAT");
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangentsAuto(xTrack, uMiddleId), "and key 1 is made AUTO");
+
+	Flux_KeyTangents xAutoBefore;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xAutoBefore), "the auto pair reads back");
+	ZENITH_ASSERT_TRUE(xAutoBefore.m_eInMode == Flux_TangentMode::AUTO, "as AUTO before the save");
+	ZENITH_ASSERT_EQ_FLOAT(xAutoBefore.m_xInTangent.y, 1.0f, 1e-5f, "carrying the line's slope");
+
+	ZENITH_ASSERT_TRUE(xDoc.Save() == ZENITH_ANIMDOC_SAVE_OK, "the save succeeds");
+	xDoc.CloseDiscardingChanges();
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "and the file reopens");
+
+	// The ids are freshly allocated by Open — they are a SESSION identity and are
+	// never serialized (D24) — so the keys are addressed by index again here.
+	Flux_KeyTangents xFlatAfter;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, 0), xFlatAfter), "key 0 reads back");
+	ZENITH_ASSERT_TRUE(xFlatAfter.m_eInMode == Flux_TangentMode::FLAT
+		&& xFlatAfter.m_eOutMode == Flux_TangentMode::FLAT,
+		"★ FLAT came off the DISK — over two zero vectors, which is the pair that used to read back "
+		"LINEAR and silently discard the ease");
+	ZENITH_ASSERT_TRUE(xFlatAfter.m_xInTangent == Zenith_Maths::Vector3(0.0f),
+		"with the zero vectors it was saved with");
+
+	Flux_KeyTangents xAutoAfter;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, 1), xAutoAfter), "key 1 reads back");
+	ZENITH_ASSERT_TRUE(xAutoAfter.m_eInMode == Flux_TangentMode::AUTO
+		&& xAutoAfter.m_eOutMode == Flux_TangentMode::AUTO,
+		"★ and AUTO came off the disk as AUTO, not as the CUSTOM a derivation would have called it — "
+		"which is what lets a NEW session go on maintaining a key an OLD one marked");
+	ZENITH_ASSERT_EQ_FLOAT(xAutoAfter.m_xInTangent.y, 1.0f, 1e-5f, "with its computed vector intact");
+
+	// The untouched key is still LINEAR, so the round trip is not simply writing one
+	// mode everywhere.
+	Flux_KeyTangents xUntouched;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, xDoc.GetKeyIdAtIndex(xTrack, 2), xUntouched), "key 2 reads back");
+	ZENITH_ASSERT_TRUE(xUntouched.m_eInMode == Flux_TangentMode::LINEAR
+		&& xUntouched.m_eOutMode == Flux_TangentMode::LINEAR, "still LINEAR, as it was authored");
+}
+
+//==============================================================================
+// (15e) B2 — EVERY KEY MUTATION RECOMPUTES THE TRACK'S AUTO ENDS, INSIDE THE SAME
+//        UNDO ENTRY.
+//
+// ★ AN AUTO END THAT IS NEVER RECOMPUTED IS JUST A CUSTOM ONE WITH A MISLEADING
+// NAME. The mode's entire reason to exist beside CUSTOM is that the document can
+// tell "this slope was computed" from "somebody dragged this", and act on the
+// difference when the track changes shape.
+//
+// ★ AND THE UNDO ENTRY IS THE HALF THAT IS EASY TO GET WRONG. Undoing a retime
+// that re-shaped four neighbours has to put all five keys back; a refresh pushed
+// as its own command would leave the user pressing Ctrl+Z twice, the first press
+// landing on a pose nobody ever saw.
+//==============================================================================
+ZENITH_TEST(AnimDocument, EveryKeyMutationRecomputesTheTracksAutoTangentsInOneUndoStep)
+{
+	AnimDocFixture xFixture("zenith_animdoc_automaintenance");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+	const Zenith_AnimTrackId xScaleTrack = Zenith_AnimTrackId::Bone("Hip", FLUX_ANIM_TRACK_SCALE);
+
+	// A SECOND track on the same bone, also Auto, so "keys on other tracks are
+	// untouched" is a measurement rather than an omission.
+	ZENITH_ASSERT_NE(xDoc.InsertKey(xScaleTrack, 0.0f, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f)),
+		uINVALID_ANIM_KEY_ID, "a scale key lands");
+	ZENITH_ASSERT_NE(xDoc.InsertKey(xScaleTrack, 2.0f, Zenith_Maths::Vector3(1.0f, 3.0f, 1.0f)),
+		uINVALID_ANIM_KEY_ID, "and a second one");
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsAuto(xScaleTrack), "the scale track goes Auto");
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsAuto(xTrack), "and so does the position track");
+
+	Flux_KeyTangents xScaleBefore;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xScaleTrack, xDoc.GetKeyIdAtIndex(xScaleTrack, 0), xScaleBefore),
+		"the scale track's first pair reads back");
+
+	const u_int uDepthAfterSetup = xDoc.GetUndoStackSize();
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+	const u_int uLastId   = xDoc.GetKeyIdAtIndex(xTrack, 2);
+
+	Flux_KeyTangents xMiddle;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xMiddle), "the middle pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xMiddle.m_xInTangent.y, 1.0f, 1e-5f, "at the line's slope, before anything moves");
+
+	// ---- (a) A VALUE EDIT ------------------------------------------------------
+	// y at t=2 goes 2 -> 10, so the centred slope through key 1 becomes
+	// (10 - 0) / (2 - 0) = 5. A hard number, so this test is not merely comparing the
+	// document against the same formula it used.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyValue(xTrack, uLastId, Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f)),
+		"a value edit lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepthAfterSetup + 1u,
+		"★ as ONE undo step — the edit and every tangent it invalidated, together");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xMiddle), "the middle pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xMiddle.m_xInTangent.y, 5.0f, 1e-5f,
+		"★ and its AUTO slope was RECOMPUTED from the new neighbour value");
+	ZENITH_ASSERT_EQ_FLOAT(xMiddle.m_xOutTangent.y, 5.0f, 1e-5f, "on both ends, as a SMOOTH key");
+	ZENITH_ASSERT_TRUE(xMiddle.m_eInMode == Flux_TangentMode::AUTO,
+		"and it is STILL AUTO — a refresh must not quietly promote a key to CUSTOM");
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc), "every AUTO end on the track is up to date");
+
+	// The other track did not move.
+	Flux_KeyTangents xScaleNow;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xScaleTrack, xDoc.GetKeyIdAtIndex(xScaleTrack, 0), xScaleNow),
+		"the scale pair still reads back");
+	ZENITH_ASSERT_TRUE(Zenith_AnimationDocument::TangentsEqual(xScaleBefore, xScaleNow),
+		"★ and a mutation on the POSITION track left the SCALE track's Auto keys alone");
+
+	// ---- one Ctrl+Z puts the value AND every tangent back ----------------------
+	xDoc.Undo();
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepthAfterSetup, "one undo, one step");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xMiddle), "the middle pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xMiddle.m_xInTangent.y, 1.0f, 1e-5f,
+		"★ with the tangent restored as well as the value — not left describing a curve the clip no "
+		"longer has");
+
+	// ---- (b) A RETIME ----------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyTime(xTrack, uMiddleId, 1.5f), "a retime lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepthAfterSetup + 1u, "as one undo step");
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc),
+		"★ a retime changes a SPAN, and every AUTO end that depended on it was recomputed");
+	xDoc.Undo();
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc), "and the undo leaves the track consistent");
+
+	// ---- (c) AN INSERT ---------------------------------------------------------
+	const u_int uInsertedId = xDoc.InsertKey(xTrack, 0.5f, Zenith_Maths::Vector3(0.0f, 0.25f, 0.0f));
+	ZENITH_ASSERT_NE(uInsertedId, uINVALID_ANIM_KEY_ID, "an insert lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepthAfterSetup + 1u, "as one undo step");
+	Flux_KeyTangents xInserted;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uInsertedId, xInserted), "the NEW key's pair reads back");
+	ZENITH_ASSERT_TRUE(xInserted.m_eInMode == Flux_TangentMode::LINEAR
+		&& xInserted.m_eOutMode == Flux_TangentMode::LINEAR,
+		"★ and the new key is LINEAR, not AUTO — the refresh maintains ends that are ALREADY Auto and "
+		"does not enrol new ones");
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc),
+		"while its AUTO neighbours, whose spans just changed, were recomputed");
+
+	// ---- (d) A REMOVAL ---------------------------------------------------------
+	ZENITH_ASSERT_TRUE(xDoc.RemoveKey(xTrack, uInsertedId), "removing it again lands");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), uDepthAfterSetup + 2u, "as one more undo step");
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc),
+		"and the neighbours are recomputed again on the way back");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xMiddle), "the middle key still resolves");
+	ZENITH_ASSERT_EQ_FLOAT(xMiddle.m_xInTangent.y, 1.0f, 1e-5f,
+		"at the original slope, because the track is the shape it started as");
+}
+
+//==============================================================================
+// (15f) B2 — THE REFRESH ADOPTS INTO A COMPOUND THE CALLER ALREADY OPENED, AND
+//        DOES NOT OPEN A NESTED ONE.
+//
+// ★★ THIS IS THE ONE THAT WOULD HAVE BEEN A ROLLBACK, NOT A FAILED ASSERTION.
+// BeginCompound REFUSES a nested group and asserts; the refusal returns false, and
+// a refresh that then called EndCompound anyway would close the CALLER'S group —
+// so a multi-key dope-sheet drag would have its whole gesture terminated halfway
+// through by the first key that happened to sit beside an Auto tangent. Seven
+// production sites hold a compound open around these verbs.
+//==============================================================================
+ZENITH_TEST(AnimDocument, TheAutoRefreshAdoptsIntoAnOpenCompoundWithoutNesting)
+{
+	AnimDocFixture xFixture("zenith_animdoc_autocompound");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsAuto(xTrack), "the track goes Auto");
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "one compound so far");
+
+	const u_int uFirstId  = xDoc.GetKeyIdAtIndex(xTrack, 0);
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_TRUE(xDoc.BeginCompound(), "the CALLER's own group opens");
+		ZENITH_ASSERT_TRUE(xDoc.SetKeyTime(xTrack, uMiddleId, 1.25f), "a retime inside it lands");
+		ZENITH_ASSERT_TRUE(xDoc.SetKeyValue(xTrack, uFirstId, Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f)),
+			"and a value edit beside it");
+		ZENITH_ASSERT_TRUE(xDoc.IsCompoundOpen(), "★ the caller's group is STILL the open one");
+		ZENITH_ASSERT_TRUE(xDoc.EndCompound("Dope Sheet Drag", /*bKeep*/ true), "and the caller closes it");
+		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 0u,
+			"★ and NOTHING asserted along the way — the refresh adopted through PushCommand instead of "
+			"calling BeginCompound, which would have been refused and would have rolled the gesture back");
+	}
+
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 2u,
+		"★ the caller's whole gesture — two edits and every tangent they invalidated — is ONE more step");
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc),
+		"with the AUTO ends recomputed for the track as it now is");
+
+	xDoc.Undo();
+	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "one Ctrl+Z takes the whole gesture back");
+	ZENITH_ASSERT_TRUE(AnimDocAutoEndsMatchAFreshCompute(xDoc), "leaving the track consistent again");
+	Flux_KeyTangents xMiddle;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xMiddle), "the middle key still resolves");
+	ZENITH_ASSERT_EQ_FLOAT(xMiddle.m_xInTangent.y, 1.0f, 1e-5f, "at the slope the Auto preset first wrote");
+}
+
+//==============================================================================
+// (15g) B2 — A HANDLE DRAG CLAIMS ONE END AND LEAVES THE OTHER'S MODE ALONE, AND
+//        THE END IT CLAIMED STOPS BEING MAINTAINED.
+//
+// ★ THE SECOND HALF IS THE POINT OF THE FIRST. If a drag promoted BOTH ends to
+// CUSTOM, the opposite handle would silently stop tracking the curve — a change
+// the user did not make, to a handle they did not touch, visible only later as a
+// key that "went stale". And if it promoted NEITHER, the next mutation on the
+// track would overwrite the number they just dragged.
+//==============================================================================
+ZENITH_TEST(AnimDocument, ADragClaimsOneEndAsCustomAndOnlyThatEndStopsBeingMaintained)
+{
+	AnimDocFixture xFixture("zenith_animdoc_dragclaims");
+	AnimDocWriteProbeFile(xFixture.m_strPath, "DocProbe", 1.0f, false);
+
+	Zenith_AnimationDocument xDoc;
+	ZENITH_ASSERT_TRUE(xDoc.Open(xFixture.m_strPath) == ZENITH_ANIMDOC_OPEN_OK, "the probe opens");
+
+	const Zenith_AnimTrackId xTrack = AnimDocHipPositionTrack();
+	ZENITH_ASSERT_TRUE(xDoc.SetTrackTangentsAuto(xTrack), "the track goes Auto");
+
+	const u_int uMiddleId = xDoc.GetKeyIdAtIndex(xTrack, 1);
+	const u_int uLastId   = xDoc.GetKeyIdAtIndex(xTrack, 2);
+
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyOutTangent(xTrack, uMiddleId, Zenith_Maths::Vector3(0.0f, 7.0f, 0.0f)),
+		"a drag on the OUT handle lands");
+
+	Flux_KeyTangents xPair;
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xPair), "the pair reads back");
+	ZENITH_ASSERT_TRUE(xPair.m_eOutMode == Flux_TangentMode::CUSTOM,
+		"★ the dragged end is CUSTOM — a hand authorship claim on ONE handle");
+	ZENITH_ASSERT_TRUE(xPair.m_eInMode == Flux_TangentMode::AUTO,
+		"★ and the OTHER end's MODE is untouched — promoting it too would silently cancel an Auto the "
+		"user never touched");
+	ZENITH_ASSERT_EQ_FLOAT(xPair.m_xInTangent.y, 1.0f, 1e-5f, "with its computed vector still there");
+
+	// Now change the track's shape. The AUTO end must move; the CUSTOM one must not.
+	ZENITH_ASSERT_TRUE(xDoc.SetKeyValue(xTrack, uLastId, Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f)),
+		"a value edit on the neighbour lands");
+	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uMiddleId, xPair), "the pair reads back");
+	ZENITH_ASSERT_EQ_FLOAT(xPair.m_xInTangent.y, 5.0f, 1e-5f,
+		"★ the AUTO end followed the new centred slope (10 - 0) / (2 - 0)");
+	ZENITH_ASSERT_EQ_FLOAT(xPair.m_xOutTangent.y, 7.0f, 1e-6f,
+		"★ and the hand-dragged CUSTOM end is EXACTLY where it was left — a maintenance pass that "
+		"re-smoothed it would be the edit nobody asked for");
+	ZENITH_ASSERT_TRUE(xPair.m_eInMode == Flux_TangentMode::AUTO
+		&& xPair.m_eOutMode == Flux_TangentMode::CUSTOM, "with both modes unchanged by the refresh");
 }
 
 //==============================================================================
@@ -925,7 +1405,15 @@ ZENITH_TEST(AnimDocument, RootMotionRefusesEveryTangentVerb)
 	ZENITH_ASSERT_FALSE(xDoc.SetKeyOutTangent(xRootPos, uRootKeyId, Zenith_Maths::Vector3(1.0f)), "and the out half");
 	ZENITH_ASSERT_FALSE(xDoc.SetKeyTangentsAuto(xRootPos, uRootKeyId), "and per-key Auto");
 	ZENITH_ASSERT_FALSE(xDoc.SetTrackTangentsAuto(xRootPos), "and the whole-track presets");
-	ZENITH_ASSERT_FALSE(xDoc.SetTrackTangentsLinear(xRootPos), "both of them");
+	ZENITH_ASSERT_FALSE(xDoc.SetTrackTangentsLinear(xRootPos), "all three of them");
+	ZENITH_ASSERT_FALSE(xDoc.SetTrackTangentsFlat(xRootPos), "including the Flat one B2 added");
+	// ★ AND THE MODE VERB TOO, ON EVERY END AND EVERY MODE. A new verb is exactly
+	// where this refusal gets forgotten: it is stated once in GetKeyTangents, which
+	// SetKeyTangentMode goes through first precisely so it cannot be.
+	ZENITH_ASSERT_FALSE(xDoc.SetKeyTangentMode(xRootPos, uRootKeyId, ZENITH_ANIM_TANGENT_END_BOTH,
+		Flux_TangentMode::FLAT), "the mode verb refuses root motion");
+	ZENITH_ASSERT_FALSE(xDoc.SetKeyTangentMode(xRootPos, uRootKeyId, ZENITH_ANIM_TANGENT_END_IN,
+		Flux_TangentMode::AUTO), "on one end as well as both, and for AUTO as well as FLAT");
 
 	ZENITH_ASSERT_EQ(xDoc.GetUndoStackSize(), 1u, "★ and not one of those refusals pushed a command");
 }

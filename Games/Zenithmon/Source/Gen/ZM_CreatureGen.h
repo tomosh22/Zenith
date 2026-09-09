@@ -38,7 +38,13 @@
 //            procedural clip set), so existing v2 bakes are stale and must
 //            self-invalidate to pick up the animation refs.
 // 4: creatures gained the full four-map PBR set, shared by the shiny variant.
-constexpr u_int uZM_CREATUREGEN_VERSION      = 5u;
+// 6: .zanim schema 3 (per-key tangent MODES on the wire). ★ THE MANIFEST CHECK IS
+//    EXISTENCE-ONLY, so a schema-2 creature clip left on disk is "warm" and then
+//    fails ParseStream with VERSION_MISMATCH at RUNTIME, invisibly — no bake, no
+//    gate and no unit would say so. Bumping this is what invalidates the stamp
+//    mechanically, in every checkout, without anyone remembering to delete a
+//    .manifest.
+constexpr u_int uZM_CREATUREGEN_VERSION      = 6u;
 
 // Flat dex/party/box icon resolution (AssetManifest 1.2). BC1 128x128.
 constexpr u_int uZM_CREATURE_ICON_RESOLUTION = 128u;

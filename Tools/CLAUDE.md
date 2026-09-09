@@ -164,13 +164,23 @@ phase is what carries them across instead.
    tails and no return value to say so.
 3. **A step CHAIN, one version at a time.** `1 -> 2` divides every key time by the clip's
    ticks-per-second (bone channels and root-motion deltas alike; the duration was already
-   seconds, and an event's normalized time never was a time). Adding schema 3 means adding
-   one case, not a bespoke `1 -> 3` path that only the newest bump exercises. The times
+   seconds, and an event's normalized time never was a time). The times
    are **divided, not multiplied by a reciprocal** — `1/24` is not representable, so the
    reciprocal form rounds twice — and the channel is rebuilt by appending in source index
    order rather than retimed through the public mutators, whose no-merge policy (right for
-   a pointer drag) would refuse a dense track's bulk conversion. The reserved tangent block
-   is carried across verbatim.
+   a pointer drag) would refuse a dense track's bulk conversion. The tangent block
+   is carried across verbatim, modes included.
+
+   `2 -> 3` (the per-key tangent MODES reaching the wire) is an **explicit no-op**, and
+   ★ **the case is REQUIRED even so**. Nothing in memory has to move —
+   `Flux_ReadKeyTangents` already DERIVED a mode per end while reading the 24-byte
+   schema-1/2 record — and the layout change happens in `AnimMigratePublish`'s
+   re-serialize through the current writer. But the loop is `uSchema < CURRENT` and walks
+   one version at a time, so without the case every schema-**1** file would take the
+   `1 -> 2` step and then fall onto the "no migration step implemented" assert at
+   `2 -> 3`, which refuses the file and leaves it on the old schema. Adding a schema
+   means adding one case, not a bespoke `1 -> 3` path that only the newest bump
+   exercises.
 4. **Staged write, runtime re-parse, then rename.** The clip is serialized to a sibling
    `.migrate.tmp`, re-read with `ParseStream` at the current schema — ★ **the verify is the
    point, not the temp file**: a staged rename alone only guarantees the replacement is

@@ -1193,7 +1193,11 @@ bool Zenith_AnimationDocument::ApplySetKeyValue(const Zenith_AnimTrackId& xTrack
 		return false;
 	}
 
-	// A value edit keeps the slot, the time AND the tangent, so no id moves.
+	// A value edit keeps the slot, the time AND the tangent, so no id moves. (The
+	// PUBLIC verb re-runs the AUTO tangents of the track afterwards — see
+	// RefreshAutoTangentsOnTrack — but that is a separate, recorded edit and it still
+	// moves no id: this primitive is what the undo commands replay, and it must stay
+	// the smallest thing that can be replayed.)
 	return xValue.m_bIsRotation
 		? xAccess.SetKeyframeValue(uIndex, xValue.m_xQuat)
 		: xAccess.SetKeyframeValue(uIndex, xValue.m_xVector);
@@ -1499,8 +1503,21 @@ u_int Zenith_AnimationDocument::InsertKey(const Zenith_AnimTrackId& xTrack, floa
 		{
 			return uINVALID_ANIM_KEY_ID;
 		}
+		// ★ THE GROUP OPENS BEFORE THE PRIMARY PUSH, which is the only moment it
+		// can: the AUTO refresh has to land in the SAME undo entry as the edit that
+		// caused it, and PushCommand is what a compound intercepts.
+		const bool bRefreshAuto = TrackHasAutoTangentEnd(xTrack);
+		const bool bOwnsGroup = bRefreshAuto && !IsCompoundOpen() && BeginCompound();
 		MarkDirty();
 		PushCommand(new Zenith_AnimCommand_KeyValue(this, xTrack, uExistingId, xBefore, xValue, "Replace Keyframe"));
+		if (bRefreshAuto)
+		{
+			RefreshAutoTangentsOnTrack(xTrack);
+		}
+		if (bOwnsGroup)
+		{
+			EndCompound("Replace Keyframe", /*bKeep*/ true);
+		}
 		return uExistingId;
 	}
 
@@ -1509,8 +1526,22 @@ u_int Zenith_AnimationDocument::InsertKey(const Zenith_AnimTrackId& xTrack, floa
 	{
 		return uINVALID_ANIM_KEY_ID;
 	}
+	const bool bRefreshAuto = TrackHasAutoTangentEnd(xTrack);
+	const bool bOwnsGroup = bRefreshAuto && !IsCompoundOpen() && BeginCompound();
 	MarkDirty();
 	PushCommand(new Zenith_AnimCommand_KeyInsert(this, xTrack, uKeyId, fTimeSeconds, xValue));
+	if (bRefreshAuto)
+	{
+		// The new key's own pair is LINEAR/zero (Add*Keyframe's default), so it is
+		// NOT recomputed — but every AUTO neighbour whose centred span just changed
+		// is, which is the whole point of doing this after the insert rather than
+		// before it.
+		RefreshAutoTangentsOnTrack(xTrack);
+	}
+	if (bOwnsGroup)
+	{
+		EndCompound("Insert Keyframe", /*bKeep*/ true);
+	}
 	return uKeyId;
 }
 
@@ -1542,8 +1573,21 @@ bool Zenith_AnimationDocument::RemoveKey(const Zenith_AnimTrackId& xTrack, u_int
 	{
 		return false;
 	}
+	// Asked AFTER the removal, deliberately: if the key that just went was the only
+	// AUTO one on the track there is nothing left to maintain, and the ordinary path
+	// stays exactly as it was — no compound allocated, one command pushed.
+	const bool bRefreshAuto = TrackHasAutoTangentEnd(xTrack);
+	const bool bOwnsGroup = bRefreshAuto && !IsCompoundOpen() && BeginCompound();
 	MarkDirty();
 	PushCommand(new Zenith_AnimCommand_KeyRemove(this, xTrack, uKeyId, fTimeSeconds, xValue));
+	if (bRefreshAuto)
+	{
+		RefreshAutoTangentsOnTrack(xTrack);
+	}
+	if (bOwnsGroup)
+	{
+		EndCompound("Delete Keyframe", /*bKeep*/ true);
+	}
 	return true;
 }
 
@@ -1562,8 +1606,21 @@ bool Zenith_AnimationDocument::SetKeyTime(const Zenith_AnimTrackId& xTrack, u_in
 	{
 		return false;
 	}
+	const bool bRefreshAuto = TrackHasAutoTangentEnd(xTrack);
+	const bool bOwnsGroup = bRefreshAuto && !IsCompoundOpen() && BeginCompound();
 	MarkDirty();
 	PushCommand(new Zenith_AnimCommand_KeyTime(this, xTrack, uKeyId, fOldTimeSeconds, fNewTimeSeconds));
+	if (bRefreshAuto)
+	{
+		// A retime changes a SPAN, so it moves the slope of the key and of both its
+		// old and both its new neighbours — which is the case the whole-track sweep
+		// exists to avoid having to enumerate.
+		RefreshAutoTangentsOnTrack(xTrack);
+	}
+	if (bOwnsGroup)
+	{
+		EndCompound("Move Keyframe", /*bKeep*/ true);
+	}
 	return true;
 }
 
@@ -1582,8 +1639,18 @@ bool Zenith_AnimationDocument::SetKeyValue(const Zenith_AnimTrackId& xTrack, u_i
 	{
 		return false;
 	}
+	const bool bRefreshAuto = TrackHasAutoTangentEnd(xTrack);
+	const bool bOwnsGroup = bRefreshAuto && !IsCompoundOpen() && BeginCompound();
 	MarkDirty();
 	PushCommand(new Zenith_AnimCommand_KeyValue(this, xTrack, uKeyId, xBefore, xValue, "Edit Keyframe Value"));
+	if (bRefreshAuto)
+	{
+		RefreshAutoTangentsOnTrack(xTrack);
+	}
+	if (bOwnsGroup)
+	{
+		EndCompound("Edit Keyframe Value", /*bKeep*/ true);
+	}
 	return true;
 }
 
@@ -1627,15 +1694,14 @@ bool Zenith_AnimationDocument::SetKeyTangents(const Zenith_AnimTrackId& xTrack, 
 		// a genuine refusal and not a satisfied assignment.
 		return false;
 	}
-	// ★ DERIVE THE MODES ON THE REQUESTED PAIR BEFORE COMPARING (B1), because the
-	// channel setter is going to derive them on the way in and the comparison has to
-	// be against what will actually be STORED. A caller hands over vectors — the
-	// panel's handle drag builds a Flux_KeyTangents and fills one component — so its
-	// mode fields are whatever the default constructor left there, and comparing
-	// those against a stored CUSTOM pair would make every re-statement of an edit
-	// look like a change and push a command for it.
-	Flux_KeyTangents xRequested = xTangents;
-	Flux_DeriveTangentModesFromVectors(xRequested);
+	// ★ WHAT IS ASKED FOR IS WHAT IS STORED, ALL FOUR FIELDS (B2). This used to
+	// derive the modes from the vectors first, because the channel setter was about
+	// to do the same and the comparison had to be against what would actually land.
+	// Both derivations are gone: a caller that means FLAT says FLAT, and a caller
+	// that only has vectors to offer (a handle drag) goes through SetKeyIn/OutTangent,
+	// which fills the mode for it. Deriving here would silently turn every FLAT
+	// request into a LINEAR store.
+	const Flux_KeyTangents& xRequested = xTangents;
 	if (TangentsEqual(xBefore, xRequested))
 	{
 		// ★ SATISFIED, NOT REFUSED — and it pushes NOTHING. A recipe that re-states
@@ -1662,6 +1728,11 @@ bool Zenith_AnimationDocument::SetKeyInTangent(const Zenith_AnimTrackId& xTrack,
 		return false;
 	}
 	xTangents.m_xInTangent = xInTangent;
+	// ★ THIS END ONLY (B2). A drag is a hand authorship claim on ONE handle, so the
+	// other end keeps its vector AND its mode — promoting it to CUSTOM as well would
+	// silently cancel an AUTO the maintenance pass was keeping current, and the user
+	// would have no way to tell which of the two handles they had just taken over.
+	xTangents.m_eInMode = Flux_TangentMode::CUSTOM;
 	return SetKeyTangents(xTrack, uKeyId, xTangents);
 }
 
@@ -1674,6 +1745,86 @@ bool Zenith_AnimationDocument::SetKeyOutTangent(const Zenith_AnimTrackId& xTrack
 		return false;
 	}
 	xTangents.m_xOutTangent = xOutTangent;
+	xTangents.m_eOutMode = Flux_TangentMode::CUSTOM;
+	return SetKeyTangents(xTrack, uKeyId, xTangents);
+}
+
+//------------------------------------------------------------------------------
+// ★ THE MODE VERB (B2). One undo entry, and the VECTOR each mode implies is
+// written in the same step — see the header for why a mode and a vector that
+// disagree is the state worth preventing.
+//------------------------------------------------------------------------------
+bool Zenith_AnimationDocument::SetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+	Zenith_AnimTangentEnd eEnd, Flux_TangentMode eMode)
+{
+	Flux_KeyTangents xTangents;
+	if (!GetKeyTangents(xTrack, uKeyId, xTangents))
+	{
+		// The key does not resolve, or the track is root motion. Both are genuine
+		// refusals; neither is a satisfied assignment.
+		return false;
+	}
+
+	// AUTO needs a number, and it needs it BEFORE anything is written: if the track
+	// cannot answer, the whole call refuses rather than storing an AUTO end over a
+	// vector nobody computed.
+	Zenith_Maths::Vector3 xAutoIn(0.0f);
+	Zenith_Maths::Vector3 xAutoOut(0.0f);
+	if (eMode == Flux_TangentMode::AUTO)
+	{
+		const u_int uIndex = GetKeyIndexForId(xTrack, uKeyId);
+		const Flux_BoneChannel* pxChannel = m_xWorkingClip.GetBoneChannel(xTrack.m_strBoneName);
+		Flux_KeyTangents xAuto;
+		if (uIndex == uINVALID_ANIM_KEY_INDEX || pxChannel == nullptr
+			|| !pxChannel->ComputeAutoTangentForKey(xTrack.m_eTrack, uIndex, xAuto))
+		{
+			return false;
+		}
+		xAutoIn = xAuto.m_xInTangent;
+		xAutoOut = xAuto.m_xOutTangent;
+	}
+
+	const bool bTouchIn  = (eEnd == ZENITH_ANIM_TANGENT_END_IN)  || (eEnd == ZENITH_ANIM_TANGENT_END_BOTH);
+	const bool bTouchOut = (eEnd == ZENITH_ANIM_TANGENT_END_OUT) || (eEnd == ZENITH_ANIM_TANGENT_END_BOTH);
+
+	if (bTouchIn)
+	{
+		xTangents.m_eInMode = eMode;
+		switch (eMode)
+		{
+		case Flux_TangentMode::LINEAR:
+		case Flux_TangentMode::FLAT:
+			// Both IGNORE the stored number, so leaving a stale one there would be a
+			// value that reappears the moment the end goes back to CUSTOM.
+			xTangents.m_xInTangent = Zenith_Maths::Vector3(0.0f);
+			break;
+		case Flux_TangentMode::AUTO:
+			xTangents.m_xInTangent = xAutoIn;
+			break;
+		case Flux_TangentMode::CUSTOM:
+			// A claim about PROVENANCE, not a new number: the vector stays.
+			break;
+		}
+	}
+	if (bTouchOut)
+	{
+		xTangents.m_eOutMode = eMode;
+		switch (eMode)
+		{
+		case Flux_TangentMode::LINEAR:
+		case Flux_TangentMode::FLAT:
+			xTangents.m_xOutTangent = Zenith_Maths::Vector3(0.0f);
+			break;
+		case Flux_TangentMode::AUTO:
+			xTangents.m_xOutTangent = xAutoOut;
+			break;
+		case Flux_TangentMode::CUSTOM:
+			break;
+		}
+	}
+
+	// Through the ordinary verb, so the "already in place pushes nothing" rule and
+	// the command shape are decided in exactly one place.
 	return SetKeyTangents(xTrack, uKeyId, xTangents);
 }
 
@@ -1710,8 +1861,8 @@ bool Zenith_AnimationDocument::SetKeyTangentsAuto(const Zenith_AnimTrackId& xTra
 	return SetKeyTangents(xTrack, uKeyId, xAuto);
 }
 
-bool Zenith_AnimationDocument::ApplyTrackTangentPreset(const Zenith_AnimTrackId& xTrack, bool bAuto,
-	const char* szDescription)
+bool Zenith_AnimationDocument::ApplyTrackTangentPreset(const Zenith_AnimTrackId& xTrack,
+	TrackTangentPreset ePreset, const char* szDescription)
 {
 	if (!m_bOpen || xTrack.m_bRootMotion || !IsTrackAddressable(xTrack))
 	{
@@ -1747,15 +1898,14 @@ bool Zenith_AnimationDocument::ApplyTrackTangentPreset(const Zenith_AnimTrackId&
 	}
 
 	// The channel's own preset is the one write path into the parallel arrays
-	// (Flux/MeshAnimation/CLAUDE.md). ComputeFlatTangents writes ZEROES, which the
-	// sampler reads as LINEAR — which is why the verb calling it is named Linear.
-	if (bAuto)
+	// (Flux/MeshAnimation/CLAUDE.md). Each of the three states its own mode, so this
+	// layer only has to pick one — Linear and Flat write identical numbers and mean
+	// the opposite, which is exactly why they are two presets and not a flag.
+	switch (ePreset)
 	{
-		pxChannel->ComputeAutoTangents(xTrack.m_eTrack);
-	}
-	else
-	{
-		pxChannel->ComputeFlatTangents(xTrack.m_eTrack);
+	case TRACK_TANGENT_PRESET_AUTO:   pxChannel->ComputeAutoTangents  (xTrack.m_eTrack); break;
+	case TRACK_TANGENT_PRESET_LINEAR: pxChannel->ComputeLinearTangents(xTrack.m_eTrack); break;
+	case TRACK_TANGENT_PRESET_FLAT:   pxChannel->ComputeFlatTangents  (xTrack.m_eTrack); break;
 	}
 
 	if (!BeginCompound())
@@ -1789,12 +1939,119 @@ bool Zenith_AnimationDocument::ApplyTrackTangentPreset(const Zenith_AnimTrackId&
 
 bool Zenith_AnimationDocument::SetTrackTangentsAuto(const Zenith_AnimTrackId& xTrack)
 {
-	return ApplyTrackTangentPreset(xTrack, /*bAuto*/ true, "Auto Tangents");
+	return ApplyTrackTangentPreset(xTrack, TRACK_TANGENT_PRESET_AUTO, "Auto Tangents");
 }
 
 bool Zenith_AnimationDocument::SetTrackTangentsLinear(const Zenith_AnimTrackId& xTrack)
 {
-	return ApplyTrackTangentPreset(xTrack, /*bAuto*/ false, "Linear Tangents");
+	return ApplyTrackTangentPreset(xTrack, TRACK_TANGENT_PRESET_LINEAR, "Linear Tangents");
+}
+
+bool Zenith_AnimationDocument::SetTrackTangentsFlat(const Zenith_AnimTrackId& xTrack)
+{
+	return ApplyTrackTangentPreset(xTrack, TRACK_TANGENT_PRESET_FLAT, "Flat Tangents");
+}
+
+//------------------------------------------------------------------------------
+// AUTO maintenance (B2) — the two halves the four key verbs call. See the header
+// for why the whole track is recomputed rather than the moved key's neighbours.
+//------------------------------------------------------------------------------
+
+bool Zenith_AnimationDocument::TrackHasAutoTangentEnd(const Zenith_AnimTrackId& xTrack) const
+{
+	if (!m_bOpen || xTrack.m_bRootMotion || !IsTrackAddressable(xTrack))
+	{
+		return false;
+	}
+	const Flux_BoneChannel* pxChannel = m_xWorkingClip.GetBoneChannel(xTrack.m_strBoneName);
+	if (pxChannel == nullptr)
+	{
+		return false;
+	}
+	const Zenith_Vector<Flux_KeyTangents>* pxTangents = ChannelTangents(*pxChannel, xTrack.m_eTrack);
+	if (pxTangents == nullptr)
+	{
+		return false;
+	}
+	for (u_int u = 0; u < pxTangents->GetSize(); ++u)
+	{
+		const Flux_KeyTangents& xPair = pxTangents->Get(u);
+		if (xPair.m_eInMode == Flux_TangentMode::AUTO || xPair.m_eOutMode == Flux_TangentMode::AUTO)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void Zenith_AnimationDocument::RefreshAutoTangentsOnTrack(const Zenith_AnimTrackId& xTrack)
+{
+	if (!m_bOpen || xTrack.m_bRootMotion || !IsTrackAddressable(xTrack))
+	{
+		return;
+	}
+	Flux_BoneChannel* pxChannel = m_xWorkingClip.GetBoneChannelMutable(xTrack.m_strBoneName);
+	if (pxChannel == nullptr)
+	{
+		return;
+	}
+	const Zenith_Vector<Flux_KeyTangents>* pxTangents = ChannelTangents(*pxChannel, xTrack.m_eTrack);
+	if (pxTangents == nullptr)
+	{
+		return;
+	}
+
+	// ★ THE COMMAND IS ADDRESSED BY ID, THE WRITE BY INDEX. A tangent edit touches
+	// neither a time nor a value, so nothing in this loop reorders the track and the
+	// index is stable while it runs; but the COMMAND outlives the loop, and an
+	// index stored in it would be the one entry on this stack that a later retime
+	// could go stale under (D24).
+	const u_int uCount = pxTangents->GetSize();
+	for (u_int u = 0; u < uCount && u < pxTangents->GetSize(); ++u)
+	{
+		const Flux_KeyTangents xBefore = pxTangents->Get(u);
+		if (xBefore.m_eInMode != Flux_TangentMode::AUTO && xBefore.m_eOutMode != Flux_TangentMode::AUTO)
+		{
+			continue;
+		}
+
+		Flux_KeyTangents xAuto;
+		if (!pxChannel->ComputeAutoTangentForKey(xTrack.m_eTrack, u, xAuto))
+		{
+			continue;
+		}
+
+		// ★ ONLY THE AUTO ENDS MOVE. A key whose IN is AUTO and whose OUT was dragged
+		// by hand keeps that hand-authored OUT vector AND its CUSTOM mode; a broken
+		// half-auto key is an ordinary thing to author and re-smoothing it would be
+		// the edit nobody asked for.
+		Flux_KeyTangents xAfter = xBefore;
+		if (xBefore.m_eInMode == Flux_TangentMode::AUTO)
+		{
+			xAfter.m_xInTangent = xAuto.m_xInTangent;
+		}
+		if (xBefore.m_eOutMode == Flux_TangentMode::AUTO)
+		{
+			xAfter.m_xOutTangent = xAuto.m_xOutTangent;
+		}
+		if (TangentsEqual(xBefore, xAfter))
+		{
+			continue;
+		}
+
+		const u_int uKeyId = GetKeyIdAtIndex(xTrack, u);
+		if (uKeyId == uINVALID_ANIM_KEY_ID)
+		{
+			continue;
+		}
+
+		ChannelSetTangent(*pxChannel, xTrack.m_eTrack, u, xAfter);
+		MarkDirty();
+		// RECORDED, not executed — the write above has already happened, exactly as
+		// the whole-track presets do it. PushCommand adopts into whatever compound is
+		// open, which is the caller's or the one the caller's verb just opened.
+		PushCommand(new Zenith_AnimCommand_KeyTangents(this, xTrack, uKeyId, xBefore, xAfter, "Auto Tangents"));
+	}
 }
 
 bool Zenith_AnimationDocument::SetDuration(float fDurationSeconds)

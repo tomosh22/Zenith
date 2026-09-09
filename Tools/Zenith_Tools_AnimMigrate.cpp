@@ -96,14 +96,16 @@ namespace
 			xOut.AddScaleKeyframe(xScales.Get(u).second / fDivisor, xScales.Get(u).first);
 		}
 
-		// The reserved tangent block (D17) is carried across VERBATIM. A tangent is
-		// a rate -- units (or radians) per second -- so a strict reading says it
-		// should be scaled by the same factor as the clock. It is NOT, deliberately:
-		// nothing samples tangents yet (they are reserved), every clip that can
-		// exist today carries the zero default for which scaling is a no-op, and
-		// silently rescaling authored numbers nothing reads would be an invented
-		// migration nobody could check. Whichever unit lands here when curve
-		// sampling ships gets its own schema step.
+		// The tangent block (D17) is carried across VERBATIM -- both vectors and both
+		// Flux_TangentModes, which Flux_ReadKeyTangents already DERIVED on the way in
+		// for a schema-1/2 record (exactly zero is LINEAR, anything else CUSTOM).
+		//
+		// A tangent is a rate -- units (or radians) per second -- so a strict reading
+		// says it should be scaled by the same factor as the clock. It is NOT,
+		// deliberately: no clip that was ever written at schema 1 carries a non-zero
+		// tangent (the block was reserved and unsampled for that whole era, and the
+		// zero default makes scaling a no-op), and silently rescaling authored numbers
+		// would be an invented migration nobody could check against anything.
 		for (u_int u = 0; u < xSource.GetPositionTangents().GetSize(); ++u)
 		{
 			xOut.SetPositionTangent(u, xSource.GetPositionTangents().Get(u));
@@ -178,8 +180,28 @@ namespace
 	}
 
 	//--------------------------------------------------------------------------
+	// STEP 2 -> 3: the per-key tangent MODES reached the wire (B2).
+	//
+	// ★ AN EXPLICIT NO-OP, AND IT IS REQUIRED RATHER THAN OPTIONAL. Nothing in
+	// MEMORY has to move -- Flux_ReadKeyTangents already derived a mode per end
+	// while reading the 24-byte schema-1/2 record, so the clip handed to this
+	// function is already in the shape schema 3 describes, and the change of layout
+	// happens in AnimMigratePublish's re-serialize through the CURRENT writer.
+	//
+	// The case still has to EXIST because the loop below is `uSchema < CURRENT` and
+	// walks one version at a time: without it every schema-1 file would take the
+	// 1->2 step and then fall onto the "no migration step implemented" assert at
+	// 2->3, which is a refusal, not a migration. That is a real failure mode, not a
+	// hypothetical -- it is exactly what the assert is for.
+	//--------------------------------------------------------------------------
+	bool AnimMigrateStep_TangentModesToWire(Flux_AnimationClip&, const std::string&, std::string&)
+	{
+		return true;
+	}
+
+	//--------------------------------------------------------------------------
 	// The step CHAIN. A file at schema N is walked forward one step at a time to
-	// uZENITH_ANIMATION_SCHEMA_CURRENT, so adding schema 3 means adding one case
+	// uZENITH_ANIMATION_SCHEMA_CURRENT, so adding a schema means adding one case
 	// here and nothing else -- a clip two versions behind is carried by 1->2 then
 	// 2->3 rather than by a bespoke 1->3 path that only the newest bump exercises.
 	//--------------------------------------------------------------------------
@@ -191,6 +213,15 @@ namespace
 			if (uSchema == 1u)
 			{
 				if (!AnimMigrateStep_TicksToSeconds(xClip, strPath, strOutReason))
+				{
+					return false;
+				}
+				continue;
+			}
+
+			if (uSchema == 2u)
+			{
+				if (!AnimMigrateStep_TangentModesToWire(xClip, strPath, strOutReason))
 				{
 					return false;
 				}

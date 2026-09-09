@@ -405,12 +405,21 @@ ZENITH_TEST(AnimCommands, TheTangentCommandRoundTripsAndRestoresTheExactPrevious
 	const Zenith_AnimTrackId xTrack = AnimCmdHipTrack();
 	const u_int uIdB = xDoc.GetKeyIdAtIndex(xTrack, 1);
 
+	// ★ THE MODES ARE STATED, AND THE COMMAND CARRIES THEM (B2). The document stores
+	// what it is given now, so a fixture left on the default LINEAR would be asking
+	// the sampler to IGNORE these numbers — and, worse for this test, would make the
+	// before/after pairs differ in their VECTORS only, which is the one thing a
+	// vector-only command would still have restored correctly.
 	Flux_KeyTangents xFirst;
 	xFirst.m_xInTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
 	xFirst.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
+	xFirst.m_eInMode = Flux_TangentMode::AUTO;
+	xFirst.m_eOutMode = Flux_TangentMode::AUTO;
 	Flux_KeyTangents xSecond;
 	xSecond.m_xInTangent = Zenith_Maths::Vector3(0.0f, -4.0f, 0.0f);
 	xSecond.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 7.0f, 0.0f);
+	xSecond.m_eInMode = Flux_TangentMode::CUSTOM;
+	xSecond.m_eOutMode = Flux_TangentMode::CUSTOM;
 
 	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uIdB, xFirst), "the first tangent edit lands");
 	ZENITH_ASSERT_TRUE(xDoc.SetKeyTangents(xTrack, uIdB, xSecond), "and a second, BROKEN one on top of it");
@@ -420,11 +429,18 @@ ZENITH_TEST(AnimCommands, TheTangentCommandRoundTripsAndRestoresTheExactPrevious
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "the pair reads back");
 	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xInTangent.y, -4.0f, 1e-6f, "with the two halves independent");
 	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xOutTangent.y, 7.0f, 1e-6f, "which is what a BROKEN key is");
+	ZENITH_ASSERT_TRUE(xRead.m_eInMode == Flux_TangentMode::CUSTOM
+		&& xRead.m_eOutMode == Flux_TangentMode::CUSTOM,
+		"and the modes it was given, applied VERBATIM — the document derives nothing");
 
 	xDoc.Undo();
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "the pair still reads back");
 	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xInTangent.y, 3.0f, 1e-6f, "one undo restores the pair before it");
 	ZENITH_ASSERT_EQ_FLOAT(xRead.m_xOutTangent.y, 3.0f, 1e-6f, "both halves of it");
+	ZENITH_ASSERT_TRUE(xRead.m_eInMode == Flux_TangentMode::AUTO
+		&& xRead.m_eOutMode == Flux_TangentMode::AUTO,
+		"★ INCLUDING ITS MODES — an undo that restored the vectors and left the ends CUSTOM would leave "
+		"the key un-maintained forever, with every number looking exactly right");
 
 	xDoc.Undo();
 	ZENITH_ASSERT_TRUE(xDoc.GetKeyTangents(xTrack, uIdB, xRead), "and again");

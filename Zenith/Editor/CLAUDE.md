@@ -630,23 +630,40 @@ column per pixel, so the curve on screen is the curve that plays. A Hermite
 re-derived in the panel would agree with the runtime right up until one of them
 changed.
 
-**★ TANGENT MODE IS STORED PER END BUT NOT YET ON THE WIRE, AND THE LABEL IS
-"Linear" — NEVER "Flat".** Since B1 the clip stores a four-valued
+**★ TANGENT MODE IS STORED PER END AND IS ON THE WIRE (B2, schema 3), SO ALL FOUR
+MODES ARE AUTHORABLE FROM THIS EDITOR.** The clip stores a four-valued
 `Flux_TangentMode` on each end of each key (`Flux/MeshAnimation/CLAUDE.md` →
-*Tangent sampling*), but the schema is still 2, the writer still emits six floats,
-and every production write path goes through
-`Flux_BoneChannel::Set*Tangent`, which DERIVES the mode from the vector — exactly
-zero is `LINEAR`, anything else is `CUSTOM`. So `FLAT` and `AUTO` are not
-authorable from this editor, *Auto* is still an **operation** whose result reads
-back as Custom, and a control labelled "Flat" would promise an ease nothing here
-can produce.
+*Tangent sampling*), `Flux_BoneChannel::Set*Tangent` store what they are GIVEN, and
+the document's verbs are the things that decide: `SetKeyTangentMode` is the mode
+verb, a handle drag claims the end it moved as `CUSTOM`, `SetKeyTangentsAuto` and
+`SetTrackTangentsAuto` write `AUTO`, `SetTrackTangentsLinear` / `SetTrackTangentsFlat`
+write `LINEAR` / `FLAT` over identical zero vectors.
 
-`Zenith_AnimCurveTangentModeOf` is a **projection** of the stored mode onto the
-two the writer can round-trip — **Linear** when both ends are
-`Flux_TangentMode::LINEAR`, **Custom** otherwise — not a second derivation from
-the numbers. That ordering is deliberate: when `FLAT` becomes authorable a flat
-key displays as "Custom", which is an under-statement rather than a lie, whereas a
-display that re-read the vectors would call it "Linear" and be silently wrong.
+**★ AND `AUTO` IS MAINTAINED, WHICH IS WHY IT IS NOT JUST `CUSTOM`.** After
+`InsertKey` / `RemoveKey` / `SetKeyTime` / `SetKeyValue` on a track, every `AUTO`
+END OF THAT TRACK is recomputed and stored **inside the same undo entry**. Keys on
+other tracks are untouched, a `CUSTOM`/`FLAT`/`LINEAR` end is untouched, and no key
+id moves. The whole track is swept rather than the moved key's neighbours: a retime
+changes the centred span of the key and of both its old AND both its new
+neighbours, the id remap has already run, and "which keys were adjacent" would be
+four different index calculations with four ways of being subtly wrong.
+
+**★★ THE GROUPING RULE IS `BeginCompound` ONLY IF `!IsCompoundOpen()`.** Nesting is
+REFUSED and asserts, and a refresh that then called `EndCompound` anyway would close
+the CALLER's group — so a multi-key dope-sheet drag would be terminated halfway
+through by the first key that happened to sit beside an Auto tangent. Seven
+production sites hold a compound open around these verbs. When one is already open
+the refresh's commands are adopted through `PushCommand`, exactly like every other
+verb's.
+
+`Zenith_AnimCurveTangentModeOf` is still a **projection** of the four stored modes
+onto the two this panel displays — **Linear** when both ends are
+`Flux_TangentMode::LINEAR`, **Custom** otherwise — never a second derivation from
+the numbers. So a `FLAT` or `AUTO` key currently reads "Custom": an under-statement
+rather than a lie, which is the direction this projection was built to fail in.
+Widening the display enum, its labels and the `ANIM_CURVE_*` automation verbs
+beside them is its own unit; until then the label stays "Linear"/"Custom", because
+"Flat" would name the wrong one of the states Custom collapses.
 
 **★ THE VALUE AXIS IS A SECOND, PURE MAPPING — the X axis is untouched.**
 `Zenith_AnimCurveValueView` + `Zenith_AnimCurveValueToPixel` / `PixelToValue` /
@@ -689,15 +706,28 @@ rather than failing the whole gesture.
 
 **Document verbs** (`Zenith_AnimationDocument`, still the only writer):
 `GetKeyTangents` / `SetKeyTangents` / `SetKeyInTangent` / `SetKeyOutTangent` /
-`SetKeyTangentsAuto` (per key) / `SetTrackTangentsAuto` / `SetTrackTangentsLinear`
-(one compound each), all by stable key id, all **ASSIGNMENTS** — true means "the
-pair you asked for is in place", and a no-op pushes nothing, so the invariant to
-assert on is the undo-stack DEPTH. Undo is one `Zenith_AnimCommand_KeyTangents`
-per key carrying the exact PREVIOUS pair; the whole-track presets capture every
-key's pair before running `Flux_BoneChannel::ComputeAutoTangents` /
-`ComputeFlatTangents`, so an undo restores the track exactly instead of
-recomputing a shape. Restoring the exact **unset** pair is what puts a key back
-on the sampler's bit-identical linear branch.
+`SetKeyTangentMode` / `SetKeyTangentsAuto` (per key) / `SetTrackTangentsAuto` /
+`SetTrackTangentsLinear` / `SetTrackTangentsFlat` (one compound each), all by
+stable key id, all **ASSIGNMENTS** — true means "the pair you asked for is in
+place", and a no-op pushes nothing, so the invariant to assert on is the undo-stack
+DEPTH. Undo is one `Zenith_AnimCommand_KeyTangents` per key carrying the exact
+PREVIOUS pair, **modes included**; the whole-track presets capture every key's pair
+before running `Flux_BoneChannel::ComputeAutoTangents` / `ComputeLinearTangents` /
+`ComputeFlatTangents`, so an undo restores the track exactly instead of recomputing
+a shape. Restoring the exact **unset** pair — zero vectors AND `LINEAR` — is what
+puts a key back on the sampler's bit-identical linear branch.
+
+★ **`SetKeyTangents` STORES WHAT IT IS GIVEN**, so its callers fill the modes:
+`Action_SetKeyTangents` and `Action_DragTangentHandleToPixel` write `CUSTOM` on the
+end(s) the gesture touched, `Action_SetSelectionTangentsLinear` writes `LINEAR`. A
+default-constructed `Flux_KeyTangents` beside two authored numbers is an instruction
+to IGNORE them — an edit that reaches the file and never reaches the pose.
+`SetKeyIn/OutTangent` fill `CUSTOM` on the end that moved and leave the other end's
+mode ALONE, so dragging one handle cannot silently un-`AUTO` the opposite one.
+`SetKeyTangentMode` writes the VECTOR its mode implies in the same step: `FLAT` and
+`LINEAR` store exact zeroes (both ignore the number, and a stale one would resurface
+the moment the end went back to `CUSTOM`), `AUTO` computes and stores the
+Catmull-Rom vector immediately, `CUSTOM` keeps the vector already there.
 
 ★ The per-key Catmull-Rom is **the clip's, with one home** (B1).
 `SetKeyTangentsAuto` calls `Flux_BoneChannel::ComputeAutoTangentForKey` — the same

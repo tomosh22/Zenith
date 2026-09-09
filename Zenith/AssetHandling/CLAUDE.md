@@ -135,7 +135,7 @@ These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 | Mesh | `.zmesh` | `Zenith_MeshAsset` — geometry with optional skinning weights |
 | Mesh geometry | `.zgeom` | `Flux_MeshGeometry` — a DIFFERENT format (its own element table, no version field): terrain chunks, the StickFigure, primitive and shared-prop geometry |
 | Skeleton | `.zskel` | Bone hierarchy and bind pose data |
-| Animation | `.zanim` | `Flux_AnimationClip` — keyframe animation clips. Stream-envelope type id 6, schema 2; key times are SECONDS |
+| Animation | `.zanim` | `Flux_AnimationClip` — keyframe animation clips. Stream-envelope type id 6, schema 3; key times are SECONDS, and each key end carries a `Flux_TangentMode` byte |
 | Animator controller | `.zanimctrl` | `Flux_AnimatorControllerDef` — the WHOLE animator: clip paths, an optional embedded top-level state machine, and the layer list (each layer embeds its own). Envelope type id 7, schema 1 |
 | Bone mask | `.zanimmask` | `Zenith_BoneMaskAsset` — per-bone weights BY NAME, skeleton-scoped. Envelope type id 8, schema 1 |
 | Behaviour Graph | `.bgraph` | Designer-authored visual-scripting graph (see below) |
@@ -182,10 +182,12 @@ and current schema version is `AssetHandling/Zenith_AssetTypeIds.h` — no more 
 `#define ZENITH_*_VERSION`.
 
 `.zanim` is the most recent adopter: **type id 6
-(`uZENITH_ANIMATION_ASSET_TYPE_ID`), schema 2 (`uZENITH_ANIMATION_SCHEMA_CURRENT`)**. It
+(`uZENITH_ANIMATION_ASSET_TYPE_ID`), schema 3 (`uZENITH_ANIMATION_SCHEMA_CURRENT`)**. It
 had no version word at all before, so its schema starts at 1 — the first layout that is
-self-describing on the wire — and **schema 2 reinterpreted the key-time floats as
-SECONDS where schema 1 meant ticks, with no field moving**. The write half is
+self-describing on the wire — **schema 2 reinterpreted the key-time floats as
+SECONDS where schema 1 meant ticks, with no field moving**, and **schema 3 is the
+first that MOVES a byte**: the per-key tangent record grew from 24 to 26, adding one
+`Flux_TangentMode` byte per END of each key. The write half is
 `Flux_AnimationClip::WriteToDataStream`, which `Export()` calls, so both `.zanim` write
 paths carry the header. See `Flux/MeshAnimation/CLAUDE.md`.
 
@@ -208,6 +210,14 @@ paths carry the header. See `Flux/MeshAnimation/CLAUDE.md`.
   delete it and let the tools boot rewrite it — exactly what a fresh clone does
   unconditionally. So **bumping a `*_SCHEMA_CURRENT` needs no legacy branch**; it needs
   the stale files deleted.
+- **★ A GAME'S OWN BAKE STAMP IS PART OF "DELETED", AND IT IS NOT AUTOMATIC.**
+  Zenithmon's `ZM_BakeManifest` guards ~912 creature clips with an EXISTENCE-ONLY
+  check, so after a schema bump a stale `.zanim` is still "warm" and then fails
+  `ParseStream` with `VERSION_MISMATCH` at RUNTIME, invisibly — no bake, no gate and
+  no unit says so. The mechanical fix is to bump that family's generator version
+  (`uZM_CREATUREGEN_VERSION`) in the SAME commit, which invalidates the stamp in every
+  checkout without anyone remembering to delete a manifest. `.zanim` schema 3 did
+  exactly that.
 - **★ `Assets/Authored/**` IS THE ONE EXCEPTION TO "DELETE IT AND RE-BAKE".** That
   directory is re-included WHOLESALE by `.gitignore` (scoped by DIRECTORY, not by
   extension) and marked `**/Assets/Authored/** binary -filter` in `.gitattributes` — the

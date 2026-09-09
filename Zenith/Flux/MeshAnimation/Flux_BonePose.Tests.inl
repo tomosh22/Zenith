@@ -406,12 +406,18 @@ ZENITH_TEST(SkeletonPose, SampleFromClipCarriesAChannelTangentIntoThePose)
 		return;
 	}
 
+	// ★ THE MODE IS STATED (B2). The channel setters store all four fields verbatim
+	// since the mode reached the wire at schema 3, so a pair left on the LINEAR
+	// default would tell the sampler to IGNORE these numbers and this test would read
+	// the plain lerp.
 	Flux_KeyTangents xStart;
 	xStart.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	xStart.m_eOutMode = Flux_TangentMode::CUSTOM;
 	pxChannel->SetPositionTangent(0u, xStart);
 
 	Flux_KeyTangents xEnd;
 	xEnd.m_xInTangent = Zenith_Maths::Vector3(0.0f, -6.0f, 0.0f);
+	xEnd.m_eInMode = Flux_TangentMode::CUSTOM;
 	pxChannel->SetPositionTangent(1u, xEnd);
 
 	Flux_SkeletonPose xPose;

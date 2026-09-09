@@ -19,6 +19,7 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "UnitTests/Zenith_AssertCapture.h"   // the refusal paths assert on purpose
 
+#include <algorithm>    // std::sort — the legacy writer's bone-name order (D5)
 #include <cmath>        // std::abs — the sampled-pose comparisons
 #include <cstring>      // std::memcpy — poking the envelope's words
 #include <fstream>
@@ -157,11 +158,21 @@ namespace
 		xHip.AddScaleKeyframe   (0.0f,                 Zenith_Maths::Vector3(1.0f));
 		xHip.AddScaleKeyframe   (fHalf * fTimeScale,   Zenith_Maths::Vector3(1.0f, 1.25f, 1.0f));
 
-		// One non-zero reserved tangent (D17), so the block is proved to survive the
-		// migration rather than merely being written as zeros at both ends.
+		// One non-zero tangent (D17), so the block is proved to survive the migration
+		// rather than merely being written as zeros at both ends.
+		//
+		// ★ THE MODES ARE STATED, AND THAT IS LOAD-BEARING FOR THE BYTE-IDENTITY PIN
+		// (B2). The setters store all four fields verbatim now, so a default-
+		// constructed pair would store LINEAR beside these two non-zero vectors —
+		// while the MIGRATED twin comes off a 24-byte legacy record whose modes
+		// Flux_ReadKeyTangents derives as CUSTOM/CUSTOM. The two files would then
+		// differ in exactly two bytes per record and the failure would read as a
+		// migrator bug. CUSTOM is also what these vectors MEAN: hand-authored.
 		Flux_KeyTangents xTangent;
 		xTangent.m_xInTangent  = Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f);
 		xTangent.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 0.25f, 0.0f);
+		xTangent.m_eInMode  = Flux_TangentMode::CUSTOM;
+		xTangent.m_eOutMode = Flux_TangentMode::CUSTOM;
 		xHip.SetPositionTangent(1u, xTangent);
 		xClip.AddBoneChannel("Hip", std::move(xHip));
 
@@ -197,18 +208,97 @@ namespace
 			fDuration * fTimeScale);
 	}
 
-	// Write a clip's bytes with the envelope's schema word forced to uSchema. The
-	// payload layout of schemas 1 and 2 is identical, so this produces a genuine
-	// schema-1 file rather than a doctored one.
-	void AnimMigrateWriteClipAtSchema(const Flux_AnimationClip& xClip, const std::filesystem::path& xPath, u_int uSchema)
+	//--------------------------------------------------------------------------
+	// ★ A REAL LEGACY WRITER, NOT A SCHEMA WORD MEMCPY'D OVER CURRENT BYTES (B2).
+	//
+	// This fixture used to serialize through Flux_AnimationClip::WriteToDataStream
+	// and then poke the envelope's schema word, on the stated precondition that
+	// "the payload layout of schemas 1 and 2 is identical". Schema 3 falsifies
+	// exactly that: the tangent record grew from 24 bytes to 26. A file written by
+	// the current writer and labelled schema 1 is now a file whose header and body
+	// disagree — the migrator would read 26-byte records as 24-byte ones and either
+	// refuse the count or slide two bytes out of phase for the rest of the block.
+	//
+	// So the legacy layout is written out longhand here, mirroring
+	// Flux_AnimationClip::WriteToDataStream exactly EXCEPT for the tangent record.
+	// That duplication is the point: this is a description of a format that no
+	// longer has a writer, and it must not follow the current one when it moves
+	// again.
+	//--------------------------------------------------------------------------
+
+	// The schema-1/2 record: six floats, no mode bytes.
+	void AnimMigrateWriteLegacyTangents(Zenith_DataStream& xStream, const Zenith_Vector<Flux_KeyTangents>& xTangents)
+	{
+		xStream << static_cast<uint32_t>(xTangents.GetSize());
+		for (const Flux_KeyTangents& xTangent : xTangents)
+		{
+			xStream << xTangent.m_xInTangent.x;
+			xStream << xTangent.m_xInTangent.y;
+			xStream << xTangent.m_xInTangent.z;
+			xStream << xTangent.m_xOutTangent.x;
+			xStream << xTangent.m_xOutTangent.y;
+			xStream << xTangent.m_xOutTangent.z;
+		}
+	}
+
+	void AnimMigrateWriteLegacyChannel(Zenith_DataStream& xStream, const Flux_BoneChannel& xChannel)
+	{
+		xStream << xChannel.GetBoneName();
+		Flux_WriteVec3Keys(xStream, xChannel.GetPositionKeyframes());
+		Flux_WriteQuatKeys(xStream, xChannel.GetRotationKeyframes());
+		Flux_WriteVec3Keys(xStream, xChannel.GetScaleKeyframes());
+		AnimMigrateWriteLegacyTangents(xStream, xChannel.GetPositionTangents());
+		AnimMigrateWriteLegacyTangents(xStream, xChannel.GetRotationTangents());
+		AnimMigrateWriteLegacyTangents(xStream, xChannel.GetScaleTangents());
+	}
+
+	// uSchema must be 1 or 2 — the two that share this layout. A caller asking for
+	// the current schema wants AnimMigrateWriteCurrentClip below.
+	void AnimMigrateWriteLegacyClip(const Flux_AnimationClip& xClip, const std::filesystem::path& xPath, u_int uSchema)
+	{
+		ZENITH_ASSERT_TRUE(uSchema >= 1u && uSchema <= 2u,
+			"fixture: the legacy writer describes the 24-byte-tangent layout, which is schemas 1 and 2 only");
+
+		Zenith_DataStream xStream;
+		Zenith_WriteStreamHeader(xStream, uZENITH_ANIMATION_ASSET_TYPE_ID, uSchema);
+		xClip.GetMetadata().WriteToDataStream(xStream);
+		xStream << Zenith_AssetRegistry::NormalizeAssetPath(xClip.GetSourcePath());
+
+		// D5: channels in ascending BONE-NAME order, exactly as the real writer
+		// imposes, or the migrated file could never be byte-identical to a twin.
+		Zenith_Vector<const Flux_BoneChannel*> apxOrdered;
+		apxOrdered.Reserve(xClip.GetBoneChannels().GetSize());
+		for (Zenith_HashMap<std::string, Flux_BoneChannel>::Iterator xIt(xClip.GetBoneChannels()); !xIt.Done(); xIt.Next())
+		{
+			apxOrdered.PushBack(&xIt.GetValue());
+		}
+		std::sort(apxOrdered.begin(), apxOrdered.end(),
+			[](const Flux_BoneChannel* pxA, const Flux_BoneChannel* pxB)
+			{ return pxA->GetBoneName() < pxB->GetBoneName(); });
+
+		xStream << static_cast<uint32_t>(apxOrdered.GetSize());
+		for (u_int u = 0; u < apxOrdered.GetSize(); ++u)
+		{
+			AnimMigrateWriteLegacyChannel(xStream, *apxOrdered.Get(u));
+		}
+
+		xStream << static_cast<uint32_t>(xClip.GetEvents().GetSize());
+		for (const Flux_AnimationEvent& xEvent : xClip.GetEvents())
+		{
+			xEvent.WriteToDataStream(xStream);
+		}
+
+		xClip.GetRootMotion().WriteToDataStream(xStream);
+
+		xStream.WriteToFile(xPath.string().c_str());
+	}
+
+	// The other half: the CURRENT writer, which is what a migrated file has to end
+	// up byte-identical to.
+	void AnimMigrateWriteCurrentClip(const Flux_AnimationClip& xClip, const std::filesystem::path& xPath)
 	{
 		Zenith_DataStream xStream;
 		xClip.WriteToDataStream(xStream);
-		if (uSchema != uZENITH_ANIMATION_SCHEMA_CURRENT)
-		{
-			std::memcpy(static_cast<uint8_t*>(xStream.GetData()) + uANIM_MIGRATE_WORD_SCHEMA * sizeof(u_int),
-				&uSchema, sizeof(u_int));
-		}
 		xStream.WriteToFile(xPath.string().c_str());
 	}
 
@@ -249,15 +339,15 @@ namespace
 	// samples alone would not notice a re-ordering that changes the file on every
 	// re-bake.
 	//
-	// ★ AND THE SAMPLES ARE STILL COMPARABLE ACROSS B1's PER-KEY TANGENT MODES,
-	// which is why nothing here changed when they landed. A .zanim at schema <= 2
-	// carries no mode byte, so Flux_ReadKeyTangents DERIVES the mode from the vector
-	// on the way in — exactly zero is LINEAR, anything else CUSTOM — and
-	// Flux_BoneChannel's setters derive the same way, so a migrated clip and a
-	// freshly written one agree on the mode as well as on the numbers. When schema 3
-	// puts the two bytes on the wire, THAT is the unit that needs a migration step
-	// here (a schema-2 record has no mode to carry forward except the derived one);
-	// until then this file is untouched by the change on purpose.
+	// ★ AND THE SAMPLES ARE COMPARABLE ACROSS THE MODES ONLY BECAUSE THE TWO SIDES
+	// AGREE ON THEM (B2). A .zanim at schema <= 2 carries no mode byte, so
+	// Flux_ReadKeyTangents DERIVES one per end on the way in — exactly zero is
+	// LINEAR, anything else CUSTOM. The setters no longer derive anything, so the
+	// seconds-authored twin only lands on the same modes because
+	// AnimMigrateBuildCorpusClip STATES them (CUSTOM on the one non-zero pair). If
+	// it did not, these clips would sample identically and the byte comparison
+	// beside this one would fail by two bytes per tangent record — which is
+	// precisely the pair of pins this file keeps in order to tell those apart.
 	constexpr u_int uANIM_MIGRATE_SAMPLE_COUNT = 24u;
 
 	bool AnimMigrateSamplesMatch(const Flux_AnimationClip& xA, const Flux_AnimationClip& xB, float fDuration)
@@ -342,11 +432,11 @@ ZENITH_TEST(AnimMigrate, Schema1CorpusMigratesAndMatchesItsCurrentSchemaTwin)
 		ZENITH_ASSERT_FALSE(Flux_ClipKeyTimesFitDuration(xTickClip),
 			"a schema-1 clip carries key times on a TICK grid beside a duration in seconds — if this fitted, "
 			"the corpus is not actually exercising the conversion");
-		AnimMigrateWriteClipAtSchema(xTickClip, (u == 2u ? xNested : xAuthored) / strLeaf, 1u);
+		AnimMigrateWriteLegacyClip(xTickClip, (u == 2u ? xNested : xAuthored) / strLeaf, 1u);
 
 		Flux_AnimationClip xTwinClip;
 		AnimMigrateBuildCorpusClip(xTwinClip, u, 1.0f);
-		AnimMigrateWriteClipAtSchema(xTwinClip, xTwins / strLeaf, uZENITH_ANIMATION_SCHEMA_CURRENT);
+		AnimMigrateWriteCurrentClip(xTwinClip, xTwins / strLeaf);
 	}
 
 	Zenith_Tools_AnimMigrateReport xReport;
@@ -401,11 +491,11 @@ ZENITH_TEST(AnimMigrate, AnAlreadyCurrentFileIsSkippedAndTheWalkIsIdempotent)
 
 	Flux_AnimationClip xOldClip;
 	AnimMigrateBuildCorpusClip(xOldClip, 0u, static_cast<float>(axANIM_MIGRATE_CORPUS[0].m_uTicksPerSecond));
-	AnimMigrateWriteClipAtSchema(xOldClip, xOldPath, 1u);
+	AnimMigrateWriteLegacyClip(xOldClip, xOldPath, 1u);
 
 	Flux_AnimationClip xCurrentClip;
 	AnimMigrateBuildCorpusClip(xCurrentClip, 1u, 1.0f);
-	AnimMigrateWriteClipAtSchema(xCurrentClip, xCurrentPath, uZENITH_ANIMATION_SCHEMA_CURRENT);
+	AnimMigrateWriteCurrentClip(xCurrentClip, xCurrentPath);
 	const std::string strCurrentBytesBefore = AnimMigrateReadBytes(xCurrentPath);
 
 	Zenith_Tools_AnimMigrateReport xFirstRun;
@@ -459,7 +549,7 @@ ZENITH_TEST(AnimMigrate, ACorruptFileIsReportedFailedAndLeftByteIdentical)
 
 	Flux_AnimationClip xClip;
 	AnimMigrateBuildCorpusClip(xClip, 0u, static_cast<float>(axANIM_MIGRATE_CORPUS[0].m_uTicksPerSecond));
-	AnimMigrateWriteClipAtSchema(xClip, xGoodPath, 1u);
+	AnimMigrateWriteLegacyClip(xClip, xGoodPath, 1u);
 
 	// (a) A TRUNCATED PAYLOAD. Three bytes off the end, so the final key-time read
 	// crosses end-of-file — Zenith_DataStream refuses an over-long read and leaves
@@ -542,7 +632,7 @@ ZENITH_TEST(AnimMigrate, AZeroTicksPerSecondIsALoudRefusalNotAGuess)
 	// somewhere it was never authored, which only a person watching the animation
 	// months later would ever notice.
 	xClip.SetTicksPerSecond(0u);
-	AnimMigrateWriteClipAtSchema(xClip, xPath, 1u);
+	AnimMigrateWriteLegacyClip(xClip, xPath, 1u);
 	const std::string strBytesBefore = AnimMigrateReadBytes(xPath);
 
 	Zenith_Tools_AnimMigrateReport xReport;
@@ -588,4 +678,142 @@ ZENITH_TEST(AnimMigrate, AnAbsentOrEmptyAuthoredRootIsSuccessNotAThrow)
 	ZENITH_ASSERT_EQ(xReport.m_uScanned, 0u,
 		"neither a foreign file nor a leftover .migrate.tmp is picked up as input");
 	ZENITH_ASSERT_TRUE(xReport.CountsAddUp(), "the counts account for every scanned file");
+}
+
+//==============================================================================
+// (6) B2 — A SCHEMA-1 *AND* A SCHEMA-2 FILE BOTH REACH SCHEMA 3, AND THE MODES
+//     THEY ARRIVE WITH ARE THE DERIVED ONES.
+//
+// ★ THE SCHEMA-2 HALF IS THE ONE THAT WOULD NOT HAVE EXISTED BEFORE. Under the
+// old chain a schema-2 file needed no step at all, because 2 WAS current; now it
+// is one behind, its tangent records are two bytes per key SHORT of the current
+// layout, and the loop `uSchema < CURRENT` walks onto a `case 2u` that has to be
+// there. A missing case is not a silent pass — it is the "no migration step
+// implemented" assert, which refuses the file and leaves it on the old schema.
+//
+// ★ AND THE 2->3 STEP IS A MEMORY NO-OP, WHICH IS WHY BOTH HALVES ASSERT ON THE
+// MODES RATHER THAN ON A COUNT. Nothing in the clip moves during the step: the
+// modes were already derived by Flux_ReadKeyTangents while the 24-byte record was
+// being read. What changes is the SERIALIZATION, in AnimMigratePublish.
+//==============================================================================
+ZENITH_TEST(AnimMigrate, LegacySchema1And2FilesReachSchema3CarryingTheDerivedModes)
+{
+	AnimMigrateTempTree xTree("zenith_animmigrate_modes");
+	const std::filesystem::path xAuthored = xTree.Dir("Authored");
+	const std::filesystem::path xTwins = xTree.Dir("Twins");
+
+	const std::filesystem::path xFromOnePath = xAuthored / ("FromSchema1" ZENITH_ANIMATION_EXT);
+	const std::filesystem::path xFromTwoPath = xAuthored / ("FromSchema2" ZENITH_ANIMATION_EXT);
+	const std::filesystem::path xTwinPath    = xTwins    / ("Twin"        ZENITH_ANIMATION_EXT);
+
+	// Corpus 0 carries a ZERO tangent on most keys and one NON-ZERO pair on Hip
+	// position key 1, which is exactly the "one of each" the derivation has to tell
+	// apart: LINEAR from the zeroes, CUSTOM from the authored pair.
+	Flux_AnimationClip xTicks;
+	AnimMigrateBuildCorpusClip(xTicks, 0u, static_cast<float>(axANIM_MIGRATE_CORPUS[0].m_uTicksPerSecond));
+	AnimMigrateWriteLegacyClip(xTicks, xFromOnePath, 1u);
+
+	Flux_AnimationClip xSeconds;
+	AnimMigrateBuildCorpusClip(xSeconds, 0u, 1.0f);
+	// Schema 2 differs from schema 1 in what the key-time floats MEAN, not in what
+	// they are, so the seconds-authored clip written at 24-byte records IS a genuine
+	// schema-2 file.
+	AnimMigrateWriteLegacyClip(xSeconds, xFromTwoPath, 2u);
+	AnimMigrateWriteCurrentClip(xSeconds, xTwinPath);
+
+	Zenith_Tools_AnimMigrateReport xReport;
+	ZENITH_ASSERT_TRUE(Zenith_Tools_MigrateAuthoredClips(xAuthored, xReport),
+		"★ a schema-2 file is MIGRATABLE, not a refusal — the chain has a case for it");
+	ZENITH_ASSERT_EQ(xReport.m_uScanned, 2u, "both files are scanned");
+	ZENITH_ASSERT_EQ(xReport.m_uMigrated, 2u, "and both are carried forward");
+	ZENITH_ASSERT_EQ(xReport.m_uFailed, 0u, "neither is refused");
+
+	const std::filesystem::path axMigrated[2] = { xFromOnePath, xFromTwoPath };
+	for (u_int u = 0; u < 2u; ++u)
+	{
+		u_int uSchema = 0u;
+		ZENITH_ASSERT_TRUE(AnimMigrateFileSchema(axMigrated[u], uSchema), "the migrated file still has its envelope");
+		ZENITH_ASSERT_EQ(uSchema, uZENITH_ANIMATION_SCHEMA_CURRENT, "and declares schema 3");
+
+		Flux_AnimationClip xLoaded;
+		ZENITH_ASSERT_TRUE(AnimMigrateLoadClip(axMigrated[u], xLoaded),
+			"and loads through the RUNTIME reader, which refuses any non-current schema");
+
+		const Flux_BoneChannel* pxHip = xLoaded.GetBoneChannel("Hip");
+		ZENITH_ASSERT_NOT_NULL(pxHip, "the Hip channel survived the migration");
+		if (pxHip == nullptr)
+		{
+			continue;
+		}
+		ZENITH_ASSERT_EQ(pxHip->GetPositionTangents().GetSize(), 3u, "with its tangent block parallel to its keys");
+
+		const Flux_KeyTangents& xZeroPair = pxHip->GetPositionTangents().Get(0u);
+		ZENITH_ASSERT_TRUE(xZeroPair.m_eInMode == Flux_TangentMode::LINEAR
+			&& xZeroPair.m_eOutMode == Flux_TangentMode::LINEAR,
+			"★ a key that carried two ZERO vectors in the 24-byte record arrives LINEAR — which is what "
+			"keeps every legacy clip on the sampler's bit-identical branch");
+
+		const Flux_KeyTangents& xAuthoredPair = pxHip->GetPositionTangents().Get(1u);
+		ZENITH_ASSERT_TRUE(xAuthoredPair.m_eInMode == Flux_TangentMode::CUSTOM
+			&& xAuthoredPair.m_eOutMode == Flux_TangentMode::CUSTOM,
+			"★ and the one NON-ZERO pair arrives CUSTOM — the only reading of a legacy record that leaves "
+			"the clip sampling as it did");
+		ZENITH_ASSERT_EQ_FLOAT(xAuthoredPair.m_xInTangent.x, 0.5f, 1e-6f, "with the vector itself intact");
+		ZENITH_ASSERT_EQ_FLOAT(xAuthoredPair.m_xOutTangent.y, 0.25f, 1e-6f, "on both ends");
+	}
+
+	// ★ AND BOTH ROUTES LAND ON THE SAME BYTES AS THE CURRENT WRITER'S TWIN. This is
+	// what makes the migration a ONE-TIME diff in git rather than churn: the schema-1
+	// file's times were divided back to seconds, the schema-2 file's were already
+	// seconds, and the tangent block gained its two mode bytes per record either way.
+	const std::string strTwinBytes = AnimMigrateReadBytes(xTwinPath);
+	ZENITH_ASSERT_TRUE(AnimMigrateReadBytes(xFromTwoPath) == strTwinBytes,
+		"the schema-2 file's migrated bytes are IDENTICAL to the current writer's");
+	ZENITH_ASSERT_TRUE(AnimMigrateReadBytes(xFromOnePath) == strTwinBytes,
+		"and so are the schema-1 file's, after the ticks-to-seconds step");
+	ZENITH_ASSERT_EQ(AnimMigrateCountTempFiles(xAuthored), 0u, "no staged .migrate.tmp survives the walk");
+}
+
+//==============================================================================
+// (7) B2 — THE CHAIN ITSELF, CALLED DIRECTLY, TAKES NO STEP FOR A FILE THAT IS
+//     ALREADY CURRENT.
+//
+// ★ THIS CANNOT BE REACHED THROUGH Zenith_Tools_MigrateAuthoredClips, WHICH IS
+// WHY IT IS A DIRECT CALL. A file whose header says the current schema is answered
+// by AnimMigrateOneFile's ALREADY_CURRENT branch and never opened for writing, and
+// a file from the FUTURE is refused by the newer-than-this-build check BEFORE the
+// chain — so the loop's own "from == current" exit has no caller that can
+// demonstrate it. The function is in this TU's anonymous namespace and this file
+// is #included at the bottom of it, which is what makes the call possible at all.
+//==============================================================================
+ZENITH_TEST(AnimMigrate, TheStepChainTakesNoStepFromTheCurrentSchema)
+{
+	Flux_AnimationClip xClip;
+	AnimMigrateBuildCorpusClip(xClip, 0u, 1.0f);
+
+	Zenith_DataStream xBefore;
+	xClip.WriteToDataStream(xBefore);
+	const uint64_t ulBeforeBytes = xBefore.GetCursor();
+
+	std::string strReason = "untouched";
+	ZENITH_ASSERT_TRUE(AnimMigrateApplyStepChain(xClip, uZENITH_ANIMATION_SCHEMA_CURRENT, "direct-call", strReason),
+		"★ a clip already at the current schema needs NO step, and that is success rather than a "
+		"'no migration step implemented' refusal");
+	ZENITH_ASSERT_STREQ(strReason.c_str(), "untouched", "and nothing wrote a failure reason");
+
+	Zenith_DataStream xAfter;
+	xClip.WriteToDataStream(xAfter);
+	ZENITH_ASSERT_EQ(xAfter.GetCursor(), ulBeforeBytes, "the clip serializes to the same length");
+	ZENITH_ASSERT_TRUE(std::memcmp(xBefore.GetData(), xAfter.GetData(), static_cast<size_t>(ulBeforeBytes)) == 0,
+		"and to the same BYTES — a no-step chain must not touch the clip");
+
+	// And the step that IS taken from schema 2 is a memory no-op for the same
+	// reason: Flux_ReadKeyTangents already derived the modes, so the layout change
+	// happens in AnimMigratePublish's re-serialize and nowhere else.
+	ZENITH_ASSERT_TRUE(AnimMigrateApplyStepChain(xClip, 2u, "direct-call", strReason),
+		"the 2->3 step runs and succeeds");
+	Zenith_DataStream xAfterTwo;
+	xClip.WriteToDataStream(xAfterTwo);
+	ZENITH_ASSERT_TRUE(std::memcmp(xBefore.GetData(), xAfterTwo.GetData(), static_cast<size_t>(ulBeforeBytes)) == 0,
+		"★ and it changed NOTHING in memory — the two mode bytes are the writer's job, not the step's");
 }

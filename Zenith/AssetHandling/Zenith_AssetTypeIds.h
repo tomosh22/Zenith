@@ -45,15 +45,18 @@ inline constexpr u_int uZENITH_MODEL_SCHEMA_CURRENT    = 2;
 // .zanim had NO version word at all before it adopted the envelope, so its schema
 // starts at 1 — the first layout that is self-describing on the wire.
 //
-// ★ SCHEMA 3 IS THE PER-KEY TANGENT MODES, AND IT IS NOT CURRENT YET. B1 added
-// Flux_TangentMode in memory and taught Flux_ReadKeyTangents the 26-byte schema-3
-// record (six floats then two mode bytes, where schema <= 2 is 24 and the modes are
-// DERIVED from the vectors), but the WRITER still emits six floats — deliberately,
-// so the 17 authored clips under Assets/Authored stay byte-identical and the pin
-// boot has nothing to migrate. Bumping this constant is the unit that adds those two
-// bytes to Flux_WriteKeyTangents and a migration step to Zenith_Tools_AnimMigrate;
-// do not bump it on its own.
-inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 2;  // 2: key times are SECONDS (were ticks); byte layout unchanged
+// ★ SCHEMA 3 IS THE PER-KEY TANGENT MODES, AND IT IS ON THE WIRE (B2). A tangent
+// record is 26 bytes — six floats then the two Flux_TangentMode bytes, in-mode
+// first — where schemas 1-2 wrote 24 and the modes had to be DERIVED from the
+// vectors on the way in. That derivation now has exactly two callers left: the
+// schema-<=2 branch of Flux_ReadKeyTangents, and the migrator's 2->3 step. Every
+// production write path stores the mode it was GIVEN, which is what makes
+// Flux_TangentMode::FLAT and ::AUTO authorable at all.
+//
+// The 17 committed clips under Assets/Authored were carried across by
+// Zenith_Tools_MigrateAuthoredClipsAtBoot in the same change that bumped this
+// constant; every generated clip is bake output and was simply rewritten.
+inline constexpr u_int uZENITH_ANIMATION_SCHEMA_CURRENT = 3;  // 3: per-key tangent MODES on the wire (2: key times became SECONDS)
 
 // WU-6.2. Both formats are self-describing from their FIRST byte — neither ever
 // existed without an envelope — so both schemas start at 1.

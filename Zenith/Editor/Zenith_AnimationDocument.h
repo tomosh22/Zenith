@@ -58,6 +58,19 @@ class Zenith_AnimCommand_Compound;
 //-----------------------------------------------------------------------------
 constexpr u_int uINVALID_ANIM_KEY_ID = 0u;
 
+//-----------------------------------------------------------------------------
+// WHICH END of a key a mode edit addresses (B2). BOTH is not a convenience:
+// "make this key flat" is the gesture a user actually performs, and expressing
+// it as two calls would make it two undo steps unless every caller remembered a
+// compound.
+//-----------------------------------------------------------------------------
+enum Zenith_AnimTangentEnd
+{
+	ZENITH_ANIM_TANGENT_END_IN,
+	ZENITH_ANIM_TANGENT_END_OUT,
+	ZENITH_ANIM_TANGENT_END_BOTH,
+};
+
 // Returned by the index lookups when an id no longer resolves (the key was
 // removed, or the id belongs to another track).
 constexpr u_int uINVALID_ANIM_KEY_INDEX = 0xFFFFFFFFu;
@@ -305,6 +318,19 @@ public:
 	//-------------------------------------------------------------------------
 	// Key mutation. Each: validates, calls the WU-1.3 mutator, re-maps the ids,
 	// marks dirty and pushes ONE undo command. A refusal does none of those.
+	//
+	// ★ AND EACH ONE MAINTAINS THE TRACK'S AUTO TANGENTS (B2). An AUTO end means
+	// "this slope was computed and may be recomputed", so an insert, a removal, a
+	// retime or a value edit re-runs the Catmull-Rom over every AUTO end OF THAT
+	// TRACK and stores the result. Keys on other tracks are untouched, a CUSTOM or
+	// FLAT or LINEAR end is untouched, and no key id moves.
+	//
+	// The recomputation is part of the SAME undo entry as the edit that caused it:
+	// undoing a retime that re-shaped four neighbours must put all five keys back,
+	// not leave the tangents of a pose the user is no longer looking at. When the
+	// caller already holds a compound open (a dope-sheet drag over eleven keys) the
+	// extra commands are adopted into it — the document does NOT open a nested one,
+	// which is refused and would roll the whole gesture back.
 	//-------------------------------------------------------------------------
 
 	// Returns the id of the key at fTimeSeconds afterwards, or
@@ -331,20 +357,27 @@ public:
 	//-------------------------------------------------------------------------
 	// PER-KEY TANGENTS (WU-8.2) — the curve editor's half of the mutation API.
 	//
-	// ★ A TANGENT MODE IS STORED PER END (Flux_TangentMode, B1) BUT IS NOT YET ON
-	// THE WIRE, so at schema 2 it is DERIVED FROM THE VECTOR — exactly zero is
-	// LINEAR, anything else is CUSTOM — and the ONE place that derivation happens
-	// is Flux_BoneChannel's Set*Tangent setters
-	// (Flux/MeshAnimation/CLAUDE.md, *Tangent sampling*). So FLAT and AUTO are not
-	// authorable through any verb below: "Auto" is still an OPERATION that realises
-	// a shape as numbers, and a key it wrote reads back CUSTOM. The editor's label
-	// for a wholly-LINEAR pair is **Linear**, never "Flat" — a control labelled
-	// "Flat" would promise an ease nothing on this path can produce yet.
+	// ★ A TANGENT MODE IS STORED PER END (Flux_TangentMode) AND IS ON THE WIRE FROM
+	// SCHEMA 3 (B2), so all four modes are authorable through the verbs below and
+	// the CALLER states the intent rather than a derivation guessing it:
+	//
+	//   SetKeyTangentMode  — the mode verb. FLAT/LINEAR store zero vectors, AUTO
+	//                        computes and stores the vector immediately, CUSTOM
+	//                        keeps the vector already there.
+	//   SetKeyIn/OutTangent— a handle DRAG: that end becomes CUSTOM, and the other
+	//                        end's mode is left exactly alone (dragging one handle
+	//                        must not silently un-Auto the opposite one).
+	//   SetKeyTangents     — stores the whole struct verbatim, modes included. Its
+	//                        callers fill the modes; it does not invent them.
+	//   SetKeyTangentsAuto — AUTO on both ends, with the Catmull-Rom vector.
+	//
+	// ★ AUTO IS PROVENANCE, AND IT IS MAINTAINED. An AUTO end reads its stored
+	// vector exactly as CUSTOM does — the difference is that the document
+	// RECOMPUTES an AUTO end when the track changes shape (see the key-mutation
+	// block above), and never touches a CUSTOM one.
 	//
 	// ★ THE VECTOR IS STORED EXACTLY. Nothing here (or in the channel) substitutes,
-	// clamps or normalises a tangent; only the MODE is derived from it. That
-	// exactness is what "an exactly-zero vector is the LINEAR one" rests on, and any
-	// tidying on the way in would take the meaning away.
+	// clamps or normalises a tangent.
 	//
 	// ★ ROOT MOTION HAS NO TANGENTS AND GAINS NONE (D17). Flux_RootMotion carries
 	// no parallel Flux_KeyTangents array — giving it one moves the .zanim layout
@@ -370,8 +403,29 @@ public:
 	// pair, replace one half and go through SetKeyTangents. Written as wrappers
 	// rather than as their own commands so there is one command shape to undo and
 	// one place the "did anything change" test lives.
+	//
+	// ★ THE END THAT MOVED BECOMES CUSTOM AND THE OTHER ONE IS NOT TOUCHED (B2) —
+	// not its vector and not its MODE. A drag is a hand authorship claim on one
+	// handle; promoting the far end to CUSTOM as well would silently cancel an AUTO
+	// that the maintenance pass would otherwise have kept up to date.
 	bool SetKeyInTangent(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Vector3& xInTangent);
 	bool SetKeyOutTangent(const Zenith_AnimTrackId& xTrack, u_int uKeyId, const Zenith_Maths::Vector3& xOutTangent);
+
+	// ★ THE MODE VERB (B2) — one undo entry, dirties, and an assignment like its
+	// neighbours (re-stating a mode that is already in place pushes nothing).
+	//
+	// The VECTOR each mode implies is written in the same step, because a mode and
+	// a vector that disagree is exactly the state the derivation used to prevent:
+	// FLAT and LINEAR store an exact zero pair (both ignore the number beside them,
+	// and leaving a stale one there would resurface the moment the end went back to
+	// CUSTOM), AUTO computes the Catmull-Rom vector and stores it immediately, and
+	// CUSTOM keeps whatever vector the end already has — it is a claim about
+	// PROVENANCE, not a new number.
+	//
+	// False for a key that does not resolve, for a root-motion track, and for an
+	// AUTO asked for on a key whose track cannot answer.
+	bool SetKeyTangentMode(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
+		Zenith_AnimTangentEnd eEnd, Flux_TangentMode eMode);
 
 	// ★ CATMULL-ROM FOR ONE KEY, AND THE FORMULA IS THE CLIP'S (B1). This calls
 	// Flux_BoneChannel::ComputeAutoTangentForKey — the SAME code
@@ -384,20 +438,26 @@ public:
 	// The root-motion refusal is stated HERE rather than downstream: a bone channel
 	// has never heard of a root-motion track, so nothing below this line could
 	// refuse one.
+	//
+	// ★ THE RESULT READS BACK AS AUTO, NOT CUSTOM (B2). That is the difference
+	// between "Auto is an operation that happened once" and "Auto is a property this
+	// key has" — and it is what the maintenance pass keys off.
 	bool SetKeyTangentsAuto(const Zenith_AnimTrackId& xTrack, u_int uKeyId);
 
-	// The two WHOLE-TRACK presets, each as ONE compound whose children capture
+	// The THREE whole-track presets, each as ONE compound whose children capture
 	// every key's PREVIOUS pair — so the undo restores the track's tangents
 	// exactly, including the keys the preset happened to leave alone. They call
-	// Flux_BoneChannel::ComputeAutoTangents / ComputeFlatTangents, which is the
-	// one write path into the parallel arrays.
+	// Flux_BoneChannel::ComputeAutoTangents / ComputeLinearTangents /
+	// ComputeFlatTangents, which is the one write path into the parallel arrays.
 	//
-	// ★ "Linear" IS ComputeFlatTangents, AND THE NAME DIFFERENCE IS THE POINT.
-	// That function writes zeroes, zero is the LINEAR tangent, and the label a
-	// user sees has to say what the data means rather than what the function is
-	// called.
+	// ★ Linear AND Flat WRITE THE SAME SIX FLOATS AND MEAN THE OPPOSITE (B2).
+	// Linear puts the track back on the sampler's bit-identical glm::mix branch;
+	// Flat gives every key a genuine zero derivative and eases the whole track. The
+	// verb names now match the MODES they write, which they did not before schema 3
+	// — SetTrackTangentsLinear used to call a function called ComputeFlatTangents.
 	bool SetTrackTangentsAuto(const Zenith_AnimTrackId& xTrack);
 	bool SetTrackTangentsLinear(const Zenith_AnimTrackId& xTrack);
+	bool SetTrackTangentsFlat(const Zenith_AnimTrackId& xTrack);
 
 	// PURE. Exact, component by component, AND both Flux_TangentModes — the same
 	// exactness Flux_DeriveTangentModesFromVectors uses and for the same reason:
@@ -527,10 +587,33 @@ private:
 	// Catmull-Rom lives on Flux_BoneChannel.
 	//-------------------------------------------------------------------------
 	bool ReadKeyTangentsAtIndex(const Zenith_AnimTrackId& xTrack, u_int uKeyIndex, Flux_KeyTangents& xOut) const;
-	// The body SetTrackTangentsAuto and SetTrackTangentsLinear share: capture
-	// every key's pair, run the channel's own preset, then push one command per
-	// key whose pair actually moved, all inside one compound.
-	bool ApplyTrackTangentPreset(const Zenith_AnimTrackId& xTrack, bool bAuto, const char* szDescription);
+	// The body the three whole-track presets share: capture every key's pair, run
+	// the channel's own preset, then push one command per key whose pair actually
+	// moved, all inside one compound.
+	enum TrackTangentPreset
+	{
+		TRACK_TANGENT_PRESET_AUTO,
+		TRACK_TANGENT_PRESET_LINEAR,
+		TRACK_TANGENT_PRESET_FLAT,
+	};
+	bool ApplyTrackTangentPreset(const Zenith_AnimTrackId& xTrack, TrackTangentPreset ePreset, const char* szDescription);
+
+	//-------------------------------------------------------------------------
+	// AUTO maintenance (B2). Two halves, because the PREDICATE has to be answered
+	// before the primary command is pushed — that is the only moment a compound
+	// can still be opened around both.
+	//
+	// ★ THE WHOLE TRACK IS RECOMPUTED, NOT THE MOVED KEY'S NEIGHBOURS. A retime
+	// changes the centred span of the key AND of both its old and both its new
+	// neighbours, and the id remap has already run by the time this is called, so
+	// "which keys were adjacent" is four different index calculations, one per
+	// verb, each with its own way of being subtly wrong. The track is already
+	// walked O(n) by the mutation itself, only AUTO ends are written, and a track
+	// with none does nothing and pushes nothing — which is every track in the tree
+	// today.
+	//-------------------------------------------------------------------------
+	bool TrackHasAutoTangentEnd(const Zenith_AnimTrackId& xTrack) const;
+	void RefreshAutoTangentsOnTrack(const Zenith_AnimTrackId& xTrack);
 
 	TrackIds& GetOrAddTrackIds(const Zenith_AnimTrackId& xTrack);
 	const TrackIds* FindTrackIds(const Zenith_AnimTrackId& xTrack) const;

@@ -216,9 +216,10 @@ float Zenith_AnimCurveTangentFromPixel(const Zenith_AnimTimelineView& xTimeView,
 
 const char* Zenith_AnimCurveTangentModeLabel(Zenith_AnimCurveTangentMode eMode)
 {
-	// ★ "Linear", NEVER "Flat". Zero IS the linear tangent (WU-8.1), a genuinely
-	// flat handle is unrepresentable in this format, and a control that said
-	// "Flat" would promise an ease and silently deliver a straight line.
+	// ★ "Linear", NEVER "Flat" — for a different reason than before B2. A flat
+	// handle IS representable now (Flux_TangentMode::FLAT, schema 3), but this
+	// two-valued display cannot tell one from a hand-authored pair, so a "Flat"
+	// label here would name the wrong one of the two states it collapses.
 	return eMode == ZENITH_ANIMCURVE_TANGENT_LINEAR ? "Linear" : "Custom";
 }
 
@@ -230,11 +231,12 @@ Zenith_AnimCurveTangentMode Zenith_AnimCurveTangentModeOf(const Flux_KeyTangents
 	// that read the numbers would disagree with the stored mode the moment FLAT or
 	// AUTO became authorable, and it would disagree silently.
 	//
-	// LINEAR only when BOTH ends are; anything else is Custom. FLAT and AUTO cannot
-	// be authored at schema 2 (the channel setters derive LINEAR or CUSTOM and the
-	// writer emits no mode byte), so the two-valued display stays honest today — and
-	// when they arrive, a FLAT key showing as "Custom" is an under-statement rather
-	// than a lie, which is the failure this ordering picks on purpose.
+	// LINEAR only when BOTH ends are; anything else is Custom. FLAT and AUTO ARE
+	// authorable since schema 3 (B2), and they land in the Custom bucket — an
+	// UNDER-STATEMENT rather than a lie, which is the failure this ordering picks
+	// on purpose. Widening the display to four values is its own unit; until then a
+	// flat key reads "Custom", which is wrong about the word and right about "this
+	// is not the untouched linear default".
 	return (xTangents.m_eInMode == Flux_TangentMode::LINEAR && xTangents.m_eOutMode == Flux_TangentMode::LINEAR)
 		? ZENITH_ANIMCURVE_TANGENT_LINEAR
 		: ZENITH_ANIMCURVE_TANGENT_CUSTOM;
@@ -938,9 +940,15 @@ bool Zenith_EditorPanel_Animation::Action_SetTangentsUnified(bool bUnified)
 bool Zenith_EditorPanel_Animation::Action_SetKeyTangents(const Zenith_AnimTrackId& xTrack, u_int uKeyId,
 	const Zenith_Maths::Vector3& xInTangent, const Zenith_Maths::Vector3& xOutTangent)
 {
+	// ★ CUSTOM ON BOTH ENDS (B2). The document stores the modes it is given now, so
+	// an action that handed over a default-constructed struct would write LINEAR
+	// beside two authored numbers — and a LINEAR end IGNORES its vector, so the edit
+	// would reach the file, reach the UI, and never reach the pose.
 	Flux_KeyTangents xTangents;
 	xTangents.m_xInTangent = xInTangent;
 	xTangents.m_xOutTangent = xOutTangent;
+	xTangents.m_eInMode = Flux_TangentMode::CUSTOM;
+	xTangents.m_eOutMode = Flux_TangentMode::CUSTOM;
 	const bool bOk = m_xDocument.SetKeyTangents(xTrack, uKeyId, xTangents);
 	if (bOk)
 	{
@@ -993,8 +1001,13 @@ bool Zenith_EditorPanel_Animation::Action_SetSelectionTangentsLinear()
 	{
 		return false;
 	}
-	// ZEROES, which the sampler reads as LINEAR. Not "flat" — see the header.
-	const Flux_KeyTangents xZero;
+	// ZERO VECTORS AND MODE LINEAR, stated rather than defaulted (B2): this action's
+	// name is the contract, and the default-constructed pair happening to be LINEAR
+	// today is not something a caller should be reading off a struct definition.
+	// Flat is a DIFFERENT selection verb with the same six floats.
+	Flux_KeyTangents xZero;
+	xZero.m_eInMode = Flux_TangentMode::LINEAR;
+	xZero.m_eOutMode = Flux_TangentMode::LINEAR;
 	bool bAnyResolved = false;
 	for (u_int u = 0; u < m_axSelectedKeys.GetSize(); ++u)
 	{
@@ -1039,14 +1052,21 @@ bool Zenith_EditorPanel_Animation::Action_DragTangentHandleToPixel(const Zenith_
 	const float fTangent = Zenith_AnimCurveTangentFromPixel(m_xView, m_xCurveValueView,
 		fTime, fKeyValue, bIn, fX, fY);
 
+	// ★ THE END THE CURSOR MOVED BECOMES CUSTOM (B2), and only that end — unless
+	// the unified toggle is on, in which case the gesture IS both ends. Without
+	// this a drag on a LINEAR or FLAT handle would store a number the sampler
+	// ignores; with it applied to BOTH ends unconditionally, dragging one handle
+	// would silently take the opposite one off AUTO.
 	const int iComponent = static_cast<int>(uComponent);
 	if (bIn || m_bCurveTangentsUnified)
 	{
 		xTangents.m_xInTangent[iComponent] = fTangent;
+		xTangents.m_eInMode = Flux_TangentMode::CUSTOM;
 	}
 	if (!bIn || m_bCurveTangentsUnified)
 	{
 		xTangents.m_xOutTangent[iComponent] = fTangent;
+		xTangents.m_eOutMode = Flux_TangentMode::CUSTOM;
 	}
 
 	const bool bOk = m_xDocument.SetKeyTangents(xTrack, uKeyId, xTangents);

@@ -426,12 +426,12 @@ constexpr float fANIM_CURVE_MIN_HANDLE_SECONDS = 1.0e-3f;
 // re-derived from the numbers — the clip says what each end IS, and a display that
 // answered that question a second way would disagree with it silently.
 //
-// ★ "Flat" AND "Auto" ARRIVE WITH THE UNIT THAT PUTS THE MODE BYTES ON THE WIRE.
-// Until then this is the projection of Flux_TangentMode onto the two the writer can
-// round-trip: the schema is still 2, the channel setters derive LINEAR from a zero
-// vector and CUSTOM from anything else, and nothing but a test can put a FLAT or an
-// AUTO into a clip. So a two-valued display stays honest today, and a control
-// labelled "Flat" would still promise an ease this build cannot store.
+// ★ THE MODE BYTES ARE ON THE WIRE NOW (B2, schema 3), SO FLAT AND AUTO ARE REAL
+// STORED STATES AND THIS ENUM HAS NOT CAUGHT UP. It still projects the four onto
+// two, and a FLAT or an AUTO key therefore displays as "Custom" — an
+// UNDER-STATEMENT rather than a lie, which is the direction this projection was
+// deliberately built to fail in. Widening it (and the labels, and the automation
+// verbs beside them) is its own unit; nothing here is wrong, it is incomplete.
 //-----------------------------------------------------------------------------
 enum Zenith_AnimCurveTangentMode : u_int
 {
@@ -439,9 +439,7 @@ enum Zenith_AnimCurveTangentMode : u_int
 	// lerp/slerp branch for a segment bounded by two of these, which is what every
 	// clip in the tree does today.
 	ZENITH_ANIMCURVE_TANGENT_LINEAR,
-	// Anything else. Including a pair Auto just wrote — which stores CUSTOM, because
-	// at schema 2 a mode is derived from the vector and nothing re-applies Auto when
-	// a neighbour moves.
+	// Anything else: CUSTOM, and — until this enum is widened — FLAT and AUTO too.
 	ZENITH_ANIMCURVE_TANGENT_CUSTOM,
 };
 

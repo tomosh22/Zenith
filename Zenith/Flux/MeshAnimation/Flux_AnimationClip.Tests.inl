@@ -506,9 +506,15 @@ ZENITH_TEST(AnimationSerialization, ClipKeyTangentBlockRoundTrips)
 	ZENITH_ASSERT_EQ(xChannel.GetScaleTangents().GetSize(), 1u, "one tangent entry per scale key");
 	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionTangents().Get(0).m_xInTangent.x, 0.0f, 1e-6f, "tangents default to zero");
 
+	// ★ THE MODE IS STATED, NOT LEFT TO A DERIVATION (B2). Since schema 3 the setters
+	// store all four fields verbatim, so a pair left on the LINEAR default would tell
+	// the sampler to IGNORE these numbers — they would still round-trip through the
+	// file and the pose assertion at the bottom would read the plain lerp.
 	Flux_KeyTangents xPosTangent;
 	xPosTangent.m_xInTangent  = Zenith_Maths::Vector3(0.25f, 0.5f, 0.75f);
 	xPosTangent.m_xOutTangent = Zenith_Maths::Vector3(-1.0f, -2.0f, -3.0f);
+	xPosTangent.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xPosTangent.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetPositionTangent(1u, xPosTangent);
 
 	// A ROTATION tangent is an angular velocity (axis * rad/s), not a quaternion
@@ -516,6 +522,8 @@ ZENITH_TEST(AnimationSerialization, ClipKeyTangentBlockRoundTrips)
 	Flux_KeyTangents xRotTangent;
 	xRotTangent.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f);
 	xRotTangent.m_xOutTangent = Zenith_Maths::Vector3(0.0f, -1.5f, 0.0f);
+	xRotTangent.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xRotTangent.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetRotationTangent(0u, xRotTangent);
 
 	xClip.AddBoneChannel("Spine", std::move(xChannel));
@@ -539,6 +547,15 @@ ZENITH_TEST(AnimationSerialization, ClipKeyTangentBlockRoundTrips)
 	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetRotationTangents().Get(0).m_xInTangent.y,  1.5f,  1e-6f, "rotation angular-velocity in-tangent round-trips");
 	ZENITH_ASSERT_EQ_FLOAT(pxLoaded->GetRotationTangents().Get(0).m_xOutTangent.y, -1.5f, 1e-6f, "rotation angular-velocity out-tangent round-trips");
 	ZENITH_ASSERT_EQ(pxLoaded->GetScaleTangents().GetSize(), 1u, "scale tangent block round-trips its length");
+	// ★ AND SO DO THE MODES, WHICH ARE TWO BYTES PER RECORD SINCE SCHEMA 3 (B2). The
+	// pose assertion below only means anything if key 1's IN end came back CUSTOM: a
+	// LINEAR one ignores the number beside it, so a reader that dropped the byte would
+	// round-trip every float correctly and still sample the plain lerp.
+	ZENITH_ASSERT_TRUE(pxLoaded->GetPositionTangents().Get(1).m_eInMode == Flux_TangentMode::CUSTOM
+		&& pxLoaded->GetPositionTangents().Get(1).m_eOutMode == Flux_TangentMode::CUSTOM,
+		"the authored key's two modes round-trip");
+	ZENITH_ASSERT_TRUE(pxLoaded->GetPositionTangents().Get(0).m_eInMode == Flux_TangentMode::LINEAR,
+		"and an unset key's LINEAR does too, rather than being inferred from its zeroes");
 
 	// ★ THIS ASSERTION USED TO READ "sampling is still linear — the tangent block is
 	// reserved, not consumed", and WU-8.1 is exactly the change that makes that false:
@@ -1769,10 +1786,12 @@ ZENITH_TEST(AnimationReload, ClipParseStreamReportsRefusalsAsAStatus)
 
 ZENITH_TEST(AnimationSerialization, HostileTangentCountRefusedWithoutReserve)
 {
-	// A count of 0xFFFFFFFF followed by eight bytes. At 24 bytes per record — which
-	// is the size at schema <= 2; schema 3 makes it 26 — that claims 96 GB out of a
-	// 12-byte buffer, and the count reaches Zenith_Vector::Reserve() as an allocation
-	// request unless it is refused first.
+	// A count of 0xFFFFFFFF followed by eight bytes. At 26 bytes per record — the
+	// CURRENT size, since schema 3 appended the two mode bytes; schemas 1-2 are 24 —
+	// that claims 104 GB out of a 12-byte buffer, and the count reaches
+	// Zenith_Vector::Reserve() as an allocation request unless it is refused first.
+	// The refusal does not depend on which of the two sizes is used, which is the
+	// point: the budget is arithmetic on the bytes that remain, not a guess.
 	u_int8 auBytes[12] = { 0xFFu, 0xFFu, 0xFFu, 0xFFu,
 	                       0x00u, 0x00u, 0x00u, 0x00u,
 	                       0x00u, 0x00u, 0x00u, 0x00u };
@@ -1823,22 +1842,27 @@ ZENITH_TEST(AnimationSerialization, ExactLengthBlocksAccepted)
 	Flux_KeyTangents xFirst;
 	xFirst.m_xInTangent  = Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f);
 	xFirst.m_xOutTangent = Zenith_Maths::Vector3(4.0f, 5.0f, 6.0f);
+	xFirst.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xFirst.m_eOutMode = Flux_TangentMode::AUTO;
 	Flux_KeyTangents xSecond;
 	xSecond.m_xInTangent  = Zenith_Maths::Vector3(-1.0f, -2.0f, -3.0f);
 	xSecond.m_xOutTangent = Zenith_Maths::Vector3(-4.0f, -5.0f, -6.0f);
+	xSecond.m_eInMode  = Flux_TangentMode::FLAT;
+	xSecond.m_eOutMode = Flux_TangentMode::LINEAR;
 	xIn.PushBack(xFirst);
 	xIn.PushBack(xSecond);
 
 	Zenith_DataStream xWrite;
 	Flux_WriteKeyTangents(xWrite, xIn);
 	const uint64_t ulBlockBytes = xWrite.GetCursor();
-	const uint64_t ulExpectedBytes = sizeof(uint32_t) + 2ull * (6ull * sizeof(float));
-	// ★ AND THE WRITER IS STILL SIX FLOATS PER RECORD (B1). Flux_TangentMode exists
-	// in memory and the reader understands the 26-byte schema-3 record, but the
-	// schema constant is still 2 and this is the assertion that says so in bytes: if
-	// the writer ever starts emitting the two mode bytes without a schema bump, every
-	// committed .zanim in the tree becomes unreadable and this line fails first.
-	ZENITH_ASSERT_EQ(ulBlockBytes, ulExpectedBytes, "fixture: count(4) + 2 * 24 bytes");
+	const uint64_t ulExpectedBytes = sizeof(uint32_t) + 2ull * (6ull * sizeof(float) + 2ull);
+	// ★ THE WRITER EMITS 26 BYTES PER RECORD (B2), AND THIS IS THE ASSERTION THAT
+	// SAYS SO IN BYTES: six floats then the two mode bytes. It is the exact mirror of
+	// the pin it replaces, which said 24 and existed to catch the two bytes arriving
+	// WITHOUT a schema bump. They arrived WITH one; if this line ever reads 24 again
+	// while the schema constant says 3, every committed .zanim in the tree becomes
+	// unreadable and this fails first.
+	ZENITH_ASSERT_EQ(ulBlockBytes, ulExpectedBytes, "fixture: count(4) + 2 * 26 bytes");
 
 	// Wrapped at EXACTLY the written length, so GetRemainingBytes() is the file's
 	// number rather than the allocation's.
@@ -1855,6 +1879,19 @@ ZENITH_TEST(AnimationSerialization, ExactLengthBlocksAccepted)
 		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(0).m_xOutTangent.z,  6.0f, 1e-6f, "record 0 round-trips");
 		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(1).m_xInTangent.y,  -2.0f, 1e-6f, "record 1 round-trips");
 		ZENITH_ASSERT_EQ_FLOAT(xOut.Get(1).m_xOutTangent.x, -4.0f, 1e-6f, "record 1 round-trips");
+
+		// ★ AND SO DO THE MODES, INCLUDING THE TWO NO DERIVATION COULD PRODUCE FROM
+		// THE VECTORS BESIDE THEM — an AUTO and a CUSTOM over non-zero numbers are
+		// what a derivation would have guessed, but a FLAT and a LINEAR over non-zero
+		// ones are not, so a writer that dropped the bytes fails here rather than
+		// passing by coincidence.
+		ZENITH_ASSERT_TRUE(xOut.Get(0).m_eInMode == Flux_TangentMode::CUSTOM
+			&& xOut.Get(0).m_eOutMode == Flux_TangentMode::AUTO,
+			"record 0's two modes survive the round trip");
+		ZENITH_ASSERT_TRUE(xOut.Get(1).m_eInMode == Flux_TangentMode::FLAT
+			&& xOut.Get(1).m_eOutMode == Flux_TangentMode::LINEAR,
+			"★ and record 1's FLAT-and-LINEAR over NON-ZERO vectors do too — the pair the old derivation "
+			"could never have produced");
 	}
 }
 
@@ -2082,12 +2119,16 @@ ZENITH_TEST(AnimationTangents, PositionTangentsBendTheSegmentByTheHermiteTerm)
 	xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
 	xChannel.SortKeyframes();
 
+	// The authored ends are CUSTOM, stated (B2): a LINEAR end IGNORES the number
+	// beside it, so a fixture on the default mode would be asking for the lerp.
 	Flux_KeyTangents xStart;
 	xStart.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	xStart.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetPositionTangent(0u, xStart);
 
 	Flux_KeyTangents xEnd;
 	xEnd.m_xInTangent = Zenith_Maths::Vector3(0.0f, -6.0f, 0.0f);
+	xEnd.m_eInMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetPositionTangent(1u, xEnd);
 
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.0f), Zenith_Maths::Vector3(2.0f, 3.0f, 0.0f), 1e-5f),
@@ -2112,6 +2153,7 @@ ZENITH_TEST(AnimationTangents, PositionTangentsBendTheSegmentByTheHermiteTerm)
 	xChannel.SortKeyframes();
 	Flux_KeyTangents xScaleStart;
 	xScaleStart.m_xOutTangent = Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f);
+	xScaleStart.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetScaleTangent(0u, xScaleStart);
 	// P0 = P1 = 1, m0 = 4, m1 = slope = 0 => x = 0.125*2*4 = 1.0 above the flat line.
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SampleScale(1.0f), Zenith_Maths::Vector3(2.0f, 1.0f, 1.0f), 1e-5f),
@@ -2133,15 +2175,18 @@ ZENITH_TEST(AnimationTangents, AnUnsetTangentIsTheSegmentSlopeNotAFlatOne)
 	xChannel.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
 	xChannel.SortKeyframes();
 
+	// ONE end authored (CUSTOM, stated), the other left on the LINEAR default — which
+	// is exactly the half-authored key this test is about.
 	Flux_KeyTangents xStart;
 	xStart.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	xStart.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetPositionTangent(0u, xStart);
 
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.0f), Zenith_Maths::Vector3(1.5f, 1.5f, 0.0f), 1e-5f),
 		"the unset end contributes the segment slope, so x stays linear-ish rather than easing");
 
-	// The same statement about the DERIVATION rather than about a bare predicate:
-	// exactly zero is the LINEAR end, and the compare is exact.
+	// The same statement about the LEGACY derivation rather than about a bare
+	// predicate: exactly zero is the LINEAR end, and the compare is exact.
 	Flux_KeyTangents xProbe;
 	xProbe.m_xInTangent = Zenith_Maths::Vector3(0.0f);
 	xProbe.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 1.0e-20f, 0.0f);
@@ -2185,6 +2230,8 @@ ZENITH_TEST(AnimationTangents, RotationVelocityIsContinuousAcrossAKeyWithMatched
 	Flux_KeyTangents xMatched;
 	xMatched.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
 	xMatched.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xMatched.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xMatched.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetRotationTangent(1u, xMatched);
 
 	{
@@ -2206,6 +2253,8 @@ ZENITH_TEST(AnimationTangents, RotationVelocityIsContinuousAcrossAKeyWithMatched
 	Flux_KeyTangents xMismatched;
 	xMismatched.m_xInTangent  = Zenith_Maths::Vector3(0.0f,  2.0f, 0.0f);
 	xMismatched.m_xOutTangent = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+	xMismatched.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xMismatched.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetRotationTangent(1u, xMismatched);
 	{
 		const Zenith_Maths::Vector3 xLeft  = TanMeasureAngularVelocity(xChannel, 1.0f - fH, 1.0f);
@@ -2246,32 +2295,69 @@ ZENITH_TEST(AnimationTangents, AutoTangentsAreTheNeighbourSlopeAndStillSampleLin
 	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(1.75f), Zenith_Maths::Vector3(3.5f, 0.0f, 0.0f), 1e-5f),
 		"...on the second segment too");
 
-	// ComputeFlatTangents puts the track back to zeroes, i.e. back to LINEAR — which
-	// on collinear keys is indistinguishable in the pose, so the tangents themselves
-	// are what has to be asserted.
+	// ★ AND THE AUTO KEYS SAY SO (B2). The preset used to leave every key it wrote
+	// reading CUSTOM, because the setter derived the mode from the vector and a
+	// non-zero slope is indistinguishable from a hand drag that way. AUTO is the
+	// PROVENANCE that lets the document recompute this key when a neighbour moves.
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const Flux_KeyTangents& xTangent = xChannel.GetPositionTangents().Get(u);
+		ZENITH_ASSERT_TRUE(xTangent.m_eInMode == Flux_TangentMode::AUTO
+			&& xTangent.m_eOutMode == Flux_TangentMode::AUTO,
+			"key %u is marked AUTO on both ends, not CUSTOM", u);
+	}
+
+	// ★ ComputeLinearTangents PUTS THE TRACK BACK ON LINEAR (B2), and it is the
+	// preset that used to be called ComputeFlatTangents. On collinear keys the pose
+	// is indistinguishable either way, so the tangents themselves are what has to be
+	// asserted.
+	xChannel.ComputeLinearTangents(FLUX_ANIM_TRACK_POSITION);
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const Flux_KeyTangents& xLinear = xChannel.GetPositionTangents().Get(u);
+		ZENITH_ASSERT_TRUE(xLinear.m_eInMode == Flux_TangentMode::LINEAR
+			&& xLinear.m_eOutMode == Flux_TangentMode::LINEAR,
+			"ComputeLinearTangents puts key %u on the LINEAR mode", u);
+		ZENITH_ASSERT_TRUE(xLinear.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+			&& xLinear.m_xOutTangent == Zenith_Maths::Vector3(0.0f),
+			"and zeroes both vectors of key %u EXACTLY", u);
+	}
+	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(0.25f), Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), 1e-6f),
+		"and the pose is untouched, because LINEAR is the branch the line was already on");
+
+	// ★★ AND ComputeFlatTangents WRITES THE VERY SAME SIX FLOATS AND MEANS THE
+	// OPPOSITE (B2). Identical numbers, mode FLAT, and the pose MOVES — which is
+	// exactly the re-timing the old name promised and the old body could not deliver.
+	// Asserting both the mode AND the pose is the point: a preset that wrote FLAT and
+	// a sampler that ignored it would pass the first half alone.
 	xChannel.ComputeFlatTangents(FLUX_ANIM_TRACK_POSITION);
 	for (u_int u = 0; u < 3u; ++u)
 	{
 		const Flux_KeyTangents& xFlat = xChannel.GetPositionTangents().Get(u);
-		// ★ AND IT LANDS ON LINEAR, NOT ON Flux_TangentMode::FLAT, despite the name.
-		// Writing FLAT here would give every key of the track a genuine zero
-		// derivative and re-time it into an ease — see the header.
-		ZENITH_ASSERT_TRUE(xFlat.m_eInMode == Flux_TangentMode::LINEAR
-			&& xFlat.m_eOutMode == Flux_TangentMode::LINEAR,
-			"ComputeFlatTangents puts key %u back on the LINEAR mode", u);
+		ZENITH_ASSERT_TRUE(xFlat.m_eInMode == Flux_TangentMode::FLAT
+			&& xFlat.m_eOutMode == Flux_TangentMode::FLAT,
+			"ComputeFlatTangents puts key %u on the FLAT mode — a genuine zero derivative", u);
 		ZENITH_ASSERT_TRUE(xFlat.m_xInTangent == Zenith_Maths::Vector3(0.0f)
 			&& xFlat.m_xOutTangent == Zenith_Maths::Vector3(0.0f),
-			"and zeroes both vectors of key %u EXACTLY", u);
+			"with the SAME zero vectors the Linear preset writes, on key %u", u);
 	}
-	ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xChannel.SamplePosition(0.25f), Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f), 1e-6f),
-		"and the pose is untouched, because zero already meant linear");
+	// A cubic Hermite with both end derivatives zero is a smoothstep: at u = 0.25 it
+	// is 3u^2 - 2u^3 = 0.15625 of the way along a 2-unit segment, i.e. x = 0.3125,
+	// where the lerp reads 0.5. Nowhere near, which is the property.
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.SamplePosition(0.25f).x, 0.3125f, 1e-4f,
+		"★ FLAT ends ease the segment — the same numbers as Linear, a different curve");
 
-	// A track with nothing to measure gets zero rather than a division by a zero span.
+	// A track with nothing to measure gets a zero slope rather than a division by a
+	// zero span — and it is still AUTO, because "there is no slope here" is an answer
+	// about this moment and the key must be recomputed when a second one arrives.
 	Flux_BoneChannel xSingle;
 	xSingle.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(7.0f, 0.0f, 0.0f));
 	xSingle.ComputeAutoTangents(FLUX_ANIM_TRACK_POSITION);
-	ZENITH_ASSERT_TRUE(xSingle.GetPositionTangents().Get(0).m_eOutMode == Flux_TangentMode::LINEAR,
-		"a one-key track has no slope to measure, and says so with a zero — which derives LINEAR");
+	ZENITH_ASSERT_TRUE(xSingle.GetPositionTangents().Get(0).m_eOutMode == Flux_TangentMode::AUTO,
+		"★ a one-key track has no slope to measure and stores a zero — with the mode as SET (AUTO), not "
+		"downgraded to LINEAR, which would opt the key out of ever being recomputed");
+	ZENITH_ASSERT_TRUE(xSingle.GetPositionTangents().Get(0).m_xOutTangent == Zenith_Maths::Vector3(0.0f),
+		"and the vector really is the zero the honest answer is");
 }
 
 // ★ (6) THE ROTATION HALF OF THE SAME THING. A uniform 30 deg/s sweep about one
@@ -2309,23 +2395,30 @@ ZENITH_TEST(AnimationTangents, AutoRotationTangentsAreAConstantAngularVelocityOn
 	ZENITH_ASSERT_TRUE(RootMotionQuatEquals(xMid, xExpectedMid, 1e-4f),
 		"w = v/dt collapses the cumulative Bezier back onto the slerp");
 
-	xChannel.ComputeFlatTangents(FLUX_ANIM_TRACK_ROTATION);
+	ZENITH_ASSERT_TRUE(xChannel.GetRotationTangents().Get(2u).m_eInMode == Flux_TangentMode::AUTO
+		&& xChannel.GetRotationTangents().Get(2u).m_eOutMode == Flux_TangentMode::AUTO,
+		"the rotation preset marks its keys AUTO too (B2), not CUSTOM");
+
+	xChannel.ComputeLinearTangents(FLUX_ANIM_TRACK_ROTATION);
 	ZENITH_ASSERT_TRUE(xChannel.GetRotationTangents().Get(2u).m_eOutMode == Flux_TangentMode::LINEAR,
-		"ComputeFlatTangents puts the rotation track back on LINEAR too");
+		"ComputeLinearTangents puts the rotation track back on LINEAR");
+
+	xChannel.ComputeFlatTangents(FLUX_ANIM_TRACK_ROTATION);
+	ZENITH_ASSERT_TRUE(xChannel.GetRotationTangents().Get(2u).m_eOutMode == Flux_TangentMode::FLAT,
+		"★ and ComputeFlatTangents puts it on FLAT — the two presets are no longer the same function "
+		"under two names");
 }
 
 // ============================================================================
-// B1 — PER-KEY TANGENT MODES, AT SCHEMA 2.
+// PER-KEY TANGENT MODES, ON THE WIRE (B1 in memory, B2 at schema 3).
 //
-// ★ THE UNIT IS INERT ON DISK AND THAT IS THE POINT. Flux_TangentMode now exists
-// per end of every key, the sampler branches on IT rather than on whether the
-// vector happens to be zero, and Flux_ReadKeyTangents already understands the
-// 26-byte schema-3 record — but uZENITH_ANIMATION_SCHEMA_CURRENT is still 2, the
-// writer still emits six floats, and the 17 authored clips in the tree are
-// untouched. So every test below is either about the DERIVATION that makes the two
-// representations agree, or about the reader understanding a record nothing writes
-// yet, or about FLAT — the mode the zero vector used to be spoken for by, reachable
-// only through the ZENITH_TESTING door.
+// ★ THE MODE IS NOW A STORED FACT RATHER THAN A FUNCTION OF THE VECTOR, and that
+// is what every test below is about. Flux_TangentMode sits on each end of each key,
+// the sampler branches on IT rather than on whether the vector happens to be zero,
+// the writer emits two bytes per record and the reader reads them back. The
+// derivation survives with exactly two callers — the schema-<=2 read branch and the
+// migrator's 2->3 step — so it is still tested, but as a description of a LEGACY
+// FILE FORMAT rather than as the invariant the setters maintain.
 // ============================================================================
 
 namespace
@@ -2351,9 +2444,10 @@ namespace
 		xChannel.SortKeyframes();
 	}
 
-	// One 26-byte schema-3 tangent record, written by hand. There is no writer for
-	// this layout in the engine — that is the NEXT unit — so a test that wants to
-	// prove the READER understands it has to lay the bytes out itself.
+	// One 26-byte schema-3 tangent record, written by hand. Flux_WriteKeyTangents
+	// emits this layout now (B2), but a test that wants to lay down a mode byte the
+	// enum has NO value for — the corruption case — cannot get there through a
+	// Flux_TangentMode, so the bytes are written out longhand.
 	void TanWriteSchema3Record(Zenith_DataStream& xStream, const Zenith_Maths::Vector3& xIn,
 		const Zenith_Maths::Vector3& xOut, uint8_t uInMode, uint8_t uOutMode)
 	{
@@ -2365,6 +2459,22 @@ namespace
 		xStream << xOut.z;
 		xStream << uInMode;
 		xStream << uOutMode;
+	}
+
+	// ★ THE LEGACY 24-BYTE RECORD, WHICH NOTHING IN THE ENGINE WRITES ANY MORE (B2).
+	// Flux_WriteKeyTangents used to produce exactly these bytes, so the schema-<=2
+	// tests could build their fixtures with it; now that it appends two mode bytes,
+	// a test of the OLD layout has to describe the old layout itself. Same reasoning
+	// as Zenith_Tools_AnimMigrate.Tests.inl's legacy clip writer.
+	void TanWriteLegacyRecord(Zenith_DataStream& xStream, const Zenith_Maths::Vector3& xIn,
+		const Zenith_Maths::Vector3& xOut)
+	{
+		xStream << xIn.x;
+		xStream << xIn.y;
+		xStream << xIn.z;
+		xStream << xOut.x;
+		xStream << xOut.y;
+		xStream << xOut.z;
 	}
 }
 
@@ -2379,7 +2489,7 @@ ZENITH_TEST(AnimationTangents, DeriveModesFromVectors_ZeroIsLinearNonZeroIsCusto
 	Flux_DeriveTangentModesFromVectors(xBothZero);
 	ZENITH_ASSERT_TRUE(xBothZero.m_eInMode == Flux_TangentMode::LINEAR
 		&& xBothZero.m_eOutMode == Flux_TangentMode::LINEAR,
-		"★ two zero vectors are two LINEAR ends — which is every key of every clip in the tree");
+		"★ two zero vectors are two LINEAR ends — which is every key of every clip written at schema 1 or 2");
 
 	Flux_KeyTangents xInOnly;
 	xInOnly.m_xInTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
@@ -2396,16 +2506,18 @@ ZENITH_TEST(AnimationTangents, DeriveModesFromVectors_ZeroIsLinearNonZeroIsCusto
 		"★ and the compare is EXACT — a deliberately tiny authored tangent is still authored, on one "
 		"component alone");
 
-	// ★ IT OVERWRITES WHATEVER MODE IT IS HANDED, INCLUDING THE TWO NOTHING CAN
-	// WRITE YET. At schema 2 a FLAT that survived a setter would change the pose,
-	// vanish on the next save, and come back LINEAR on the next load.
+	// ★ IT OVERWRITES WHATEVER MODE IT IS HANDED, WHICH IS EXACTLY RIGHT FOR ITS TWO
+	// REMAINING CALLERS AND EXACTLY WRONG EVERYWHERE ELSE (B2). A legacy record has
+	// no mode to preserve, so there is nothing to destroy; a stored pair does, which
+	// is why the setters stopped calling this and why a third caller would be a
+	// regression rather than a convenience.
 	Flux_KeyTangents xPreSet;
 	xPreSet.m_eInMode = Flux_TangentMode::FLAT;
 	xPreSet.m_eOutMode = Flux_TangentMode::AUTO;
 	xPreSet.m_xOutTangent = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
 	Flux_DeriveTangentModesFromVectors(xPreSet);
 	ZENITH_ASSERT_TRUE(xPreSet.m_eInMode == Flux_TangentMode::LINEAR,
-		"a FLAT handed in over a zero vector comes back LINEAR at schema 2");
+		"a FLAT handed to the LEGACY derivation over a zero vector comes back LINEAR");
 	ZENITH_ASSERT_TRUE(xPreSet.m_eOutMode == Flux_TangentMode::CUSTOM,
 		"and an AUTO over a non-zero one comes back CUSTOM");
 
@@ -2418,15 +2530,20 @@ ZENITH_TEST(AnimationTangents, DeriveModesFromVectors_ZeroIsLinearNonZeroIsCusto
 	ZENITH_ASSERT_TRUE(Flux_TangentModeUsesVector(Flux_TangentMode::CUSTOM), "and so does CUSTOM");
 }
 
-// ★ (B1-2) THE SETTERS ARE THE ONE PLACE THE INVARIANT IS MAINTAINED, AND A DRAG
-// BACK TO ZERO READS LINEAR AGAIN.
+// ★ (B2-2) THE SETTERS STORE WHAT THEY ARE GIVEN — ALL FOUR FIELDS, NO DERIVATION.
 //
-// ★ THE SECOND HALF IS THE LOAD-BEARING ONE. If a setter stored CUSTOM and left it
-// there, a user who dragged a handle out and then back onto its key would leave the
-// key with a zero vector and a CUSTOM mode — a genuine zero derivative — and the
-// segment would silently become an ease that no vector comparison, no byte
-// comparison and no undo-depth check could see.
-ZENITH_TEST(AnimationTangents, SetTangentDerivesTheModeAndAZeroDragReadsLinearAgain)
+// ★ THIS IS THE PIN THAT REPLACED "THE SETTER DERIVES THE MODE". It is the same
+// three functions and the opposite contract: the mode used to be overwritten from
+// the vector on the way in (right while the mode was off the wire, because a mode
+// the writer could not emit would change the pose and vanish on the next save), and
+// it is now stored verbatim (right now that it IS emitted, because a derivation
+// would silently turn every FLAT request into a LINEAR store and every AUTO into a
+// CUSTOM one).
+//
+// ★ THE TWO IMPOSSIBLE-UNDER-DERIVATION PAIRS ARE THE LOAD-BEARING ASSERTIONS: a
+// FLAT over an exact zero, and a LINEAR over a non-zero vector. Either one coming
+// back changed is the derivation still running somewhere.
+ZENITH_TEST(AnimationTangents, SetTangentStoresWhatItIsGivenIncludingTheModes)
 {
 	Flux_BoneChannel xChannel;
 	xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -2440,43 +2557,58 @@ ZENITH_TEST(AnimationTangents, SetTangentDerivesTheModeAndAZeroDragReadsLinearAg
 
 	Flux_KeyTangents xAuthored;
 	xAuthored.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 6.0f, 0.0f);
+	xAuthored.m_eOutMode = Flux_TangentMode::CUSTOM;
 	xChannel.SetPositionTangent(0u, xAuthored);
 	ZENITH_ASSERT_TRUE(xChannel.GetPositionTangents().Get(0).m_eOutMode == Flux_TangentMode::CUSTOM,
-		"a non-zero vector stores CUSTOM");
+		"the CUSTOM this caller asked for is the CUSTOM that is stored");
 	ZENITH_ASSERT_TRUE(xChannel.GetPositionTangents().Get(0).m_eInMode == Flux_TangentMode::LINEAR,
-		"and the other end of that key is untouched");
+		"and the other end of that key is whatever the same struct said, here the LINEAR default");
 	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionTangents().Get(0).m_xOutTangent.y, 6.0f, 0.0f,
-		"★ and the VECTOR is stored EXACTLY — only the mode is derived");
+		"★ and the VECTOR is stored EXACTLY — nothing on this path clamps or tidies one");
 
-	// ★ THE DRAG BACK TO ZERO.
-	Flux_KeyTangents xDraggedBack;
-	xChannel.SetPositionTangent(0u, xDraggedBack);
-	ZENITH_ASSERT_TRUE(xChannel.GetPositionTangents().Get(0).m_eOutMode == Flux_TangentMode::LINEAR,
-		"★ a handle returned to exactly zero reads LINEAR again, not CUSTOM-with-a-zero");
+	// ★ A FLAT OVER AN EXACT ZERO. The derivation called this LINEAR; a FLAT end is
+	// a genuine zero DERIVATIVE and a LINEAR one substitutes the segment slope, so
+	// the two sample completely differently over identical numbers.
+	Flux_KeyTangents xFlat;
+	xFlat.m_eInMode = Flux_TangentMode::FLAT;
+	xFlat.m_eOutMode = Flux_TangentMode::FLAT;
+	xChannel.SetPositionTangent(0u, xFlat);
+	ZENITH_ASSERT_TRUE(xChannel.GetPositionTangents().Get(0).m_eInMode == Flux_TangentMode::FLAT
+		&& xChannel.GetPositionTangents().Get(0).m_eOutMode == Flux_TangentMode::FLAT,
+		"★ FLAT over two ZERO vectors SURVIVES the setter — the pair the derivation used to flatten to "
+		"LINEAR, which is the whole reason an ease was unauthorable");
+	ZENITH_ASSERT_TRUE(xChannel.GetPositionTangents().Get(0).m_xInTangent == Zenith_Maths::Vector3(0.0f),
+		"with its zero vectors intact");
 
-	// The mode fields on the ARGUMENT are ignored, which is what makes the setter
-	// the single authority rather than one of two.
-	Flux_KeyTangents xLies;
-	xLies.m_eInMode = Flux_TangentMode::CUSTOM;
-	xLies.m_eOutMode = Flux_TangentMode::FLAT;
-	xChannel.SetPositionTangent(1u, xLies);
+	// ★ AND A LINEAR OVER A NON-ZERO VECTOR, the other direction the derivation
+	// could not reach. A LINEAR end ignores the number beside it, so this is a
+	// legitimate stored state and not a contradiction.
+	Flux_KeyTangents xLinearOverNumbers;
+	xLinearOverNumbers.m_xInTangent = Zenith_Maths::Vector3(0.0f, 3.0f, 0.0f);
+	xLinearOverNumbers.m_xOutTangent = Zenith_Maths::Vector3(0.0f, -3.0f, 0.0f);
+	xLinearOverNumbers.m_eInMode = Flux_TangentMode::LINEAR;
+	xLinearOverNumbers.m_eOutMode = Flux_TangentMode::LINEAR;
+	xChannel.SetPositionTangent(1u, xLinearOverNumbers);
 	ZENITH_ASSERT_TRUE(xChannel.GetPositionTangents().Get(1).m_eInMode == Flux_TangentMode::LINEAR
 		&& xChannel.GetPositionTangents().Get(1).m_eOutMode == Flux_TangentMode::LINEAR,
-		"★ the caller's mode fields are IGNORED — zero vectors mean two LINEAR ends whatever was asked for");
+		"★ LINEAR over NON-ZERO vectors survives too — a derivation would have called both ends CUSTOM");
+	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionTangents().Get(1).m_xInTangent.y, 3.0f, 0.0f,
+		"and the ignored numbers are still there, exactly");
 
-	// All three setters, because a derivation added to one of them and forgotten in
-	// the other two would leave two tracks sampling on stale modes.
+	// All three setters, because a derivation left behind in one of them and removed
+	// from the other two would leave one track silently unable to hold a mode.
 	Flux_KeyTangents xRot;
 	xRot.m_xInTangent = Zenith_Maths::Vector3(0.0f, 2.0f, 0.0f);
+	xRot.m_eInMode = Flux_TangentMode::AUTO;
 	xChannel.SetRotationTangent(0u, xRot);
-	ZENITH_ASSERT_TRUE(xChannel.GetRotationTangents().Get(0).m_eInMode == Flux_TangentMode::CUSTOM,
-		"SetRotationTangent derives too");
+	ZENITH_ASSERT_TRUE(xChannel.GetRotationTangents().Get(0).m_eInMode == Flux_TangentMode::AUTO,
+		"SetRotationTangent stores an AUTO verbatim as well");
 
 	Flux_KeyTangents xScale;
-	xScale.m_xOutTangent = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	xScale.m_eOutMode = Flux_TangentMode::FLAT;
 	xChannel.SetScaleTangent(0u, xScale);
-	ZENITH_ASSERT_TRUE(xChannel.GetScaleTangents().Get(0).m_eOutMode == Flux_TangentMode::CUSTOM,
-		"and so does SetScaleTangent");
+	ZENITH_ASSERT_TRUE(xChannel.GetScaleTangents().Get(0).m_eOutMode == Flux_TangentMode::FLAT,
+		"and so does SetScaleTangent — a FLAT over a zero, which is the pair most easily lost");
 }
 
 // ★ (B1-3) A SCHEMA-2 BLOCK IS SIX FLOATS AND THE MODES ARE DERIVED. The wrapped
@@ -2485,19 +2617,19 @@ ZENITH_TEST(AnimationTangents, SetTangentDerivesTheModeAndAZeroDragReadsLinearAg
 // off-by-two would be invisible on an over-allocated owned stream.
 ZENITH_TEST(AnimationSerialization, Schema2BlockReadsSixFloatsAndDerivesModes)
 {
-	Zenith_Vector<Flux_KeyTangents> xIn;
-	Flux_KeyTangents xLinearThenCustom;
-	xLinearThenCustom.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 4.0f, 0.0f);
-	Flux_KeyTangents xCustomThenLinear;
-	xCustomThenLinear.m_xInTangent = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
-	xIn.PushBack(xLinearThenCustom);
-	xIn.PushBack(xCustomThenLinear);
-
+	// ★ HAND-LAID, BECAUSE THE WRITER NO LONGER PRODUCES THIS LAYOUT (B2). This
+	// fixture used to be built by calling Flux_WriteKeyTangents, on the premise that
+	// the writer's output WAS the schema-2 record; schema 3 ended that, and a test
+	// that kept calling it would be feeding 26-byte records to a 24-byte reader and
+	// pinning nothing about the legacy format at all.
 	Zenith_DataStream xWrite;
-	Flux_WriteKeyTangents(xWrite, xIn);
+	xWrite << static_cast<uint32_t>(2);
+	TanWriteLegacyRecord(xWrite, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Vector3(0.0f, 4.0f, 0.0f));
+	TanWriteLegacyRecord(xWrite, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(0.0f));
+
 	const uint64_t ulBlockBytes = xWrite.GetCursor();
 	ZENITH_ASSERT_EQ(ulBlockBytes, static_cast<uint64_t>(sizeof(uint32_t) + 2ull * 24ull),
-		"fixture: the writer is still count(4) + 2 * 24 bytes at schema 2");
+		"fixture: the LEGACY record is count(4) + 2 * 24 bytes");
 
 	Zenith_DataStream xExact(xWrite.GetData(), ulBlockBytes);
 	Zenith_Vector<Flux_KeyTangents> xOut;
@@ -2564,12 +2696,13 @@ ZENITH_TEST(AnimationSerialization, Schema3BlockReadsModes)
 	// 26 it is not. A reader that budgeted with the wrong record size would either
 	// refuse a legitimate block or accept one whose bytes cannot back it, and only a
 	// fixture sitting on the boundary can tell those apart.
-	Zenith_Vector<Flux_KeyTangents> xTwoSixFloat;
-	xTwoSixFloat.PushBack(Flux_KeyTangents());
-	xTwoSixFloat.PushBack(Flux_KeyTangents());
 	Zenith_DataStream xNarrowWrite;
-	Flux_WriteKeyTangents(xNarrowWrite, xTwoSixFloat);
+	xNarrowWrite << static_cast<uint32_t>(2);
+	TanWriteLegacyRecord(xNarrowWrite, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Vector3(0.0f));
+	TanWriteLegacyRecord(xNarrowWrite, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Vector3(0.0f));
 	const uint64_t ulNarrowBytes = xNarrowWrite.GetCursor();
+	ZENITH_ASSERT_EQ(ulNarrowBytes, static_cast<uint64_t>(sizeof(uint32_t) + 2ull * 24ull),
+		"fixture: two SIX-FLOAT records — hand-laid, because Flux_WriteKeyTangents emits 26 now (B2)");
 
 	Zenith_DataStream xNarrow(xNarrowWrite.GetData(), ulNarrowBytes);
 	Zenith_Vector<Flux_KeyTangents> xNarrowOut;
@@ -2634,13 +2767,14 @@ ZENITH_TEST(AnimationTangents, FlatEndYieldsZeroDerivativeAtTheKey)
 	ZENITH_ASSERT_EQ_FLOAT(TanMeasurePositionRateX(xChannel, 1.0f, 1.0f + fH), 2.0f, 1e-2f,
 		"and leaves at it");
 
-	// ★ FLAT WITH ZERO VECTORS, which is the pair the derivation would call LINEAR —
-	// so this is reachable ONLY through the ZENITH_TESTING door, and that is exactly
-	// what makes it the test of the MODE rather than of the numbers.
-	Flux_KeyTangents xZero;
-	xChannel.SetPositionTangent(1u, xZero);
-	xChannel.SetTangentModesForTesting(FLUX_ANIM_TRACK_POSITION, 1u,
-		Flux_TangentMode::FLAT, Flux_TangentMode::FLAT);
+	// ★ FLAT WITH ZERO VECTORS — the pair the derivation used to call LINEAR, and
+	// which the ORDINARY SETTER now stores (B2). This used to need a
+	// ZENITH_TESTING-only door to reach, which is exactly what "FLAT is not
+	// authorable" meant in practice; the door is gone with the reason for it.
+	Flux_KeyTangents xFlatPair;
+	xFlatPair.m_eInMode = Flux_TangentMode::FLAT;
+	xFlatPair.m_eOutMode = Flux_TangentMode::FLAT;
+	xChannel.SetPositionTangent(1u, xFlatPair);
 
 	ZENITH_ASSERT_EQ_FLOAT(TanMeasurePositionRateX(xChannel, 1.0f - fH, 1.0f), 0.0f, 1e-2f,
 		"★ the curve ARRIVES at the key with a zero derivative — an ease-in, which zero-means-linear "
@@ -2658,8 +2792,10 @@ ZENITH_TEST(AnimationTangents, FlatEndYieldsZeroDerivativeAtTheKey)
 
 	// ★ THE SAME DATA, THE MODE PUT BACK: the vectors never moved, so if the rate
 	// returns to the segment slope the ONLY thing that decided the shape was the mode.
-	xChannel.SetTangentModesForTesting(FLUX_ANIM_TRACK_POSITION, 1u,
-		Flux_TangentMode::LINEAR, Flux_TangentMode::LINEAR);
+	Flux_KeyTangents xLinearPair;
+	xLinearPair.m_eInMode = Flux_TangentMode::LINEAR;
+	xLinearPair.m_eOutMode = Flux_TangentMode::LINEAR;
+	xChannel.SetPositionTangent(1u, xLinearPair);
 	ZENITH_ASSERT_EQ_FLOAT(TanMeasurePositionRateX(xChannel, 1.0f - fH, 1.0f), 2.0f, 1e-2f,
 		"★ back to the segment slope on IDENTICAL vectors — the mode is what chose the shape");
 	ZENITH_ASSERT_EQ_FLOAT(TanMeasurePositionRateX(xChannel, 1.0f, 1.0f + fH), 2.0f, 1e-2f,
@@ -2687,10 +2823,11 @@ ZENITH_TEST(AnimationTangents, FlatDiffersFromLinearOnARotationSegment)
 	ZENITH_ASSERT_EQ_FLOAT(TanMeasureAngularVelocity(xChannel, 1.0f, 1.0f + fH).y, glm::radians(60.0f), 1e-2f,
 		"and to the right of it");
 
-	Flux_KeyTangents xZero;
-	xChannel.SetRotationTangent(1u, xZero);
-	xChannel.SetTangentModesForTesting(FLUX_ANIM_TRACK_ROTATION, 1u,
-		Flux_TangentMode::FLAT, Flux_TangentMode::FLAT);
+	// Zero vectors, mode FLAT, through the ordinary setter (B2).
+	Flux_KeyTangents xFlatPair;
+	xFlatPair.m_eInMode = Flux_TangentMode::FLAT;
+	xFlatPair.m_eOutMode = Flux_TangentMode::FLAT;
+	xChannel.SetRotationTangent(1u, xFlatPair);
 
 	const Zenith_Maths::Vector3 xLeft  = TanMeasureAngularVelocity(xChannel, 1.0f - fH, 1.0f);
 	const Zenith_Maths::Vector3 xRight = TanMeasureAngularVelocity(xChannel, 1.0f, 1.0f + fH);
@@ -2714,9 +2851,15 @@ ZENITH_TEST(AnimationTangents, FlatDiffersFromLinearOnARotationSegment)
 // The existing oracle unit above pins that a channel with zero VECTORS matches the
 // lerp/slerp reference. What B1 changed is WHICH TEST selects that branch, and this
 // is the fixture that can tell the two apart: non-zero vectors left in place with
-// both ends forced to LINEAR. Under the old rule that data was curved; under the new
+// both ends set to LINEAR. Under the old rule that data was curved; under the new
 // one it must be exactly the reference again, because a LINEAR end ignores its
 // stored number entirely.
+//
+// ★ AND SINCE B2 THE WHOLE FIXTURE GOES THROUGH THE ORDINARY SETTER. Both halves
+// of it — the CUSTOM bend and the LINEAR-over-non-zero state — used to be
+// unreachable without a ZENITH_TESTING door (the first because the vectors would
+// have derived CUSTOM by accident rather than by request, the second because
+// nothing could ask for it at all).
 ZENITH_TEST(AnimationTangents, AllLinearDataSamplesBitIdenticalToTheReference)
 {
 	Flux_BoneChannel xChannel;
@@ -2731,6 +2874,8 @@ ZENITH_TEST(AnimationTangents, AllLinearDataSamplesBitIdenticalToTheReference)
 	Flux_KeyTangents xBend;
 	xBend.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 9.0f, 0.0f);
 	xBend.m_xOutTangent = Zenith_Maths::Vector3(0.0f, -9.0f, 0.0f);
+	xBend.m_eInMode  = Flux_TangentMode::CUSTOM;
+	xBend.m_eOutMode = Flux_TangentMode::CUSTOM;
 	for (u_int u = 0; u < 3u; ++u)
 	{
 		xChannel.SetPositionTangent(u, xBend);
@@ -2739,13 +2884,15 @@ ZENITH_TEST(AnimationTangents, AllLinearDataSamplesBitIdenticalToTheReference)
 	ZENITH_ASSERT_TRUE(std::abs(xChannel.SamplePosition(0.5f).y) > 0.5f,
 		"fixture: the authored CUSTOM tangents really do bend the curve off the line");
 
-	// ★ NOW THE MODE ALONE, WITH EVERY VECTOR LEFT EXACTLY WHERE IT IS.
+	// ★ NOW THE MODE ALONE, WITH EVERY VECTOR LEFT EXACTLY WHERE IT IS — and through
+	// the production setter, which is the state B2 made expressible.
+	Flux_KeyTangents xLinearOverBend = xBend;
+	xLinearOverBend.m_eInMode  = Flux_TangentMode::LINEAR;
+	xLinearOverBend.m_eOutMode = Flux_TangentMode::LINEAR;
 	for (u_int u = 0; u < 3u; ++u)
 	{
-		xChannel.SetTangentModesForTesting(FLUX_ANIM_TRACK_POSITION, u,
-			Flux_TangentMode::LINEAR, Flux_TangentMode::LINEAR);
-		xChannel.SetTangentModesForTesting(FLUX_ANIM_TRACK_ROTATION, u,
-			Flux_TangentMode::LINEAR, Flux_TangentMode::LINEAR);
+		xChannel.SetPositionTangent(u, xLinearOverBend);
+		xChannel.SetRotationTangent(u, xLinearOverBend);
 	}
 	ZENITH_ASSERT_EQ_FLOAT(xChannel.GetPositionTangents().Get(1).m_xInTangent.y, 9.0f, 0.0f,
 		"the stored vectors are STILL non-zero — nothing was tidied away");
@@ -2803,10 +2950,11 @@ ZENITH_TEST(AnimationTangents, ComputeAutoTangentForKeyIsPureAndCentred)
 			"key %u's IN tangent is the line's slope", u);
 		ZENITH_ASSERT_TRUE(RootMotionVec3Equals(xAuto.m_xOutTangent, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f), 1e-5f),
 			"and key %u's IN == OUT, because Auto is a SMOOTH key", u);
-		ZENITH_ASSERT_TRUE(xAuto.m_eInMode == Flux_TangentMode::CUSTOM
-			&& xAuto.m_eOutMode == Flux_TangentMode::CUSTOM,
-			"★ and the answer carries the modes the setters WOULD derive, so a caller may compare it "
-			"against a stored pair without writing first");
+		ZENITH_ASSERT_TRUE(xAuto.m_eInMode == Flux_TangentMode::AUTO
+			&& xAuto.m_eOutMode == Flux_TangentMode::AUTO,
+			"★ and both ends come back AUTO (B2), not CUSTOM — that mode is the PROVENANCE the document's "
+			"maintenance pass keys off, and a caller may compare this answer against a stored pair "
+			"directly because it is exactly what a store would leave behind");
 	}
 
 	// ★ PURE. Nothing above may have touched the arrays.
@@ -2836,15 +2984,22 @@ ZENITH_TEST(AnimationTangents, ComputeAutoTangentForKeyIsPureAndCentred)
 	ZENITH_ASSERT_FALSE(xChannel.ComputeAutoTangentForKey(FLUX_ANIM_TRACK_SCALE, 0u, xSentinel),
 		"a track with no keys has no key 0 to answer about");
 
-	// A one-key track has no slope to measure and says so with a LINEAR zero.
+	// A one-key track has no slope to measure and says so with a ZERO — still marked
+	// AUTO, because "there is no slope right now" is an answer about this moment and
+	// the key has to be recomputed the instant a second key arrives. Reporting LINEAR
+	// would opt it out of that silently.
 	Flux_BoneChannel xSingle;
 	xSingle.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(7.0f, 0.0f, 0.0f));
 	Flux_KeyTangents xLone;
 	ZENITH_ASSERT_TRUE(xSingle.ComputeAutoTangentForKey(FLUX_ANIM_TRACK_POSITION, 0u, xLone),
 		"the sole key of a one-key track resolves");
-	ZENITH_ASSERT_TRUE(xLone.m_eInMode == Flux_TangentMode::LINEAR
-		&& xLone.m_eOutMode == Flux_TangentMode::LINEAR,
-		"and the honest answer to 'what slope?' is the LINEAR zero");
+	ZENITH_ASSERT_TRUE(xLone.m_xInTangent == Zenith_Maths::Vector3(0.0f)
+		&& xLone.m_xOutTangent == Zenith_Maths::Vector3(0.0f),
+		"and the honest answer to 'what slope?' is an exact zero");
+	ZENITH_ASSERT_TRUE(xLone.m_eInMode == Flux_TangentMode::AUTO
+		&& xLone.m_eOutMode == Flux_TangentMode::AUTO,
+		"★ with the mode still AUTO — a one-key track is a degenerate MOMENT, not a decision to stop "
+		"being an Auto key");
 
 	// ★ ONE FORMULA. The whole-track preset must land on exactly what the per-key
 	// query returned — the panel's two Auto controls are the same gesture at two
@@ -2858,4 +3013,208 @@ ZENITH_TEST(AnimationTangents, ComputeAutoTangentForKeyIsPureAndCentred)
 		&& xWritten.m_eInMode == xQueried.m_eInMode
 		&& xWritten.m_eOutMode == xQueried.m_eOutMode,
 		"★ the whole-track preset writes EXACTLY what the per-key query returned");
+}
+
+namespace
+{
+	// A clip whose Hip position track carries all four modes across its keys, plus
+	// one MARKER float that appears nowhere else in the file — which is what lets the
+	// corruption test below find a tangent record's first byte without hard-coding an
+	// offset into a payload full of variable-length strings.
+	constexpr float fTAN_WIRE_MARKER = 1234.5678f;
+
+	void TanBuildFourModeClip(Flux_AnimationClip& xClip)
+	{
+		xClip.SetName("TangentModeWireProbe");
+		xClip.SetDuration(3.0f);
+
+		Flux_BoneChannel xHip;
+		xHip.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(2.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+		xHip.AddPositionKeyframe(3.0f, Zenith_Maths::Vector3(9.0f, 0.0f, 0.0f));
+		xHip.SortKeyframes();
+
+		// Key 0 carries the marker AND the two modes that IGNORE their vector, so the
+		// pair is one no derivation could ever have produced.
+		Flux_KeyTangents xKey0;
+		xKey0.m_xInTangent  = Zenith_Maths::Vector3(fTAN_WIRE_MARKER, 0.0f, 0.0f);
+		xKey0.m_eInMode  = Flux_TangentMode::LINEAR;
+		xKey0.m_eOutMode = Flux_TangentMode::FLAT;
+		xHip.SetPositionTangent(0u, xKey0);
+
+		Flux_KeyTangents xKey1;
+		xKey1.m_xInTangent  = Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f);
+		xKey1.m_xOutTangent = Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f);
+		xKey1.m_eInMode  = Flux_TangentMode::AUTO;
+		xKey1.m_eOutMode = Flux_TangentMode::AUTO;
+		xHip.SetPositionTangent(1u, xKey1);
+
+		Flux_KeyTangents xKey2;
+		xKey2.m_xInTangent  = Zenith_Maths::Vector3(0.0f, -1.5f, 0.0f);
+		xKey2.m_xOutTangent = Zenith_Maths::Vector3(0.0f,  7.25f, 0.0f);
+		xKey2.m_eInMode  = Flux_TangentMode::CUSTOM;
+		xKey2.m_eOutMode = Flux_TangentMode::CUSTOM;
+		xHip.SetPositionTangent(2u, xKey2);
+
+		Flux_KeyTangents xKey3;
+		xKey3.m_eInMode  = Flux_TangentMode::FLAT;
+		xKey3.m_eOutMode = Flux_TangentMode::LINEAR;
+		xHip.SetPositionTangent(3u, xKey3);
+
+		xClip.AddBoneChannel("Hip", std::move(xHip));
+	}
+
+	// The byte offset of fTAN_WIRE_MARKER's four bytes in a serialized clip, or
+	// ulNOT_FOUND. It is the first float of a tangent record, so +24 and +25 are that
+	// record's two mode bytes.
+	constexpr uint64_t ulTAN_MARKER_NOT_FOUND = 0xFFFFFFFFFFFFFFFFull;
+
+	uint64_t TanFindMarkerOffset(const uint8_t* puBytes, uint64_t ulSize, u_int& uOutMatches)
+	{
+		uint8_t auNeedle[sizeof(float)];
+		const float fNeedle = fTAN_WIRE_MARKER;
+		std::memcpy(auNeedle, &fNeedle, sizeof(float));
+
+		uint64_t ulFirst = ulTAN_MARKER_NOT_FOUND;
+		uOutMatches = 0u;
+		for (uint64_t ul = 0; ul + sizeof(float) <= ulSize; ++ul)
+		{
+			if (std::memcmp(puBytes + ul, auNeedle, sizeof(float)) == 0)
+			{
+				if (ulFirst == ulTAN_MARKER_NOT_FOUND) { ulFirst = ul; }
+				uOutMatches++;
+			}
+		}
+		return ulFirst;
+	}
+}
+
+// ★ (B2-W1) A WHOLE .zanim ROUND-TRIPS ALL FOUR MODES, THROUGH THE REAL WRITER AND
+// THE REAL READER.
+//
+// The block-level tests above pin Flux_WriteKeyTangents and Flux_ReadKeyTangents in
+// isolation; this is the one that says the two bytes survive an ENVELOPE, a
+// metadata block, a bone-name string and a channel sort — i.e. that a clip saved
+// from the editor and loaded by the game agrees with itself. Every mode in the
+// fixture is one the old derivation could not have produced from the vector beside
+// it, so a writer or reader that dropped the bytes fails rather than coinciding.
+ZENITH_TEST(AnimationSerialization, EveryTangentModeSurvivesAWholeClipRoundTrip)
+{
+	Flux_AnimationClip xClip;
+	TanBuildFourModeClip(xClip);
+
+	Zenith_DataStream xWrite;
+	xClip.WriteToDataStream(xWrite);
+	const uint64_t ulBytes = xWrite.GetCursor();
+
+	// Wrapped at EXACTLY the written length, so a reader that consumed the wrong
+	// number of bytes per record runs off the end instead of into slack.
+	Zenith_DataStream xRead(xWrite.GetData(), ulBytes);
+	Flux_AnimationClip xLoaded;
+	ZENITH_ASSERT_TRUE(xLoaded.ParseStream(xRead).IsOk(), "the clip parses at the current schema");
+	ZENITH_ASSERT_EQ(xRead.GetCursor(), xRead.GetCapacity(),
+		"★ and the payload ends EXACTLY at end of file — 26 bytes a tangent record, not 24");
+
+	const Flux_BoneChannel* pxHip = xLoaded.GetBoneChannel("Hip");
+	ZENITH_ASSERT_NOT_NULL(pxHip, "the Hip channel round-trips");
+	if (pxHip == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxHip->GetPositionTangents().GetSize(), 4u, "with one tangent per key");
+
+	const Zenith_Vector<Flux_KeyTangents>& xTangents = pxHip->GetPositionTangents();
+	ZENITH_ASSERT_TRUE(xTangents.Get(0).m_eInMode == Flux_TangentMode::LINEAR
+		&& xTangents.Get(0).m_eOutMode == Flux_TangentMode::FLAT,
+		"★ key 0 is LINEAR over a NON-ZERO vector and FLAT over a zero — neither is reachable by "
+		"deriving a mode from the numbers, which is exactly why they prove the bytes were read");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.Get(0).m_xInTangent.x, fTAN_WIRE_MARKER, 1e-3f,
+		"and the vector a LINEAR end ignores is still stored, unchanged");
+	ZENITH_ASSERT_TRUE(xTangents.Get(1).m_eInMode == Flux_TangentMode::AUTO
+		&& xTangents.Get(1).m_eOutMode == Flux_TangentMode::AUTO,
+		"key 1 keeps AUTO on both ends — the provenance that survives a save is what makes Auto "
+		"maintainable across a session");
+	ZENITH_ASSERT_TRUE(xTangents.Get(2).m_eInMode == Flux_TangentMode::CUSTOM
+		&& xTangents.Get(2).m_eOutMode == Flux_TangentMode::CUSTOM,
+		"key 2 keeps CUSTOM on both ends");
+	ZENITH_ASSERT_EQ_FLOAT(xTangents.Get(2).m_xOutTangent.y, 7.25f, 1e-6f, "with its authored number");
+	ZENITH_ASSERT_TRUE(xTangents.Get(3).m_eInMode == Flux_TangentMode::FLAT
+		&& xTangents.Get(3).m_eOutMode == Flux_TangentMode::LINEAR,
+		"and key 3 keeps a BROKEN pair — the two ends are independent bytes, not one");
+
+	// ★ AND THE SECOND WRITE IS BYTE-IDENTICAL (D5). A mode that round-tripped
+	// through the READER but was dropped on the way back out would pass every
+	// assertion above and still churn the file on every save.
+	Zenith_DataStream xRewrite;
+	xLoaded.WriteToDataStream(xRewrite);
+	ZENITH_ASSERT_EQ(xRewrite.GetCursor(), ulBytes, "a re-serialize is the same length");
+	ZENITH_ASSERT_TRUE(std::memcmp(xWrite.GetData(), xRewrite.GetData(), static_cast<size_t>(ulBytes)) == 0,
+		"and the same BYTES");
+}
+
+// ★ (B2-W2) A MODE BYTE ABOVE CUSTOM INSIDE A REAL CLIP IS CORRUPT_DATA AND AN
+// EMPTY CLIP — the block-level refusal carried all the way out through ParseStream.
+//
+// ★ THE ASSERT COUNT IS DELIBERATELY NOT PINNED. Flux_ReadKeyTangents itself
+// reports through MarkCorrupt and asserts nothing (that pin lives in
+// Schema3OutOfRangeModeMarksCorrupt), but the channel's tangent/keyframe PARITY
+// assert fires on the way out — the record was dropped, so the arrays no longer
+// index together — and how many guards a given corruption trips is a property of
+// where it lands, not of the contract. Same reasoning as
+// TruncatedClipParsesToEmptyWithCorruptData above.
+ZENITH_TEST(AnimationSerialization, ClipWithAnOutOfRangeModeByteParsesToEmptyWithCorruptData)
+{
+	Flux_AnimationClip xClip;
+	TanBuildFourModeClip(xClip);
+
+	Zenith_DataStream xWrite;
+	xClip.WriteToDataStream(xWrite);
+	const uint64_t ulBytes = xWrite.GetCursor();
+
+	// ★ THE RECORD IS LOCATED, NOT COUNTED TO. The payload in front of the tangent
+	// block holds two length-prefixed strings and a metadata struct, so a hard-coded
+	// offset would be a fixture that breaks the next time a field is added — and
+	// would then poke a byte in the middle of something else and "pass".
+	uint8_t* puBytes = static_cast<uint8_t*>(xWrite.GetData());
+	u_int uMatches = 0u;
+	const uint64_t ulRecord = TanFindMarkerOffset(puBytes, ulBytes, uMatches);
+	ZENITH_ASSERT_EQ(uMatches, 1u,
+		"fixture: the marker float must appear EXACTLY once in the file, or the poke below is aimed at "
+		"a byte this test does not understand");
+	ZENITH_ASSERT_TRUE(ulRecord != ulTAN_MARKER_NOT_FOUND && ulRecord + 26ull <= ulBytes,
+		"fixture: the located record has its full 26 bytes inside the file");
+	if (ulRecord == ulTAN_MARKER_NOT_FOUND || ulRecord + 26ull > ulBytes)
+	{
+		return;
+	}
+
+	// The marker is the record's FIRST float, so +24 and +25 are its two mode bytes.
+	// Sanity-check that the writer really did put the fixture's modes there before
+	// overwriting one, or a mis-located record would make the refusal below prove
+	// nothing.
+	ZENITH_ASSERT_EQ(static_cast<u_int>(puBytes[ulRecord + 24ull]),
+		static_cast<u_int>(Flux_TangentMode::LINEAR), "byte +24 of the record is the IN mode");
+	ZENITH_ASSERT_EQ(static_cast<u_int>(puBytes[ulRecord + 25ull]),
+		static_cast<u_int>(Flux_TangentMode::FLAT), "and byte +25 is the OUT mode");
+
+	// 7 is not a Flux_TangentMode and never will be: accepting it would hand the
+	// sampler an enum value no switch has a case for, at every sample, for the life
+	// of the clip.
+	puBytes[ulRecord + 24ull] = 7u;
+
+	Zenith_DataStream xPoked(xWrite.GetData(), ulBytes);
+	Flux_AnimationClip xLoaded;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Status xStatus = xLoaded.ParseStream(xPoked);
+		ZENITH_ASSERT_FALSE(xStatus.IsOk(), "a mode byte of 7 refuses the whole clip, with a STATUS");
+		ZENITH_ASSERT_EQ(xStatus.Error(), Zenith_ErrorCode::CORRUPT_DATA, "and the status names the reason");
+	}
+
+	ZENITH_ASSERT_EQ(xLoaded.GetBoneChannels().GetSize(), 0u,
+		"★ a refused parse leaves an EMPTY clip — never a half-read one whose tangent array is two "
+		"records short of its keys");
+	ZENITH_ASSERT_EQ(xLoaded.GetEvents().GetSize(), 0u, "empty of events too");
+	ZENITH_ASSERT_TRUE(xLoaded.GetName().empty(), "and unnamed");
 }
