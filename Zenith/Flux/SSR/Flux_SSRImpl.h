@@ -28,9 +28,12 @@ enum SSR_DebugMode : u_int
 
 // Phase 9: state + behaviour for SSR subsystem.
 //
-// S5b: the whole SSR chain (transients, constants CBV, committed-handle
-// selector) is per-render-view — slot 0 (main) at swapchain dims as before;
-// the preview view at 512² when active. uViewSlot defaults keep single-view
+// The whole SSR chain (transients, constants CBV, committed-handle selector) is
+// per-render-view. SetupRenderGraph builds one chain per ACTIVE FULL-PIPELINE
+// view by driving Flux_RenderViewRegistry::ForEachActiveFullPipelineView, each
+// at that view's Flux_GraphicsImpl::GetViewSetupDims (slot 0 resolves to the
+// render dims; every other qualifying slot to its own). No slot number is
+// special-cased anywhere in the walk. uViewSlot defaults keep single-view
 // callers unchanged.
 class Flux_SSRImpl : public Flux_ScreenSpaceEffectBase<Flux_SSRImpl>
 {
@@ -103,9 +106,11 @@ public:
 	// mirrors Flux_GraphicsImpl::m_axViewConstantsBuffers.
 	Flux_DynamicConstantBuffer m_axSSRConstantsBuffers[FLUX_MAX_RENDER_VIEWS];
 
-	// Per-view base dims captured at setup (slot 0 = swapchain, preview =
-	// kuFLUX_PREVIEW_VIEW_SIZE²) — UpdateSSRConstants derives the half-res +
-	// HiZ mip-size fields from these.
+	// Per-view base dims captured at setup — whatever GetViewSetupDims returned
+	// for that slot during the ForEachActiveFullPipelineView walk.
+	// UpdateSSRConstants derives the half-res + HiZ mip-size fields from these,
+	// so a slot never built this frame keeps its last-built dims and no live
+	// swapchain query is needed at record time.
 	u_int m_auViewWidths[FLUX_MAX_RENDER_VIEWS]  = {};
 	u_int m_auViewHeights[FLUX_MAX_RENDER_VIEWS] = {};
 
@@ -116,9 +121,10 @@ public:
 	Flux_CommittedHandleSelector<bool> m_axReflectionSelectors[FLUX_MAX_RENDER_VIEWS];
 
 private:
-	// Per-view transients + RayMarch/Upsample/DenoiseH/DenoiseV pass chain
-	// (S5b): called for the main view at swapchain dims, then for the preview
-	// view at kuFLUX_PREVIEW_VIEW_SIZE² only while it is active — so the main
-	// path stays byte-equivalent.
+	// Per-view transients + RayMarch/Upsample/DenoiseH/DenoiseV pass chain.
+	// Called once per ACTIVE FULL-PIPELINE view by SetupRenderGraph's
+	// ForEachActiveFullPipelineView walk, in ascending slot order, at the dims
+	// GetViewSetupDims returns for that slot. bRoughnessBlur is the ONE snapshot
+	// taken before the walk, so no two views can commit different aux chains.
 	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight, bool bRoughnessBlur);
 };

@@ -12,6 +12,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Fog/Flux_VolumeFogImpl.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/SSR.h" // typed binding handles
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -350,8 +351,10 @@ void Flux_SSRImpl::UpdateSSRConstants(u_int uViewSlot)
 		dbg_xSSRConstants.m_uStartMip = uMainMipCount - 1;
 
 	// Frame-local per-view snapshot: dims + the HiZ mip chain come from THIS
-	// view (slot 0 = swapchain, preview = kuFLUX_PREVIEW_VIEW_SIZE²), so the
-	// main view's fill is byte-identical to the historical single-view path.
+	// view. m_auViewWidths/m_auViewHeights hold whatever GetViewSetupDims gave
+	// the recording slot when its chain was built, so no slot is special-cased
+	// here and slot 0's fill stays byte-identical to the historical single-view
+	// path.
 	SSRConstants xConstants = dbg_xSSRConstants;
 	const u_int uFullWidth  = m_auViewWidths[uViewSlot];
 	const u_int uFullHeight = m_auViewHeights[uViewSlot];
@@ -578,25 +581,53 @@ static void ExecuteSSRDenoiseV(Flux_CommandBuffer* pxCommandList, void*)
 
 void Flux_SSRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
+	// The graph back-ref is per-BUILD, not per-view — every view's attachment
+	// accessors resolve their transients through it — so it is set once, first,
+	// and outside the walk.
 	m_pxGraph = &xGraph;
-	// Capture once for the whole graph generation. Main + preview must commit
-	// the same selection even if the live UI toggle changes while setup runs.
+
+	// Snapshot the roughness-blur toggle ONCE, BEFORE the walk. It decides
+	// whether the aux MRT pair exists, which pipelines the record callbacks
+	// pick and which handle each view commits, so every view must be built from
+	// the SAME value; reading it inside the walk would let a UI toggle landing
+	// mid-setup give one view an aux chain and the next none.
 	const bool bRoughnessBlur = Zenith_GraphicsOptions::Get().m_bSSRRoughnessBlurEnabled;
 
-	// Main view at swapchain dims (byte-equivalent to the historical
-	// single-view path), then the preview view at its own dims — only while
-	// active, so its transients exist exactly when its passes do (the graph's
-	// unused-transient validation demands this). Both come from GetViewSetupDims,
-	// the ONE derivation SetupTransients sized each view's G-buffer/depth with, so
-	// these passes can never disagree with the targets they read; the preview slot
-	// is active inside this branch, hence its dims are staged.
+	// ONE chain per ACTIVE FULL-PIPELINE view, in ascending slot order. The
+	// registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies (active + full-pipeline from construction), the
+	// preview slot joins while its owner has it up (so its transients exist
+	// exactly when its passes do — the graph's unused-transient validation
+	// demands that), and depth-only shadow cascades are never full-pipeline and
+	// never get a chain. Today that set is exactly {main} ∪ {preview if active},
+	// which is what the two hand-written calls this replaced produced.
+	//
+	// Every view's dims come from GetViewSetupDims — the ONE derivation
+	// SetupTransients sized that view's G-buffer and depth with — so an SSR
+	// chain can never disagree with the targets it reads. Slot 0 resolves to the
+	// render dims, which is exactly the GetRenderWidth/GetRenderHeight pair the
+	// hand-written main call passed.
+	//
+	// The callback is a CAPTURELESS LAMBDA written here rather than a file-static
+	// free function on purpose: SetupViewPasses is private, and a closure declared
+	// inside a member body inherits the class's access. Being captureless (so it
+	// converts to the registry's plain fn-pointer), `this`, the graph, the hoisted
+	// graphics reference and the snapshot all travel through pCtx.
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	SetupViewPasses(xGraph, kuFluxViewSlotMain, xGraphics.GetRenderWidth(), xGraphics.GetRenderHeight(), bRoughnessBlur);
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+	struct SetupCtx
 	{
-		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
-		SetupViewPasses(xGraph, kuFluxViewSlotPreview, xPreviewDims.x, xPreviewDims.y, bRoughnessBlur);
-	}
+		Flux_SSRImpl*      m_pxThis;
+		Flux_RenderGraph*  m_pxGraph;
+		Flux_GraphicsImpl* m_pxGraphics;
+		bool               m_bRoughnessBlur;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics, bRoughnessBlur };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		const Zenith_Maths::UVector2 xDims = xSetup.m_pxGraphics->GetViewSetupDims(uSlot);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, xDims.x, xDims.y, xSetup.m_bRoughnessBlur);
+	}, &xCtx);
 }
 
 void Flux_SSRImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight, bool bRoughnessBlur)
@@ -643,15 +674,17 @@ void Flux_SSRImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 		m_axUpsampledAuxHandles[uViewSlot] = xGraph.CreateTransient(xFullDesc);
 	}
 
-	// Pass names must be per-view unique + static-lifetime (duplicate names
-	// are a hard assert). View 0 keeps the historical names (profiling /
-	// FindPass stability).
-	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
+	// Pass names must be per-view unique + static-lifetime (a duplicate name is
+	// a hard assert), so they come from the interning pool rather than a second
+	// literal table: Flux_ViewPassName hands slot 0 the base pointer ITSELF, so
+	// the main view's names stay byte-for-byte the historical ones that
+	// profiling labels and FindPass key off, and every other slot gets an
+	// interned, static-lifetime "<base> (<suffix>)".
 
 	// RayMarch pass — first writer of its targets; clear so the initial
 	// render-pass LoadOp is valid. RT0 is always colour; RT1 aux is appended
 	// only on the committed blur-on graph (attachment order matches SV_Target).
-	const Flux_PassHandle xRayMarchPass = xGraph.AddPass(bMainView ? "SSR RayMarch" : "SSR RayMarch (Preview)", ExecuteSSRRayMarch)
+	const Flux_PassHandle xRayMarchPass = xGraph.AddPass(Flux_ViewPassName("SSR RayMarch", uViewSlot), ExecuteSSRRayMarch)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -667,7 +700,7 @@ void Flux_SSRImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 	// Always enabled and always produces canonical full-res RT0. The aux read
 	// and RT1 write exist only on the blur-on graph; its no-aux pipeline exposes
 	// one colour attachment and the shader skips metadata sampling.
-	const Flux_PassHandle xUpsamplePass = xGraph.AddPass(bMainView ? "SSR Upsample" : "SSR Upsample (Preview)", ExecuteSSRUpsample)
+	const Flux_PassHandle xUpsamplePass = xGraph.AddPass(Flux_ViewPassName("SSR Upsample", uViewSlot), ExecuteSSRUpsample)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -686,7 +719,7 @@ void Flux_SSRImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 	// pair, RT1 carries the (Σw·conf, variance scale) parallel data. V applies the
 	// final ratio. The enable bit tracks the graph-committed blur selection. Roughness
 	// gating inside the shader skips smooth/rough pixels.
-	const Flux_PassHandle xDenoiseHPass = xGraph.AddPass(bMainView ? "SSR DenoiseH" : "SSR DenoiseH (Preview)", ExecuteSSRDenoiseH)
+	const Flux_PassHandle xDenoiseHPass = xGraph.AddPass(Flux_ViewPassName("SSR DenoiseH", uViewSlot), ExecuteSSRDenoiseH)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)
@@ -702,7 +735,7 @@ void Flux_SSRImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_
 	// upsampled colour (passthrough fallback) + aux (BRDF reuse), applies its
 	// own bilateral × BRDF kernel, divides numerator/denominator at the end,
 	// and outputs the final RGBA the deferred shader consumes.
-	const Flux_PassHandle xDenoiseVPass = xGraph.AddPass(bMainView ? "SSR DenoiseV" : "SSR DenoiseV (Preview)", ExecuteSSRDenoiseV)
+	const Flux_PassHandle xDenoiseVPass = xGraph.AddPass(Flux_ViewPassName("SSR DenoiseV", uViewSlot), ExecuteSSRDenoiseV)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (xGraphics.GetDepthAttachment(uViewSlot),                         RESOURCE_ACCESS_READ_SRV)

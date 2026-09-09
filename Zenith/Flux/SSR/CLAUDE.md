@@ -21,6 +21,23 @@ The render graph schedules these passes via Read/Write declarations; there is no
 
 The raymarch pass runs at **half resolution** for ~75% pixel-shader cost reduction; the upsample pass reconstructs the full-resolution output via a depth-weighted 4x4 KNN bilateral gather (16 candidates, top-4 selected). The roughness blur is a **separable bilateral denoise** split into two passes (DenoiseH horizontal + DenoiseV vertical) gated on `m_bSSRRoughnessBlurEnabled` via `ApplyBlurSelectionToGraph`; when disabled the deferred shader reads the upsampled output directly — never the raw half-res raymarch. The committed handle the deferred pass reads (`GetReflectionHandle`) is tracked by a `Flux_CommittedHandleSelector<bool>` that triggers a graph rebuild when the live toggle diverges from the committed selection.
 
+### Per-view setup and naming
+
+`SetupRenderGraph` stores the per-BUILD graph back-ref, snapshots the
+roughness-blur toggle **once**, then drives
+`Flux_RenderViewRegistry::ForEachActiveFullPipelineView` — one four-pass chain
+per active full-pipeline view, in ascending slot order, at that view's
+`Flux_GraphicsImpl::GetViewSetupDims` (slot 0 resolves to the render dims). The
+registry decides membership by view **properties**, never by slot number, so no
+`uViewSlot == kuFluxViewSlotMain` branch survives here; the walk's callback is a
+captureless lambda inside the member body (`SetupViewPasses` is private) and
+carries `this`, the graph, the hoisted `Flux_GraphicsImpl&` and the snapshot
+through `void* pCtx`. Pass names come from `Flux_ViewPassName(base, uViewSlot)`
+(`Flux/RenderViews/Flux_ViewPassNames.h`) over the four bases `"SSR RayMarch"`,
+`"SSR Upsample"`, `"SSR DenoiseH"`, `"SSR DenoiseV"`: slot 0 gets the base
+pointer back by identity, so its historical names are byte-for-byte unchanged,
+and any other slot gets an interned `"<base> (<suffix>)"`.
+
 ### Files
 
 | File | Purpose |
