@@ -6,6 +6,7 @@
 #include "Core/Zenith_Engine.h"
 
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"   // per-view pass names — slot 0 returns the base literal by pointer identity
 #include "Flux/HDR/Flux_HDRImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_GraphicsImpl.h"
@@ -245,41 +246,62 @@ static void ExecuteApplyLighting(Flux_CommandBuffer* pxCommandList, void*)
 	pxCommandList->DrawIndexed(6);
 }
 
-void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
+void Flux_DeferredShadingImpl::SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, const Flux_RenderView&)
 {
-	// First writer of the HDR scene target — clear overwrites every pixel.
-	// Capture the handle via the implicit conversion; builder temporary dies
-	// at the semicolon. All loop/conditional declarations below go through
-	// the graph's Read/ReadTransient helpers with the captured handle.
-	const Flux_PassHandle xPass = xGraph.AddPass("Apply Lighting", ExecuteApplyLighting)
-		.Writes(g_xEngine.FluxGraphics().GetHDRSceneTarget(), RESOURCE_ACCESS_WRITE_RTV)
-		.ClearTargets();
-
+	// ONE view's entire "Apply Lighting" declaration. Every resource below is
+	// either indexed by uSlot — this view's G-buffer, depth, HDR target and (since
+	// S5b) its own SSAO/SSR/SSGI chains — or genuinely shared by every view: the
+	// CSM array, the cluster buffers and the IBL cubes. There is no per-slot
+	// branch and no discriminator parameter, because there is nothing to
+	// discriminate: the difference between the main view's pass and a preview
+	// view's pass is the slot and nothing else. The flag word that actually
+	// changes the SHADING (m_xConstants.m_uViewFlags) is read at RECORD time by
+	// ExecuteApplyLighting from the recording pass's view slot, which is why the
+	// walk's Flux_RenderView is accepted here and deliberately unused.
+	//
+	// The pass name comes from Flux_ViewPassName, which supplies the per-view
+	// uniqueness the graph's duplicate-name assert demands: slot 0 gets the base
+	// literal back by pointer identity, so the main view's row is still exactly
+	// "Apply Lighting", and the material-preview slot composes
+	// "Apply Lighting (Preview)" — byte-for-byte the literal this replaced.
+	//
+	// This pass is the first writer of the view's HDR scene target, so the clear
+	// overwrites every pixel. Capture the handle via the implicit conversion; the
+	// builder temporary dies at the semicolon and every declaration below goes
+	// through the graph's Read/ReadTransient helpers with the captured handle.
 	Flux_GraphicsImpl& xFluxGraphics = g_xEngine.FluxGraphics();
 
+	const Flux_PassHandle xPass = xGraph.AddPass(Flux_ViewPassName("Apply Lighting", uSlot), ExecuteApplyLighting)
+		.View(uSlot)
+		.Writes(xFluxGraphics.GetHDRSceneTarget(uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.ClearTargets();
+
 	for (u_int u = 0; u < uFLUX_MRT_CORE_COUNT; u++)   // lighting reads the 4 core G-buffer MRTs, never velocity
-		xGraph.Read(xPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u)), RESOURCE_ACCESS_READ_SRV);
+		xGraph.Read(xPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u), uSlot), RESOURCE_ACCESS_READ_SRV);
 
-	xGraph.Read(xPass, xFluxGraphics.GetDepthAttachment(), RESOURCE_ACCESS_READ_SRV);
+	xGraph.Read(xPass, xFluxGraphics.GetDepthAttachment(uSlot), RESOURCE_ACCESS_READ_SRV);
 
-	// SSAO feeds the ambient term in-shader. Its selector commits one output
-	// handle (raw, legacy-filtered, or separable-filtered) for this graph build;
-	// declaring only that handle keeps the graph Read identical to the SRV bound
-	// by ExecuteApplyLighting during the one-frame runtime-toggle transition.
+	// SSAO feeds the ambient term in-shader. This view's selector commits one
+	// output handle (raw, legacy-filtered, or separable-filtered) for this graph
+	// build; declaring only that handle keeps the graph Read identical to the SRV
+	// bound by ExecuteApplyLighting during the one-frame runtime-toggle transition.
 	Flux_SSAOImpl& xSSAO = g_xEngine.SSAO();
-	xGraph.ReadTransient(xPass, xSSAO.GetOutputHandle(kuFluxViewSlotMain), RESOURCE_ACCESS_READ_SRV);
+	xGraph.ReadTransient(xPass, xSSAO.GetOutputHandle(uSlot), RESOURCE_ACCESS_READ_SRV);
 
-	// Shadow maps — one 4-cascade depth array (Phase 4b). Read ALL layers so the
-	// graph transitions every cascade WRITE_DSV → SHADER_READ before this pass
-	// (and, transitively, before the fog passes that also sample it).
+	// Shadow maps — one 4-cascade depth array (Phase 4b), SHARED by every view.
+	// Read ALL layers so the graph transitions every cascade WRITE_DSV →
+	// SHADER_READ before this pass (and, transitively, before the fog passes that
+	// also sample it). Declared for EVERY full-pipeline view, including one whose
+	// flags disable shadow sampling: the shader STATICALLY samples that persistent
+	// VIEW member, so the graph-Read validator demands the declaration.
 	xGraph.ReadTransient(xPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
 
-	// Clustered-deferred cluster-output buffers — declaring the reads here causes
-	// the graph to order this pass after Flux_LightClustering's compute writes,
-	// with the necessary UAV→SRV barrier emitted automatically. The LightBuffer
-	// itself is a frame-indexed Flux_DynamicReadWriteBuffer and so is NOT
-	// graph-tracked — see the RENDER-GRAPH CONTRACT on Flux_FrameIndexedBufferBase
-	// (Flux_Buffers.h).
+	// Clustered-deferred cluster-output buffers — also SHARED. Declaring the reads
+	// here causes the graph to order this pass after Flux_LightClustering's compute
+	// writes, with the necessary UAV→SRV barrier emitted automatically. The
+	// LightBuffer itself is a frame-indexed Flux_DynamicReadWriteBuffer and so is
+	// NOT graph-tracked — see the RENDER-GRAPH CONTRACT on
+	// Flux_FrameIndexedBufferBase (Flux_Buffers.h).
 	Flux_LightClusteringImpl& xLightClustering = g_xEngine.LightClustering();
 	if (xLightClustering.IsInitialised())
 	{
@@ -289,51 +311,50 @@ void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			RESOURCE_ACCESS_READ_SRV);
 	}
 
-	// SSR / SSGI single-handle declarations. The subsystem decides which of
-	// its internal handles serves as "the output" based on its debug toggles
-	// at SetupRenderGraph time. Runtime toggles trigger g_xEngine.FluxRenderer().RequestGraphRebuild()
-	// via ApplyBlurSelectionToGraph / ApplyDenoiseSelectionToGraph, which re-runs
-	// this SetupRenderGraph and re-resolves the handle.
+	// SSR / SSGI single-handle declarations, per view. The subsystem decides which
+	// of its internal handles serves as "the output" for this view based on its
+	// debug toggles at SetupRenderGraph time. Runtime toggles trigger
+	// g_xEngine.FluxRenderer().RequestGraphRebuild() via ApplyBlurSelectionToGraph /
+	// ApplyDenoiseSelectionToGraph, which re-runs this SetupRenderGraph and
+	// re-resolves the handle. Pre-existing asymmetry, deliberately left alone by
+	// this hoist: setup gates on IsInitialised() while the record-time binds in
+	// ExecuteApplyLighting gate on IsEnabled().
 	if (g_xEngine.SSR().IsInitialised())
-		xGraph.ReadTransient(xPass, g_xEngine.SSR().GetReflectionHandle(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadTransient(xPass, g_xEngine.SSR().GetReflectionHandle(uSlot), RESOURCE_ACCESS_READ_SRV);
 	if (g_xEngine.SSGI().IsInitialised())
-		xGraph.ReadTransient(xPass, g_xEngine.SSGI().GetSSGIHandle(), RESOURCE_ACCESS_READ_SRV);
+		xGraph.ReadTransient(xPass, g_xEngine.SSGI().GetSSGIHandle(uSlot), RESOURCE_ACCESS_READ_SRV);
 
 	// IBL textures — BRDF LUT + both double-buffered cubemaps (see
-	// Flux_IBLImpl::DeclareConsumerReads).
+	// Flux_IBLImpl::DeclareConsumerReads). Shared, and declared per view for the
+	// same static-sampling reason as the CSM array above.
 	Flux_IBLImpl& xIBL = g_xEngine.IBL();
 	xIBL.DeclareConsumerReads(xGraph, xPass);
+}
 
-	// Preview view (S5a): a second lighting instance over the preview view's own
-	// G-buffer, writing its HDR target. Same record callback — the pass's view
-	// slot selects the per-view G-buffer accessors + the preview VIEW set (whose
-	// flags disable shadow/cluster sampling). S5b: the preview owns its own
-	// SSAO/SSR/SSGI chains, so the same screen-space reads as the main pass are
-	// declared against the preview-slot handles.
-	// The CSM/cluster/IBL reads are still declared: the shader STATICALLY samples
-	// those persistent VIEW members, so the graph-Read validator demands them.
-	if (xFluxGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
+void Flux_DeferredShadingImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
+{
+	// ONE lighting pass per ACTIVE FULL-PIPELINE view, in ascending slot order.
+	// The registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies (active + full-pipeline from construction), the
+	// material-preview slot joins while its owner has it up, and depth-only shadow
+	// cascades are never full-pipeline and never get a lighting pass. Today that
+	// set is exactly {main} ∪ {preview if active} — which is what the two
+	// hand-written blocks this replaced produced, in the same declaration order.
+	//
+	// The callback is a CAPTURELESS LAMBDA written inside the member body rather
+	// than a file-static free function, matching Flux_HiZImpl::SetupRenderGraph: a
+	// closure declared in a member body inherits the class's access, and being
+	// captureless it converts to the registry's plain fn-pointer, so `this` and
+	// the graph travel through pCtx.
+	struct SetupCtx
 	{
-		const Flux_PassHandle xPreviewPass = xGraph.AddPass("Apply Lighting (Preview)", ExecuteApplyLighting)
-			.View(kuFluxViewSlotPreview)
-			.Writes(xFluxGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.ClearTargets();
-		for (u_int u = 0; u < uFLUX_MRT_CORE_COUNT; u++)   // lighting reads the 4 core G-buffer MRTs, never velocity
-			xGraph.Read(xPreviewPass, xFluxGraphics.GetMRTAttachment(static_cast<MRTIndex>(u), kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		xGraph.Read(xPreviewPass, xFluxGraphics.GetDepthAttachment(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadTransient(xPreviewPass, xSSAO.GetOutputHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		xGraph.ReadTransient(xPreviewPass, g_xEngine.Shadows().GetCSMArrayHandle(), RESOURCE_ACCESS_READ_SRV, 0, 1, 0, FLUX_RG_ALL_LAYERS);
-		if (xLightClustering.IsInitialised())
-		{
-			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightCountsBuffer().GetBuffer(),
-				RESOURCE_ACCESS_READ_SRV);
-			xGraph.ReadBuffer(xPreviewPass, xLightClustering.GetClusterLightIndicesBuffer().GetBuffer(),
-				RESOURCE_ACCESS_READ_SRV);
-		}
-		if (g_xEngine.SSR().IsInitialised())
-			xGraph.ReadTransient(xPreviewPass, g_xEngine.SSR().GetReflectionHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		if (g_xEngine.SSGI().IsInitialised())
-			xGraph.ReadTransient(xPreviewPass, g_xEngine.SSGI().GetSSGIHandle(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-		xIBL.DeclareConsumerReads(xGraph, xPreviewPass);
-	}
+		Flux_DeferredShadingImpl* m_pxThis;
+		Flux_RenderGraph*         m_pxGraph;
+	};
+	SetupCtx xCtx{ this, &xGraph };
+	g_xEngine.FluxGraphics().RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView& xView, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		xSetup.m_pxThis->SetupViewPasses(*xSetup.m_pxGraph, uSlot, xView);
+	}, &xCtx);
 }

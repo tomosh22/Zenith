@@ -185,7 +185,7 @@ namespace
 		"SSAO Blur Legacy",             // SSAO          (Flux_SSAO.cpp:394)
 		"SSAO Blur H",                  // SSAO          (Flux_SSAO.cpp:403)
 		"SSAO Blur",                    // SSAO          (Flux_SSAO.cpp:413)
-		"HiZ Mip 0",                    // HiZ           (Flux_HiZ.cpp:187-196) — 10 rows at 512^2,
+		"HiZ Mip 0",                    // HiZ           (Flux_HiZ.cpp:234) — 10 rows at 512^2,
 		"HiZ Mip 1",                    // HiZ             ComputeMipCount(512,512) = 10; the main view's
 		"HiZ Mip 2",                    // HiZ             chain is 11 on the fixed 1280x720 Null swapchain
 		"HiZ Mip 3",                    // HiZ
@@ -203,7 +203,7 @@ namespace
 		"SSGI Upsample",                // SSGI          (Flux_SSGI.cpp:439)
 		"SSGI Denoise H",               // SSGI          (Flux_SSGI.cpp:450) — space, unlike SSR's
 		"SSGI Denoise V",               // SSGI          (Flux_SSGI.cpp:459)
-		"Apply Lighting",               // DeferredShading (Flux_DeferredShading.cpp:254 / :317)
+		"Apply Lighting",               // DeferredShading (Flux_DeferredShading.cpp:274) — ONE per-view site
 		"Fog_Simple",                   // Fog           (Flux_Fog.cpp:293 / :341)
 		"Particles",                    // Particles     (Flux_Particles.cpp:394 / :426)
 		"SDFs",                         // SDFs          (Flux_SDFs.cpp:142 / :153)

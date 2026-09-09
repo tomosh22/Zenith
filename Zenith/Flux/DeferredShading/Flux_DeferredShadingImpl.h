@@ -17,7 +17,18 @@ public:
 	void Initialise();
 	void Shutdown();
 	void BuildPipelines();
+	// Walks Flux_RenderViewRegistry::ForEachActiveFullPipelineView and declares one
+	// "Apply Lighting" pass per active full-pipeline view, in ascending slot order.
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
+
+	// One view's whole lighting declaration, called once per active full-pipeline
+	// view by SetupRenderGraph's walk. Everything it declares is either indexed by
+	// uSlot or genuinely shared (CSM array, cluster buffers, IBL) — there is no
+	// per-slot branch inside it. The Flux_RenderView the walk supplies is accepted
+	// and UNUSED on purpose: nothing about the view discriminates the pass, and the
+	// flag word that changes the shading is Flux_RenderView::m_xConstants.m_uViewFlags,
+	// which ExecuteApplyLighting reads at RECORD time from the recording pass's slot.
+	void SetupViewPasses(Flux_RenderGraph& xGraph, u_int uSlot, const Flux_RenderView& xView);
 
 	Flux_Shader   m_xShader;
 	// One pipeline per view-shading mode (Stage 3a). Selected at record time from
