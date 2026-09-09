@@ -53,7 +53,7 @@ void Flux_MaterialPreviewController::ReleaseAssetReferences()
 	m_xMaterial.Clear();
 	m_bActive = false;
 	// Drop the slot with the liveness flag: a torn-down controller must not stay
-	// on record as the preview's owner, or an animation preview reclaiming would
+	// on record as the preview's owner, or the next claimant's placeholder would
 	// report a name belonging to something that no longer exists.
 	Flux_PreviewSlotArbiter::Release(this);
 	m_bForcedTestViewWasActive = false;
@@ -185,23 +185,32 @@ void Flux_MaterialPreviewController::Update()
 	m_bForcedTestViewWasActive = bForcedTestView;
 	bActive |= bForcedTestView;
 
-	// ★ ARBITRATION (Flux_PreviewSlotArbiter). There is ONE preview view slot and
-	// two editors that want it, so an open-but-DISPOSSESSED material preview must
-	// neither activate the view nor stage its constants: both claimants write the
-	// same Flux_ViewConstants, and without this the last one to run each frame won
-	// and the two previews fought at frame rate. m_bActive is untouched — the panel
-	// is still open, it just does not own the slot, which is what makes the
+	// ★ ARBITRATION (Flux_PreviewSlotArbiter). Two claimants want the MATERIAL
+	// preview slot — this panel's liveness window and the --preview-test-view
+	// diagnostic above — so an open-but-DISPOSSESSED material preview must neither
+	// activate the view nor stage its constants: both write the same
+	// Flux_ViewConstants, and without this the last one to run each frame won and
+	// the two fought at frame rate. m_bActive is untouched — the panel is still
+	// open, it just does not own the slot, which is what makes the
 	// placeholder-plus-reclaim UI possible.
+	//
+	// The ANIMATION editor is not in this contest (D3): it stages
+	// kuFluxViewSlotPreviewAnim, which nothing else stages.
 	bActive = bActive && Flux_PreviewSlotArbiter::HasSlot(this);
 
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 	Flux_RenderViewRegistry& xViews = xGraphics.RenderViews();
 	if (!bActive)
 	{
-		// ★ DEACTIVATE ONLY WHEN NOBODY OWNS THE SLOT. If an animation preview holds
+		// ★ DEACTIVATE ONLY WHEN NOBODY OWNS THE SLOT. If the other claimant holds
 		// it, it is staging into the very same view this frame; tearing it down from
-		// here would flicker the other editor's preview black. Same rule the session
-		// side follows (Zenith_AnimationPreviewSession::UpdatePreviewView).
+		// here would flicker its preview black.
+		//
+		// ★ THE ANIMATION PREVIEW'S SLOT FOLLOWS THE OPPOSITE RULE, and that is not
+		// an inconsistency: it has exactly one stager, so
+		// Zenith_AnimationPreviewSession::UpdatePreviewView lowers slot 6
+		// unconditionally when it has no pose to draw. The rule here exists only
+		// because TWO things stage slot 5.
 		if (Flux_PreviewSlotArbiter::GetOwner() == nullptr)
 		{
 			if (xViews.SetViewActive(kuFluxViewSlotPreviewMaterial, false))

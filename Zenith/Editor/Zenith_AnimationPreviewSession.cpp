@@ -9,8 +9,10 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/RenderViews/Flux_RenderViews.h"
 #include "Flux/RenderViews/Flux_MaterialPreviewController.h"   // the pure orbit/view-constants builders
-#include "Flux/Flux_GraphicsImpl.h"                            // RenderViews()
-#include "Flux/Flux_RendererImpl.h"                            // RequestGraphRebuild
+#include "Flux/Flux_GraphicsImpl.h"                            // RenderViews() + MaterialTable()
+#include "Flux/Flux_RendererImpl.h"                            // RequestGraphRebuild + the external-item pull seam
+#include "Flux/Flux_ModelInstance.h"                           // the .zmodel preview subject
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"               // the bare-mesh preview subject
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
@@ -38,8 +40,8 @@ bool Zenith_AnimationPreviewSession_ForceLink()
 namespace
 {
 	//-------------------------------------------------------------------------
-	// The two reaches into the engine singleton this file is allowed, wrapped so
-	// every caller below shares them.
+	// The reaches into the engine singleton this file is allowed — TWO LINES, and
+	// every accessor below is built out of them rather than adding a third.
 	//
 	// ★ THE NULL ANSWER IS "FLUX IS NOT UP", NOT "THIS IS HEADLESS". The Null
 	// backend builds a Flux_GraphicsImpl exactly like the Vulkan one, and the boot
@@ -48,10 +50,32 @@ namespace
 	// units below DO stage real views. The null case is the window before Flux
 	// exists and the one after Shutdown has dropped it.
 	//-------------------------------------------------------------------------
+	Flux_GraphicsImpl* TryGetPreviewGraphics()
+	{
+		return g_xEngine.TryGetFluxGraphics();
+	}
+
 	Flux_RenderViewRegistry* TryGetPreviewViewRegistry()
 	{
-		Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
+		Flux_GraphicsImpl* pxGraphics = TryGetPreviewGraphics();
 		return (pxGraphics != nullptr) ? &pxGraphics->RenderViews() : nullptr;
+	}
+
+	//-------------------------------------------------------------------------
+	// The renderer holder, or null in the SAME window the registry above is null
+	// in. Zenith_Engine::AllocateRenderer creates both and Shutdown frees both, so
+	// the graphics pointer is the one liveness test for the pair.
+	//
+	// ★ THE GUARD IS NOT OPTIONAL. Zenith_Engine::FluxRenderer() is a HOTPATH
+	// accessor — it dereferences the holder with no null check of its own — so a
+	// session destroyed after Shutdown (a panel outliving the engine) would
+	// unregister itself through a null pointer. Shutdown frees the renderer a
+	// couple of lines BEFORE the graphics holder, but nothing runs between those
+	// two deletes, so no session can be torn down inside that window.
+	//-------------------------------------------------------------------------
+	Flux_RendererImpl* TryGetPreviewRenderer()
+	{
+		return (TryGetPreviewGraphics() != nullptr) ? &g_xEngine.FluxRenderer() : nullptr;
 	}
 
 	// The ACTIVE VIEW SET changed: per-view transients and passes must be
@@ -59,7 +83,88 @@ namespace
 	// called on a frame where the registry above resolved.
 	void RequestPreviewGraphRebuild()
 	{
-		g_xEngine.FluxRenderer().RequestGraphRebuild();
+		if (Flux_RendererImpl* pxRenderer = TryGetPreviewRenderer())
+		{
+			pxRenderer->RequestGraphRebuild();
+		}
+	}
+
+	//-------------------------------------------------------------------------
+	// THE PULL SOURCE (D5) — one Flux_ExternalSceneItem per preview submesh.
+	//
+	// Called once per GPU-scene sync, on the main thread, with the renderer's
+	// item list mid-build (Flux_RendererImpl::PollExternalSceneItemSources), and
+	// by GatherExternalSceneItemsForTesting with a list of the caller's own. It
+	// appends and does nothing else: no device traffic, no registry mutation
+	// beyond the material-table index the draw needs, and NO Zenith_IsNullRenderer
+	// branch — the submission is DATA, and the walk that consumes it is inert on a
+	// backend with no compute rather than needing to be skipped here.
+	//
+	// ★ A LOWERED VIEW SUBMITS NOTHING. The mask alone would be enough for
+	// CORRECTNESS (an inactive slot's bit is never tested), but not for cost: a
+	// hidden dope sheet with a clip open would still take an arena slice, a bone
+	// palette block and a skin job every frame for a preview nobody is looking at.
+	// The view is raised by the first staged frame and lowered by the panel's
+	// hidden-frame call, which is exactly the "somebody is looking" signal.
+	//-------------------------------------------------------------------------
+	void AnimPreviewGatherExternalItems(void* pCtx, Zenith_Vector<Flux_RendererImpl::Flux_ExternalSceneItem>& xOut)
+	{
+		Zenith_AnimationPreviewSession* pxSession = static_cast<Zenith_AnimationPreviewSession*>(pCtx);
+		if (pxSession == nullptr)
+		{
+			return;
+		}
+
+		Flux_RenderViewRegistry* pxViews = TryGetPreviewViewRegistry();
+		if (pxViews == nullptr || !pxViews->IsViewActive(kuFluxViewSlotPreviewAnim))
+		{
+			return;
+		}
+
+		// The session's OWN skeleton — the one the controller poses. See the class
+		// comment: the model instance's is never animated.
+		Flux_SkeletonInstance* pxSkeleton = pxSession->GetSkeletonInstance();
+		if (pxSkeleton == nullptr)
+		{
+			return;
+		}
+
+		Flux_GraphicsImpl* pxGraphics = TryGetPreviewGraphics();
+		const u_int uNumSubmeshes = pxSession->GetPreviewSubmeshCount();
+		for (u_int u = 0; u < uNumSubmeshes; ++u)
+		{
+			Flux_MeshInstance* pxMeshInstance = pxSession->GetPreviewSubmeshInstance(u);
+			if (pxMeshInstance == nullptr)
+			{
+				continue;
+			}
+
+			// Register the material with the GPU table HERE, on the main thread,
+			// while the sync is open — the draw's worker record reads the index back
+			// and the textures have to be bindless by then. Exactly what
+			// Flux_MaterialPreviewController::Update does one submission over. A null
+			// material needs no registration: the sync substitutes the blank one.
+			Zenith_MaterialAsset* pxMaterial = pxSession->GetPreviewSubmeshMaterial(u);
+			if (pxMaterial != nullptr && pxGraphics != nullptr)
+			{
+				pxGraphics->MaterialTable().GetOrCreateIndex(pxMaterial);
+			}
+
+			Flux_RendererImpl::Flux_ExternalSceneItem xItem;
+			xItem.m_xWorldMatrix       = pxSession->GetSessionModelMatrix();
+			xItem.m_pxMeshInstance     = pxMeshInstance;
+			xItem.m_pxMaterial         = pxMaterial;
+			xItem.m_pxSkeletonInstance = pxSkeleton;
+			// ★ THE SUBMESH SLOT IS WHAT KEEPS TWO SUBMESHES APART. The skinned
+			// instance key is (skeleton, mesh ASSET, slot), and this preview shares
+			// one skeleton across every submesh — two items that also shared a mesh
+			// asset would collapse onto one arena slice and one draw.
+			xItem.m_uSubmeshSlot       = u;
+			// This preview's slot ALONE. The default is every scene view, which would
+			// put a preview rig in the camera and in all four shadow cascades.
+			xItem.m_uViewMask          = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim);
+			xOut.PushBack(xItem);
+		}
 	}
 
 	bool EndsWithNoCase(const std::string& strValue, const char* szSuffix)
@@ -265,6 +370,14 @@ void Zenith_AnimationPreviewSession::ResetBoneAuthoringState()
 
 void Zenith_AnimationPreviewSession::ReleaseRig()
 {
+	// ★ THE RENDERER STOPS POLLING BEFORE ANYTHING IT WOULD BE HANDED IS DELETED.
+	// A source is polled on the very next sync; leaving it registered over a
+	// destroyed mesh instance and a destroyed skeleton is a use-after-free one
+	// frame later, on a path where the only symptom is a crash in the GPU-scene
+	// walk with no reference to this file.
+	UnregisterExternalItemSource();
+	DestroyPreviewMeshInstances();
+
 	// The controller is told to forget the instance BEFORE it is deleted: it caches
 	// the raw pointer and nothing else would clear it.
 	m_xController.Initialize(nullptr);
@@ -405,7 +518,158 @@ void Zenith_AnimationPreviewSession::ResolveRigInternal()
 
 	m_xController.Initialize(m_pxSkeletonInstance);
 	ArmDirectPlay();
+
+	// ★ THE RENDERABLE IS BUILT LAST, AND THE SOURCE REGISTERED AFTER IT. Every
+	// return above leaves the session with no renderable and no registration, so
+	// there is no state in which the renderer can poll a half-resolved rig. A mesh
+	// that fails to instantiate is NOT a failed resolve — the pose, the track list
+	// and the bone authoring are all still usable — so the status stays OK and the
+	// source simply finds nothing to submit.
+	CreatePreviewMeshInstances();
+	RegisterExternalItemSource();
+
 	m_eRigStatus = ZENITH_ANIMPREVIEW_RIG_OK;
+}
+
+//-----------------------------------------------------------------------------
+// The preview subject (D5)
+//-----------------------------------------------------------------------------
+
+void Zenith_AnimationPreviewSession::CreatePreviewMeshInstances()
+{
+	if (m_bPreviewIsBareMesh)
+	{
+		// ★ THE PLAIN (STATIC-FORMAT) INSTANCE, NOT A SKIN-INPUT ONE, and that is
+		// right even for a skinned mesh: the skinned walk builds its own skin-input
+		// mesh from the source ASSET through the pose registry and reads this
+		// instance only for GetSourceAsset() and its bounds.
+		Zenith_MeshAsset* pxMesh = m_xPreviewMesh.GetDirect();
+		if (pxMesh != nullptr)
+		{
+			m_pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMesh);
+		}
+		if (m_pxMeshInstance == nullptr)
+		{
+			Zenith_Warning(LOG_CATEGORY_RENDERER,
+				"Zenith_AnimationPreviewSession: the preview mesh '%s' produced no renderable — the view will draw an empty pose",
+				m_strPreviewModelPath.c_str());
+		}
+		return;
+	}
+
+	Zenith_ModelAsset* pxModel = m_xPreviewModel.GetDirect();
+	if (pxModel == nullptr)
+	{
+		return;
+	}
+
+	// ★ A MODEL RIGGED TO A DIFFERENT SKELETON IS DRAWN ANYWAY, and said out loud
+	// once. The pose is the SESSION's, so a mismatched model skins against bone
+	// indices that mean other bones — a mangled figure rather than nothing at all,
+	// which is the state a user needs told about. Refusing here would instead make
+	// a legitimate near-match (a re-exported rig under a new path) unpreviewable.
+	if (pxModel->HasSkeleton() &&
+		pxModel->GetSkeletonPath() != Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath))
+	{
+		Zenith_Warning(LOG_CATEGORY_RENDERER,
+			"Zenith_AnimationPreviewSession: preview model '%s' is rigged to '%s' but the session animates '%s' — the pose applied is the SESSION's",
+			m_strPreviewModelPath.c_str(), pxModel->GetSkeletonPath().c_str(), m_strSkeletonPath.c_str());
+	}
+
+	m_pxModelInstance = Flux_ModelInstance::CreateFromAsset(pxModel);
+	if (m_pxModelInstance == nullptr)
+	{
+		Zenith_Warning(LOG_CATEGORY_RENDERER,
+			"Zenith_AnimationPreviewSession: the preview model '%s' produced no renderable", m_strPreviewModelPath.c_str());
+		return;
+	}
+
+	// See GetPreviewSubmeshMaterial: the two arrays index-align only while every
+	// binding carries exactly one material. Logged ONCE, here, rather than per
+	// frame from the pull source.
+	if (m_pxModelInstance->GetNumMaterials() != m_pxModelInstance->GetNumMeshes())
+	{
+		Zenith_Warning(LOG_CATEGORY_RENDERER,
+			"Zenith_AnimationPreviewSession: preview model '%s' has %u mesh instances but %u materials — submesh materials are clamped to the last entry",
+			m_strPreviewModelPath.c_str(), m_pxModelInstance->GetNumMeshes(), m_pxModelInstance->GetNumMaterials());
+	}
+}
+
+void Zenith_AnimationPreviewSession::DestroyPreviewMeshInstances()
+{
+	if (m_pxModelInstance != nullptr)
+	{
+		m_pxModelInstance->Destroy();
+		delete m_pxModelInstance;
+		m_pxModelInstance = nullptr;
+	}
+	if (m_pxMeshInstance != nullptr)
+	{
+		m_pxMeshInstance->Destroy();
+		delete m_pxMeshInstance;
+		m_pxMeshInstance = nullptr;
+	}
+}
+
+void Zenith_AnimationPreviewSession::RegisterExternalItemSource()
+{
+	// Keyed on `this`: registering twice REPLACES rather than doubling (see
+	// Flux_RendererImpl::RegisterExternalSceneItemSource), so a re-resolve cannot
+	// leave two rows submitting the same rig.
+	if (Flux_RendererImpl* pxRenderer = TryGetPreviewRenderer())
+	{
+		pxRenderer->RegisterExternalSceneItemSource(&AnimPreviewGatherExternalItems, this);
+		m_bSourceRegistered = true;
+	}
+}
+
+void Zenith_AnimationPreviewSession::UnregisterExternalItemSource()
+{
+	if (!m_bSourceRegistered)
+	{
+		return;
+	}
+	// Cleared FIRST, so a run whose renderer has already gone still leaves the flag
+	// honest rather than retrying for the rest of the object's life.
+	m_bSourceRegistered = false;
+	if (Flux_RendererImpl* pxRenderer = TryGetPreviewRenderer())
+	{
+		pxRenderer->UnregisterExternalSceneItemSource(this);
+	}
+}
+
+u_int Zenith_AnimationPreviewSession::GetPreviewSubmeshCount() const
+{
+	if (m_pxModelInstance != nullptr)
+	{
+		return m_pxModelInstance->GetNumMeshes();
+	}
+	return (m_pxMeshInstance != nullptr) ? 1u : 0u;
+}
+
+Flux_MeshInstance* Zenith_AnimationPreviewSession::GetPreviewSubmeshInstance(u_int uIndex) const
+{
+	if (m_pxModelInstance != nullptr)
+	{
+		return (uIndex < m_pxModelInstance->GetNumMeshes()) ? m_pxModelInstance->GetMeshInstance(uIndex) : nullptr;
+	}
+	return (uIndex == 0u) ? m_pxMeshInstance : nullptr;
+}
+
+Zenith_MaterialAsset* Zenith_AnimationPreviewSession::GetPreviewSubmeshMaterial(u_int uIndex) const
+{
+	// A bare mesh asset has no material BINDING at all — null, which the renderer
+	// reads as the blank material. That is a real answer, not a failure.
+	if (m_pxModelInstance == nullptr)
+	{
+		return nullptr;
+	}
+	const u_int uNumMaterials = m_pxModelInstance->GetNumMaterials();
+	if (uNumMaterials == 0u)
+	{
+		return nullptr;
+	}
+	return m_pxModelInstance->GetMaterial((uIndex < uNumMaterials) ? uIndex : uNumMaterials - 1u);
 }
 
 void Zenith_AnimationPreviewSession::ArmDirectPlay()
@@ -724,17 +988,19 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 	xVC.m_xPrevViewProjMatNoJitter = xVC.m_xViewProjMat;
 	xVC.m_xJitterUV_PrevJitterUV   = Zenith_Maths::Vector4(0.0f);
 
-	// ★ NO MESH IS SUBMITTED YET, AND THAT IS A REPORTED GAP, NOT AN OVERSIGHT.
-	// The external-item seam the material preview draws through
-	// (Flux_RendererImpl::Flux_ExternalSceneItem) carries a world matrix, a
-	// Flux_MeshInstance and a material — and NO skeleton. An animated preview needs
-	// the compute-skinning path to know which Flux_SkeletonInstance to skin the
-	// instance with, so submitting through it today would draw the mesh frozen at
-	// bind pose while the session's rig animated underneath, which looks like a
-	// broken clip rather than a missing feature. Extending that struct means
-	// editing Flux_RendererImpl.h, which this unit does not own. Until something
-	// records into it, the slot's persistent LDR simply samples as its cleared
-	// contents — see the list in Flux_Graphics.cpp, which builds it regardless.
+	// ★ THE MESH IS NOT SUBMITTED FROM HERE, AND THAT IS THE POINT OF THE PULL
+	// SOURCE. Staging is whatever a panel's frame happens to be; SUBMITTING has to
+	// happen inside the sync that consumes it, or the item sits in the renderer's
+	// list holding a raw mesh pointer until some later frame. So this function
+	// raises the view and fills the constants, and
+	// AnimPreviewGatherExternalItems — registered at rig resolve, polled by
+	// Flux_RendererImpl::PollExternalSceneItemSources — hands over one skinned
+	// external item per submesh on the frame it is wanted. The rise above is also
+	// what UNGATES that source: a lowered slot 6 submits nothing.
+	//
+	// Flux_ExternalSceneItem carries a Flux_SkeletonInstance* since D4, so the
+	// item goes down the compute-skinning walk with THIS session's pose rather
+	// than drawing the mesh frozen at bind pose.
 }
 
 void Zenith_AnimationPreviewSession::DeactivatePreviewView()

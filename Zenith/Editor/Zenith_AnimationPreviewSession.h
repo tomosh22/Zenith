@@ -8,6 +8,13 @@
 #include <string>
 
 class Flux_SkeletonInstance;
+// The preview SUBJECT (D5). Forward-declared rather than included: the accessors
+// below only hand the pointers out, and Flux_ModelInstance.h / Flux_MeshInstance.h
+// would pull the asset-handle + buffer headers into every panel that opens a
+// session. The .cpp includes both.
+class Flux_ModelInstance;
+class Flux_MeshInstance;
+class Zenith_MaterialAsset;
 // STRUCT, matching its definition — a `class` forward declaration of a struct
 // trips MSVC C4099 in every TU that sees both.
 struct Zenith_EditorPrefs;
@@ -47,6 +54,25 @@ struct Zenith_EditorPrefs;
 // the MATERIAL slot, which still has two claimants of its own — the material
 // editor panel's liveness window and the --preview-test-view diagnostic — and
 // Flux_MaterialPreviewController is its only owner now.
+//
+// ★ THE SESSION SUBMITS ITS OWN MESH, AND IT DOES SO AS A PULL SOURCE (D5). A
+// resolved rig registers this object with
+// Flux_RendererImpl::RegisterExternalSceneItemSource (keyed on `this`), and the
+// GPU-scene sync polls it once per frame for one Flux_ExternalSceneItem per
+// submesh: the session's model matrix, that submesh's Flux_MeshInstance, the
+// aligned material, THE SESSION'S OWN Flux_SkeletonInstance, and the view mask of
+// slot 6 alone. PULL rather than PUSH because a panel draws on frames the editor
+// may never sync: a pushed item would sit in the renderer's list holding a raw
+// mesh pointer until the next real frame, which is a use-after-free if the rig
+// re-resolved in between.
+//
+// ★ THE SKELETON ON THE ITEM IS THE SESSION'S, NEVER THE MODEL INSTANCE'S. A
+// Flux_ModelInstance builds a skeleton of its own from the model's skeleton path
+// and NOTHING ever animates it, so an item carrying that one would compute-skin a
+// bind pose — the mesh would stand in a T-pose while the clip played underneath
+// it, which reads as a broken clip rather than as a wrong pointer. The bone
+// palette dedups by skeleton POINTER, so this is also what shares one palette
+// block across every submesh of the preview.
 //=============================================================================
 
 //-----------------------------------------------------------------------------
@@ -93,9 +119,11 @@ public:
 	~Zenith_AnimationPreviewSession();
 
 	// ★ NON-COPYABLE. It owns a Flux_AnimationController (itself non-copyable), a
-	// heap Flux_SkeletonInstance whose address that controller caches, and the
-	// activation edge of one render view — a copy would give two objects one
-	// instance to delete and one view to raise and lower against each other.
+	// heap Flux_SkeletonInstance whose address that controller caches, the heap
+	// renderable below, the activation edge of one render view, and a renderer
+	// pull-source registration keyed on ITS OWN ADDRESS — a copy would give two
+	// objects one instance to delete, one view to raise and lower against each
+	// other, and a source row only one of them could ever unregister.
 	Zenith_AnimationPreviewSession(const Zenith_AnimationPreviewSession&) = delete;
 	Zenith_AnimationPreviewSession& operator=(const Zenith_AnimationPreviewSession&) = delete;
 
@@ -338,6 +366,43 @@ public:
 	bool GetAutoKey() const { return m_bAutoKey; }
 
 	//-------------------------------------------------------------------------
+	// THE PREVIEW SUBJECT (D5) — what the view actually draws.
+	//
+	// One renderable per submesh, created when the rig resolves and destroyed by
+	// ReleaseRig. A .zmodel gives a Flux_ModelInstance (one mesh instance per
+	// binding); a bare .zasset/.zmesh gives a single Flux_MeshInstance and no
+	// material at all. The accessors below are what the pull source reads, and
+	// they are public so a unit can compare the submitted items against them
+	// rather than against a second copy of the same rule.
+	//-------------------------------------------------------------------------
+
+	// 0 with no rig, 1 for a bare mesh, one per model binding otherwise.
+	u_int GetPreviewSubmeshCount() const;
+	// Null for an out-of-range index, or for a binding whose mesh failed to load
+	// (Flux_ModelInstance skips those, so the count already excludes them).
+	Flux_MeshInstance* GetPreviewSubmeshInstance(u_int uIndex) const;
+	// The material aligned with that submesh, or NULL — which the renderer reads
+	// as "the blank material". A bare mesh asset carries no binding, so it is
+	// always null there.
+	//
+	// ★ THE ALIGNMENT IS APPROXIMATE BY CONSTRUCTION and the header says so
+	// rather than the call site guessing. Flux_ModelInstance keeps ONE material
+	// entry per binding MATERIAL, not per binding, so GetMaterial(i) lines up
+	// with GetMeshInstance(i) only while every binding has exactly one. A model
+	// that breaks that is clamped to the last entry and logged once at resolve:
+	// a possibly-wrong material still draws the submesh, where an out-of-range
+	// read would be undefined behaviour on a path with no other symptom.
+	Zenith_MaterialAsset* GetPreviewSubmeshMaterial(u_int uIndex) const;
+
+	// The two owning pointers, for a unit that needs to see which shape resolved.
+	Flux_ModelInstance* GetPreviewModelInstance() const { return m_pxModelInstance; }
+	Flux_MeshInstance* GetPreviewMeshInstance() const { return m_pxMeshInstance; }
+
+	// Is this session currently registered as a renderer pull source? True from a
+	// successful rig resolve until ReleaseRig (or Close).
+	bool IsSubmittingToRenderer() const { return m_bSourceRegistered; }
+
+	//-------------------------------------------------------------------------
 	// The animation preview view (kuFluxViewSlotPreviewAnim).
 	//
 	// ★ THE PAIR IS EDGE-TRIGGERED AND BOTH HALVES ARE IDEMPOTENT, because the
@@ -380,6 +445,17 @@ private:
 	void ResolveRig();
 	void ResolveRigInternal();
 	void ReleaseRig();
+	// Build the renderable for the resolved preview mesh (D5). Called once per
+	// successful resolve, after the skeleton instance exists so a rig that fails
+	// leaves no orphan renderable behind.
+	void CreatePreviewMeshInstances();
+	void DestroyPreviewMeshInstances();
+	// Register/unregister this session as the renderer's pull source, keyed on
+	// `this`. Both are safe with no Flux (they simply do nothing), and the
+	// unregister runs BEFORE the renderables are destroyed — a source left
+	// registered is polled on the very next frame.
+	void RegisterExternalItemSource();
+	void UnregisterExternalItemSource();
 	// Put the working clip into the controller's collection and start direct play.
 	void ArmDirectPlay();
 	// The remembered choice for m_strClipAssetPath, if any.
@@ -411,6 +487,19 @@ private:
 
 	// The session's OWN skeleton instance — never an entity's (D30).
 	Flux_SkeletonInstance* m_pxSkeletonInstance = nullptr;
+
+	// The preview subject (D5). EXACTLY ONE of these is non-null while a rig is
+	// resolved: a .zmodel bundle gives the model instance, a bare .zasset/.zmesh
+	// the mesh instance. Both are owned here and destroyed by ReleaseRig.
+	//
+	// ★ THE MODEL INSTANCE'S OWN SKELETON IS DELIBERATELY UNUSED. It exists (the
+	// factory builds one from the model's skeleton path), nothing animates it, and
+	// the submission carries m_pxSkeletonInstance instead — see the class comment.
+	Flux_ModelInstance* m_pxModelInstance = nullptr;
+	Flux_MeshInstance* m_pxMeshInstance = nullptr;
+	// Mirrors the renderer's source table so the unregister is exactly as
+	// idempotent as the view teardown beside it.
+	bool m_bSourceRegistered = false;
 
 	Zenith_EditorPrefs* m_pxPrefs = nullptr;
 

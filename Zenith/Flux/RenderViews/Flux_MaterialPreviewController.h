@@ -182,10 +182,16 @@ public:
 	}
 	bool IsActive() const { return m_bActive; }
 
-	// Does this controller currently own the shared preview view slot? FALSE while
-	// an animation preview holds it, in which case Update() neither activates nor
-	// stages the view. Distinct from IsActive(): a panel can be open (active) and
-	// dispossessed at the same time — that pair is exactly the placeholder state.
+	// Does this controller currently own the MATERIAL preview view slot? FALSE
+	// while the --preview-test-view diagnostic holds it, in which case Update()
+	// neither activates nor stages the view. Distinct from IsActive(): a panel can
+	// be open (active) and dispossessed at the same time — that pair is exactly
+	// the placeholder state.
+	//
+	// ★ THE ANIMATION EDITOR IS NOT A CLAIMANT (D3). It drives slot 6 —
+	// kuFluxViewSlotPreviewAnim — which nothing else stages, so it can neither
+	// take this slot nor be dispossessed of its own. The two claimants left are
+	// this panel's liveness window and the diagnostic, and both are in this file.
 	bool HasPreviewSlot() const { return Flux_PreviewSlotArbiter::HasSlot(this); }
 	const std::string& GetPreviewSlotOwnerName() const { return Flux_PreviewSlotArbiter::GetOwnerName(); }
 	// Take the slot back (the panel's reclaim button), dispossessing the owner.

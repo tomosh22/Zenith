@@ -39,8 +39,14 @@ as re-plan corrections, confirmed shipped):
   main G-buffer MRTs (`Zenith/Flux/Primitives/Flux_Primitives.cpp:571-575`).
 - **The preview slot already has an owner.** `Flux_MaterialPreviewController` activates and
   stages slot `kuFluxViewSlotPreviewMaterial` from its own liveness window
-  (`Zenith/Flux/RenderViews/Flux_MaterialPreviewController.h:144,156-161`). Two panels open
-  at once contend for one slot.
+  (`Zenith/Flux/RenderViews/Flux_MaterialPreviewController.h`). Two panels open
+  at once contend for one slot. **SUPERSEDED (D3, 2026-09): there are two preview slots
+  now.** `kuFluxViewSlotPreviewAnim` is the animation editor's own — a full-pipeline
+  PREVIEW view with a persistent LDR of its own — staged by
+  `Zenith_AnimationPreviewSession::UpdatePreviewView` and by nothing else. The two panels
+  no longer contend, the session is not an arbiter claimant, and the dispossessed-plus-
+  reclaim UI this contention implied was deleted rather than disabled. See §8's fourth
+  open question for what became of the arbiter.
 
 ---
 
@@ -1025,18 +1031,39 @@ fallback is safe whether or not 4.3 has landed in the binary being built.
    clears it unconditionally. No separate Phase-3 contract needed to be written down;
    the ownership this question worried about not existing had already been decided by
    the time Phase 4 needed it.
-4. **The preview view slot has an incumbent.** — **RESOLVED: `Flux_PreviewSlotArbiter`**
+4. **The preview view slot has an incumbent.** — **RESOLVED TWICE, and the second answer
+   retired the first.**
+
+   *First (Phase 4):* `Flux_PreviewSlotArbiter`
    (`Zenith/Flux/RenderViews/Flux_PreviewSlotArbiter.h`), a last-opened-wins arbiter
    living in `Flux/RenderViews` (not `Editor/`, because Flux may not include Editor and
    both claimants — `Flux_MaterialPreviewController` and
-   `Zenith_AnimationPreviewSession` — sit on opposite sides of that boundary). It is
+   `Zenith_AnimationPreviewSession` — sat on opposite sides of that boundary). It is
    owner-agnostic (a `void*` identity plus a display name, never dereferenced), claims on
    a transition rather than per frame (so a re-claim-every-visible-frame panel could
    never be dispossessed), and a dispossessed claimant is told WHO holds the slot so its
-   panel can offer a reclaim. `Flux_MaterialPreviewController` participates with the same
-   `Claim`/`Release`/`HasSlot` calls the animation session uses
-   (`Flux_MaterialPreviewController.h:174,179,189-192`) — confirming both sides of the
-   arbitration this note asked for actually exist, not just the animation side.
+   panel can offer a reclaim.
+
+   *Second (D3, 2026-09) — SHARING THE SLOT WAS THE PROBLEM, not who won it.* The
+   animation editor has a preview slot of its OWN now (`kuFluxViewSlotPreviewAnim`, the
+   second of a contiguous PREVIEW range), so nothing arbitrates between the two panels at
+   all: the session stages slot 6, nothing else does, and it makes no `Claim` call. The
+   panel's placeholder-and-Reclaim UI was DELETED rather than disabled — a button for a
+   state that can no longer occur is a promise the code cannot keep. The arbiter is KEPT
+   and still owns the MATERIAL slot, which genuinely has two claimants of its own: the
+   material panel's liveness window and the `--preview-test-view` diagnostic. Its unit
+   lives beside them in `Flux_MaterialPreviewController.Tests.inl` (D5 moved it there
+   from the session's own test file, where it had been parked while the session was still
+   a claimant).
+
+   *And the slot is drawn into (D5).* The session registers itself as a renderer
+   external-item PULL source while its rig is resolved, and the GPU-scene sync polls it
+   for one `Flux_ExternalSceneItem` per submesh — the session's model matrix, the
+   submesh's `Flux_MeshInstance`, the aligned material, THE SESSION'S OWN
+   `Flux_SkeletonInstance`, and a view mask carrying slot 6's bit alone. The skeleton
+   choice is the load-bearing one: a `Flux_ModelInstance` builds a skeleton of its own
+   that nothing ever animates, so submitting that one would draw the preview at bind pose
+   while the clip played underneath.
 5. **Non-uniform bone scale.** — **RESOLVED: assert, as recommended.**
    `Zenith_BoneSpace::ParentWorldRotation` asserts uniform, positive-determinant scale on
    the extracted matrix rather than assuming it (confirmed in the shipped header's own

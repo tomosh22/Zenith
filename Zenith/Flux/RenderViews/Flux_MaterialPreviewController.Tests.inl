@@ -110,3 +110,84 @@ ZENITH_TEST(MaterialPreviewOrbit, PitchAndDistanceClamps)
 	ZENITH_ASSERT_EQ_FLOAT(Flux_PreviewApplyZoom(1.6f, -100.0f), 6.0f,  1e-6f, "zoom-out clamps at 6.0");
 	ZENITH_ASSERT_EQ_FLOAT(Flux_PreviewApplyZoom(1.6f,    1.0f), 1.45f, 1e-6f, "nominal wheel step is -0.15/unit");
 }
+
+// ============================================================================
+// The MATERIAL preview slot's arbitration (Flux_PreviewSlotArbiter).
+//
+// ★ RELOCATED HERE BY D5, from Zenith_AnimationPreviewSession.Tests.inl. It was
+// parked there because the arbitration used to have two claimants on opposite
+// sides of a layer boundary, and only the Editor side could see both. It does
+// not any more: D3 moved the animation editor onto a preview slot of its OWN, so
+// the material slot's claimants are this controller's liveness window and the
+// --preview-test-view diagnostic — both of them right here.
+//
+// The half that could NOT come along is "a staged animation session claims
+// nothing", which is a fact about the SESSION. Flux may not include Editor, so it
+// stays in Zenith_AnimationPreviewSession.Tests.inl.
+//
+// No force-link anchor is needed for this TU: Flux_MaterialPreviewController is a
+// registered tools feature reached through Zenith_Engine::MaterialPreview(), so
+// live symbols hold the .obj in — which the five orbit units above already
+// demonstrate, since they count in the pinned baseline today.
+//
+// THE RISING EDGE IS WHAT THE COVERAGE IS FOR: SetActive(true) runs every frame
+// the material panel is visible, and a claim per frame would make the material
+// editor impossible to dispossess — last-opened-wins would quietly become
+// last-drawn-wins.
+//
+// Headless and device-free: Update() is never called (that needs procedural
+// meshes, a material table and the submission seam), only the claim/release
+// edges, which are pure static state.
+// ============================================================================
+ZENITH_TEST(MaterialPreview, TheArbiterClaimsOnTheRisingEdgeOnly)
+{
+	// Process-level state, so it is reset at BOTH ends: a unit that left the slot
+	// claimed would hand its claim to the next one.
+	Flux_PreviewSlotArbiter::ResetForTesting();
+
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "the reset leaves nobody owning it");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName().empty(), "and no owner name");
+
+	Flux_MaterialPreviewController xMaterialPreview;
+	xMaterialPreview.SetActive(true);
+	ZENITH_ASSERT_TRUE(xMaterialPreview.HasPreviewSlot(), "the material editor opening claims the slot");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName() == "Material Editor", "under its own name");
+
+	// The second claimant: a bare address standing in for whatever claims the
+	// material slot next (the --preview-test-view diagnostic claims exactly like
+	// this, under its own name). The arbiter stores an IDENTITY it never
+	// dereferences, so a local is a complete claimant.
+	const int iOtherClaimant = 0;
+
+	// ★ ACTIVE AND DISPOSSESSED ARE STILL DIFFERENT THINGS. The DP automation
+	// asserts IsActive() stays true for the whole time the panel is open, so
+	// arbitration must not touch the liveness flag.
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::Claim(&iOtherClaimant, "Preview Test View"), "the owner changed");
+	ZENITH_ASSERT_FALSE(xMaterialPreview.HasPreviewSlot(), "the material editor is dispossessed");
+	ZENITH_ASSERT_TRUE(xMaterialPreview.IsActive(), "but its panel is still open");
+	ZENITH_ASSERT_TRUE(xMaterialPreview.GetPreviewSlotOwnerName() == "Preview Test View", "and it is told who took it");
+
+	// THE RISING EDGE IS THE ONLY EDGE. These are the per-frame liveness refreshes.
+	xMaterialPreview.SetActive(true);
+	xMaterialPreview.SetActive(true);
+	ZENITH_ASSERT_FALSE(xMaterialPreview.HasPreviewSlot(), "a liveness refresh is not a claim");
+
+	// A dispossessed claimant closing must not free somebody else's slot.
+	xMaterialPreview.SetActive(false);
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == &iOtherClaimant, "a dispossessed close frees nothing");
+
+	// ...and re-opening IS a rising edge, so it wins.
+	xMaterialPreview.SetActive(true);
+	ZENITH_ASSERT_TRUE(xMaterialPreview.HasPreviewSlot(), "reopening claims again");
+
+	// The falling edge of the OWNER releases.
+	xMaterialPreview.SetActive(false);
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "the owner's close frees the slot");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName().empty(), "and clears the owner name");
+
+	// The reset is what every fixture in the suite leans on.
+	Flux_PreviewSlotArbiter::Claim(&iOtherClaimant, "Leftover");
+	Flux_PreviewSlotArbiter::ResetForTesting();
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwner() == nullptr, "ResetForTesting clears the owner");
+	ZENITH_ASSERT_TRUE(Flux_PreviewSlotArbiter::GetOwnerName().empty(), "and the name with it");
+}

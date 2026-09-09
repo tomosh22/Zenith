@@ -1719,11 +1719,13 @@ private:
 	u_int m_uSeenRedoDepth = 0;
 	bool m_bClipRefreshPending = false;
 
-	// ★ The ImGui registration of the SHARED preview LDR, kept as the raw handle
-	// value so this header does not have to pull Flux in. Registered once and
-	// NEVER unregistered: the panel outlives the frame loop, and unregistering
-	// from a static destructor would be a descriptor write after the backend has
-	// gone. Same treatment, same reason, as the material editor's.
+	// ★ The ImGui registration of the animation preview's OWN persistent LDR
+	// (GetPreviewLDR(kuFluxViewSlotPreviewAnim) — not shared with the material
+	// editor since D3, which gave each preview a slot and an LDR of its own), kept
+	// as the raw handle value so this header does not have to pull Flux in.
+	// Registered once and NEVER unregistered: the panel outlives the frame loop,
+	// and unregistering from a static destructor would be a descriptor write after
+	// the backend has gone. Same treatment, same reason, as the material editor's.
 	u_int64 m_ulPreviewImageHandle = 0;
 	bool m_bPreviewImageRegistered = false;
 

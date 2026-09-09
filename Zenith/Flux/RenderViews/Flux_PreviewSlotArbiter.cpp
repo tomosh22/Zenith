@@ -6,12 +6,17 @@
 #include "Flux/RenderViews/Flux_PreviewSlotArbiter.h"
 
 // ★ NO /OPT:REF ANCHOR HERE, ON PURPOSE. Unlike the animation-preview session,
-// this TU is named by GENUINE callers that are themselves linked:
-// Flux_MaterialPreviewController::SetActive (a registered tools feature) and
-// Zenith_AnimationPreviewSession::Open. A force-link anchor would be dead code
-// pretending to be a safety net. There are no ZENITH_TESTs in this file either —
-// the arbitration unit needs BOTH claimants, and the session is Editor-layer, so
-// it lives in Zenith_AnimationPreviewSession.Tests.inl where both are reachable.
+// this TU is named by GENUINE callers that are themselves linked — all of them
+// now in Flux_MaterialPreviewController, a registered tools feature: SetActive's
+// two edges, Update's liveness-expiry release and the --preview-test-view
+// diagnostic's own pair, ReleaseAssetReferences, HasSlot/GetPreviewSlotOwnerName
+// and the destructor. A force-link anchor would be dead code pretending to be a
+// safety net.
+//
+// There are no ZENITH_TESTs in this file either. The arbitration unit lives in
+// Flux_MaterialPreviewController.Tests.inl, beside the claimant it is about
+// (D5 moved it there from Zenith_AnimationPreviewSession.Tests.inl, where D3 had
+// parked it while the animation editor was still a second claimant).
 
 const void* Flux_PreviewSlotArbiter::s_pxOwner = nullptr;
 std::string Flux_PreviewSlotArbiter::s_strOwnerName;

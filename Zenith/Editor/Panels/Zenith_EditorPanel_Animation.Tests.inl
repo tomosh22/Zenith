@@ -121,9 +121,13 @@ namespace
 	// lingers in the live registry the suite runs inside.
 	//
 	// ★ IT ALSO RESETS THE PREVIEW-SLOT ARBITER AT BOTH ENDS, exactly as
-	// Zenith_AnimationPreviewSession.Tests.inl does: opening a clip opens a
-	// preview session, which CLAIMS the process-level slot, and a unit that left
-	// it claimed would hand its claim to the next one.
+	// Zenith_AnimationPreviewSession.Tests.inl does — but NO LONGER because this
+	// panel claims anything. Opening a clip opens a preview session, and since D3
+	// a session stages a render view of its OWN (kuFluxViewSlotPreviewAnim) and
+	// claims the arbiter never. The reset stays as fixture hygiene over
+	// process-level state these units run inside, not as a claim of this panel's.
+	// What the panel DOES leave behind is the render view itself, which the
+	// session lowers on Close and on its hidden-frame call.
 	//
 	// ★ DECLARE THE FIXTURE BEFORE THE PANEL IN EVERY TEST. The panel owns a
 	// document and a session, both of which hold owning asset handles;

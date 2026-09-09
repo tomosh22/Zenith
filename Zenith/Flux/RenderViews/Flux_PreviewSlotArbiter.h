@@ -27,23 +27,33 @@
 // because that is where the material editor's item goes.
 //
 // So this class is NOT what makes two previews possible; it is what decides who
-// owns ONE OF THEM while two editors want the same one. It arbitrates a single
-// named slot — the material preview — and the animation editor participates only
-// for as long as it shares that slot. When an owner is moved onto a slot of its
-// own the right change is to arbitrate PER SLOT (an owner per range index), not
-// to widen this to "the preview view" again.
+// owns ONE OF THEM while two claimants want the same one. It arbitrates a single
+// named slot — the MATERIAL preview — and nothing else.
+//
+// ★ THE ANIMATION EDITOR IS NO LONGER A CLAIMANT (D3). It used to share this
+// slot, and that sharing was the whole reason the class exists; it stages
+// kuFluxViewSlotPreviewAnim now, which nothing else stages, so there is nothing
+// left to arbitrate on its side and Zenith_AnimationPreviewSession does not name
+// this class at all. What remains here are the two claimants of the MATERIAL
+// slot: Flux_MaterialPreviewController's liveness window and the
+// --preview-test-view diagnostic (which also runs through that controller, on
+// its own edges). If a THIRD preview owner ever appears, the right change is to
+// arbitrate PER SLOT (an owner per range index), not to widen this back to "the
+// preview view".
 //
 // The rule that reads best to a user is the one a tabbed editor already implies:
 // the thing you opened most recently is the thing you are looking at. The
 // dispossessed owner is told WHO took it (by name) so its panel can say so and
 // offer a reclaim.
 //
-// ★ IT LIVES IN Flux/RenderViews, NOT IN Editor/, AND THAT IS FORCED. Both
-// claimants are on opposite sides of a layer boundary: Flux_MaterialPreviewController
-// is Flux and Zenith_AnimationPreviewSession is Editor. Editor may include Flux;
-// Flux may NOT include Editor. An arbiter only one of them can reach arbitrates
-// nothing. It also belongs here on the merits — the resource it owns is a Flux
-// render-view slot, not an editor concept.
+// ★ IT LIVES IN Flux/RenderViews, NOT IN Editor/. That placement was originally
+// FORCED — the two claimants sat on opposite sides of a layer boundary
+// (Flux_MaterialPreviewController is Flux, Zenith_AnimationPreviewSession is
+// Editor; Editor may include Flux, Flux may NOT include Editor), and an arbiter
+// only one of them can reach arbitrates nothing. That reason is spent with the
+// animation editor's departure, and the placement still stands on the merits:
+// the resource it owns is a Flux render-view slot, not an editor concept, and
+// the --preview-test-view diagnostic that claims it is Flux-side too.
 //
 // ★ IT IS DELIBERATELY OWNER-AGNOSTIC — a void* identity plus a display name —
 // so anything that wants the slot participates with one Claim call and holds no
@@ -54,11 +64,13 @@
 // view slot in one renderer. That is also why it has a test-only reset — a unit
 // that left it claimed would hand its claim to the next unit.
 //
-// THE RULE BOTH CLAIMANTS FOLLOW, and it is not symmetric with claiming: a
+// THE RULE EVERY CLAIMANT FOLLOWS, and it is not symmetric with claiming: a
 // claimant stages the view only while HasSlot(this), and DEACTIVATES the view
 // only when GetOwner() == nullptr. A dispossessed claimant that deactivated on
 // its own behalf would tear down the view the CURRENT owner is staging into that
-// same frame, and the symptom is the other editor's preview flickering black.
+// same frame, and the symptom is the other one's preview flickering black. Note
+// that this rule is about the MATERIAL slot alone: the animation preview's slot
+// has one stager, so it lowers its own view unconditionally.
 //=============================================================================
 class Flux_PreviewSlotArbiter
 {
