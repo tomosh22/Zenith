@@ -550,6 +550,36 @@ ZENITH_TEST(AnimationPreview, DeactivateIsIdempotentAndAStagedFrameRecovers)
 }
 
 //------------------------------------------------------------------------------
+// (4c') ONLY THE RAISER LOWERS. A session that never raised slot 6 must leave it
+// exactly as it found it: the panel calls DeactivatePreviewView() on every hidden
+// frame, and an animation panel with nothing open is hidden in every editor frame
+// of every game -- the render-graph oracle's sample C raises slot 6 itself and
+// was lowered by that call once.
+//------------------------------------------------------------------------------
+ZENITH_TEST(AnimationPreview, ASessionThatNeverRaisedTheViewNeverLowersIt)
+{
+	Flux_RenderViewRegistry* pxViews = AnimPreview_Views();
+	ZENITH_ASSERT_NOT_NULL(pxViews, "the unit batch runs with a live Flux_GraphicsImpl");
+	if (pxViews == nullptr)
+	{
+		return;
+	}
+	const bool bWasActive = pxViews->IsViewActive(kuFluxViewSlotPreviewAnim);
+	pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, true);
+
+	{
+		Zenith_AnimationPreviewSession xSession("Nothing.zanim");
+		xSession.DeactivatePreviewView();
+		ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim),
+			"a session that never raised the view leaves somebody else's activation alone");
+	}
+	ZENITH_ASSERT_TRUE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim),
+		"and destroying it (Close on a never-opened session) leaves it alone too");
+
+	pxViews->SetViewActive(kuFluxViewSlotPreviewAnim, bWasActive);
+}
+
+//------------------------------------------------------------------------------
 // (4d) TWO PREVIEWS, TWO PAYLOADS. The property the whole slot split exists for.
 //
 // Slot 5's ViewConstants are hand-staged here with a camera nothing else would

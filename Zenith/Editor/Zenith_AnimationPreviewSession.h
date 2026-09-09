@@ -416,6 +416,11 @@ private:
 
 	Zenith_AnimPreviewRigStatus m_eRigStatus = ZENITH_ANIMPREVIEW_RIG_NOT_OPEN;
 	bool m_bOpen = false;
+	// TRUE between the session's own raise of the animation-preview view and its
+	// lowering of it. DeactivatePreviewView() lowers ONLY when this is set: the
+	// panel calls it on every hidden frame, and a panel that never raised the view
+	// must not lower one somebody else (the render-graph oracle's sample C) raised.
+	bool m_bRaisedPreviewView = false;
 	bool m_bPlaying = true;
 	bool m_bPreviewIsBareMesh = false;
 

@@ -698,6 +698,7 @@ void Zenith_AnimationPreviewSession::UpdatePreviewView()
 	{
 		RequestPreviewGraphRebuild();
 	}
+	m_bRaisedPreviewView = true;
 
 	// Staged through the SAME pure builders Flux_MaterialPreviewController uses.
 	// The two previews now fill two different slots' constants, so they can no
@@ -743,6 +744,17 @@ void Zenith_AnimationPreviewSession::DeactivatePreviewView()
 	{
 		return;
 	}
+
+	// ★ ONLY THE RAISER LOWERS. The panel calls this on every hidden frame, and
+	// an animation panel with no rig of its own is hidden in every editor frame of
+	// every game -- so without this guard it would lower a view it never raised
+	// (the render-graph oracle's sample C activates slot 6 itself, and lost it
+	// to exactly this call once).
+	if (!m_bRaisedPreviewView)
+	{
+		return;
+	}
+	m_bRaisedPreviewView = false;
 
 	// ★ IDEMPOTENT BY CONSTRUCTION, WHICH IS WHAT MAKES THE PANEL'S CALL SITE
 	// LEGAL. SetViewActive answers "did the ACTIVE SET change", so the rebuild is
