@@ -114,6 +114,11 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 #ifdef ZENITH_TOOLS
 	g_xEngine.MaterialPreview().Update();
 #endif
+	// ...and PULL from every registered external-item source, in the same place and
+	// for the same reason. The material preview pushes because it already runs here;
+	// anything whose draw is driven from OUTSIDE the frame loop registers instead, so
+	// its items are produced during the sync that consumes them and never linger.
+	PollExternalSceneItemSources();
 
 	// ONE sync covers both sources: snapshot statics (Zenith_ModelComponent meshes) AND
 	// instance-group foliage (trees). The mesh-geometry residency refcount + the GPU-scene
@@ -139,14 +144,19 @@ void Flux_RendererImpl::SyncUnifiedBucketsFromSnapshot()
 	m_xUnifiedPrevTransformCache.BeginFrame();
 	m_axUnifiedPrevTransforms.Clear();
 
-	// Three independent data sources fill the one unified GPU scene; each is extracted
-	// into its own helper below for readability (pure factoring — no behaviour change).
-	// The refcount-diff bracket (mesh-geometry BeginSync/EndSync + the GPU-scene build
-	// Begin/End) stays here, around all three.
+	// Four independent data sources fill the one unified GPU scene; each is extracted
+	// into its own helper below for readability. The refcount-diff bracket (mesh-geometry
+	// BeginSync/EndSync + the GPU-scene build Begin/End) stays here, around all four.
+	//
+	// ORDER IS LOAD-BEARING for the last two: the external-item list is read by BOTH.
+	// ExtractSkinnedBuckets runs first and takes only the SKINNED items (it owns the
+	// arena cursor + the bone palette, which are open only inside it);
+	// ExtractExternalSceneItems then takes the rest and clears the list. Swapping them
+	// would clear the list before the skinned walk ever saw it.
 	ExtractSnapshotStaticBuckets(xSnapshot, pxBlankMaterial);   // Zenith_ModelComponent static meshes
 	ExtractInstanceGroupBuckets(pxBlankMaterial);               // instance-group foliage (trees)
-	ExtractSkinnedBuckets(xSnapshot, pxBlankMaterial);          // animated skinned models (compute-skinned to the arena)
-	ExtractExternalSceneItems(pxBlankMaterial);                 // renderer-level submissions (the material-preview mesh)
+	ExtractSkinnedBuckets(xSnapshot, pxBlankMaterial);          // animated skinned models + SKINNED external items
+	ExtractExternalSceneItems(pxBlankMaterial);                 // the remaining renderer-level submissions
 
 	Flux_EndGPUSceneBuild(m_xUnifiedGPUScene, m_xUnifiedBucketRegistry);
 	m_xUnifiedMeshGeometryRegistry.EndSync();
@@ -310,9 +320,11 @@ void Flux_RendererImpl::ExtractInstanceGroupBuckets(Zenith_MaterialAsset* pxBlan
 	}
 }
 
-// Source 3/3 — animated skinned models (Stage 5). Resets the per-frame skin builders,
-// compute-skins each animated submesh-instance to the shared arena via its own per-instance
-// skinned bucket, and appends any non-skinned submeshes of an animated model as static geometry.
+// Source 3/4 — animated skinned models (Stage 5) AND skinned external submissions.
+// Resets the per-frame skin builders, compute-skins each animated submesh-instance to the
+// shared arena via its own per-instance skinned bucket, appends any non-skinned submeshes of
+// an animated model as static geometry, and then — while the arena cursor and the bone
+// palette are still open — takes the SKINNED items off the external list too.
 void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial)
 {
 	const Zenith_Vector<Flux_RenderSceneItem>& xItems = xSnapshot.Items();
@@ -492,6 +504,107 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 				RecordUnifiedPrevTransform(xSrc.m_ulEntityIDPacked, xSrc.m_xWorldMatrix);   // Stage 4.3: animated model's non-skinned submeshes (index-locked)
 			}
 		}
+
+		// ---- SKINNED external submissions (the animation preview's rig) ----
+		// Second walk, same open registries: the arena cursor, the bone palette, the
+		// palette history, the pose registry and the stable-id registry are all still
+		// mid-sync here, which is the ONLY window a skinned external item can join them
+		// in. It is a walk of its own rather than a branch in the snapshot loop because
+		// its items are not snapshot items — they carry their own world matrix, skeleton
+		// and view mask, and no entity id at all.
+		for (u_int uExt = 0; uExt < m_axExternalSceneItems.GetSize(); ++uExt)
+		{
+			const Flux_ExternalSceneItem& xExt = m_axExternalSceneItems.Get(uExt);
+			Zenith_MaterialAsset* pxMat = xExt.m_pxMaterial != nullptr ? xExt.m_pxMaterial : pxBlankMaterial;
+			if (Flux_RouteExternalItem(Flux_ClassifyExternalSceneItem(xExt, pxMat)) != EXTERNAL_ITEM_WALK_SKINNED)
+			{
+				continue;   // STATIC / SKIP -> ExtractExternalSceneItems owns the decision (and the warning)
+			}
+			Flux_SkeletonInstance* pxSkeleton = xExt.m_pxSkeletonInstance;   // non-null: the classifier said SKINNED
+
+			// Dedup into the SAME shared palette the snapshot walk fills, by the same
+			// pointer identity — a preview rig that also appears in the scene (it does
+			// not today, but nothing forbids it) shares one block rather than two.
+			bool bNewSkel = false;
+			const u_int uBonePaletteBase = m_xUnifiedBonePalette.GetOrAddSkeleton(
+				reinterpret_cast<u_int64>(pxSkeleton), bNewSkel);
+			if (bNewSkel)
+			{
+				const u_int uNumBones = pxSkeleton->GetNumBones();
+				const Zenith_Maths::Matrix4* pxMats = pxSkeleton->GetSkinningMatrices();
+				Zenith_Assert(uBonePaletteBase + Flux_SkeletonInstance::MAX_BONES <= m_xUnifiedBonePalette.Matrices().GetSize(),
+					"Bone-palette block overruns the concatenated palette buffer");
+				for (u_int b = 0; b < uNumBones && b < Flux_SkeletonInstance::MAX_BONES; ++b)
+				{
+					m_xUnifiedBonePalette.Matrices().Get(uBonePaletteBase + b) = pxMats[b];
+				}
+				m_xUnifiedBonePaletteHistory.SubmitSkeleton(
+					reinterpret_cast<u_int64>(pxSkeleton), uBonePaletteBase, pxMats,
+					(uNumBones < Flux_SkeletonInstance::MAX_BONES) ? uNumBones : Flux_SkeletonInstance::MAX_BONES);
+			}
+
+			Flux_SkinnedPoseEntry* pxPose = m_xUnifiedSkinnedPoseRegistry.Reference(xExt.m_pxMeshInstance->GetSourceAsset());
+			if (pxPose == nullptr || pxPose->m_uNumVerts == 0u)
+			{
+				continue;   // no bind pose (procedural geometry, or a build failure) -> nothing to skin
+			}
+
+			const u_int uOutVertBase = uArenaCursor;
+			uArenaCursor += pxPose->m_uNumVerts;
+			// ★ THE SAME max-verts update as the snapshot walk, and it is not optional.
+			// This value is the X dimension of the skinning dispatch: a preview rig denser
+			// than every mesh in the scene would otherwise dispatch too few groups and be
+			// skinned only in part. Nothing gates on it CPU-side, the compute pass does not
+			// run under Null, and the result is a visibly torn mesh on a Vulkan build only.
+			if (pxPose->m_uNumVerts > m_uUnifiedSkinMaxVerts)
+			{
+				m_uUnifiedSkinMaxVerts = pxPose->m_uNumVerts;
+			}
+
+			Flux_GPUSkinJob xJob;
+			xJob.m_uBindPoseVertBase = pxPose->m_uPoolVertBase;
+			xJob.m_uOutVertBase      = uOutVertBase;
+			xJob.m_uVertCount        = pxPose->m_uNumVerts;
+			xJob.m_uBonePaletteBase  = uBonePaletteBase;
+			m_axUnifiedSkinJobs.PushBack(xJob);
+
+			Flux_SkinnedInstanceKey xInstKey;
+			xInstKey.m_pvSkeleton   = pxSkeleton;
+			xInstKey.m_pvMeshAsset  = xExt.m_pxMeshInstance->GetSourceAsset();
+			xInstKey.m_uSubmeshSlot = xExt.m_uSubmeshSlot;
+			const u_int uStableId = m_xUnifiedSkinnedIdRegistry.Reference(xInstKey);
+
+			// ★ Two submissions sharing (skeleton, mesh asset, submesh slot) get the SAME
+			// stable id, so the second Insert would overwrite the first's arena slice and
+			// both draws would read one skinned copy — silently, with the right vertex count
+			// and no validation error. m_uSubmeshSlot is what a submitter varies to avoid it.
+			Zenith_Assert(!m_xUnifiedSkinnedDrawById.Contains(uStableId),
+				"Flux_RendererImpl: two skinned submissions share one skinned-instance id (%u) — give them distinct m_uSubmeshSlot values", uStableId);
+
+			Flux_UnifiedSkinnedDraw xSD;
+			xSD.m_pxMesh        = pxPose->m_pxMesh;
+			xSD.m_uVertexOffset = uOutVertBase;
+			m_xUnifiedSkinnedDrawById.Insert(uStableId, xSD);
+
+			Flux_GPUSceneBucketKey xKey;
+			xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | uStableId;
+			xKey.m_uCullMode         = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
+			// Pointer-as-id: same per-frame-rebuilt lifetime contract as BuildStaticSubmeshDesc's SAFETY note.
+			xKey.m_ulMaterialAssetId = reinterpret_cast<u_int64>(pxMat);
+			xKey.m_ulVATTextureId    = 0u;   // skinned != VAT
+
+			const Zenith_AABB& xLocal = xExt.m_pxMeshInstance->GetLocalBounds();
+			const Zenith_Maths::Vector4 xSphere = Flux_InflateBoundsSphere(
+				Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax), fFLUX_SKIN_BOUNDS_INFLATION);
+
+			// The item's OWN view mask, ALWAYS explicitly — the 8th parameter defaults to
+			// every scene view, so omitting it would put a preview rig in the camera and in
+			// all four shadow cascades.
+			Flux_AppendGPUSceneSkinnedInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
+				xExt.m_xWorldMatrix, uBonePaletteBase, xKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE, xExt.m_uViewMask);
+			RecordUnifiedPrevTransform(0u, xExt.m_xWorldMatrix);   // Stage 4.3: no stable entity id -> camera-only velocity
+		}
+
 		m_uUnifiedSkinTotalOutVerts = uArenaCursor;
 		m_xUnifiedSkinnedIdRegistry.EndSync();   // recycle stable ids for skinned instances no longer drawn
 	}
@@ -501,14 +614,36 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 	m_xUnifiedBonePaletteHistory.EndFrame();
 }
 
-// Source 4/4 - renderer-level external submissions (the material-preview mesh).
-// Same descriptor build as the static walk; the item view mask (preview-only for
-// the preview mesh) rides into the draw-item so the GPU cull scopes it to its
-// target view slots. Translucent/additive-material items divert to the preserved
-// translucent list instead of an opaque submesh: the owner keeps mesh + material
-// alive for the frame, and the Translucency per-view gather (a pass Prepare,
-// which runs AFTER this sync) consumes it. Consumes then clears this frame's
-// submissions.
+// The classifier's live-submission forwarder (declared in Flux_RendererImpl.h, defined
+// here where Flux_MeshInstance and Zenith_MaterialAsset are complete). It resolves the
+// three facts the pure cascade needs and NOTHING else — no registry, no append, no side
+// effect — so the routing decision stays testable at the value level.
+Flux_ExternalItemClass Flux_ClassifyExternalSceneItem(
+	const Flux_RendererImpl::Flux_ExternalSceneItem& xItem, Zenith_MaterialAsset* pxResolvedMaterial)
+{
+	const bool bHasMesh = (xItem.m_pxMeshInstance != nullptr);
+	Zenith_Assert(pxResolvedMaterial != nullptr,
+		"Flux_ClassifyExternalSceneItem: pass the RESOLVED material (the blank material for a null submission), never nullptr");
+	return Flux_ClassifyExternalSceneItem(
+		bHasMesh,
+		bHasMesh ? xItem.m_pxMeshInstance->GetNumVerts()   : 0u,
+		bHasMesh ? xItem.m_pxMeshInstance->GetNumIndices() : 0u,
+		xItem.m_pxSkeletonInstance != nullptr,
+		bHasMesh && xItem.m_pxMeshInstance->HasSkinning(),
+		pxResolvedMaterial->GetResolved().m_xParams.m_eBlendMode);
+}
+
+// Source 4/4 - renderer-level external submissions (the material-preview mesh, and
+// anything a pull source produced). The SKINNED items were already consumed by
+// ExtractSkinnedBuckets, so this walk takes the STATIC ones and discards the SKIP ones.
+//
+// STATIC splits again, exactly as it always did: a translucent/additive material diverts
+// to the preserved translucent list (the owner keeps mesh + material alive, and the
+// Translucency per-view gather — a pass Prepare that runs AFTER this sync — consumes it),
+// everything else builds one opaque unified submesh. The item's view mask rides into the
+// draw-item so the GPU cull scopes it to its target view slots.
+//
+// This is the LAST reader of the list, so it is the one that clears it.
 void Flux_RendererImpl::ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankMaterial)
 {
 	m_axExternalTranslucentItems.Clear();
@@ -516,21 +651,37 @@ void Flux_RendererImpl::ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankM
 	for (u_int u = 0; u < m_axExternalSceneItems.GetSize(); ++u)
 	{
 		const Flux_ExternalSceneItem& xExt = m_axExternalSceneItems.Get(u);
+		Zenith_MaterialAsset* pxMat = xExt.m_pxMaterial != nullptr ? xExt.m_pxMaterial : pxBlankMaterial;
 
-		// Route translucent/additive items to the forward Translucency path (the
-		// opaque build below would skip them anyway — this preserves them for the
-		// per-view gather, with the material pre-resolved so consumers never see null).
-		if (xExt.m_pxMeshInstance != nullptr)
+		const Flux_ExternalItemWalk eWalk = Flux_RouteExternalItem(Flux_ClassifyExternalSceneItem(xExt, pxMat));
+		if (eWalk == EXTERNAL_ITEM_WALK_SKINNED)
 		{
-			Zenith_MaterialAsset* pxMat = xExt.m_pxMaterial != nullptr ? xExt.m_pxMaterial : pxBlankMaterial;
-			const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
-			if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+			continue;   // consumed by ExtractSkinnedBuckets' second walk (this frame, already)
+		}
+		if (eWalk == EXTERNAL_ITEM_WALK_NONE)
+		{
+			// Warn ONCE, like the translucency gather's skinned-submesh refusal: a
+			// submission that is drawn by nobody is otherwise indistinguishable from a
+			// panel that simply chose not to draw, and the difference matters when a
+			// preview comes up empty.
+			if (!m_bWarnedDiscardedExternalItem)
 			{
-				Flux_ExternalSceneItem xTranslucent = xExt;
-				xTranslucent.m_pxMaterial = pxMat;
-				m_axExternalTranslucentItems.PushBack(xTranslucent);
-				continue;
+				m_bWarnedDiscardedExternalItem = true;
+				Zenith_Warning(LOG_CATEGORY_RENDERER,
+					"Flux_RendererImpl: external scene item discarded — degenerate geometry (no mesh / 0 verts / 0 indices), or a skinned submission with a translucent/additive material (unsupported on both paths)");
 			}
+			continue;
+		}
+
+		// Translucent/additive -> the forward path, with the material pre-resolved so
+		// consumers never see null.
+		const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+		if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
+		{
+			Flux_ExternalSceneItem xTranslucent = xExt;
+			xTranslucent.m_pxMaterial = pxMat;
+			m_axExternalTranslucentItems.PushBack(xTranslucent);
+			continue;
 		}
 
 		Flux_GPUSceneSourceItem xSrc;
@@ -541,11 +692,72 @@ void Flux_RendererImpl::ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankM
 		if (!BuildStaticSubmeshDesc(m_xUnifiedMeshGeometryRegistry, xExt.m_pxMeshInstance,
 			xExt.m_pxMaterial, pxBlankMaterial, xSub))
 		{
-			continue;   // invalid -> not an opaque unified draw
+			continue;   // no shareable geometry identity / build failure -> not an opaque unified draw
 		}
 		xSrc.m_xSubmeshes.PushBack(xSub);
 		Flux_AppendGPUSceneItem(xSrc, m_xUnifiedBucketRegistry, m_xUnifiedGPUScene);
 		RecordUnifiedPrevTransform(0u, xSrc.m_xWorldMatrix);   // Stage 4.3: external/preview item has no stable id -> camera-only velocity
 	}
 	m_axExternalSceneItems.Clear();
+}
+
+// ---- the external-item PULL seam -------------------------------------------
+// Registration is keyed on the CONTEXT pointer, not the function: a source that
+// re-registers (a preview session re-resolving its rig) replaces its own row instead
+// of adding a second one, so the same rig cannot be drawn twice.
+void Flux_RendererImpl::RegisterExternalSceneItemSource(Flux_ExternalSceneItemSourceFn pfn, void* pCtx)
+{
+	Zenith_Assert(pfn != nullptr, "Flux_RendererImpl: an external-item source needs a gather function");
+	if (pfn == nullptr)
+	{
+		return;
+	}
+	for (u_int u = 0; u < m_axExternalSceneItemSources.GetSize(); ++u)
+	{
+		if (m_axExternalSceneItemSources.Get(u).m_pContext == pCtx)
+		{
+			m_axExternalSceneItemSources.Get(u).m_pfnGather = pfn;
+			return;
+		}
+	}
+	Flux_ExternalSceneItemSource xSource;
+	xSource.m_pfnGather = pfn;
+	xSource.m_pContext  = pCtx;
+	m_axExternalSceneItemSources.PushBack(xSource);
+}
+
+void Flux_RendererImpl::UnregisterExternalSceneItemSource(void* pCtx)
+{
+	for (u_int u = 0; u < m_axExternalSceneItemSources.GetSize(); ++u)
+	{
+		if (m_axExternalSceneItemSources.Get(u).m_pContext == pCtx)
+		{
+			m_axExternalSceneItemSources.Erase(u);
+			return;
+		}
+	}
+}
+
+void Flux_RendererImpl::PollExternalSceneItemSources()
+{
+	for (u_int u = 0; u < m_axExternalSceneItemSources.GetSize(); ++u)
+	{
+		const Flux_ExternalSceneItemSource& xSource = m_axExternalSceneItemSources.Get(u);
+		if (xSource.m_pfnGather != nullptr)
+		{
+			xSource.m_pfnGather(xSource.m_pContext, m_axExternalSceneItems);
+		}
+	}
+}
+
+void Flux_RendererImpl::GatherExternalSceneItemsForTesting(Zenith_Vector<Flux_ExternalSceneItem>& xOut)
+{
+	for (u_int u = 0; u < m_axExternalSceneItemSources.GetSize(); ++u)
+	{
+		const Flux_ExternalSceneItemSource& xSource = m_axExternalSceneItemSources.Get(u);
+		if (xSource.m_pfnGather != nullptr)
+		{
+			xSource.m_pfnGather(xSource.m_pContext, xOut);
+		}
+	}
 }

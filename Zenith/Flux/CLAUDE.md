@@ -122,7 +122,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Zenith_TextureAsset.h/cpp` - GPU texture wrapper with SRV
 
 ### Subdirectories
-- `UnifiedMesh/` - **THE opaque mesh pipeline — static, instanced-foliage, AND skeletal** (GPU-driven: compute cull → indirect draw to the camera G-buffer + every shadow cascade, fed from the render snapshot). Skeletal meshes are GPU compute-skinned into a shared arena (Stage 5) then drawn like static geometry; `Flux_SkeletonInstance::GetSkinningMatrices` is the CPU input. Stage 4 retired the per-object StaticMeshes/InstancedMeshes draw loops and Stage 5 retired the per-object skeletal draw + its bone constant-buffer.
+- `UnifiedMesh/` - **THE opaque mesh pipeline — static, instanced-foliage, AND skeletal** (GPU-driven: compute cull → indirect draw to the camera G-buffer + every shadow cascade, fed from the render snapshot). Skeletal meshes are GPU compute-skinned into a shared arena (Stage 5) then drawn like static geometry; `Flux_SkeletonInstance::GetSkinningMatrices` is the CPU input. The snapshot is not the only source: an external scene item carrying a skeleton is compute-skinned by the SAME walk (see *External scene items*), which is how the editor's animation preview draws a posed rig. Stage 4 retired the per-object StaticMeshes/InstancedMeshes draw loops and Stage 5 retired the per-object skeletal draw + its bone constant-buffer.
 - `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md). ECS entry point is `Zenith_AnimatorComponent`, not `Zenith_ModelComponent`.
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
 - `Shadows/` - Cascaded shadow maps
@@ -151,7 +151,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Quads/` - Textured/UI quad rendering
 - `Present/` - Final-RT → backbuffer blit (backend-neutral present)
 - `SceneGraph/` - Render scene snapshot + culling
-- `RenderViews/` - Render-view registry (fixed slots: main camera / shadow cascades / material preview) + the editor material-preview controller. Each view owns a persistent VIEW descriptor-set instance (`.View(slot)` on a graph pass selects it) and, for full-pipeline views, its own G-buffer/depth/HDR transients. The material preview renders through the REAL pipeline as a second view (per-draw-item view masks scope content); its old bespoke render system was deleted. `Flux_ViewPassNames.{h,cpp}` holds the per-view pass-name pool: `Flux_ViewPassName(base, slot)` returns the base pointer itself for slot 0 (every historical main-view name is preserved byte-for-byte) and an interned, never-reallocating `"<base> (<suffix>)"` for any other slot (5 = Preview, 6 = AnimPreview); the one legacy row maps `"LDR Transition"` + slot 5 to the historical `"Preview LDR Transition"`.
+- `RenderViews/` - Render-view registry (fixed slots: main camera / shadow cascades / the two editor preview views — material and animation) + the editor material-preview controller. Content reaches a preview view through the external-scene-item seam (see *External scene items* under Architecture), never by being in the scene snapshot. Each view owns a persistent VIEW descriptor-set instance (`.View(slot)` on a graph pass selects it) and, for full-pipeline views, its own G-buffer/depth/HDR transients. The material preview renders through the REAL pipeline as a second view (per-draw-item view masks scope content); its old bespoke render system was deleted. `Flux_ViewPassNames.{h,cpp}` holds the per-view pass-name pool: `Flux_ViewPassName(base, slot)` returns the base pointer itself for slot 0 (every historical main-view name is preserved byte-for-byte) and an interned, never-reallocating `"<base> (<suffix>)"` for any other slot (5 = Preview, 6 = AnimPreview); the one legacy row maps `"LDR Transition"` + slot 5 to the historical `"Preview LDR Transition"`.
 - `MeshGeometry/` - Shared mesh geometry buffers
 - `Shaders/` - `.slang` shader sources (`Common/` shared helper modules). Conventions + the frequency-set spine, accessor facade, `interface`/`extension` seams, spec-constant folding, and include-vs-import rules are in [Shaders/SHADER_STYLE.md](Shaders/SHADER_STYLE.md). Feature shaders reach the GLOBAL/VIEW/BINDLESS sets only through the free-function accessors in `Common/Bindings.slang` — never the raw `g_xViewSet`/`g_xGlobalSet`/`g_xBindlessSet` blocks (enforced by the spine lint below).
 - `Slang/` - Shader catalog + Slang compilation glue (`Flux_ShaderCatalog`) + the spine lint (`Flux_SpineLint.h`, a FluxCompiler gate that fails the build on any direct spine poke / spine `extension` / block redeclaration outside `Common/Bindings.slang`).
@@ -257,6 +257,54 @@ arena is fetched by the SAME pipelines that fetch a CPU-packed static mesh. **Sl
 makes the module declare the SPIR-V `Int16` capability, and `vkCreateShaderModule` rejects that
 without `VkPhysicalDeviceFeatures::shaderInt16` — a feature this engine does not require on any
 backend or Android device. The 32-bit-integer-only half codec in that module is the replacement.
+
+### External scene items (renderer-level draw submissions)
+
+Content that is **not in the scene snapshot** reaches the unified GPU scene through one seam:
+`Flux_RendererImpl::Flux_ExternalSceneItem` (world matrix, `Flux_MeshInstance*`, material,
+per-view mask, and — since the animation preview — an optional `Flux_SkeletonInstance*` plus a
+submesh slot). The editor's material preview and animation preview are the two producers; both
+mask their item to their own preview view slot, so nothing they submit can reach the camera or a
+shadow cascade.
+
+**Two ways in, differing only in who drives the clock.** `SubmitExternalSceneItem` is the PUSH
+path, valid on the main thread on a frame that will reach `SyncUnifiedBucketsFromSnapshot` — the
+material-preview controller uses it because its `Update()` already runs inside that sync.
+`RegisterExternalSceneItemSource(fn, ctx)` is the PULL path, polled by the sync itself
+(`PollExternalSceneItemSources`, right beside the preview `Update()`, before any extractor).
+Anything whose draw is driven from OUTSIDE the frame loop — a panel draw on a frame the editor
+declines to render, a unit test — must register rather than push: a pushed item sits in the list
+holding a raw `Flux_MeshInstance*` until the next real frame, which is a use-after-free if the
+owner died in between and a frame of latency if it did not. Unregister with the same context
+pointer before the context dies. `GatherExternalSceneItemsForTesting` polls every source and
+submits nothing, which is how a source is proved wired without a device.
+
+**Which walk consumes an item is one pure function.** `Flux_ClassifyExternalSceneItem` — declared
+in `Flux_RendererImpl.h` over PLAIN VALUES (has-mesh, vert count, index count, has-skeleton,
+has-skinning, blend mode), with a thin forwarder over a live item — runs an ordered cascade:
+degenerate (no mesh / 0 verts / 0 indices) → `SKIP`; skeleton **and** skinning → `SKIP` if
+translucent/additive, else `SKINNED`; anything else → `STATIC`. `Flux_RouteExternalItem` maps
+that onto the walk that owns it, and the two walks split the one list: `ExtractSkinnedBuckets`
+runs FIRST and takes only the `SKINNED` items (it owns the arena cursor, the bone palette and
+the skinned-id registry, which are open only inside it), then `ExtractExternalSceneItems` takes
+the `STATIC` ones — diverting translucent/additive to the forward translucent list as it always
+did — warns once about the `SKIP`s, and clears the list. Swapping the two would clear the list
+before the skinned walk saw it.
+
+The classifier is pure **because the interesting rows are otherwise unreachable**: every
+`Flux_MeshInstance` factory refuses degenerate vertex/index counts, so "verts but no indices"
+cannot be built and can only be covered at the value level. The row that matters most in
+practice is `skeleton but no skinning → STATIC`: routing that to the skinned walk would ask the
+pose registry for a bind pose the asset has not got, and the mesh would silently stop drawing.
+
+★ **A skinned external item MUST update `m_uUnifiedSkinMaxVerts`.** That value is the X
+dimension of the skinning dispatch. A preview rig denser than every mesh in the scene would
+otherwise dispatch too few groups and be skinned only in part — invisible to every gate, because
+the compute pass does not run under `Null_*` at all, and visible as a torn mesh on a Vulkan build
+only. The same walk also asserts the stable skinned-instance id it allocates is FRESH: two
+submissions sharing (skeleton, mesh asset, submesh slot) would collapse onto one arena slice and
+one draw, with the right vertex count and no validation error. `m_uSubmeshSlot` is what a
+submitter varies to keep them apart.
 
 ### Material System
 Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Located in `AssetHandling/`. Use `SetDiffuseTexture(TextureHandle(...))` when creating materials — the handle covers both path-based (serializable) and procedural-pointer textures. See `AssetHandling/CLAUDE.md` for details on material and texture asset management.

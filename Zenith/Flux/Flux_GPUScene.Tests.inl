@@ -1,5 +1,6 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/Flux_GPUScene.h"
+#include "Flux/Flux_RendererImpl.h"   // Flux_ExternalSceneItem + the pure external-item classifier/router + the pull seam
 
 // ============================================================================
 // Flux GPU-scene Stage-0 unit tests (unified GPU-driven opaque-mesh pipeline).
@@ -747,6 +748,261 @@ ZENITH_TEST(GPUScene, BuildersDefaultToAllSceneViews)
 	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(1).m_uFlags, kuFluxViewSlotMain), "instance defaults into the camera view");
 	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotMain), "preview-only item stays out of the camera view");
 	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(xOut.m_xDrawItems.Get(2).m_uFlags, kuFluxViewSlotPreviewMaterial), "preview-only item lands in the material-preview slot");
+}
+
+// ---- external scene items: classification, routing, and the pull seam (D4) ---
+
+namespace
+{
+	// The classifier returns an enum; the value formatter prints "<value>" for one, so
+	// the tests compare NUMBERS and a failure names the class that came back.
+	u_int GPUScene_ExternalClass(bool bHasMesh, u_int uNumVerts, u_int uNumIndices,
+		bool bHasSkeleton, bool bHasSkinning, MaterialBlendMode eBlend)
+	{
+		return static_cast<u_int>(Flux_ClassifyExternalSceneItem(
+			bHasMesh, uNumVerts, uNumIndices, bHasSkeleton, bHasSkinning, eBlend));
+	}
+
+	u_int GPUScene_ExternalWalk(Flux_ExternalItemClass eClass)
+	{
+		return static_cast<u_int>(Flux_RouteExternalItem(eClass));
+	}
+
+	// A pull source + its context, in the exact shape a preview session registers.
+	struct GPUScene_ExternalSourceCtx
+	{
+		u_int m_uPollCount = 0u;
+	};
+
+	void GPUScene_GatherOneItem(void* pCtx, Zenith_Vector<Flux_RendererImpl::Flux_ExternalSceneItem>& xOut)
+	{
+		GPUScene_ExternalSourceCtx& xSource = *static_cast<GPUScene_ExternalSourceCtx*>(pCtx);
+		++xSource.m_uPollCount;
+		Flux_RendererImpl::Flux_ExternalSceneItem xItem;
+		xItem.m_uViewMask = Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim);
+		xOut.PushBack(xItem);
+	}
+}
+
+ZENITH_TEST(GPUScene, ExternalItemClassifierCascade)
+{
+	// Rule 1 — nothing to draw. FIRST, so it wins over every later test.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(false, 100u, 300u, true, true, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_SKIP), "no mesh instance -> SKIP, whatever else the item carries");
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 0u, 300u, false, false, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_SKIP), "zero vertices -> SKIP");
+	// The OVERLAP row: verts but no indices. No Flux_MeshInstance factory can build this
+	// (they all refuse degenerate counts), so a value-level classifier is the only place
+	// it is reachable at all — and it is exactly the shape an indexed draw reads as empty.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 0u, false, false, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_SKIP), "vertices but no indices -> SKIP");
+	// ...and rule 1 beats the blend test: a DEGENERATE translucent item is dropped, not
+	// forwarded to the translucent list (the pre-D4 order would have preserved it).
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 0u, false, false, MATERIAL_BLEND_TRANSLUCENT),
+		static_cast<u_int>(EXTERNAL_ITEM_SKIP), "degenerate beats translucent — rule 1 runs first");
+
+	// Rule 3 — no skeleton at all is the material preview's own shape.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, false, false, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_STATIC), "no skeleton -> STATIC");
+	// A skeleton whose MESH is not skinned still draws — as static geometry. Routing it to
+	// the skinned walk would ask for a bind pose the asset has not got, and it would vanish.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, true, false, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_STATIC), "skeleton without skinning -> STATIC, not SKINNED");
+	// A skinned mesh with no skeleton to pose it is likewise static (bind pose), not skinned.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, false, true, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_STATIC), "skinning without a skeleton -> STATIC");
+	// A translucent STATIC item is still STATIC: the external walk owns the divert to the
+	// forward translucent list, so the classifier must NOT swallow it.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, false, false, MATERIAL_BLEND_TRANSLUCENT),
+		static_cast<u_int>(EXTERNAL_ITEM_STATIC), "translucent static item stays STATIC (the walk diverts it)");
+
+	// Rule 2 — the animation preview's own shape.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, true, true, MATERIAL_BLEND_OPAQUE),
+		static_cast<u_int>(EXTERNAL_ITEM_SKINNED), "skeleton + skinning -> SKINNED");
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, true, true, MATERIAL_BLEND_MASKED),
+		static_cast<u_int>(EXTERNAL_ITEM_SKINNED), "masked is opaque-path -> still SKINNED");
+	// ...but compute-skinned translucency exists on NEITHER path, so it is a drop.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, true, true, MATERIAL_BLEND_TRANSLUCENT),
+		static_cast<u_int>(EXTERNAL_ITEM_SKIP), "skinned + translucent -> SKIP");
+	ZENITH_ASSERT_EQ(GPUScene_ExternalClass(true, 100u, 300u, true, true, MATERIAL_BLEND_ADDITIVE),
+		static_cast<u_int>(EXTERNAL_ITEM_SKIP), "skinned + additive -> SKIP");
+}
+
+ZENITH_TEST(GPUScene, EveryDrawableExternalItemAppearsExactlyOnce)
+{
+	// The two walks split the ONE external list, and "exactly once" is a property of the
+	// pair. The live consumption needs a booted renderer (covered by the Phase G
+	// end-to-end run, not by a unit), so what is pinned here is the ROUTING: every class
+	// maps to exactly one walk, and a hand-made list is consumed with nothing drawn twice
+	// and nothing silently dropped except what the cascade said to drop.
+	ZENITH_ASSERT_EQ(GPUScene_ExternalWalk(EXTERNAL_ITEM_STATIC),
+		static_cast<u_int>(EXTERNAL_ITEM_WALK_EXTERNAL), "STATIC -> the external walk");
+	ZENITH_ASSERT_EQ(GPUScene_ExternalWalk(EXTERNAL_ITEM_SKINNED),
+		static_cast<u_int>(EXTERNAL_ITEM_WALK_SKINNED), "SKINNED -> the skinned walk");
+	ZENITH_ASSERT_EQ(GPUScene_ExternalWalk(EXTERNAL_ITEM_SKIP),
+		static_cast<u_int>(EXTERNAL_ITEM_WALK_NONE), "SKIP -> neither walk");
+
+	const Flux_ExternalItemClass aeSubmissions[] =
+	{
+		EXTERNAL_ITEM_STATIC,    // the material preview's mesh
+		EXTERNAL_ITEM_SKINNED,   // the animation preview's rig
+		EXTERNAL_ITEM_SKIP,      // an unresolved / degenerate submission
+		EXTERNAL_ITEM_SKINNED,
+		EXTERNAL_ITEM_STATIC,
+		EXTERNAL_ITEM_STATIC,
+	};
+	const u_int uCount = static_cast<u_int>(sizeof(aeSubmissions) / sizeof(aeSubmissions[0]));
+
+	u_int uExternalWalk = 0u;
+	u_int uSkinnedWalk  = 0u;
+	u_int uDropped      = 0u;
+	for (u_int u = 0; u < uCount; ++u)
+	{
+		switch (Flux_RouteExternalItem(aeSubmissions[u]))
+		{
+		case EXTERNAL_ITEM_WALK_EXTERNAL: ++uExternalWalk; break;
+		case EXTERNAL_ITEM_WALK_SKINNED:  ++uSkinnedWalk;  break;
+		case EXTERNAL_ITEM_WALK_NONE:     ++uDropped;      break;
+		}
+	}
+
+	ZENITH_ASSERT_EQ(uExternalWalk, 3u, "three STATIC items land on the external walk");
+	ZENITH_ASSERT_EQ(uSkinnedWalk, 2u, "two SKINNED items land on the skinned walk");
+	ZENITH_ASSERT_EQ(uDropped, 1u, "the one SKIP item is drawn by nobody");
+	ZENITH_ASSERT_EQ(uExternalWalk + uSkinnedWalk + uDropped, uCount,
+		"every submission is accounted for EXACTLY once — no double-draw, no silent loss");
+}
+
+ZENITH_TEST(GPUScene, PreviewMaskedSkinnedInstanceIsVisibleOnlyInItsView)
+{
+	Flux_GPUSceneBucketRegistry xReg;
+	Flux_GPUSceneBuildResult xOut;
+	Flux_BeginGPUSceneBuild(xOut, xReg);
+
+	const Zenith_Maths::Vector4 xSphere(0.0f, 0.0f, 0.0f, 1.0f);
+
+	// A scene character: the append's DEFAULT mask (camera + cascades).
+	Flux_GPUSceneBucketKey xSceneKey;
+	xSceneKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | 1u;
+	xSceneKey.m_ulMaterialAssetId = 10u;
+	Flux_AppendGPUSceneSkinnedInstance(xReg, xOut, Zenith_Maths::Matrix4(1.0f), 0u,
+		xSceneKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE);
+
+	// The animation preview's rig: its OWN slot, passed EXPLICITLY as the 8th argument.
+	// Taking the default here is the whole failure mode this test exists for — a preview
+	// rig would then render into the main camera and all four shadow cascades.
+	Flux_GPUSceneBucketKey xPreviewKey;
+	xPreviewKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | 2u;
+	xPreviewKey.m_ulMaterialAssetId = 20u;
+	Flux_AppendGPUSceneSkinnedInstance(xReg, xOut, Zenith_Maths::Matrix4(1.0f), 0u,
+		xPreviewKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE, Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim));
+
+	Flux_EndGPUSceneBuild(xOut, xReg);
+
+	ZENITH_ASSERT_EQ(xOut.m_xDrawItems.GetSize(), 2u, "one draw-item per skinned append");
+	const u_int uPreviewFlags = xOut.m_xDrawItems.Get(1).m_uFlags;
+	const u_int uSceneFlags   = xOut.m_xDrawItems.Get(0).m_uFlags;
+
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uPreviewFlags, kuFluxViewSlotPreviewAnim),
+		"the preview rig is visible in the animation-preview slot");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPreviewFlags, kuFluxViewSlotMain),
+		"the preview rig never reaches the main camera");
+	for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++)
+	{
+		ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPreviewFlags, kuFluxViewSlotShadowFirst + u),
+			"the preview rig casts into no cascade (slot %u)", kuFluxViewSlotShadowFirst + u);
+	}
+	// The OTHER preview view must not see it either — the clause a single "preview" mask
+	// could not state, and the one that catches a per-slot mask degraded back to "any preview".
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uPreviewFlags, kuFluxViewSlotPreviewMaterial),
+		"the animation rig does not appear in the MATERIAL preview");
+
+	ZENITH_ASSERT_TRUE(Flux_DrawItemVisibleInView(uSceneFlags, kuFluxViewSlotMain),
+		"the scene character keeps the default camera visibility");
+	ZENITH_ASSERT_FALSE(Flux_DrawItemVisibleInView(uSceneFlags, kuFluxViewSlotPreviewAnim),
+		"scene content never leaks into the animation preview");
+
+	// Both objects are still SKINNED objects carrying their palette base.
+	ZENITH_ASSERT_TRUE((xOut.m_xObjects.Get(1).m_uFlags & uFLUX_GPUSCENE_OBJFLAG_SKINNED) != 0u,
+		"a view-masked skinned append is still a skinned OBJECT");
+}
+
+ZENITH_TEST(GPUScene, SkinnedAppendRecordsExactlyOnePrevTransform)
+{
+	// The renderer's prev-transform array is index-locked to the GPU-scene objects: one
+	// push immediately after EACH append. That is only correct because a skinned append
+	// adds EXACTLY ONE object — never zero, never two — which is what this pins, driving
+	// the real Flux_PrevTransformCache the way the external walk does (entity id 0).
+	Flux_GPUSceneBucketRegistry xReg;
+	Flux_GPUSceneBuildResult xOut;
+	Flux_PrevTransformCache xCache;
+	Zenith_Vector<Zenith_Maths::Matrix4> axPrevTransforms;
+
+	Flux_BeginGPUSceneBuild(xOut, xReg);
+	xCache.BeginFrame();
+
+	const Zenith_Maths::Vector4 xSphere(0.0f, 0.0f, 0.0f, 1.0f);
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_GPUSceneBucketKey xKey;
+		xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | u;
+		xKey.m_ulMaterialAssetId = 100u;
+
+		Zenith_Maths::Matrix4 xWorld(1.0f);
+		xWorld[3] = Zenith_Maths::Vector4(static_cast<float>(u), 0.0f, 0.0f, 1.0f);
+
+		const u_int uObjectsBefore = xOut.m_xObjects.GetSize();
+		Flux_AppendGPUSceneSkinnedInstance(xReg, xOut, xWorld, 0u, xKey, xSphere,
+			uFLUX_GPUSCENE_TINT_WHITE, Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim));
+		ZENITH_ASSERT_EQ(xOut.m_xObjects.GetSize(), uObjectsBefore + 1u,
+			"one skinned append appends exactly one object");
+
+		// RecordUnifiedPrevTransform's shape for an external item: no stable entity id.
+		Zenith_Maths::Matrix4 xPrev;
+		if (!xCache.TryGetPrev(0u, xPrev)) { xPrev = xWorld; }
+		axPrevTransforms.PushBack(xPrev);
+		xCache.RecordCurrent(0u, xWorld);
+	}
+
+	Flux_EndGPUSceneBuild(xOut, xReg);
+
+	ZENITH_ASSERT_EQ(axPrevTransforms.GetSize(), xOut.m_xObjects.GetSize(),
+		"the prev-transform array stays index-locked to the GPU-scene objects");
+	ZENITH_ASSERT_EQ(xOut.m_xDrawItems.GetSize(), 3u, "one draw-item per skinned append");
+	ZENITH_ASSERT_EQ_FLOAT(axPrevTransforms.Get(2)[3].x, 2.0f, 0.0001f,
+		"an id-0 external item's prev IS its current -> camera-only velocity");
+}
+
+ZENITH_TEST(GPUScene, RegisteredSourceIsPolledAndUnregistered)
+{
+	// The PULL seam, with no device and no renderer boot: registration is pure
+	// bookkeeping, and Gather...ForTesting polls without submitting anything.
+	Flux_RendererImpl xRenderer;
+	GPUScene_ExternalSourceCtx xCtx;
+	Zenith_Vector<Flux_RendererImpl::Flux_ExternalSceneItem> xGathered;
+
+	xRenderer.GatherExternalSceneItemsForTesting(xGathered);
+	ZENITH_ASSERT_EQ(xGathered.GetSize(), 0u, "nothing registered -> nothing gathered");
+
+	xRenderer.RegisterExternalSceneItemSource(&GPUScene_GatherOneItem, &xCtx);
+	xGathered.Clear();
+	xRenderer.GatherExternalSceneItemsForTesting(xGathered);
+	ZENITH_ASSERT_EQ(xGathered.GetSize(), 1u, "a registered source is polled");
+	ZENITH_ASSERT_EQ(xCtx.m_uPollCount, 1u, "...exactly once per gather");
+	ZENITH_ASSERT_EQ(xGathered.Get(0).m_uViewMask, Flux_ViewMaskForSlot(kuFluxViewSlotPreviewAnim),
+		"the source's own view mask arrives intact");
+
+	// Re-registering the SAME context replaces its row. A session that re-resolves its
+	// rig would otherwise be polled twice and draw its mesh twice into one view.
+	xRenderer.RegisterExternalSceneItemSource(&GPUScene_GatherOneItem, &xCtx);
+	xGathered.Clear();
+	xRenderer.GatherExternalSceneItemsForTesting(xGathered);
+	ZENITH_ASSERT_EQ(xGathered.GetSize(), 1u, "re-registering one context must not double it");
+
+	xRenderer.UnregisterExternalSceneItemSource(&xCtx);
+	xGathered.Clear();
+	xRenderer.GatherExternalSceneItemsForTesting(xGathered);
+	ZENITH_ASSERT_EQ(xGathered.GetSize(), 0u, "an unregistered source is never polled again");
 }
 
 ZENITH_TEST(GPUScene, UnifiedAddressingAtMaxViewSlots)
