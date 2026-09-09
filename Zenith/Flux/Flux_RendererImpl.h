@@ -419,6 +419,16 @@ private:
 	void ExtractSnapshotStaticBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
 	void ExtractInstanceGroupBuckets(Zenith_MaterialAsset* pxBlankMaterial);
 	void ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xSnapshot, Zenith_MaterialAsset* pxBlankMaterial);
+	// The SECOND HALF of ExtractSkinnedBuckets — the walk over the SKINNED external
+	// submissions — and nothing else calls it. It is a separate function purely so the
+	// one extractor stays under the complexity ceiling the engine-ci gate enforces (the
+	// two walks together measured 58 against a 56 limit); it is NOT an independent data
+	// source and MUST NOT be called from anywhere but ExtractSkinnedBuckets, because it
+	// runs inside that function's open window: the bone palette, the palette history,
+	// the pose registry and the stable-id registry are all mid-sync, and the arena
+	// cursor is threaded in BY REFERENCE so the appends it makes continue the snapshot
+	// walk's numbering and its final value still becomes m_uUnifiedSkinTotalOutVerts.
+	void ExtractExternalSkinnedItems(Zenith_MaterialAsset* pxBlankMaterial, u_int& uArenaCursor);
 	void ExtractExternalSceneItems(Zenith_MaterialAsset* pxBlankMaterial);
 
 	// Poll every registered pull source into m_axExternalSceneItems. Runs at the
