@@ -14,6 +14,7 @@
 #include "Flux/InstancedMeshes/Flux_InstanceCulling.h"   // Flux_FrustumPlaneGPU + ExtractFrustumPlanes (reused)
 #include "Flux/Shadows/Flux_ShadowsImpl.h"               // ZENITH_FLUX_NUM_CSMS, CSM_FORMAT, cascade matrices
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"  // per-bucket VAT texture resolve (Stage 3)
+#include "Flux/RenderViews/Flux_ViewPassNames.h"         // per-view-slot pass names (slot 0 = the base literal, by pointer)
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/UnifiedMesh.h"          // per-program baked vertex layouts
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -468,6 +469,71 @@ void Flux_UnifiedMeshImpl::Reset()
 // Render graph
 //=============================================================================
 
+// Everything ONE per-view G-buffer declaration needs, in the one form the walk can
+// carry it: Flux_RenderViewRegistry::ForEachActiveFullPipelineView takes a CAPTURELESS
+// fn-pointer + void* (Flux_RenderViews.h:154 — no std::function, per engine
+// convention), so nothing may be captured and everything travels through here.
+// Nothing in the declaration needs private access, so this is a file-static helper
+// rather than a member trampoline, and Flux_UnifiedMeshImpl.h is unchanged.
+//
+// m_xMainGBufferPass is an OUT field: the slot-0 visit stashes its pass handle so the
+// velocity / prev-arena declarations AFTER the walk can name that exact pass.
+namespace
+{
+	struct UnifiedGBufferWalkCtx
+	{
+		Flux_RenderGraph*  m_pxGraph    = nullptr;
+		Flux_GraphicsImpl* m_pxGraphics = nullptr;
+		Flux_PassHandle    m_xCullPass;                 // every view's G-buffer depends on the ONE cull
+		Flux_Buffer*       m_pxVisible  = nullptr;
+		Flux_Buffer*       m_pxIndirect = nullptr;
+		Flux_Buffer*       m_pxArena    = nullptr;
+		Flux_PassHandle    m_xMainGBufferPass;          // OUT — filled in by the slot-0 visit
+	};
+}
+
+// ONE view's indirect G-buffer draw. Called once per ACTIVE FULL-PIPELINE view by the
+// walk in SetupRenderGraph, in ascending slot order.
+static void DeclareUnifiedGBufferPass(UnifiedGBufferWalkCtx& xCtx, u_int uSlot)
+{
+	Flux_RenderGraph&  xGraph    = *xCtx.m_pxGraph;
+	Flux_GraphicsImpl& xGraphics = *xCtx.m_pxGraphics;
+
+	// The name comes from the ONE base literal through Flux_ViewPassName, which
+	// supplies the per-view uniqueness the graph's duplicate-name assert demands:
+	// slot 0 gets "Unified Mesh GBuffer" back BY POINTER IDENTITY, so the main
+	// view's historical spelling is byte-identical (profiling labels / FindPass /
+	// SetPassForceDisabled key off it), and the preview slot composes exactly the
+	// "Unified Mesh GBuffer (Preview)" literal the hand-written second declaration
+	// this replaced used to spell out. No per-slot branch here — the naming is a
+	// property of the slot, resolved by the pool.
+	//
+	// Attachments are the slot's own (GetMRTAttachment / GetDepthAttachment take the
+	// view slot, and slot 0 is their default, so the main set is unchanged). The pass
+	// declares no dims: the graph infers the render extent from the attachments.
+	const Flux_PassHandle xPass = xGraph.AddPass(Flux_ViewPassName("Unified Mesh GBuffer", uSlot), ExecuteUnifiedGBuffer)
+		.View(uSlot)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE,       uSlot), RESOURCE_ACCESS_WRITE_RTV)
+		.Writes(xGraphics.GetDepthAttachment(uSlot),                         RESOURCE_ACCESS_WRITE_DSV)
+		.DependsOn(xCtx.m_xCullPass);
+
+	// The G-buffer reads the visible-index list (SSBO), the indirect args and the
+	// skinned arena (fetched as a vertex stream). All three are SHARED, view-major
+	// buffers — the pass's declared view slot selects this view's slice at record
+	// time — so every view declares the same three reads on its own pass.
+	xGraph.ReadBuffer(xPass, *xCtx.m_pxVisible,  RESOURCE_ACCESS_READ_BUFFER_SRV);
+	xGraph.ReadBuffer(xPass, *xCtx.m_pxIndirect, RESOURCE_ACCESS_READ_INDIRECT_ARG);
+	xGraph.ReadBuffer(xPass, *xCtx.m_pxArena,    RESOURCE_ACCESS_READ_VERTEX_BUFFER);
+
+	if (uSlot == kuFluxViewSlotMain)
+	{
+		xCtx.m_xMainGBufferPass = xPass;
+	}
+}
+
 void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 {
 	if (!m_bResourcesReady)
@@ -477,34 +543,20 @@ void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 
 	// Pass 0 (Stage 5): compute-skinning pre-pass — skins animated submesh-instances into the
 	// object-space arena BEFORE cull/draw read it. View-independent (one pose feeds camera +
-	// every cascade). Self-guards on m_uSkinJobCount == 0 (no animated work -> no dispatch).
+	// every cascade), so it stays main-only and OUTSIDE the per-view walk below. Self-guards
+	// on m_uSkinJobCount == 0 (no animated work -> no dispatch).
 	Flux_PassHandle xSkinPass = xGraph.AddPass("Unified Skinning", ExecuteUnifiedSkinning);
 
-	// Pass 1: per-bucket indirect-command reset (compute).
+	// Pass 1: per-bucket indirect-command reset (compute). ONE dispatch that already resets
+	// EVERY view's slice of the indirect buffer — never replicated per view.
 	Flux_PassHandle xResetPass = xGraph.AddPass("Unified Cull Reset", ExecuteUnifiedReset);
 
-	// Pass 2: per-draw-item culling (compute). The main-thread gather is hung here.
+	// Pass 2: per-draw-item culling (compute). ONE dispatch over (draw-items × views), so it
+	// stays outside the walk too — and with it the main-thread gather hung on .Prepare, which
+	// is ONE per frame and would corrupt the frozen per-frame state if it ran per view.
 	Flux_PassHandle xCullPass = xGraph.AddPass("Unified Mesh Culling", ExecuteUnifiedCulling)
 		.Prepare([](void* p) { g_xEngine.UnifiedMesh().GatherUnifiedPacket(p); })
 		.DependsOn(xResetPass);
-
-	// Pass 3: indirect G-buffer draw (graphics).
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	Flux_PassHandle xGBufferPass = xGraph.AddPass("Unified Mesh GBuffer", ExecuteUnifiedGBuffer)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE),        RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT), RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE),       RESOURCE_ACCESS_WRITE_RTV)
-		.Writes(xGraphics.GetDepthAttachment(),                       RESOURCE_ACCESS_WRITE_DSV)
-		.DependsOn(xCullPass);
-
-	// Optional velocity MRT — MAIN view only, when the latch is on. Added non-fluently (the
-	// fluent builder is rvalue-only). This makes the pass a 5-attachment framebuffer, matching
-	// the velocity pipeline variant selected at record time. The preview pass never writes it.
-	if (xGraphics.IsVelocityMRTActive())
-	{
-		xGraph.Write(xGBufferPass, xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV);
-	}
 
 	// The two persistent cull-output buffers — the only graph-tracked buffers. Their
 	// declaration is independent of bucket count, so the graph structure is static.
@@ -519,48 +571,59 @@ void Flux_UnifiedMeshImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	xGraph.WriteBuffer(xCullPass, xVisible,  RESOURCE_ACCESS_WRITE_UAV);
 	xGraph.WriteBuffer(xCullPass, xIndirect, RESOURCE_ACCESS_READWRITE_UAV);
 
-	// GBuffer reads the visible-index list (SSBO) and the indirect args.
-	xGraph.ReadBuffer(xGBufferPass, xVisible,  RESOURCE_ACCESS_READ_BUFFER_SRV);
-	xGraph.ReadBuffer(xGBufferPass, xIndirect, RESOURCE_ACCESS_READ_INDIRECT_ARG);
-
-	// Stage 5: the skinning pass writes the persistent arena; the GBuffer (and, via the same
-	// buffer, the shadow cascades) read it as the skinned buckets' vertex source. Declaring
-	// the write+read makes the graph order skinning before the consumers and synthesise the
-	// compute-write -> vertex-read barrier. (Inert until the gather produces skin-jobs.)
+	// Stage 5: the skinning pass writes the persistent arena; the G-buffer passes (and, via
+	// the same buffer, the shadow cascades) read it as the skinned buckets' vertex source.
+	// Declaring the write here and the reads inside the walk makes the graph order skinning
+	// before every consumer and synthesise the compute-write -> vertex-read barrier. (Inert
+	// until the gather produces skin-jobs.)
 	Flux_Buffer& xArena = m_xSkinnedArenaBuffer.GetBuffer();
-	xGraph.WriteBuffer(xSkinPass,    xArena, RESOURCE_ACCESS_WRITE_UAV);
-	xGraph.ReadBuffer(xGBufferPass,  xArena, RESOURCE_ACCESS_READ_VERTEX_BUFFER);   // fetched as a vertex stream
+	xGraph.WriteBuffer(xSkinPass, xArena, RESOURCE_ACCESS_WRITE_UAV);
 
-	// Stage 4.3b: while the velocity latch is on, the prev-pose dispatch (same skinning pass) writes
-	// the previous position arena and the velocity G-buffer VS reads it (SRV). Declaring the write+read
-	// orders prev-skinning before the velocity draw and synthesises the compute-write -> SRV-read
-	// barrier. Off => not declared (byte-identical), matching the conditional velocity MRT above. The
-	// preview view never uses velocity, so only the MAIN G-buffer pass reads it.
+	// Passes 3..N: ONE indirect G-buffer draw per ACTIVE FULL-PIPELINE view, in ascending
+	// slot order. The registry decides membership by view PROPERTIES, never by slot number:
+	// slot 0 always qualifies (active + full-pipeline from construction) and the preview slot
+	// joins while its owner has it up (so its passes exist exactly when its targets do —
+	// (de)activation triggers the graph rebuild that re-runs this walk). Depth-only shadow
+	// cascades are never full-pipeline; they are drawn by RenderToShadowMap from inside the
+	// cascade passes, not from here. That set is exactly what the two hand-written pass
+	// declarations this replaced produced, in the same order, so every downstream pass index
+	// is unchanged.
+	//
+	// The callback is a CAPTURELESS lambda (the registry takes a plain fn-pointer): the graph,
+	// the hoisted graphics reference, the cull handle and the three shared buffers all travel
+	// through xCtx, and the slot-0 pass handle comes back out through it.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	UnifiedGBufferWalkCtx xCtx{ &xGraph, &xGraphics, xCullPass, &xVisible, &xIndirect, &xArena };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView&, void* pCtx)
+	{
+		DeclareUnifiedGBufferPass(*static_cast<UnifiedGBufferWalkCtx*>(pCtx), uSlot);
+	}, &xCtx);
+
+	// Optional velocity MRT + the prev-pose arena read — the MAIN view's pass only, when the
+	// latch is on. Declared AFTER the walk on the stashed slot-0 handle (legal: the graph keys
+	// its resource traffic on pass INDEX, not on declaration order, and these are the last
+	// entries on that pass's attachment / buffer lists either way — byte-identical to the
+	// hand-written version). The velocity MRT makes the main pass a 5-attachment framebuffer,
+	// matching the velocity pipeline variant ExecuteUnifiedGBuffer selects at record time;
+	// the prev-pose dispatch (same skinning pass) writes the previous position arena and the
+	// velocity VS reads it (SRV), which orders prev-skinning before the velocity draw.
+	//
+	// ★ The discriminator is the SLOT, not the view's m_eType and not its m_uViewFlags.
+	// Velocity ownership is defined BY SLOT in Flux_Graphics — GetVelocityAttachment asserts
+	// on any slot but the main one, and only slot 0 has a velocity target at all — so the slot
+	// IS the property being tested here. m_eType would be wrong: it defaults to
+	// FLUX_RENDER_VIEW_MAIN for the unassigned slots, so a future full-pipeline view there
+	// would trip that assert. m_uViewFlags is written once at construction and read by nobody.
 	if (xGraphics.IsVelocityMRTActive())
 	{
-		Flux_Buffer& xPrevArena = m_xPrevSkinnedArenaBuffer.GetBuffer();
-		xGraph.WriteBuffer(xSkinPass,   xPrevArena, RESOURCE_ACCESS_WRITE_UAV);
-		xGraph.ReadBuffer(xGBufferPass, xPrevArena, RESOURCE_ACCESS_READ_BUFFER_SRV);
-	}
+		Zenith_Assert(xCtx.m_xMainGBufferPass.IsValid(),
+			"Flux_UnifiedMesh: the velocity latch is on but the main view declared no G-buffer pass — slot 0 must always be an active full-pipeline view");
 
-	// Preview view (S5a): a second G-buffer instance drawing the preview slot's
-	// cull slices into the preview view's own targets. Same record callback — the
-	// pass's declared view slot selects the slices AND its per-view VIEW set.
-	// Declared only while the preview view is active (its transients exist then;
-	// (de)activation triggers the graph rebuild that re-runs this walk).
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
-	{
-		Flux_PassHandle xPreviewGBufferPass = xGraph.AddPass("Unified Mesh GBuffer (Preview)", ExecuteUnifiedGBuffer)
-			.View(kuFluxViewSlotPreview)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_DIFFUSE,        kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_NORMALSAMBIENT, kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_MATERIAL,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetMRTAttachment(MRT_INDEX_EMISSIVE,       kuFluxViewSlotPreview), RESOURCE_ACCESS_WRITE_RTV)
-			.Writes(xGraphics.GetDepthAttachment(kuFluxViewSlotPreview),                         RESOURCE_ACCESS_WRITE_DSV)
-			.DependsOn(xCullPass);
-		xGraph.ReadBuffer(xPreviewGBufferPass, xVisible,  RESOURCE_ACCESS_READ_BUFFER_SRV);
-		xGraph.ReadBuffer(xPreviewGBufferPass, xIndirect, RESOURCE_ACCESS_READ_INDIRECT_ARG);
-		xGraph.ReadBuffer(xPreviewGBufferPass, xArena,    RESOURCE_ACCESS_READ_VERTEX_BUFFER);
+		xGraph.Write(xCtx.m_xMainGBufferPass, xGraphics.GetVelocityAttachment(), RESOURCE_ACCESS_WRITE_RTV);
+
+		Flux_Buffer& xPrevArena = m_xPrevSkinnedArenaBuffer.GetBuffer();
+		xGraph.WriteBuffer(xSkinPass,                 xPrevArena, RESOURCE_ACCESS_WRITE_UAV);
+		xGraph.ReadBuffer(xCtx.m_xMainGBufferPass,    xPrevArena, RESOURCE_ACCESS_READ_BUFFER_SRV);
 	}
 }
 
