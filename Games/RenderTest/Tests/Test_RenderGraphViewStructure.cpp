@@ -238,11 +238,17 @@ namespace
 	// The ONE preview pass whose name is not "<base> (<suffix>)". It spells the
 	// suffix as a PREFIX and is matched by its FULL literal
 	// (Flux/RenderViews/Flux_ViewPassNames.cpp:79-82 keeps it as the single
-	// legacy row). Today it is declared with NO .View(...) (Flux_HDR.cpp:759) so
-	// it RECORDS AT SLOT 0; unit D1-e gives it .View(kuFluxViewSlotPreview), at
-	// which point its base becomes "LDR Transition" and it moves into the
-	// per-view set. Both spellings are named here so the day that lands is a
-	// one-line edit rather than an archaeology exercise.
+	// legacy row). Unit D1-e landed: the pass is now declared with
+	// .View(uViewSlot) and named through Flux_ViewPassName("LDR Transition",
+	// uViewSlot) (Flux_HDR.cpp:746), so it RECORDS ON THE PREVIEW SLOT and its
+	// base is "LDR Transition". Clause 4 pins exactly that below — the literal is
+	// absent from slot 0 and present once on the preview slot.
+	//
+	// kszPREVIEW_ONLY_BASE / IsPreviewOnlyBase stay as D2-a scaffolding: clause 2
+	// short-circuits on the literal before it ever strips a suffix, so the base
+	// spelling is not on any live path today. It becomes live the moment a
+	// preview-class slot WITHOUT a legacy row (slot 6) declares the pass, which
+	// composes "LDR Transition (AnimPreview)".
 	const char* const kszPREVIEW_ONLY_LITERAL = "Preview LDR Transition";
 	const char* const kszPREVIEW_ONLY_BASE    = "LDR Transition";
 
@@ -841,11 +847,11 @@ namespace
 				"per-view base does not appear EXACTLY ONCE at slot 0", szBase);
 		}
 
-		// Staged: the pass is declared with no .View(...) today (Flux_HDR.cpp:759)
-		// so it records at slot 0, but it is only DECLARED while the preview view
-		// is active (Flux_HDR.cpp:746). After D1-e it moves to the preview slot;
-		// the total-count assertion below is spelled over the WHOLE graph so it
-		// survives that move unchanged.
+		// The pass is only DECLARED while the preview view is active
+		// (Flux_HDR.cpp:828-831 — the per-view walk visits it only when the
+		// registry reports it active and full-pipeline). m_uLegacyLiteralCount is
+		// counted over the WHOLE graph regardless of slot (see TakeSample), so
+		// these three survived D1-e moving the pass off slot 0 unchanged.
 		CheckEqInt(static_cast<int>(xB.m_uLegacyLiteralCount), 1,
 			"'Preview LDR Transition' must appear exactly once while the preview view is active");
 		if (xA.m_bTaken)
@@ -858,6 +864,29 @@ namespace
 			CheckEqInt(static_cast<int>(xD.m_uLegacyLiteralCount), 0,
 				"'Preview LDR Transition' must not survive the preview view going away (sample D)");
 		}
+
+		// D1-e: WHICH SLOT it records on, which the whole-graph count above
+		// cannot see. Before D1-e the pass carried no .View(...) and therefore
+		// recorded at slot 0 — a preview-only pass sitting in the main view's
+		// inventory, where clause 3 had to exclude it by name to stay true. Both
+		// halves are asserted: absent from slot 0, and present EXACTLY ONCE on
+		// the material-preview slot. Checking only the first half would pass for
+		// a pass that had vanished entirely.
+		CheckEqInt(static_cast<int>(CountName(xB.m_aszSlot0Names, xB.m_uSlot0Count, kszPREVIEW_ONLY_LITERAL)), 0,
+			"'Preview LDR Transition' still records at SLOT 0 — it must carry .View(kuFluxViewSlotPreview)");
+
+		u_int uOnPreviewSlot = 0u;
+		for (u_int u = 0; u < xB.m_uPreviewCount; u++)
+		{
+			if (xB.m_aszPreviewNames[u] != nullptr
+				&& std::strcmp(xB.m_aszPreviewNames[u], kszPREVIEW_ONLY_LITERAL) == 0
+				&& xB.m_auPreviewSlots[u] == kuFluxViewSlotPreview)
+			{
+				++uOnPreviewSlot;
+			}
+		}
+		CheckEqInt(static_cast<int>(uOnPreviewSlot), 1,
+			"'Preview LDR Transition' must record EXACTLY ONCE on the material-preview slot");
 	}
 
 	// 5. The per-view base inventory equals kaszPERVIEW_BASES EXACTLY.

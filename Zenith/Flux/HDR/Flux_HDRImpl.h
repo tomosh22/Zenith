@@ -5,6 +5,12 @@
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/RenderViews/Flux_RenderViews.h"
 
+// SetupPreviewViewPasses takes the graphics subsystem BY REFERENCE rather than
+// reaching for g_xEngine.FluxGraphics() again: the per-view walk in
+// SetupRenderGraph already holds one. A forward declaration is enough here and
+// keeps Flux_GraphicsImpl.h out of this header.
+class Flux_GraphicsImpl;
+
 // ---- Derived exposure constants (not tuned; unit-tested) -------------------
 // The auto-exposure key is the ISO-standard saturation-based target: a
 // reflected-light meter maps the metered average to K / ISO of saturation
@@ -75,10 +81,22 @@ public:
 	void SetupRenderGraph(Flux_RenderGraph& xGraph);
 
 	// Create one view's 5-mip bloom-chain transients (half the view's dims at the
-	// base) + its threshold/downsample/upsample pass chain. Slot 0 keeps the
-	// historical pass names; the preview slot uses " (Preview)" static name
-	// tables. Mirrors Flux_HiZImpl::SetupViewPasses.
+	// base) + its threshold/downsample/upsample pass chain. Names come from
+	// Flux_ViewPassName(base, uViewSlot), so slot 0 keeps the historical pass
+	// names by pointer identity and every other slot gets an interned
+	// "<base> (<suffix>)". Mirrors Flux_HiZImpl::SetupViewPasses.
+	//
+	// ★ uWidth/uHeight for SLOT 0 are the OUTPUT dims, NOT GetViewSetupDims(0):
+	// the main bloom chain samples the TAA-RESOLVED image and is output-res by
+	// design. See the walk in SetupRenderGraph for the full reasoning.
 	void SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight);
+
+	// The extra passes a PREVIEW-class view owns: its fixed-exposure tonemap into
+	// that slot's persistent preview LDR, and the no-op reader that leaves the
+	// LDR in SHADER_READ_ONLY for the editor's ImGui sample. Called from the
+	// per-view walk for every view whose registered type is
+	// FLUX_RENDER_VIEW_PREVIEW; nothing here is slot-5-specific.
+	void SetupPreviewViewPasses(Flux_RenderGraph& xGraph, Flux_GraphicsImpl& xGraphics, u_int uViewSlot);
 
 	void SetToneMappingOperator(ToneMappingOperator eOperator);
 	void SetExposure(float fExposure);

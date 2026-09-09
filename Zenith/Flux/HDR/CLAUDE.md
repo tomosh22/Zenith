@@ -56,16 +56,18 @@ Scene Rendering (Deferred Shading, SSAO, Fog, Particles, SDFs)
 
 ## Render Targets
 
-HDR owns only its **private bloom chain** (a graph transient created in
-`Flux_HDR::SetupRenderGraph`). The **HDR scene target** is a *shared* render target
-owned by `Flux_Graphics` — created up front in `Flux_GraphicsImpl::SetupRenderGraph`
-(the first feature), before any feature writes it. HDR reads / tonemaps it via
-`g_xEngine.FluxGraphics().GetHDRSceneTarget()`.
+HDR owns only its **private bloom chains** — one 5-mip chain PER ACTIVE
+FULL-PIPELINE VIEW, all graph transients created in `Flux_HDR::SetupRenderGraph`.
+The **HDR scene targets** are *shared* render targets owned by `Flux_Graphics` —
+created up front in `Flux_GraphicsImpl::SetupRenderGraph` (the first feature),
+before any feature writes them, one per view slot. HDR reads / tonemaps a view's
+via `GetHDRSceneTarget(uViewSlot)`.
 
 | Target | Owner | Format | Purpose |
 |--------|-------|--------|---------|
-| HDR scene target (`m_xHDRSceneTargetHandle`) | `Flux_Graphics` | `RGBA16F` | Main HDR scene accumulation (shared; many features write it) |
-| Bloom chain (`m_axBloomChainHandles[5]`) | `Flux_HDR` | `RGBA16F` | Bloom downsample/upsample chain (HDR-private) |
+| HDR scene targets (`m_axHDRSceneTargetHandles[view]`) | `Flux_Graphics` | `RGBA16F` | Per-view HDR scene accumulation (shared; many features write them) |
+| Bloom chains (`m_aaxBloomChainHandles[view][mip]`) | `Flux_HDR` | `RGBA16F` | Per-view bloom downsample/upsample chain, 5 mips (HDR-private) |
+| Preview LDRs (`m_axPreviewLDR[view]`) | `Flux_Graphics` | `FINAL_RT_FORMAT` | **Persistent** (not a transient) 512² output of a preview view's tonemap, sampled by ImGui across graph rebuilds |
 
 ## Target Setups
 
@@ -80,14 +82,82 @@ The HDR scene-target setup helpers live on `Flux_Graphics` (it owns the target):
 
 HDR registers these passes with the render graph; ordering is derived from Read/Write declarations, not from any enum.
 
-| Pass | Status | Reads | Writes |
-|------|--------|-------|--------|
-| Luminance histogram (`HDR_LuminanceHistogram`, compute) | active | HDR scene | histogram buffer |
-| Exposure adaptation (`HDR_Adaptation`, compute) | active | histogram buffer | exposure buffer |
-| Bloom (downsample + blur + composite) | active | HDR scene | bloom mip chain |
-| Tonemap (HDR → LDR) | active | HDR scene, bloom output, exposure | swapchain LDR target |
+| Pass | Scope | Reads | Writes |
+|------|-------|-------|--------|
+| Luminance histogram (`HDR_LuminanceHistogram`, compute) | **main only** | slot-0 HDR scene | histogram buffer |
+| Exposure adaptation (`HDR_Adaptation`, compute) | **main only** | histogram buffer | exposure buffer |
+| Bloom (threshold + 4 downsamples + 4 upsamples) | **per view** | that view's post-FX scene colour | that view's bloom mip chain |
+| Tonemap (`HDR_ToneMapping`) | **main only** | slot-0 post-FX scene colour, main bloom mip 0, exposure | the **Final RT** (`GetFinalRenderTarget()`) |
+| Preview tonemap (`HDR_ToneMapping (Preview)`) | **per preview view** | that view's HDR scene + bloom mip 0 | that view's **persistent preview LDR** |
+| Preview LDR transition (`Preview LDR Transition`) | **per preview view** | that view's preview LDR | nothing (layout-only no-op) |
 
-The tonemap pass naturally runs after anything that writes the HDR scene (deferred shading, SSAO, fog, particles) and before anything that reads the LDR target (UI text, UI quads, ImGui).
+The main tonemap naturally runs after anything that writes the HDR scene (deferred shading, SSAO, fog, particles) and before anything that reads the Final RT (UI text, UI quads, ImGui).
+
+**Auto-exposure is global, not per-view, and that is why the first two rows stay
+out of the per-view walk.** There is exactly ONE histogram buffer and ONE exposure
+buffer (both created in `Initialise`); the histogram meters the slot-0 HDR scene at
+`GetRenderWidth/Height`. Instantiating either per view would put two writers on one
+buffer. The preview tonemap binds both buffers purely for descriptor validity — it
+forces `m_bAutoExposure = 0`, so it never reads them.
+
+## Per-view instantiation
+
+`Flux_HDRImpl::SetupRenderGraph` declares the two global auto-exposure passes,
+then walks
+`Flux_GraphicsImpl::RenderViews().ForEachActiveFullPipelineView(...)` — a
+captureless trampoline plus a `SetupCtx` carrying `this`, the graph and the
+graphics reference — and finally declares the main tonemap. For each visited
+view it calls:
+
+| | |
+|---|---|
+| `SetupBloomViewPasses(xGraph, uSlot, w, h)` | that view's 5 transients + its threshold / 4 downsample / 4 upsample passes, every one with `.View(uSlot)` |
+| `SetupPreviewViewPasses(xGraph, xGraphics, uSlot)` | **only when `xView.m_eType == FLUX_RENDER_VIEW_PREVIEW`** — that view's tonemap into its persistent preview LDR, plus the LDR layout-transition no-op |
+
+Membership is decided by view PROPERTIES, never by slot number: slot 0 always
+qualifies, a preview slot joins while its owner has it up (so its transients
+exist exactly when its passes do, which the graph's unused-transient validation
+demands), and depth-only shadow cascades are never full-pipeline. Today that set
+is `{main} ∪ {material preview if active}`. Adding a second preview-class view
+needs no edit in this feature.
+
+**Pass names come from `Flux_ViewPassName(base, uSlot)`**
+(`Flux/RenderViews/Flux_ViewPassNames.h`), not from a per-view literal table.
+Slot 0 gets the base pointer back by identity — so the main view keeps the exact
+historical spellings that profiling labels, `FindPass` and
+`SetPassForceDisabled` key off — and every other slot gets an interned
+`"<base> (<suffix>)"`. The one exception is the LDR transition, whose historical
+name is a PREFIX (`"Preview LDR Transition"`); that spelling lives as the pool's
+single legacy row, so this file spells only the base `"LDR Transition"`.
+
+**★ The main bloom chain is sized from `GetOutputDims()`, NOT
+`GetViewSetupDims(0)`.** Every other per-view feature (HiZ / SSAO / SSR / SSGI /
+Decals) sizes from `GetViewSetupDims`, which for slot 0 resolves to
+`GetRenderDims()` — the DOWNSCALED render resolution under temporal upscaling.
+Bloom is output-res by design because it samples the TAA-resolved image (the
+"Bloom is AFTER TAA" note at the top of this file). Feeding it
+`GetViewSetupDims(0)` would silently halve main bloom the moment upscaling
+engaged, and **every gate would stay green**, because upscaling defaults off and
+`GetRenderDims()` then returns `GetOutputDims()` verbatim. Preview-class slots
+carry no upscaling latch, so `GetViewSetupDims` is exactly right for them — and
+it is the same derivation `SetupTransients` sized their HDR scene target with.
+
+**The execute callbacks are view-agnostic.** `ExecuteBloomThreshold`,
+`ExecuteBloomDownsample`, `ExecuteBloomUpsample` and `ExecutePreviewTonemap` all
+recover the view from `Flux_RenderGraph::GetCurrentRecordingPassViewSlot()` (the
+slot the pass declared via `.View`), so the per-mip `UserData` stays mip-only and
+one callback serves every view.
+
+The LDR transition's `.View(uSlot)` is **structural only** — it classifies the
+pass into its view's chain and selects its name. It binds nothing: a pass's
+`m_uViewSlot` reaches exactly one consumer (the VIEW persistent spine set in
+`Zenith_Vulkan_CommandBuffer::BindPersistentSpineSets`), and that runs from
+`UpdateDescriptorSets` on a draw or dispatch, of which the no-op issues none.
+
+`Games/RenderTest/Tests/Test_RenderGraphViewStructure.cpp`
+(`RT_RenderGraphViewStructure`) is the oracle for all of the above: it reads the
+live compiled graph and asserts the per-view naming law, the slot-0 inventory
+and the slot each pass records on.
 
 ## Tone Mapping Operators
 
@@ -196,11 +266,18 @@ FreezeExposure, ShowHistogram).
   12.5 / (100 * 1.2) ≈ 0.104`** — the ISO 2720 reflected-light-meter target
   (K = 12.5, ISO 100) with Lagarde & de Rousiers' 1.2 highlight headroom
   ("Moving Frostbite to PBR", SIGGRAPH 2014). The old 0.14 was tuned by eye.
-- **The histogram domain (`fHDR_HISTOGRAM_MIN_LOG_LUMINANCE = -10`, range 13)**
-  derives its top bin (2^3 = 8) from the radiometric anchor
-  (`AtmosphereConfig::fSUN_INTENSITY = 7`): the sky is the brightest
-  non-emissive content and must not clip into the last bin (the old range 12
-  topped out at 4.0 and skewed the metered average).
+- **The histogram domain (`fHDR_HISTOGRAM_MIN_LOG_LUMINANCE = -10`,
+  `fHDR_HISTOGRAM_LOG_LUMINANCE_RANGE = 26`)** derives its top bin
+  (2^16 = 65536) from the brightest radiance in the scene, which is **no longer
+  the sky**: the sun disc is a physically scaled radiance (the anchor's
+  irradiance over the solar solid angle, ~2.5e4) against a sky of 1-7. A top bin
+  of 8 put the sun, the sky and every sunlit white surface in the SAME saturated
+  bin, which does not merely skew the average — it makes every high percentile
+  meaningless, so the highlight protection in `Flux_Adaptation.slang` could not
+  tell a clipping surface from the sun. -10 + 26 covers the disc with room to
+  spare at a still-fine 0.10 stops per bin. (See the derivation comment on
+  `Flux_HDRImpl.h`; this bullet said "range 13, top bin 8" long after the
+  constants moved.)
 - **Scene sun authoring does not add an exposure or energy knob.** A
   `Zenith_SunComponent` authors direction/time-of-day only. Low-sun warmth,
   sunset dimming, and a zero key below the horizon derive from atmospheric

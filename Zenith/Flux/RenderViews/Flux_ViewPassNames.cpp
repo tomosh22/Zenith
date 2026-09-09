@@ -59,10 +59,14 @@ namespace
 	// changes. It has exactly ONE row.
 	//
 	// Of the 45 preview pass names in the tree, 44 are exactly "<base> (Preview)".
-	// The outlier is Flux/HDR/Flux_HDR.cpp:759, which spells it as a PREFIX:
+	// The outlier is the LDR-transition pass declared at
+	// Flux/HDR/Flux_HDR.cpp:746, which spells it as a PREFIX:
 	// "Preview LDR Transition". Its base is PREVIEW-ONLY — there is no slot-0
-	// pass named "LDR Transition" (the pass is declared with no .View(...), so it
-	// records at slot 0 today); unit D1-e gives it its .View(kuFluxViewSlotPreview).
+	// pass named "LDR Transition". Unit D1-e composed that site through
+	// Flux_ViewPassName("LDR Transition", uViewSlot) and gave the pass its
+	// .View(uViewSlot), so the historical spelling now comes from THIS row rather
+	// than from a literal, and the pass records on the preview slot instead of
+	// falling through to slot 0.
 	//
 	// Slot 6 is deliberately NOT a row: it falls through to the generic form and
 	// yields "LDR Transition (AnimPreview)".

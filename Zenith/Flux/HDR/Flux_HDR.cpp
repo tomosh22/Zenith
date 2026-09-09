@@ -7,6 +7,7 @@
 #include "Core/Zenith_Engine.h"
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/RenderViews/Flux_ViewPassNames.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Flux/Shaders/Generated/HDR.h" // typed binding handles
 #include "Core/Zenith_GraphicsOptions.h"
@@ -589,10 +590,17 @@ static void ExecuteToneMapping(Flux_CommandBuffer* pxCommandList, void* pUserDat
 // pipeline (the persistent preview LDR is FINAL_RT_FORMAT); the
 // histogram/exposure UAVs bind the shared buffers purely for descriptor
 // validity (m_bAutoExposure=0 skips the read).
+//
+// The VIEW comes from the recording pass's declared slot, never from a
+// hard-coded kuFluxViewSlotPreview: ONE callback serves every preview-class
+// view the registry walk instantiates this pass for (mirrors the bloom
+// trampolines above and the HiZ per-view conversion).
 static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)
 {
 	Flux_HDRImpl& xHDR = g_xEngine.HDR();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+
+	const u_int uViewSlot = Flux_RenderGraph::GetCurrentRecordingPassViewSlot();
 
 	ToneMappingConstants xConsts;
 	xConsts.m_fExposure = 1.0f;
@@ -610,8 +618,13 @@ static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)
 	{
 		namespace TM = Flux_Generated_HDR::HDR_ToneMapping;
 		Flux_ShaderBinder xBinder(*pxCommandList);
-		xBinder.BindSRV(TM::hg_xHDRTex, &xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview).SRV());
-		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0, kuFluxViewSlotPreview).SRV());
+		// No clamp sampler on the bloom bind, unlike the main tonemap's
+		// (ExecuteToneMapping, above). PRE-EXISTING asymmetry, deliberately left
+		// alone by this unit: unifying it would change preview pixels at the
+		// mip-0 border, which is a rendering change and not a per-view
+		// generalisation.
+		xBinder.BindSRV(TM::hg_xHDRTex, &xGraphics.GetHDRSceneTarget(uViewSlot).SRV());
+		xBinder.BindSRV(TM::hg_xBloomTex, &xHDR.GetBloomChainAttachment(0, uViewSlot).SRV());
 		xBinder.BindUAV_Buffer(TM::hg_auHistogram,   &xHDR.m_xHistogramBuffer.GetUAV());
 		xBinder.BindUAV_Buffer(TM::hg_afExposureData, &xHDR.m_xExposureBuffer.GetUAV());
 		xBinder.BindDrawConstants(TM::hToneMappingConstants, &xConsts, sizeof(ToneMappingConstants));
@@ -622,7 +635,16 @@ static void ExecutePreviewTonemap(Flux_CommandBuffer* pxCommandList, void*)
 
 // No-op record: the .Reads(GetPreviewLDR(slot)) declaration makes the graph leave
 // that slot's persistent preview LDR in SHADER_READ_ONLY for the editor's ImGui sample
-// (mirrors the Present feature's final-RT layout-transition pass).
+// (the same job Present's "Final RT Layout Transition" pass does for the final RT).
+//
+// The pass now carries .View(uViewSlot) — Present's does NOT, and cannot: its
+// final RT is not per-view. Here the .View is purely STRUCTURAL: it makes the
+// pass classify as this preview view's, so the graph inventory pairs it with
+// the rest of that view's chain and Flux_ViewPassName spells its name. It binds
+// NOTHING. A pass's m_uViewSlot reaches exactly one consumer — the VIEW
+// persistent spine set selected in Zenith_Vulkan_CommandBuffer::
+// BindPersistentSpineSets — and that runs from UpdateDescriptorSets on a draw
+// or dispatch, of which this callback issues none.
 static void ExecutePreviewLDRTransition(Flux_CommandBuffer*, void*)
 {
 }
@@ -630,11 +652,15 @@ static void ExecutePreviewLDRTransition(Flux_CommandBuffer*, void*)
 // Per-view bloom chain: creates one view's 5-mip transients (half the view's
 // dims at the base) then declares its threshold / downsample / upsample pass
 // chain against that view's HDR scene target. Pass names must be per-view
-// unique + static-lifetime (duplicate names are a hard assert): view 0 keeps
-// the historical names (profiling / FindPass stability); the preview gets its
-// own " (Preview)" tables. The executes derive the view from the recording
-// pass's slot (declared via .View below), so the per-mip UserData stays
-// mip-only — mirrors the HiZ per-view conversion.
+// unique + static-lifetime (duplicate names are a hard assert), and per-view
+// uniqueness now comes from Flux_ViewPassName(base, uViewSlot) rather than from
+// a second hand-written table per chain: slot 0 gets the base pointer back
+// verbatim (so the main view keeps the exact historical spellings the profiling
+// labels / FindPass / SetPassForceDisabled key off), and every other slot gets
+// an interned "<base> (<suffix>)" — the preview slot composing exactly the
+// " (Preview)" names the deleted second tables used to spell out. The executes
+// derive the view from the recording pass's slot (declared via .View below), so
+// the per-mip UserData stays mip-only — mirrors the HiZ per-view conversion.
 void Flux_HDRImpl::SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight)
 {
 	u_int uBloomWidth = uWidth / 2;
@@ -653,50 +679,73 @@ void Flux_HDRImpl::SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlo
 		uBloomHeight = std::max(1u, uBloomHeight / 2);
 	}
 
-	const bool bMainView = (uViewSlot == kuFluxViewSlotMain);
-
-	xGraph.AddPass(bMainView ? "HDR_BloomThreshold" : "HDR_BloomThreshold (Preview)", ExecuteBloomThreshold)
+	xGraph.AddPass(Flux_ViewPassName("HDR_BloomThreshold", uViewSlot), ExecuteBloomThreshold)
 		.View(uViewSlot)
 		.ClearTargets()
 		.Reads          (g_xEngine.FluxGraphics().GetSceneColourForPostFX(uViewSlot),       RESOURCE_ACCESS_READ_SRV)
 		.WritesTransient(m_aaxBloomChainHandles[uViewSlot][0],        RESOURCE_ACCESS_WRITE_RTV);
 
-	static const char* s_aszBloomDownsampleNames[] = {
+	// BASES only — one row per mip, no per-view duplicate table. Indexed by
+	// (mip - 1), so the row count is one short of the chain length.
+	static const char* const s_aszBloomDownsampleNames[] = {
 		"HDR_BloomDownsample Mip1", "HDR_BloomDownsample Mip2",
 		"HDR_BloomDownsample Mip3", "HDR_BloomDownsample Mip4",
 	};
-	static const char* s_aszBloomDownsamplePreviewNames[] = {
-		"HDR_BloomDownsample Mip1 (Preview)", "HDR_BloomDownsample Mip2 (Preview)",
-		"HDR_BloomDownsample Mip3 (Preview)", "HDR_BloomDownsample Mip4 (Preview)",
-	};
-	const char* const* pszDownsampleNames = bMainView ? s_aszBloomDownsampleNames : s_aszBloomDownsamplePreviewNames;
+	static_assert(static_cast<u_int>(sizeof(s_aszBloomDownsampleNames) / sizeof(s_aszBloomDownsampleNames[0])) == uHDR_BLOOM_MIP_COUNT - 1u,
+		"one downsample pass-name base per mip below the base mip — the loop indexes this table by (mip - 1)");
 	for (u_int i = 1; i < uHDR_BLOOM_MIP_COUNT; i++)
 	{
-		xGraph.AddPass(pszDownsampleNames[i - 1], ExecuteBloomDownsample, &m_axBloomMipUserData[i])
+		xGraph.AddPass(Flux_ViewPassName(s_aszBloomDownsampleNames[i - 1], uViewSlot), ExecuteBloomDownsample, &m_axBloomMipUserData[i])
 			.View(uViewSlot)
 			.ClearTargets()
 			.ReadsTransient (m_aaxBloomChainHandles[uViewSlot][i - 1], RESOURCE_ACCESS_READ_SRV)
 			.WritesTransient(m_aaxBloomChainHandles[uViewSlot][i],     RESOURCE_ACCESS_WRITE_RTV);
 	}
 
-	static const char* s_aszBloomUpsampleNames[] = {
+	// BASES only, declared HIGH mip first (the upsample walks the chain back
+	// down): row i targets mip (3 - i).
+	static const char* const s_aszBloomUpsampleNames[] = {
 		"HDR_BloomUpsample Mip3", "HDR_BloomUpsample Mip2",
 		"HDR_BloomUpsample Mip1", "HDR_BloomUpsample Mip0",
 	};
-	static const char* s_aszBloomUpsamplePreviewNames[] = {
-		"HDR_BloomUpsample Mip3 (Preview)", "HDR_BloomUpsample Mip2 (Preview)",
-		"HDR_BloomUpsample Mip1 (Preview)", "HDR_BloomUpsample Mip0 (Preview)",
-	};
-	const char* const* pszUpsampleNames = bMainView ? s_aszBloomUpsampleNames : s_aszBloomUpsamplePreviewNames;
+	static_assert(static_cast<u_int>(sizeof(s_aszBloomUpsampleNames) / sizeof(s_aszBloomUpsampleNames[0])) == uHDR_BLOOM_MIP_COUNT - 1u,
+		"one upsample pass-name base per upsample step — the loop indexes this table by step");
 	for (u_int i = 0; i < uHDR_BLOOM_MIP_COUNT - 1; i++)
 	{
 		const u_int uTargetMip = 3 - i;
 		const u_int uSourceMip = uTargetMip + 1;
-		xGraph.AddPass(pszUpsampleNames[i], ExecuteBloomUpsample, &m_axBloomUpsampleUserData[i])
+		xGraph.AddPass(Flux_ViewPassName(s_aszBloomUpsampleNames[i], uViewSlot), ExecuteBloomUpsample, &m_axBloomUpsampleUserData[i])
 			.View(uViewSlot)
 			.ReadsTransient (m_aaxBloomChainHandles[uViewSlot][uSourceMip], RESOURCE_ACCESS_READ_SRV)
 			.WritesTransient(m_aaxBloomChainHandles[uViewSlot][uTargetMip], RESOURCE_ACCESS_WRITE_RTV);
 	}
+}
+
+// The passes a PREVIEW-class view owns beyond its bloom chain: a fixed-exposure
+// tonemap of that view's HDR scene into its PERSISTENT preview LDR, then a
+// no-op reader that leaves the LDR in SHADER_READ_ONLY for the editor's ImGui
+// sample. Both are named through Flux_ViewPassName, so the tonemap composes
+// "HDR_ToneMapping (Preview)" for slot 5 and the transition resolves through the
+// pool's ONE legacy row to the historical "Preview LDR Transition"; no literal
+// in this file changes for slot 5.
+//
+// The histogram/exposure UAV binds are descriptor-validity only (the preview
+// forces m_bAutoExposure = 0 and neither buffer is written here) but must still
+// be DECLARED so the graph's bind validator and its barriers stay honest.
+void Flux_HDRImpl::SetupPreviewViewPasses(Flux_RenderGraph& xGraph, Flux_GraphicsImpl& xGraphics, u_int uViewSlot)
+{
+	xGraph.AddPass(Flux_ViewPassName("HDR_ToneMapping", uViewSlot), ExecutePreviewTonemap)
+		.View(uViewSlot)
+		.ClearTargets()
+		.Reads         (xGraphics.GetHDRSceneTarget(uViewSlot),                    RESOURCE_ACCESS_READ_SRV)
+		.Writes        (xGraphics.GetPreviewLDR(uViewSlot),                        RESOURCE_ACCESS_WRITE_RTV)
+		.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),                            RESOURCE_ACCESS_READWRITE_UAV)
+		.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),                             RESOURCE_ACCESS_READWRITE_UAV)
+		.ReadsTransient(m_aaxBloomChainHandles[uViewSlot][0],                      RESOURCE_ACCESS_READ_SRV);
+
+	xGraph.AddPass(Flux_ViewPassName("LDR Transition", uViewSlot), ExecutePreviewLDRTransition)
+		.View(uViewSlot)
+		.Reads(xGraphics.GetPreviewLDR(uViewSlot), RESOURCE_ACCESS_READ_SRV);
 }
 
 void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
@@ -708,6 +757,13 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// bloom chains here (SetupBloomViewPasses), then declares its bloom /
 	// tonemap / exposure passes.
 
+	// MAIN-ONLY, and deliberately OUTSIDE the per-view walk below. Auto-exposure
+	// is a single global metering chain, not a per-view one: there is exactly ONE
+	// histogram buffer and ONE exposure buffer (both created in Initialise), the
+	// histogram meters the slot-0 HDR scene at GetRenderWidth/Height, and the
+	// preview tonemap deliberately does not meter at all. So neither pass carries
+	// a .View, and instantiating either per view would race two writers onto one
+	// buffer.
 	xGraph.AddPass("HDR_LuminanceHistogram", ExecuteLuminanceHistogram)
 		.Prepare    (PreExecuteLuminanceHistogram)
 		.Reads      (g_xEngine.FluxGraphics().GetHDRSceneTarget(),                     RESOURCE_ACCESS_READ_SRV)
@@ -719,14 +775,76 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsBuffer (m_xHistogramBuffer.GetBuffer(), RESOURCE_ACCESS_READWRITE_UAV)
 		.WritesBuffer(m_xExposureBuffer.GetBuffer(),  RESOURCE_ACCESS_WRITE_UAV);
 
-	// Main-view bloom chain — half swapchain dims, historical pass names.
-	SetupBloomViewPasses(xGraph, kuFluxViewSlotMain,
-		g_xEngine.FluxSwapchain().GetWidth(), g_xEngine.FluxSwapchain().GetHeight());
+	// ONE bloom chain per ACTIVE FULL-PIPELINE view, in ascending slot order,
+	// plus the preview tonemap + LDR transition for the PREVIEW-typed ones. The
+	// registry decides membership by view PROPERTIES, never by slot number: slot
+	// 0 always qualifies (active + full-pipeline from construction) and a preview
+	// slot joins while its owner has it up — so its bloom transients exist
+	// exactly when its passes do, which the graph's unused-transient validation
+	// demands. Depth-only shadow cascades are never full-pipeline and never get a
+	// chain. Today that set is exactly {main} ∪ {preview if active}, which is what
+	// the hand-written call + `if (IsViewActive(preview))` block this replaced
+	// produced.
+	//
+	// ★ SLOT 0'S DIMS ARE THE OUTPUT DIMS, NOT GetViewSetupDims(0). Every other
+	// per-view feature (HiZ / SSAO / SSR / SSGI / Decals) sizes from
+	// GetViewSetupDims, which for slot 0 resolves to GetRenderDims() — the
+	// DOWNSCALED render resolution under temporal upscaling. The main bloom chain
+	// is deliberately OUTPUT-res instead because it samples the TAA-RESOLVED
+	// image (see Flux/HDR/CLAUDE.md's "Bloom is AFTER TAA" note and
+	// Flux_GraphicsImpl::GetSceneColourForPostFX): feeding it GetViewSetupDims(0)
+	// would silently halve main bloom the moment upscaling engaged, and every
+	// gate would stay green because upscaling defaults OFF and GetRenderDims()
+	// then returns GetOutputDims() verbatim. Preview-class slots have no
+	// upscaling latch, so GetViewSetupDims is exactly right for them — and it is
+	// the same derivation SetupTransients sized their HDR scene target with, so a
+	// bloom chain can never disagree with the target it reads.
+	//
+	// The callback is a CAPTURELESS LAMBDA written here rather than a file-static
+	// free function on purpose: a closure declared inside a member body inherits
+	// the class's access. Being captureless (so it converts to the registry's
+	// plain fn-pointer), `this`, the graph and the hoisted graphics reference all
+	// travel through pCtx.
+	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	struct SetupCtx
+	{
+		Flux_HDRImpl*      m_pxThis;
+		Flux_RenderGraph*  m_pxGraph;
+		Flux_GraphicsImpl* m_pxGraphics;
+	};
+	SetupCtx xCtx{ this, &xGraph, &xGraphics };
+	xGraphics.RenderViews().ForEachActiveFullPipelineView(+[](u_int uSlot, const Flux_RenderView& xView, void* pCtx)
+	{
+		SetupCtx& xSetup = *static_cast<SetupCtx*>(pCtx);
+		const Zenith_Maths::UVector2 xDims = (uSlot == kuFluxViewSlotMain)
+			? xSetup.m_pxGraphics->GetOutputDims()
+			: xSetup.m_pxGraphics->GetViewSetupDims(uSlot);
+		xSetup.m_pxThis->SetupBloomViewPasses(*xSetup.m_pxGraph, uSlot, xDims.x, xDims.y);
+
+		// Keyed on the view's TYPE, not on its slot number: a second
+		// preview-class view picks up its own tonemap + transition with no edit
+		// here. The main view's tonemap is a different pass (it writes the final
+		// RT and meters) and is declared once, below.
+		if (xView.m_eType == FLUX_RENDER_VIEW_PREVIEW)
+		{
+			xSetup.m_pxThis->SetupPreviewViewPasses(*xSetup.m_pxGraph, *xSetup.m_pxGraphics, uSlot);
+		}
+	}, &xCtx);
 
 	// Tone mapping samples exposure (and optionally histogram for a debug
 	// overlay). Both are bound as UAV_Buffer in ExecuteToneMapping so declare
 	// as READWRITE_UAV — the barrier must match the binding's access mode
 	// rather than the shader's actual read-only intent.
+	//
+	// MAIN-ONLY and declared AFTER the walk (it reads the main view's bloom mip
+	// 0, which the walk creates). That reverses the DECLARATION order of this
+	// pass and the preview tonemap, and with it the direction of the
+	// READWRITE_UAV edge the two share on the histogram/exposure buffers. Inert:
+	// neither tonemap writes either buffer (the READWRITE declaration matches the
+	// UAV BINDING's access mode, not the shader's intent), and the preview forces
+	// m_bAutoExposure = 0 so it does not even read them. Both still sort strictly
+	// after HDR_Adaptation, which is the only real producer of the exposure
+	// buffer.
 	xGraph.AddPass("HDR_ToneMapping", ExecuteToneMapping)
 		.ClearTargets()
 		.Reads         (g_xEngine.FluxGraphics().GetSceneColourForPostFX(),              RESOURCE_ACCESS_READ_SRV)
@@ -734,35 +852,6 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),         RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),          RESOURCE_ACCESS_READWRITE_UAV)
 		.ReadsTransient(m_aaxBloomChainHandles[kuFluxViewSlotMain][0], RESOURCE_ACCESS_READ_SRV);
-
-	// Preview view (S5a/S5c): the preview's own bloom chain (256² base) + a
-	// fixed-exposure tonemap of the preview HDR into the persistent preview LDR
-	// (now reading the preview bloom mip 0 — emissive materials glow) + a no-op
-	// reader pass that leaves the LDR in SHADER_READ_ONLY for the editor's
-	// ImGui sample. The histogram/exposure UAV binds are descriptor-validity
-	// only (auto-exposure off) but must be declared so the graph's bind
-	// validator + barriers stay honest.
-	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	if (xGraphics.RenderViews().IsViewActive(kuFluxViewSlotPreview))
-	{
-		// The view's dims come from the same derivation SetupTransients sized the
-		// preview HDR scene target with, so the bloom chain can never disagree with
-		// the target it reads.
-		const Zenith_Maths::UVector2 xPreviewDims = xGraphics.GetViewSetupDims(kuFluxViewSlotPreview);
-		SetupBloomViewPasses(xGraph, kuFluxViewSlotPreview, xPreviewDims.x, xPreviewDims.y);
-
-		xGraph.AddPass("HDR_ToneMapping (Preview)", ExecutePreviewTonemap)
-			.View(kuFluxViewSlotPreview)
-			.ClearTargets()
-			.Reads         (xGraphics.GetHDRSceneTarget(kuFluxViewSlotPreview),        RESOURCE_ACCESS_READ_SRV)
-			.Writes        (xGraphics.GetPreviewLDR(kuFluxViewSlotPreview),            RESOURCE_ACCESS_WRITE_RTV)
-			.ReadsBuffer   (m_xHistogramBuffer.GetBuffer(),                            RESOURCE_ACCESS_READWRITE_UAV)
-			.ReadsBuffer   (m_xExposureBuffer.GetBuffer(),                             RESOURCE_ACCESS_READWRITE_UAV)
-			.ReadsTransient(m_aaxBloomChainHandles[kuFluxViewSlotPreview][0],          RESOURCE_ACCESS_READ_SRV);
-
-		xGraph.AddPass("Preview LDR Transition", ExecutePreviewLDRTransition)
-			.Reads(xGraphics.GetPreviewLDR(kuFluxViewSlotPreview), RESOURCE_ACCESS_READ_SRV);
-	}
 }
 
 // GetHDRSceneTarget / GetHDRSceneSRV / GetHDRSceneTargetSetup{,WithDepth} moved to

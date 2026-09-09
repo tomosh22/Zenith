@@ -193,10 +193,13 @@ ZENITH_TEST(ViewPassNames, CapacityAsserts)
 }
 
 // ----------------------------------------------------------------------------
-// 7. The legacy row. "Preview LDR Transition" (Flux_HDR.cpp:759) is the ONE of
+// 7. The legacy row. "Preview LDR Transition" (Flux_HDR.cpp:746) is the ONE of
 //    45 preview names that is not "<base> (Preview)", so it is a table row
-//    keyed by content. Slot 6 is NOT a row and must fall through to the
-//    generic form; and a base that merely LOOKS similar must not be captured.
+//    keyed by content. Since D1-e that site calls
+//    Flux_ViewPassName("LDR Transition", uViewSlot), so this row is what keeps
+//    the historical spelling alive. Slot 6 is NOT a row and must fall through
+//    to the generic form; and a base that merely LOOKS similar must not be
+//    captured.
 // ----------------------------------------------------------------------------
 ZENITH_TEST(ViewPassNames, LegacyRow)
 {
@@ -234,17 +237,17 @@ namespace
 		{ "Decal Normals Copy",         "Decal Normals Copy (Preview)"         },  // Flux/Decals/Flux_Decals.cpp:583
 		{ "Decal Apply",                "Decal Apply (Preview)"                },  // Flux/Decals/Flux_Decals.cpp:589
 		{ "Fog_Simple",                 "Fog_Simple (Preview)"                 },  // Flux/Fog/Flux_Fog.cpp:341
-		{ "HDR_BloomThreshold",         "HDR_BloomThreshold (Preview)"         },  // Flux/HDR/Flux_HDR.cpp:658
-		{ "HDR_BloomDownsample Mip1",   "HDR_BloomDownsample Mip1 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:669
-		{ "HDR_BloomDownsample Mip2",   "HDR_BloomDownsample Mip2 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:669
-		{ "HDR_BloomDownsample Mip3",   "HDR_BloomDownsample Mip3 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:670
-		{ "HDR_BloomDownsample Mip4",   "HDR_BloomDownsample Mip4 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:670
-		{ "HDR_BloomUpsample Mip3",     "HDR_BloomUpsample Mip3 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:687
-		{ "HDR_BloomUpsample Mip2",     "HDR_BloomUpsample Mip2 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:687
-		{ "HDR_BloomUpsample Mip1",     "HDR_BloomUpsample Mip1 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:688
-		{ "HDR_BloomUpsample Mip0",     "HDR_BloomUpsample Mip0 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:688
-		{ "HDR_ToneMapping",            "HDR_ToneMapping (Preview)"            },  // Flux/HDR/Flux_HDR.cpp:750
-		{ "LDR Transition",             "Preview LDR Transition"               },  // Flux/HDR/Flux_HDR.cpp:759 — THE OUTLIER (prefix, not suffix)
+		{ "HDR_BloomThreshold",         "HDR_BloomThreshold (Preview)"         },  // Flux/HDR/Flux_HDR.cpp:682
+		{ "HDR_BloomDownsample Mip1",   "HDR_BloomDownsample Mip1 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:690-693
+		{ "HDR_BloomDownsample Mip2",   "HDR_BloomDownsample Mip2 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:690-693
+		{ "HDR_BloomDownsample Mip3",   "HDR_BloomDownsample Mip3 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:690-693
+		{ "HDR_BloomDownsample Mip4",   "HDR_BloomDownsample Mip4 (Preview)"   },  // Flux/HDR/Flux_HDR.cpp:690-693
+		{ "HDR_BloomUpsample Mip3",     "HDR_BloomUpsample Mip3 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:707-710
+		{ "HDR_BloomUpsample Mip2",     "HDR_BloomUpsample Mip2 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:707-710
+		{ "HDR_BloomUpsample Mip1",     "HDR_BloomUpsample Mip1 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:707-710
+		{ "HDR_BloomUpsample Mip0",     "HDR_BloomUpsample Mip0 (Preview)"     },  // Flux/HDR/Flux_HDR.cpp:707-710
+		{ "HDR_ToneMapping",            "HDR_ToneMapping (Preview)"            },  // Flux/HDR/Flux_HDR.cpp:737
+		{ "LDR Transition",             "Preview LDR Transition"               },  // Flux/HDR/Flux_HDR.cpp:746 — THE OUTLIER (prefix, not suffix)
 		{ "HiZ Mip 0",                  "HiZ Mip 0 (Preview)"                  },  // Flux/HiZ/Flux_HiZ.cpp:193
 		{ "HiZ Mip 1",                  "HiZ Mip 1 (Preview)"                  },  // Flux/HiZ/Flux_HiZ.cpp:193
 		{ "HiZ Mip 2",                  "HiZ Mip 2 (Preview)"                  },  // Flux/HiZ/Flux_HiZ.cpp:193
@@ -337,7 +340,7 @@ ZENITH_TEST(ViewPassNames, LiveGraphKnowsTheBases)
 		"Apply Lighting",        // Flux/DeferredShading/Flux_DeferredShading.cpp:254
 		"Unified Mesh GBuffer",  // Flux/UnifiedMesh/Flux_UnifiedMesh.cpp:493
 		"Skybox",                // Flux/Skybox/Flux_Skybox.cpp:568
-		"HDR_ToneMapping",       // Flux/HDR/Flux_HDR.cpp:730
+		"HDR_ToneMapping",       // Flux/HDR/Flux_HDR.cpp:848
 	};
 
 	for (const char* szBase : aszAlwaysOnBases)
