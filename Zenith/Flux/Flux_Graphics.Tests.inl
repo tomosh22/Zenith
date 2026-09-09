@@ -71,11 +71,6 @@ namespace
 		u_int                  m_uSlot;
 		Zenith_Maths::UVector2 m_xTargetDims;
 	};
-
-	// The animation preview's slot. Spelled `6u` here for the same reason the
-	// builder in Flux_Graphics.cpp spells it that way: D2-a is the unit that adds
-	// kuFluxViewSlotPreviewAnim to Flux_RenderViews.h.
-	constexpr u_int kuFluxTestSlotPreviewAnim = 6u;
 }
 
 // Slot 0 must resolve THROUGH GetRenderDims(), not through the registry (nobody
@@ -138,20 +133,20 @@ ZENITH_TEST(Graphics, ViewSetupDimsPreviewReadsStagedTargetDims)
 // An owner that activates a view without staging its size is a hard authoring
 // error: every consumer downstream would create a 0x0 transient or divide by
 // zero, a long way from the mistake. This is the assert SetupTransients' loop
-// used to spell out inline, now covering the feature setups too. Slot 6 is used
-// as the subject because it is inactive and unused, so nothing observes the
-// zeroed value.
+// used to spell out inline, now covering the feature setups too. The animation-
+// preview slot is used as the subject because it is inactive and unused, so
+// nothing observes the zeroed value.
 ZENITH_TEST(Graphics, ViewSetupDimsZeroAsserts)
 {
 	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
 	if (pxGraphics == nullptr) { return; }
 
-	Flux_ScopedViewTargetDims xRestore(*pxGraphics, kuFluxTestSlotPreviewAnim);
+	Flux_ScopedViewTargetDims xRestore(*pxGraphics, kuFluxViewSlotPreviewAnim);
 
-	pxGraphics->RenderViews().View(kuFluxTestSlotPreviewAnim).m_xTargetDims = Zenith_Maths::UVector2(0u, 0u);
+	pxGraphics->RenderViews().View(kuFluxViewSlotPreviewAnim).m_xTargetDims = Zenith_Maths::UVector2(0u, 0u);
 	{
 		Zenith_AssertCaptureScope xCapture;
-		const Zenith_Maths::UVector2 xSetup = pxGraphics->GetViewSetupDims(kuFluxTestSlotPreviewAnim);
+		const Zenith_Maths::UVector2 xSetup = pxGraphics->GetViewSetupDims(kuFluxViewSlotPreviewAnim);
 		ZENITH_ASSERT_EQ(xCapture.GetHitCount(), 1u, "zero staged dims assert exactly once");
 		ZENITH_ASSERT_EQ(xSetup.x, 0u, "the value is still returned verbatim after the assert");
 		ZENITH_ASSERT_EQ(xSetup.y, 0u, "the value is still returned verbatim after the assert");
@@ -168,7 +163,7 @@ ZENITH_TEST(Graphics, PreviewLDRsAreDistinctAndBuilt)
 	if (pxGraphics == nullptr) { return; }
 
 	const Flux_RenderAttachment& xLDR5 = pxGraphics->GetPreviewLDR(kuFluxViewSlotPreview);
-	const Flux_RenderAttachment& xLDR6 = pxGraphics->GetPreviewLDR(kuFluxTestSlotPreviewAnim);
+	const Flux_RenderAttachment& xLDR6 = pxGraphics->GetPreviewLDR(kuFluxViewSlotPreviewAnim);
 
 	ZENITH_ASSERT_TRUE(xLDR5.m_xVRAMHandle.IsValid(), "the material-preview LDR is built at Initialise");
 	ZENITH_ASSERT_TRUE(xLDR6.m_xVRAMHandle.IsValid(), "the animation-preview LDR is built at Initialise too");

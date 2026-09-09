@@ -69,8 +69,7 @@ ZENITH_TEST(ViewPassNames, UniqueAcrossAllSlots)
 	}
 
 	ZENITH_ASSERT_STREQ(aszNames[kuFluxViewSlotPreview], "X (Preview)", "the material-preview slot's suffix");
-	// Slot 6 is the animation-preview view (unit D2-a names the constant).
-	ZENITH_ASSERT_STREQ(aszNames[6], "X (AnimPreview)", "the animation-preview slot's suffix");
+	ZENITH_ASSERT_STREQ(aszNames[kuFluxViewSlotPreviewAnim], "X (AnimPreview)", "the animation-preview slot's suffix");
 }
 
 // ----------------------------------------------------------------------------
@@ -88,9 +87,9 @@ ZENITH_TEST(ViewPassNames, PointerStable)
 			"repeated calls must return the SAME pointer");
 	}
 	// A different slot on the same base is a different, equally stable entry.
-	const char* szOther = Flux_ViewPassName(szBase, 6u);
+	const char* szOther = Flux_ViewPassName(szBase, kuFluxViewSlotPreviewAnim);
 	ZENITH_ASSERT_TRUE(szOther != szFirst, "different slots are different entries");
-	ZENITH_ASSERT_TRUE(Flux_ViewPassName(szBase, 6u) == szOther, "...and that entry is stable too");
+	ZENITH_ASSERT_TRUE(Flux_ViewPassName(szBase, kuFluxViewSlotPreviewAnim) == szOther, "...and that entry is stable too");
 }
 
 // ----------------------------------------------------------------------------
@@ -205,8 +204,8 @@ ZENITH_TEST(ViewPassNames, LegacyRow)
 {
 	ZENITH_ASSERT_STREQ(Flux_ViewPassName("LDR Transition", kuFluxViewSlotPreview), "Preview LDR Transition",
 		"the historical prefix spelling is preserved for the preview slot");
-	ZENITH_ASSERT_STREQ(Flux_ViewPassName("LDR Transition", 6u), "LDR Transition (AnimPreview)",
-		"slot 6 has no legacy row — it composes generically");
+	ZENITH_ASSERT_STREQ(Flux_ViewPassName("LDR Transition", kuFluxViewSlotPreviewAnim), "LDR Transition (AnimPreview)",
+		"the animation-preview slot has no legacy row — it composes generically");
 	ZENITH_ASSERT_STREQ(Flux_ViewPassName("HDR_ToneMapping", kuFluxViewSlotPreview), "HDR_ToneMapping (Preview)",
 		"a genuine <base> (Preview) pair must NOT be treated as legacy");
 }

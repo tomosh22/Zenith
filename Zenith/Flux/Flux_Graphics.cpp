@@ -39,14 +39,17 @@
 
 // The view slots that own a PERSISTENT preview LDR (see GetPreviewLDR). Both the
 // Initialise builder and the Shutdown release walk THIS list, so a slot can never
-// be built without a matching destroy. Slot 6 is spelled `6u` rather than named
-// because D2-a is the unit that adds kuFluxViewSlotPreviewAnim = 6 to
-// Flux_RenderViews.h; its LDR is built here AHEAD of that so the animation panel
-// can register it, and until D1-e/D2-a land NOTHING WRITES IT — that is expected,
-// not a bug. An unwritten persistent attachment simply samples as its cleared
-// contents; it is not a graph transient, so the unused-transient validation never
-// sees it.
-static constexpr u_int kuFLUX_PREVIEW_LDR_SLOTS[]  = { kuFluxViewSlotPreview, 6u };
+// be built without a matching destroy. The animation preview's LDR is built here
+// whether or not its view is active, so the animation panel can register it; until
+// something records into slot 6 NOTHING WRITES IT — that is expected, not a bug.
+// An unwritten persistent attachment simply samples as its cleared contents; it is
+// not a graph transient, so the unused-transient validation never sees it.
+//
+// This list is kept EXPLICIT rather than derived from Flux_IsPreviewViewSlot: the
+// two answer different questions (which slots are preview-TYPED versus which own a
+// persistent allocation), and collapsing them would make a future preview slot
+// silently allocate a 512x512 target it never uses.
+static constexpr u_int kuFLUX_PREVIEW_LDR_SLOTS[]  = { kuFluxViewSlotPreview, kuFluxViewSlotPreviewAnim };
 // Parallel to the slot list — the backend's only handle on which LDR is which in a
 // capture, so each name carries its SLOT rather than its role (slot 6 has no role
 // until D1-e wires one).

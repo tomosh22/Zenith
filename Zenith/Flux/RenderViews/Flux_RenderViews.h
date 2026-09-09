@@ -16,6 +16,7 @@
 //   slot 0                        = MAIN camera (always active)
 //   slots 1..ZENITH_FLUX_NUM_CSMS = shadow cascades (active iff shadows enabled)
 //   slot 1+ZENITH_FLUX_NUM_CSMS   = editor material preview (tools, on demand)
+//   slot 2+ZENITH_FLUX_NUM_CSMS   = editor ANIMATION preview (tools, on demand)
 //
 // The registry is a pure CPU fixed-slot array (no device deps) owned by
 // Flux_GraphicsImpl — unit-tested headless in Flux_RenderViews.Tests.inl.
@@ -38,7 +39,9 @@ enum FluxRenderViewType : u_int
 };
 
 // Fixed slot assignments (see header comment). kuFluxViewSlotShadowFirst + c is
-// cascade c's slot; the preview sits after the last cascade.
+// cascade c's slot; the two PREVIEW-class slots sit after the last cascade, in a
+// contiguous range — Flux_IsPreviewViewSlot below is derived from that range
+// rather than from a second enumerated list.
 // kuFluxViewNumShadowSlots mirrors ZENITH_FLUX_NUM_CSMS — kept as a local
 // constant so this header stays dependency-light (Flux_ShadowsImpl.h includes
 // this header and static_asserts the two stay in lockstep).
@@ -48,6 +51,25 @@ inline constexpr u_int kuFluxViewSlotShadowFirst = 1u;
 inline constexpr u_int kuFluxViewSlotPreview     = 1u + kuFluxViewNumShadowSlots;
 static_assert(kuFluxViewSlotPreview < FLUX_MAX_RENDER_VIEWS,
 	"FLUX_MAX_RENDER_VIEWS must fit main + all shadow cascades + the preview view");
+
+// The editor's ANIMATION preview view. Same shape as the material preview — a
+// full-pipeline PREVIEW-typed view, INACTIVE until its owner activates it — and
+// deliberately the NEXT slot up, so the preview class stays a contiguous range.
+inline constexpr u_int kuFluxViewSlotPreviewAnim = kuFluxViewSlotPreview + 1u;
+static_assert(kuFluxViewSlotPreviewAnim < FLUX_MAX_RENDER_VIEWS,
+	"FLUX_MAX_RENDER_VIEWS must fit main + all shadow cascades + BOTH preview views");
+
+// True iff uSlot is one of the PREVIEW-class views. DERIVED from the contiguous
+// range above and NOT a second list: an enumerated list is a place a later slot
+// can be forgotten while every existing test stays green. Pinned against the
+// registry's own m_eType for every slot by the RenderViews unit
+// IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes — so the predicate and the
+// constructor cannot drift apart silently. Total over all u_int inputs
+// (out-of-range slots are simply not preview slots).
+inline constexpr bool Flux_IsPreviewViewSlot(u_int uSlot)
+{
+	return uSlot >= kuFluxViewSlotPreview && uSlot <= kuFluxViewSlotPreviewAnim;
+}
 
 // The preview views' fixed square target size.
 //
@@ -99,8 +121,9 @@ constexpr FluxViewShadingMode Flux_ViewShadingModeFromFlags(u_int uViewFlags)
 // View-mask helpers — the per-draw-item mask (Stage S4) is a bit per view slot.
 inline constexpr u_int Flux_ViewMaskAllSceneViews(bool bShadowsEnabled)
 {
-	// Main + (all cascade slots when shadows are on). The preview slot is opt-in
-	// only — scene content NEVER defaults into it.
+	// Main + (all cascade slots when shadows are on). Built by INCLUSION, so BOTH
+	// preview slots are opt-in only: scene content NEVER defaults into either of
+	// them, and a preview slot added later cannot leak in by omission.
 	u_int uMask = 1u << kuFluxViewSlotMain;
 	if (bShadowsEnabled)
 	{
@@ -114,7 +137,7 @@ struct Flux_RenderView
 {
 	FluxRenderViewType     m_eType         = FLUX_RENDER_VIEW_MAIN;
 	bool                   m_bActive       = false;
-	// True for views that run the full render pipeline (main + preview); false
+	// True for views that run the full render pipeline (main + both previews); false
 	// for depth-only shadow views. Feature setup loops iterate full-pipeline
 	// views when instantiating per-view pass chains (Stage S5).
 	bool                   m_bFullPipeline = false;

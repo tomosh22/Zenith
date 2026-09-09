@@ -6,7 +6,9 @@ Flux_RenderViewRegistry::Flux_RenderViewRegistry()
 {
 	// Fixed slot layout (see header): 0 = MAIN (always active, full pipeline),
 	// 1..N = shadow cascades (depth-only; activated by Shadows when enabled),
-	// 1+N = preview (full pipeline; activated by the preview controller).
+	// 1+N = material preview, 2+N = animation preview (both full pipeline, both
+	// INACTIVE here — each is activated by its own owning controller, which is
+	// what keeps the default registry at exactly ONE active full-pipeline view).
 	m_axViews[kuFluxViewSlotMain].m_eType         = FLUX_RENDER_VIEW_MAIN;
 	m_axViews[kuFluxViewSlotMain].m_bActive       = true;
 	m_axViews[kuFluxViewSlotMain].m_bFullPipeline = true;
@@ -17,8 +19,10 @@ Flux_RenderViewRegistry::Flux_RenderViewRegistry()
 	{
 		m_axViews[kuFluxViewSlotShadowFirst + u].m_eType = FLUX_RENDER_VIEW_SHADOW_CASCADE;
 	}
-	m_axViews[kuFluxViewSlotPreview].m_eType         = FLUX_RENDER_VIEW_PREVIEW;
-	m_axViews[kuFluxViewSlotPreview].m_bFullPipeline = true;
+	m_axViews[kuFluxViewSlotPreview].m_eType             = FLUX_RENDER_VIEW_PREVIEW;
+	m_axViews[kuFluxViewSlotPreview].m_bFullPipeline     = true;
+	m_axViews[kuFluxViewSlotPreviewAnim].m_eType         = FLUX_RENDER_VIEW_PREVIEW;
+	m_axViews[kuFluxViewSlotPreviewAnim].m_bFullPipeline = true;
 }
 
 Flux_RenderView& Flux_RenderViewRegistry::View(u_int uSlot)

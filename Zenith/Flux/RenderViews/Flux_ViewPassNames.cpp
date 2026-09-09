@@ -14,14 +14,6 @@
 
 namespace
 {
-	// Slot 6 is the dedicated animation-preview view. Unit D2-a adds it to
-	// Flux_RenderViews.h as kuFluxViewSlotPreviewAnim; that constant does not
-	// exist yet and this unit deliberately does NOT add it, so the slot index is
-	// spelled out here with this note. Every other slot below uses the real
-	// constant (kuFluxViewSlotMain / kuFluxViewSlotShadowFirst /
-	// kuFluxViewSlotPreview) rather than a literal.
-	constexpr u_int kuViewSlotPreviewAnimProvisional = 6u;
-
 	// One suffix per view slot, total over FLUX_MAX_RENDER_VIEWS.
 	//
 	//   0 (kuFluxViewSlotMain)        nullptr — identity, no suffix is ever composed
@@ -31,8 +23,7 @@ namespace
 	//                                 passes (Flux/Shadows/Flux_Shadows.cpp:180-187) and
 	//                                 nothing routes a cascade pass through this pool.
 	//   5 (kuFluxViewSlotPreview)     "Preview" — the 44 historical "<base> (Preview)" names
-	//   6 (kuViewSlotPreviewAnimProvisional)
-	//                                 "AnimPreview"
+	//   6 (kuFluxViewSlotPreviewAnim) "AnimPreview"
 	//   7                             "View7" — the last fixed slot, unassigned today
 	const char* const s_aszViewSlotSuffixes[FLUX_MAX_RENDER_VIEWS] =
 	{
@@ -47,12 +38,13 @@ namespace
 	};
 	static_assert(FLUX_MAX_RENDER_VIEWS == 8u,
 		"s_aszViewSlotSuffixes has one row per view slot — add/remove rows with FLUX_MAX_RENDER_VIEWS");
+	// The table is positional, so both preview rows are pinned to their index: a
+	// slot constant that moved without the rows moving would hand every one of
+	// that view's passes another view's suffix, which reads as a plausible name.
 	static_assert(kuFluxViewSlotPreview == 5u,
 		"the suffix table's row comments describe slot 5 as the material preview");
-	static_assert(kuViewSlotPreviewAnimProvisional < FLUX_MAX_RENDER_VIEWS,
-		"the animation-preview slot must fit the fixed view registry");
-	static_assert(kuViewSlotPreviewAnimProvisional == kuFluxViewSlotPreview + 1u,
-		"the animation-preview view sits immediately after the material preview");
+	static_assert(kuFluxViewSlotPreviewAnim == 6u,
+		"the suffix table's row comments describe slot 6 as the animation preview");
 
 	// The legacy table: names that are NOT of the generic "<base> (<suffix>)"
 	// form and must keep their historical spelling so no existing pass literal
