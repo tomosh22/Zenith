@@ -328,12 +328,12 @@ m_fHeight`).
 
 ### 1.1 Interior furniture -- highest value, seen closest
 
-- [x] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- A single wooden bed with a stuffed mattress and a folded blanket, low headboard, slightly worn. Reads from above and from one side; the player never sees under it. -- source: `Games/Zenithmon/Assets/Props/Bed/Bed.glb`
-- [x] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately. -- source: `Games/Zenithmon/Assets/Props/Table/Table.glb`
-- [x] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber. -- source: `Games/Zenithmon/Assets/Props/Chair/Chair.glb`
-- [x] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive. -- source: `Games/Zenithmon/Assets/Props/Shelf/Shelf.glb`
-- [x] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture. -- source: `Games/Zenithmon/Assets/Props/Counter/Counter.glb`
-- [x] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors. -- source: `Games/Zenithmon/Assets/Props/Barrel/Barrel.glb`
+- [ ] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- A single wooden bed with a stuffed mattress and a folded blanket, low headboard, slightly worn. Reads from above and from one side; the player never sees under it.
+- [ ] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately.
+- [ ] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber.
+- [ ] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive.
+- [ ] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture.
+- [ ] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors.
 
 **★ THE FOOTPRINT IS A HARD CONSTRAINT, NOT A GUIDE.** Interior furniture carries
 an AABB static collider sized from its own mesh bounds
@@ -345,7 +345,7 @@ collider in a corridor the automated walk driver has no way around
 
 ### 1.2 Outdoor fixtures
 
-- [x] `AB-PROP-07` **LampPost** -- 0.4 x 0.4 x 3.0 m -- A cast-iron street lamp with a glass lantern head, town-scale. -- source: `Games/Zenithmon/Assets/Props/LampPost/LampPost.glb`
+- [ ] `AB-PROP-07` **LampPost** -- 0.4 x 0.4 x 3.0 m -- A cast-iron street lamp with a glass lantern head, town-scale.
 - [ ] `AB-PROP-08` **LanternPost** -- 0.4 x 0.4 x 2.4 m -- The shorter, warmer cousin of the lamp post; a hung lantern rather than a fixed head.
 - [ ] `AB-PROP-09` **FenceWood** -- A short run of rough post-and-rail timber fencing. Must tile end to end with no visible seam.
 - [ ] `AB-PROP-10` **FenceStone** -- A dry-stone wall section, same tiling requirement.
