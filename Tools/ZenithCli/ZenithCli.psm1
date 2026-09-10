@@ -434,7 +434,10 @@ function Invoke-ZenithBuild {
         )
         foreach ($s in $steps) {
             Write-CliInfo "[build] $($s.Target) ($($s.Config))..."
-            $buildArgs = @($sln, "/t:$($s.Target)", "/p:Configuration=$($s.Config)", '/p:Platform=x64', '/m', '/nologo', '/v:minimal')
+            # `10.0` resolves to the newest installed Windows SDK. Generated projects
+            # retain their authoring-machine SDK pin, which GitHub-hosted VS images do
+            # not guarantee (MSB8036).
+            $buildArgs = @($sln, "/t:$($s.Target)", "/p:Configuration=$($s.Config)", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
             $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
             if ($rc -ne 0) { Write-CliError "engine target '$($s.Target)' failed"; return $script:EXIT_BUILD }
         }
@@ -446,7 +449,8 @@ function Invoke-ZenithBuild {
     $sln = Get-GameWin64Sln $name
     if (-not (Test-Path $sln)) { Write-CliError "solution not found: $sln (run 'zenith regen')"; return $script:EXIT_GENERATION }
     Write-CliInfo "[build] $name ($config)..."
-    $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/m', '/nologo', '/v:minimal')
+    # Match the explicit CI MSBuild calls: resolve, rather than pin, the Windows SDK.
+    $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
     $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
     if ($rc -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
 

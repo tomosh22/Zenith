@@ -91,18 +91,8 @@ jobs:
           # build creates no Vulkan instance at all, so vkEnumeratePhysicalDevices
           # never runs on the GPU-less runner. Tools are ON in that config, which
           # is what makes the boot authoring pass below possible.
-          $buildLog = Join-Path $env:RUNNER_TEMP 'scripttest-null-build.log'
-          pwsh -NoProfile -File Tools\zenith.ps1 build ScriptTest --headless *>&1 |
-            Tee-Object -FilePath $buildLog
-          $buildExit = $LASTEXITCODE
-          if ($buildExit -ne 0) {
-            # Hosted-job logs require sign-in even for this public repository. Mirror
-            # the actionable tail into a check annotation so CI regressions remain
-            # diagnosable from the public check API as well.
-            $tail = (Get-Content -LiteralPath $buildLog -Tail 30) -join '%0A'
-            Write-Host "::error title=ScriptTest Null build::$tail"
-            exit $buildExit
-          }
+          pwsh -NoProfile -File Tools\zenith.ps1 build ScriptTest --headless
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build ScriptTest (D3D12 null backend -- backend-neutrality link proof)
         shell: pwsh
