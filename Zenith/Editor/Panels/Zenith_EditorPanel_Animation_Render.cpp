@@ -1,9 +1,9 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+#include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorUI.h"
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Core/Zenith_DragDropPayloads.h"
@@ -902,7 +902,7 @@ void Zenith_EditorPanel_Animation::RenderPreviewPane()
 	// that have no Flux at all — a boot-time unit batch among them. Registration
 	// is left unattempted rather than recorded as done, so a later frame with a
 	// live renderer still picks the image up.
-	Flux_GraphicsImpl* pxGraphics = g_xEngine.TryGetFluxGraphics();
+	Flux_GraphicsImpl* pxGraphics = Zenith_Editor::TryGetActiveGraphics();
 	if (!m_bPreviewImageRegistered && pxGraphics != nullptr)
 	{
 		// The persistent preview LDR the per-view tonemap writes — NOT a

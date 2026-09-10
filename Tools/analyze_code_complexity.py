@@ -1806,15 +1806,14 @@ class CppAnalyzer:
                     'detail': f'{count} use(s) of {tok}',
                 })
 
-        # g_xEngine token (PS1 kind-2 parity): per CODE line — skip pure-comment lines and
-        # trailing // comments. Gate key is per-FILE (membership), matching PS1 behaviour.
+        # g_xEngine token (PS1 kind-2 parity): count only CODE lines.  `cleaned_code`
+        # has every comment and string blanked while preserving line numbers, so block
+        # comments and documentation examples cannot accidentally inflate a file's
+        # shrink-only singleton baseline. Gate key is per-FILE (membership), matching
+        # PS1 behaviour.
         gx_lines: List[int] = []
-        for i, line in enumerate(raw_code.split('\n'), start=1):
-            if 'g_xEngine' not in line:
-                continue
-            if line.lstrip().startswith('//'):
-                continue
-            if 'g_xEngine' in line.split('//', 1)[0]:
+        for i, line in enumerate(cleaned_code.split('\n'), start=1):
+            if 'g_xEngine' in line:
                 gx_lines.append(i)
         if gx_lines:
             findings.append({

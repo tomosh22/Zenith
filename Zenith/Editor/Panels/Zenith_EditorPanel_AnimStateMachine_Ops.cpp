@@ -46,7 +46,7 @@ namespace
 	// one re-deriving the guard and one of them eventually forgetting.
 	Zenith_Editor* AnimSmTryGetEditor()
 	{
-		return g_xEngine.HasEditor() ? &g_xEngine.Editor() : nullptr;
+		return Zenith_Editor::TryGetActive();
 	}
 }
 

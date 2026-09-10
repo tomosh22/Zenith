@@ -78,6 +78,8 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Panels/Zenith_EditorPanel_Animation.h"
+#include "Editor/Panels/Zenith_EditorPanel_AnimStateMachine.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_SceneGraphDebug.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -122,6 +124,45 @@ void Zenith_RegisterEngineGraphNodes();
 // initialiser (currently none, but the rule must hold as members are
 // added in later phases).
 constinit Zenith_Engine g_xEngine;
+
+#ifdef ZENITH_TOOLS
+Zenith_Editor* Zenith_Editor::TryGetActive()
+{
+	return g_xEngine.HasEditor() ? &g_xEngine.Editor() : nullptr;
+}
+
+Flux_GraphicsImpl* Zenith_Editor::TryGetActiveGraphics()
+{
+	return g_xEngine.TryGetFluxGraphics();
+}
+
+Flux_RendererImpl* Zenith_Editor::TryGetActiveRenderer()
+{
+	return (TryGetActiveGraphics() != nullptr) ? &g_xEngine.FluxRenderer() : nullptr;
+}
+
+Zenith_EditorPanel_Animation& Zenith_EditorPanel_Animation::Instance()
+{
+	Zenith_Editor* pxEditor = Zenith_Editor::TryGetActive();
+	Zenith_Assert(pxEditor != nullptr,
+		"Zenith_EditorPanel_Animation::Instance() before the editor was allocated");
+	Zenith_EditorPanel_Animation* pxPanel = pxEditor->TryGetAnimationPanel();
+	Zenith_Assert(pxPanel != nullptr,
+		"Zenith_EditorPanel_Animation::Instance() outside Zenith_Editor::Initialise..Shutdown");
+	return *pxPanel;
+}
+
+Zenith_EditorPanel_AnimStateMachine& Zenith_EditorPanel_AnimStateMachine::Instance()
+{
+	Zenith_Editor* pxEditor = Zenith_Editor::TryGetActive();
+	Zenith_Assert(pxEditor != nullptr,
+		"Zenith_EditorPanel_AnimStateMachine::Instance() before the editor was allocated");
+	Zenith_EditorPanel_AnimStateMachine* pxPanel = pxEditor->TryGetAnimStateMachinePanel();
+	Zenith_Assert(pxPanel != nullptr,
+		"Zenith_EditorPanel_AnimStateMachine::Instance() outside Zenith_Editor::Initialise..Shutdown");
+	return *pxPanel;
+}
+#endif
 
 namespace
 {

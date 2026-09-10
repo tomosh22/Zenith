@@ -5,7 +5,6 @@
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
 #include "Editor/Zenith_Editor.h"          // Instance() resolves the editor-owned panel
 #include "Editor/Zenith_Gizmo.h"
-#include "Core/Zenith_Engine.h"            // g_xEngine.Editor()
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Flux/Flux_ViewConstants.h"
 #include "Flux/RenderViews/Flux_MaterialPreviewController.h"   // the pure orbit / view-constants builders
@@ -27,25 +26,6 @@
 // explicitly not repeating, and because "what the panel knows" and "what the
 // panel paints" are the two halves a reader wants separately.
 //=============================================================================
-
-Zenith_EditorPanel_Animation& Zenith_EditorPanel_Animation::Instance()
-{
-	// ★ THE OBJECT IS Zenith_Editor'S — see the header. This used to be a
-	// function-local static, whose destructor runs at ATEXIT, i.e. after
-	// Zenith_AssetRegistry::Shutdown has force-deleted every asset. Any owning
-	// handle the panel still held then Released into freed memory: an assert
-	// ("Release called on asset with 0 ref count") when the freed word happened to
-	// read zero, and silent heap corruption when it did not.
-	//
-	// A unit that wants an isolated panel still constructs one on the stack; this
-	// accessor is only for the editor's single one.
-	Zenith_Assert(g_xEngine.HasEditor(),
-		"Zenith_EditorPanel_Animation::Instance() before the editor was allocated");
-	Zenith_EditorPanel_Animation* pxPanel = g_xEngine.Editor().TryGetAnimationPanel();
-	Zenith_Assert(pxPanel != nullptr,
-		"Zenith_EditorPanel_Animation::Instance() outside Zenith_Editor::Initialise..Shutdown");
-	return *pxPanel;
-}
 
 Zenith_EditorPanel_Animation::Zenith_EditorPanel_Animation()
 	: m_xSession(std::string(szEDITOR_WINDOW_ANIMATION_EDITOR))

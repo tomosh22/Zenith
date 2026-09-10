@@ -819,11 +819,11 @@ void HandleEntryDoubleClickOpen(const ContentBrowserEntry& xEntry)
 		}
 
 		const std::string strAssetPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_strFullPath);
-		Zenith_EditorPanel_Animation* pxPanel = g_xEngine.Editor().TryGetAnimationPanel();
+		Zenith_EditorPanel_Animation* pxPanel = Zenith_Editor::TryGetActive() != nullptr
+			? Zenith_Editor::TryGetActive()->TryGetAnimationPanel()
+			: nullptr;
 		if (pxPanel == nullptr)
 		{
-			// "The editor is not between Initialise and Shutdown" is a real state
-			// the accessor returns a POINTER for — see Zenith_Editor.h.
 			Zenith_Error(LOG_CATEGORY_ANIMATION,
 				"[ContentBrowser] %s: the Animation Editor panel does not exist yet", strAssetPath.c_str());
 			return;

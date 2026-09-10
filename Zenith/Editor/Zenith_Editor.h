@@ -26,6 +26,7 @@
 // Forward declarations
 class Zenith_MaterialAsset;
 class Flux_GraphicsImpl;
+class Flux_RendererImpl;
 class FrameContext;
 class Zenith_DebugVariables;
 class Zenith_Profiling;
@@ -149,6 +150,13 @@ public:
 	// nothing here needs the panel definition.
 	//--------------------------------------------------------------------------
 	Zenith_EditorPanel_Animation* TryGetAnimationPanel() const { return m_pxAnimationPanel; }
+
+	// The engine composition root owns the editor lifetime. These bridges keep
+	// panel implementation files independent of the process-wide engine object:
+	// a stack-created panel can still observe that the editor/renderer is absent.
+	static Zenith_Editor* TryGetActive();
+	static Flux_GraphicsImpl* TryGetActiveGraphics();
+	static Flux_RendererImpl* TryGetActiveRenderer();
 
 	//--------------------------------------------------------------------------
 	// The animator-controller state-machine graph (WU-6.5).

@@ -1,5 +1,4 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
 
@@ -22,16 +21,6 @@
 // "what the panel knows", "what the panel does" and "what the panel paints"
 // are the three halves a reader wants separately.
 //=============================================================================
-
-Zenith_EditorPanel_AnimStateMachine& Zenith_EditorPanel_AnimStateMachine::Instance()
-{
-	Zenith_Assert(g_xEngine.HasEditor(),
-		"Zenith_EditorPanel_AnimStateMachine::Instance() before the editor was allocated");
-	Zenith_EditorPanel_AnimStateMachine* pxPanel = g_xEngine.Editor().TryGetAnimStateMachinePanel();
-	Zenith_Assert(pxPanel != nullptr,
-		"Zenith_EditorPanel_AnimStateMachine::Instance() outside Zenith_Editor::Initialise..Shutdown");
-	return *pxPanel;
-}
 
 Zenith_EditorPanel_AnimStateMachine::Zenith_EditorPanel_AnimStateMachine()
 {

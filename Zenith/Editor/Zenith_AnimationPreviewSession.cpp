@@ -1,9 +1,9 @@
 #include "Zenith.h"
-#include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Zenith_AnimationPreviewSession.h"
+#include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorPrefs.h"
 
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
@@ -52,7 +52,7 @@ namespace
 	//-------------------------------------------------------------------------
 	Flux_GraphicsImpl* TryGetPreviewGraphics()
 	{
-		return g_xEngine.TryGetFluxGraphics();
+		return Zenith_Editor::TryGetActiveGraphics();
 	}
 
 	Flux_RenderViewRegistry* TryGetPreviewViewRegistry()
@@ -75,7 +75,7 @@ namespace
 	//-------------------------------------------------------------------------
 	Flux_RendererImpl* TryGetPreviewRenderer()
 	{
-		return (TryGetPreviewGraphics() != nullptr) ? &g_xEngine.FluxRenderer() : nullptr;
+		return (TryGetPreviewGraphics() != nullptr) ? Zenith_Editor::TryGetActiveRenderer() : nullptr;
 	}
 
 	// The ACTIVE VIEW SET changed: per-view transients and passes must be
