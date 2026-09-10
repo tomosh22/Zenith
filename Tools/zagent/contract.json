@@ -1,0 +1,33 @@
+{
+  "$comment": [
+    "The wire contract between the PowerShell client and the board, as",
+    "the board's own `zagent contract --json` answers it. Committed, and",
+    "asserted against by BOTH sides: Test-ZagentClient.ps1 checks it",
+    "against this client's behaviour, and the board's contract.test.ts",
+    "checks contractMetadata() against this file. Either side changing",
+    "without the other fails a test, instead of failing a tick.",
+    "",
+    "The `$comment` key is a comment (stripped by both readers, the same",
+    "rule zagent.project.json follows).",
+    "",
+    "Generated from `zagent contract --json` against the board at",
+    "http://localhost:3001 — PROTOCOL_VERSION 1.",
+    "When the board's contract changes, re-run `zagent contract --json`,",
+    "diff, and commit the result together with the change."
+  ],
+  "protocolVersion": 1,
+  "commands": [
+    "help", "auth", "provision", "doctor", "next", "claim", "show", "check", "queue", "owns",
+    "comment", "move", "finish", "gates", "guard", "create", "link", "unlink", "links",
+    "transitions", "blocked", "epic", "parent", "sprint", "version", "update", "estimate",
+    "flag", "resolve", "history", "report", "board", "notion", "docs", "rows", "ask",
+    "decide", "shortfall", "changelog", "suggest", "suggestions", "contract"
+  ],
+  "fileFlags": {
+    "all": ["file", "comment", "worklog", "body", "goal", "dod"],
+    "narrowed": {
+      "sprint": ["file", "comment", "worklog", "body", "dod"]
+    }
+  },
+  "needsDocsTree": ["docs sync", "docs status", "board status"]
+}

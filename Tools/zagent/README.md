@@ -165,3 +165,28 @@ this repo requires is the `pwsh` every gate already needs.
   optional field in the project file is read through
   `PSObject.Properties['name']`. A file that legally omits `baseBranch`
   must make `doctor` report, not crash.
+- **`zagent.cmd` must keep CRLF line endings.** A Windows batch file
+  with LF-only endings is outside what cmd.exe's parser guarantees, and
+  the symptom is a bare `zagent …` through the shim that never returns —
+  observed as the SECOND shim invocation within one console session
+  hanging past five minutes, every time, while the same script through
+  `pwsh -File` directly never hung once. It reached disk with LF bytes
+  under `core.autocrlf=true` while still looking "clean" to git.
+  `.gitattributes` pins `Tools/zagent/zagent.cmd text eol=crlf`, so every
+  checkout puts CRLF on disk regardless of the cloner's setting.
+
+## The wire contract, and a local board
+
+`contract.json` (this directory, committed) is the golden fixture both
+sides of the protocol assert against — the path-valued flags, the
+commands that ship the docs tree, the protocol version. A board change
+without this client fails the client's own test suite; a client change
+without the board fails the board's. `zagent contract --json` prints
+the live answer when a board is reachable.
+
+The board itself lives in a different repo and may run on an entirely
+different machine — this client only ever needs `ZAGENT_URL` +
+`ZAGENT_TOKEN`. **A local board for development** (its startup, health
+checks, backup expectations, the protocol handshake and the
+milestone-to-sprint mapping) is documented in the board repo at
+`packages/agent/OPERATIONS.md`; nothing here depends on it.

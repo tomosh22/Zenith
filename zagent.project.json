@@ -217,6 +217,90 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
       ],
       "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+    },
+    "Undervault": {
+      "$comment": [
+        "Project UV. THE BOOTSTRAP STATE: Games/Undervault has docs (GDD + TDD)",
+        "but no .zproj, so the permanent gates below cannot compile anything yet --",
+        "and that is the mechanism, not a gap. They FAIL until the first scaffold",
+        "ticket lands its .zproj + directories, and pass exactly when the scaffold",
+        "is real: the gate list IS the scaffold's acceptance test, and it needs no",
+        "protected-path edit, ever. See Docs/OperateBoard.md (saas repo) for the",
+        "full bootstrap transition, including the two HUMAN edits that follow a",
+        "scaffold: a `build <Name>` line joins the Engine list above (a .zproj'd",
+        "game missing from it fails Test-ZagentClient.ps1), and the game's",
+        "baseline row joins Tools/unit_baselines.json when its first units land."
+      ],
+      "project": "UV",
+      "paths": [
+        "Games/Undervault/**"
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Build\\regen.ps1",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+      ],
+      "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+      "docs": {
+        "dir": "Games/Undervault/Docs",
+        "title": "Undervault",
+        "icon": "⛏️",
+        "order": [
+          "TechnicalDesignDocument.md",
+          "GameDesignDocument.md"
+        ]
+      }
+    },
+    "Hearth": {
+      "$comment": [
+        "Project HE. Same bootstrap state as Undervault: docs, no .zproj. The",
+        "gates pass exactly when the scaffold lands; see the Undervault comment."
+      ],
+      "project": "HE",
+      "paths": [
+        "Games/Hearth/**"
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Build\\regen.ps1",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+      ],
+      "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+      "docs": {
+        "dir": "Games/Hearth/Docs",
+        "title": "Hearth",
+        "icon": "🏠",
+        "order": [
+          "TDD.md",
+          "GameDesignDocument.md"
+        ]
+      }
+    },
+    "Foundry": {
+      "$comment": [
+        "Project FD. Same bootstrap state as Undervault: docs, no .zproj. The",
+        "TDD's L0-only + no-float lint (section 2) is the convention the scaffold",
+        "must install as CLAUDE.md before any SimCore code lands."
+      ],
+      "project": "FD",
+      "paths": [
+        "Games/Foundry/**"
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Build\\regen.ps1",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+      ],
+      "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+      "docs": {
+        "dir": "Games/Foundry/Docs",
+        "title": "Foundry",
+        "icon": "🔧",
+        "order": [
+          "TechnicalDesignDocument.md",
+          "GameDesignDocument.md"
+        ]
+      }
     }
   },
   "conventionDocs": {

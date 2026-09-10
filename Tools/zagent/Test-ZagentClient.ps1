@@ -971,6 +971,48 @@ Assert-That 'returns an array, not an unrolled string' {
     ($flags -is [array]) -and ($flags.Count -eq 5)
 }
 
+Write-Host "`n=== the wire contract (contract.json) ===" -ForegroundColor Cyan
+# The client and the board duplicate the protocol's LOCAL half -- which
+# flags are path-valued, which commands ship the docs tree -- because
+# the client must decide what to slurp before any request exists. The
+# duplication is where drift lives: a flag missing on one side arrives
+# on the other as a PATH STRING, stored as prose, with a successful
+# exit. The committed fixture is the mechanical proof both sides assert
+# against; this asserts the CLIENT side against it, offline, the way
+# the board's contract.test.ts asserts contractMetadata() against the
+# same file.
+$contractPath = Join-Path $here 'contract.json'
+Assert-That 'contract.json exists and parses' {
+    (Test-Path -LiteralPath $contractPath) -and
+    ($null -ne (Get-Content -LiteralPath $contractPath -Raw -Encoding utf8 | ConvertFrom-Json))
+}
+Assert-That '** contract.json agrees with THIS client on every path-valued flag' {
+    $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding utf8 | ConvertFrom-Json
+    $mismatches = Test-ContractFixture -Contract $contract
+    if ($mismatches.Count -gt 0) {
+        Write-Host ("       the fixture disagrees with this client:")
+        foreach ($m in $mismatches) { Write-Host ("         " + $m) }
+    }
+    $mismatches.Count -eq 0
+}
+Assert-That '** a synthetic board-side divergence is REPORTED, not passed' {
+    # One flag the client has never heard of, and one the board omitted.
+    $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding utf8 | ConvertFrom-Json
+    $drifted = $contract | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $drifted.fileFlags.all = @($drifted.fileFlags.all) + 'mystery'
+    $drifted.fileFlags.narrowed.sprint = @()
+    # ASSIGN, not @() -- the validator returns ,@(...) on purpose, and
+    # wrapping it again would count the ARRAY as one item.
+    (Test-ContractFixture -Contract $drifted).Count -ge 2
+}
+Assert-That 'the fixture names the protocol version the client sends' {
+    $contract = Get-Content -LiteralPath $contractPath -Raw -Encoding utf8 | ConvertFrom-Json
+    # The client's own constant, read from the script file it lives in.
+    $ps1 = Get-Content (Join-Path $here 'zagent.ps1') -Raw
+    $clientVersion = [regex]::Match($ps1, '\$script:PROTOCOL_VERSION\s*=\s*(\d+)').Groups[1].Value
+    ($null -ne $contract.protocolVersion) -and ([string]$contract.protocolVersion -eq $clientVersion)
+}
+
 Write-Host ""
 Write-Host "=== the forward-reference trap: a key cited before it existed ===" -ForegroundColor Cyan
 

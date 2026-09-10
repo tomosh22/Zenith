@@ -31,6 +31,131 @@ $script:PROJECT_FILE = 'zagent.project.json'
 $script:EXIT_ERROR = 1
 $script:EXIT_UNREACHABLE = 7
 
+# ─── THE WIRE CONTRACT ───────────────────────────────
+#
+# The client and the board each need command knowledge the other side
+# also holds — which flags are path-valued, which commands ship the
+# docs tree — and the two run on different machines in different
+# languages, so the lists are spelled twice. That duplication is a
+# defect waiting for a release: a flag missing HERE arrives at the
+# board as a path string it stores as prose.
+#
+# `contract.json` (committed beside this module) is the golden fixture
+# both sides assert against. `Test-ContractFixture` validates a parsed
+# contract payload against THIS client's actual behaviour, so a board
+# change without the client fails HERE, and a client change without the
+# board fails the board's own test. `zagent contract --json` serves the
+# live answer when a board is reachable; the fixture is the offline
+# copy that keeps the check running where the board is not.
+
+function Test-ContractFixture {
+    <#
+    .SYNOPSIS
+      Does a contract payload agree with THIS client's behaviour?
+    .DESCRIPTION
+      Takes the parsed `contractMetadata` object — from the committed
+      fixture, or from a live `zagent contract --json` — and exercises
+      the client's own predicates against what it claims.
+
+      Returns a list of mismatch strings; an EMPTY list means the two
+      sides agree. Deliberately a report rather than a throw, so one
+      run names every divergence instead of the first.
+    #>
+    param([PSCustomObject]$Contract)
+
+    $mismatches = [System.Collections.Generic.List[string]]::new()
+    if (-not $Contract) {
+        $mismatches.Add('no contract payload to check')
+        return , $mismatches.ToArray()
+    }
+
+    # The path-valued flags, for every command and for the one narrowed
+    # shape (`sprint`). Asked of the FUNCTION, not of a literal here —
+    # the same rule Get-FileFlags' own tests follow.
+    #
+    # ★ ASSIGN, never `@()`. Get-FileFlags returns `,@(…)` precisely so
+    # a six-element list survives PowerShell's unrolling — and wrapping
+    # that array again nests it one level down, where a six-element
+    # check silently compares against a one-element array holding the
+    # whole list as one string. Same trap the file documents at
+    # Get-BodyDrift; call it and use the result.
+    $allFlags = Get-FileFlags -Argv @('create')
+    $sprintFlags = Get-FileFlags -Argv @('sprint', 'create', 'S9')
+
+    $ffProp = $Contract.PSObject.Properties['fileFlags']
+    if (-not $ffProp) {
+        $mismatches.Add('contract has no fileFlags — cannot check which flags are path-valued')
+    } else {
+        $allProp = $ffProp.Value.PSObject.Properties['all']
+        $narrowedProp = $ffProp.Value.PSObject.Properties['narrowed']
+        if (-not $allProp) {
+            $mismatches.Add('contract fileFlags has no "all" list')
+        } else {
+            $board = @($allProp.Value)
+            foreach ($flag in $board) {
+                if ($flag -notin $allFlags) {
+                    $mismatches.Add("the board treats --$flag as path-valued for every command; this client does not know it")
+                }
+            }
+            foreach ($flag in $allFlags) {
+                if ($flag -notin $board) {
+                    $mismatches.Add("this client treats --$flag as path-valued for every command; the board's list omits it")
+                }
+            }
+        }
+        if ($narrowedProp) {
+            $sprintProp = $narrowedProp.Value.PSObject.Properties['sprint']
+            if ($sprintProp) {
+                $boardSprint = @($sprintProp.Value)
+                foreach ($flag in $boardSprint) {
+                    if ($flag -notin $sprintFlags) {
+                        $mismatches.Add("the board treats --$flag as path-valued for sprint commands; this client does not")
+                    }
+                }
+                foreach ($flag in $sprintFlags) {
+                    if ($flag -notin $boardSprint) {
+                        $mismatches.Add("this client treats --$flag as path-valued for sprint commands; the board's list omits it")
+                    }
+                }
+            } else {
+                $mismatches.Add('contract fileFlags.narrowed has no "sprint" entry')
+            }
+        } else {
+            $mismatches.Add('contract fileFlags has no "narrowed" map')
+        }
+    }
+
+    # Which commands ship the docs tree, checked by BEHAVIOUR rather
+    # than by name: run the client's own predicate over each pair the
+    # board lists, and over a few commands the board does NOT list.
+    $dtProp = $Contract.PSObject.Properties['needsDocsTree']
+    if (-not $dtProp) {
+        $mismatches.Add('contract has no needsDocsTree — cannot check which commands ship the docs tree')
+    } else {
+        $listed = @($dtProp.Value)
+        foreach ($entry in $listed) {
+            $argv = @([string]$entry -split '\s+')
+            if (-not (Test-NeedsDocsTree -Argv $argv)) {
+                $mismatches.Add("the board expects ``$entry`` to ship the docs tree; this client does not")
+            }
+        }
+        # A sample of commands the board says nothing about must ALSO
+        # come back false here. `queue` is the cheap control.
+        if (Test-NeedsDocsTree -Argv @('queue')) {
+            $mismatches.Add('this client ships the docs tree for ``queue``, which the board does not list')
+        }
+    }
+
+    # The version itself. A client cannot SPEAK a version the contract
+    # does not name — that asymmetry means the fixture is stale.
+    $pvProp = $Contract.PSObject.Properties['protocolVersion']
+    if (-not $pvProp) {
+        $mismatches.Add('contract carries no protocolVersion')
+    }
+
+    return , $mismatches.ToArray()
+}
+
 # ─── LOCATING THINGS ─────────────────────────────────
 
 <#
@@ -1295,4 +1420,5 @@ Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annot
     Get-ConventionsTree, Get-AmendContents, Get-ScratchRoot, Write-Results, Write-LastResult, Write-LastExit,
     Get-ClientChecks, Get-AllGateLines, Write-StdErr,
     Test-HelpFlag, Get-HelpSubject, Format-HelpStub,
-    Get-LivingDocDirs, Find-KeyCitations, Format-KeyCitations, Get-CreatedKey
+    Get-LivingDocDirs, Find-KeyCitations, Format-KeyCitations, Get-CreatedKey,
+    Test-ContractFixture

@@ -66,6 +66,14 @@ $script:EXIT_ERROR = 1
 $script:EXIT_UNREACHABLE = 7
 $script:PROJECT_FILE = 'zagent.project.json'
 
+# The protocol version THIS client speaks. Sent with every request as
+# `protocol`; the board refuses a mismatch before dispatch runs, so an
+# incompatible pair fails cleanly instead of a command being parsed
+# under a stale argv grammar. See PROTOCOL_VERSION in the board's
+# packages/agent/src/dispatch.ts — the two constants are pinned to each
+# other by contract.json, which both sides' tests assert against.
+$script:PROTOCOL_VERSION = 1
+
 Import-Module (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Force
 
 # ─── ENVIRONMENT ─────────────────────────────────────
@@ -142,8 +150,26 @@ function Invoke-Board {
         # only "400 Bad Request" is how an unattended loop stalls with
         # nothing to act on — surface the reason it gave.
         $detail = $_.ErrorDetails.Message
+        $detailObject = $null
         if ($detail) {
-            try { $detail = ($detail | ConvertFrom-Json).error } catch { }
+            try { $detailObject = $detail | ConvertFrom-Json; $detail = $detailObject.error } catch { }
+        }
+        # ★ A PROTOCOL MISMATCH IS NOT AN ORDINARY 400. The board refused
+        # the REQUEST rather than the command, so no board verdict exists
+        # to act on: nothing was claimed, nothing moved, and the fix is
+        # to update whichever side is stale. Naming both versions is the
+        # whole message — "400 Bad Request" would send an operator into
+        # the command's own arguments looking for a defect that is not
+        # there.
+        if ($status -eq 400 -and $detailObject -and
+            $detailObject.PSObject.Properties['protocolVersion']) {
+            $requested = 'an unversioned request'
+            if ($Body.PSObject.Properties['protocol']) {
+                $requested = "v$($Body.protocol)"
+            }
+            Write-StdErr "Protocol mismatch: the board speaks v$($detailObject.protocolVersion), this client sent $requested."
+            Write-StdErr '        Nothing was executed and nothing changed. Update the stale side, then retry.'
+            Exit-Zagent $script:EXIT_ERROR
         }
         if ($status -eq 401) {
             Write-StdErr "The board rejected this token (401). Mint a new one with ``zagent auth mint``, or check ZAGENT_TOKEN."
@@ -185,6 +211,10 @@ $asJson = Test-Flag -Argv $argv -Name 'json'
 
 $body = @{ argv = $argv }
 if ($client) { $body.client = $client }
+# Every request names the protocol version this client speaks. The board
+# refuses a mismatch before dispatch, and echoes its own version back —
+# see the warning below for what happens when it does not.
+$body.protocol = $script:PROTOCOL_VERSION
 
 $files = Get-FileContents -Argv $argv
 $fileMap = [ordered]@{}
@@ -269,9 +299,23 @@ if ($amend) { $body.amend = $amend }
 
 $result = Invoke-Board -Body $body -TimeoutSec (Get-RequestTimeout -Argv $argv)
 
-# ★★ A REFUSED CLAIM USED TO LEAVE THE TICKET CLAIMED, AND THAT HALTED THE REPO.
+# ★ THE HANDSHAKE'S OTHER HALF. The board echoes `protocolVersion` on
+# every answered request. A response WITHOUT one means the board that
+# answered predates the handshake — it accepted our version blindly and
+# may be parsing argv under an older grammar. That is not a refusal and
+# this is not a failure: an older board and this client both speak v1
+# semantics today, so the run proceeds and says out loud what it could
+# not verify. The moment the two grammars actually diverge, this is the
+# line that tells the reader where to look.
+if (-not ($result.PSObject.Properties['protocolVersion'])) {
+    Write-StdErr 'note: the board answered without a protocolVersion — it predates the protocol handshake.'
+    Write-StdErr '      Proceeding; upgrade the board before any release that changes the request contract.'
+}
+
+# ★★ A REFUSED CLAIM USED TO LEAVE THE TICKET CLAIMED. THE BOARD IS FIXED;
+#    THIS ROLLBACK IS NOW DEFENCE-IN-DEPTH FOR AN OLDER BOARD.
 #
-# The board's claim transaction writes FIRST and validates SECOND, so
+# The board's claim transaction used to write FIRST and validate SECOND, so
 # `zagent claim <needs-human key>` returned exit 4 -- "no machine can produce
 # this deliverable" -- having already written:
 #
@@ -286,10 +330,13 @@ $result = Invoke-Board -Body $body -TimeoutSec (Get-RequestTimeout -Argv $argv)
 # report the error and change nothing") guarantees it stays stopped, because that
 # instruction was written assuming a refusal had written nothing.
 #
-# `needs-human`'s printed contract is "never claimed, by the queue OR BY NAME".
-# This is what makes the second half true. Rolling back HERE rather than in the
-# protocol is deliberate: a rule in prose in front of a check is the defect this
-# repo keeps naming, and every caller of the CLI gets this one, not just a tick.
+# The BOARD now enforces the order this rollback existed for: the contract is
+# evaluated BEFORE the claim writes anything, inside the claim's own
+# transaction, so a refusal rolls everything back and the refusal payload
+# carries NO previousStatus. This client-side rollback keys on exactly that
+# field, so it is INERT against a current board and stays here only for a
+# board that predates the fix (or a transport hop to one). Keeping it costs
+# nothing and covers the gap between a client update and a board update.
 if ($result.exitCode -eq 4 -and ($argv[0] -eq 'claim' -or $argv[0] -eq 'next')) {
     $rolled = Restore-RefusedClaim -Payload $result.payload -Client $client `
         -Invoke { param($a) Invoke-Board -Body @{ argv = $a; client = $client } -TimeoutSec 60 }

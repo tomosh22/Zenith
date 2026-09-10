@@ -15,6 +15,23 @@
 Tools/zagent/zagent text eol=lf
 
 ###############################################################################
+# The cmd shim must keep CRLF endings.
+#
+# THE MIRROR IMAGE OF THE RULE ABOVE, and the reason zagent.cmd can hang:
+# a Windows batch file with LF-only line endings is outside what cmd.exe's
+# parser guarantees — the batch reader scans for the NEXT line by CRLF and a
+# file that has only LF can stall the interpreter between statements, which
+# manifests as an invocation that never returns (observed 2026-09-10: the
+# SECOND `zagent …` through the shim within one console session hung past
+# five minutes, every time, with the pwsh child alive underneath; the same
+# script through `pwsh -File` directly never hung once). It reached disk with
+# LF bytes under core.autocrlf=true while still looking "clean" to git, which
+# is why nothing ever flagged it. `text eol=crlf` makes every checkout put
+# CRLF on disk regardless of the cloner's autocrlf setting.
+###############################################################################
+Tools/zagent/zagent.cmd text eol=crlf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by
