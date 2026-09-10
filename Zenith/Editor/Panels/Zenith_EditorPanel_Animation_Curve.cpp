@@ -495,6 +495,69 @@ void Zenith_EditorPanel_Animation::UpdateCurveValueViewGeometry(const SheetLayou
 	Zenith_AnimCurveClamp(m_xCurveValueView);
 }
 
+void Zenith_EditorPanel_Animation::DrawCurveKeysAndHandles(ImDrawList* pxDraw, const Zenith_AnimTrackId& xTrack,
+	u_int uRow, u_int uComponent, uint32_t uColour, float fPointHalf, float fHandleHalf)
+{
+	const Zenith_EditorPalette& xPalette = Zenith_EditorUI::Palette();
+	const u_int uKeyCount = m_xDocument.GetKeyCount(xTrack);
+	for (u_int uKey = 0; uKey < uKeyCount; ++uKey)
+	{
+		const u_int uKeyId = m_xDocument.GetKeyIdAtIndex(xTrack, uKey);
+		float fTime = 0.0f;
+		float fKeyValue = 0.0f;
+		if (!m_xDocument.GetKeyTime(xTrack, uKeyId, fTime)
+			|| !GetCurveKeyValue(xTrack, uKeyId, uComponent, fKeyValue)
+			|| !Zenith_AnimTimelineIsVisible(m_xView, fTime)) { continue; }
+		const float fKeyX = Zenith_AnimTimelineTimeToPixel(m_xView, fTime);
+		const float fKeyY = Zenith_AnimCurveValueToPixel(m_xCurveValueView, fKeyValue);
+		if (!CurveIsFinite(fKeyX) || !CurveIsFinite(fKeyY)) { continue; }
+		const bool bSelected = IsKeySelected(xTrack, uKeyId);
+		pxDraw->AddRectFilled(CurveVec(fKeyX - fPointHalf, fKeyY - fPointHalf),
+			CurveVec(fKeyX + fPointHalf, fKeyY + fPointHalf), bSelected ? xPalette.m_uSelection : uColour);
+		pxDraw->AddRect(CurveVec(fKeyX - fPointHalf, fKeyY - fPointHalf),
+			CurveVec(fKeyX + fPointHalf, fKeyY + fPointHalf), bSelected ? xPalette.m_uTextBright : xPalette.m_uBorder);
+		Zenith_AnimPanelRect xPointRect;
+		xPointRect.m_fMinX = fKeyX - fPointHalf;
+		xPointRect.m_fMinY = fKeyY - fPointHalf;
+		xPointRect.m_fMaxX = fKeyX + fPointHalf;
+		xPointRect.m_fMaxY = fKeyY + fPointHalf;
+		m_xCurveKeyRects[MakeCurveRectKey(uRow, uKeyId, uComponent, false)] = xPointRect;
+
+		Flux_KeyTangents xTangents;
+		if (!m_xDocument.GetKeyTangents(xTrack, uKeyId, xTangents)) { continue; }
+		for (u_int uEnd = 0; uEnd < 2u; ++uEnd)
+		{
+			const bool bIn = (uEnd == 0u);
+			const bool bBeingDragged = m_bCurveHandleDragActive && m_bCurveDragIn == bIn
+				&& m_uCurveDragComponent == uComponent && m_uCurveDragKeyId == uKeyId && m_xCurveDragTrack == xTrack;
+			float fHandleX = 0.0f;
+			float fHandleY = 0.0f;
+			if (bBeingDragged)
+			{
+				fHandleX = m_fCurveDragPixelX;
+				fHandleY = m_fCurveDragPixelY;
+			}
+			else
+			{
+				const Zenith_Maths::Vector3& xTangent = bIn ? xTangents.m_xInTangent : xTangents.m_xOutTangent;
+				Zenith_AnimCurveHandlePixel(m_xView, m_xCurveValueView, fTime, fKeyValue,
+					xTangent[static_cast<int>(uComponent)], bIn, fANIM_CURVE_HANDLE_SECONDS, fHandleX, fHandleY);
+			}
+			if (!CurveIsFinite(fHandleX) || !CurveIsFinite(fHandleY)) { continue; }
+			pxDraw->AddLine(CurveVec(fKeyX, fKeyY), CurveVec(fHandleX, fHandleY),
+				bBeingDragged ? xPalette.m_uTextBright : xPalette.m_uTextDim);
+			pxDraw->AddRectFilled(CurveVec(fHandleX - fHandleHalf, fHandleY - fHandleHalf),
+				CurveVec(fHandleX + fHandleHalf, fHandleY + fHandleHalf), bBeingDragged ? xPalette.m_uTextBright : uColour);
+			Zenith_AnimPanelRect xHandleRect;
+			xHandleRect.m_fMinX = fHandleX - fHandleHalf;
+			xHandleRect.m_fMinY = fHandleY - fHandleHalf;
+			xHandleRect.m_fMaxX = fHandleX + fHandleHalf;
+			xHandleRect.m_fMaxY = fHandleY + fHandleHalf;
+			m_xCurveHandleRects[MakeCurveRectKey(uRow, uKeyId, uComponent, bIn)] = xHandleRect;
+		}
+	}
+}
+
 //=============================================================================
 // Drawing
 //=============================================================================
@@ -602,100 +665,7 @@ void Zenith_EditorPanel_Animation::DrawCurveView(ImDrawList* pxDraw, const Sheet
 					uColour, ImDrawFlags_None, 1.5f);
 			}
 
-			// ---- the keys, and their handles --------------------------------
-			const u_int uKeyCount = m_xDocument.GetKeyCount(xTrack);
-			for (u_int uKey = 0; uKey < uKeyCount; ++uKey)
-			{
-				const u_int uKeyId = m_xDocument.GetKeyIdAtIndex(xTrack, uKey);
-				float fTime = 0.0f;
-				float fKeyValue = 0.0f;
-				if (!m_xDocument.GetKeyTime(xTrack, uKeyId, fTime)
-				 || !GetCurveKeyValue(xTrack, uKeyId, uComponent, fKeyValue))
-				{
-					continue;
-				}
-				// The mapping's own visibility test, not a pixel compare: it is false
-				// for a zero-width track, which is the one case a bare compare gets
-				// wrong.
-				if (!Zenith_AnimTimelineIsVisible(m_xView, fTime))
-				{
-					continue;
-				}
-				const float fKeyX = Zenith_AnimTimelineTimeToPixel(m_xView, fTime);
-				const float fKeyY = Zenith_AnimCurveValueToPixel(m_xCurveValueView, fKeyValue);
-				if (!CurveIsFinite(fKeyX) || !CurveIsFinite(fKeyY))
-				{
-					continue;
-				}
-
-				const bool bSelected = IsKeySelected(xTrack, uKeyId);
-				pxDraw->AddRectFilled(CurveVec(fKeyX - fPointHalf, fKeyY - fPointHalf),
-					CurveVec(fKeyX + fPointHalf, fKeyY + fPointHalf),
-					bSelected ? xPalette.m_uSelection : uColour);
-				pxDraw->AddRect(CurveVec(fKeyX - fPointHalf, fKeyY - fPointHalf),
-					CurveVec(fKeyX + fPointHalf, fKeyY + fPointHalf),
-					bSelected ? xPalette.m_uTextBright : xPalette.m_uBorder);
-
-				Zenith_AnimPanelRect xPointRect;
-				xPointRect.m_fMinX = fKeyX - fPointHalf;
-				xPointRect.m_fMinY = fKeyY - fPointHalf;
-				xPointRect.m_fMaxX = fKeyX + fPointHalf;
-				xPointRect.m_fMaxY = fKeyY + fPointHalf;
-				m_xCurveKeyRects[MakeCurveRectKey(uRow, uKeyId, uComponent, false)] = xPointRect;
-
-				Flux_KeyTangents xTangents;
-				if (!m_xDocument.GetKeyTangents(xTrack, uKeyId, xTangents))
-				{
-					continue;
-				}
-
-				for (u_int uEnd = 0; uEnd < 2u; ++uEnd)
-				{
-					const bool bIn = (uEnd == 0u);
-					const Zenith_Maths::Vector3& xTangent = bIn ? xTangents.m_xInTangent : xTangents.m_xOutTangent;
-					float fHandleX = 0.0f;
-					float fHandleY = 0.0f;
-
-					// ★ THE GHOST, AND WHY IT IS DRAWN RATHER THAN READ BACK. Nothing
-					// reaches the document until the button comes up, so while THIS
-					// handle is being dragged its position comes from the cursor and
-					// its stored tangent is still the old one — the same
-					// preview-then-commit shape as the key drag's ghost diamond.
-					const bool bBeingDragged = m_bCurveHandleDragActive
-						&& m_bCurveDragIn == bIn
-						&& m_uCurveDragComponent == uComponent
-						&& m_uCurveDragKeyId == uKeyId
-						&& m_xCurveDragTrack == xTrack;
-					if (bBeingDragged)
-					{
-						fHandleX = m_fCurveDragPixelX;
-						fHandleY = m_fCurveDragPixelY;
-					}
-					else
-					{
-						Zenith_AnimCurveHandlePixel(m_xView, m_xCurveValueView, fTime, fKeyValue,
-							xTangent[static_cast<int>(uComponent)], bIn, fANIM_CURVE_HANDLE_SECONDS,
-							fHandleX, fHandleY);
-					}
-					if (!CurveIsFinite(fHandleX) || !CurveIsFinite(fHandleY))
-					{
-						continue;
-					}
-
-					pxDraw->AddLine(CurveVec(fKeyX, fKeyY), CurveVec(fHandleX, fHandleY),
-						bBeingDragged ? xPalette.m_uTextBright : xPalette.m_uTextDim);
-					pxDraw->AddRectFilled(CurveVec(fHandleX - fHandleHalf, fHandleY - fHandleHalf),
-						CurveVec(fHandleX + fHandleHalf, fHandleY + fHandleHalf),
-						bBeingDragged ? xPalette.m_uTextBright : uColour);
-
-					Zenith_AnimPanelRect xHandleRect;
-					xHandleRect.m_fMinX = fHandleX - fHandleHalf;
-					xHandleRect.m_fMinY = fHandleY - fHandleHalf;
-					xHandleRect.m_fMaxX = fHandleX + fHandleHalf;
-					xHandleRect.m_fMaxY = fHandleY + fHandleHalf;
-					m_xCurveHandleRects[MakeCurveRectKey(uRow, uKeyId, uComponent, bIn)] = xHandleRect;
-				}
-			}
+			DrawCurveKeysAndHandles(pxDraw, xTrack, uRow, uComponent, uColour, fPointHalf, fHandleHalf);
 		}
 	}
 }

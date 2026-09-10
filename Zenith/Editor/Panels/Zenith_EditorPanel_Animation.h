@@ -1649,6 +1649,11 @@ private:
 	// the ONLY functions that read ImGui state; each one ends in an Action_*.
 	//-------------------------------------------------------------------------
 	void HandleSheetInput(const SheetLayout& xLayout, bool bCanvasHovered);
+	bool UpdateDurationDrag(float fMouseX, bool bDown, bool bReleased, u_int uFrameRate);
+	bool UpdateScrub(float fMouseX, bool bDown, bool bReleased, u_int uFrameRate);
+	bool UpdateKeyDrag(float fMouseX, bool bDown, bool bReleased, bool bShiftHeld);
+	bool UpdateEventDrag(float fMouseX, bool bDown, bool bReleased, bool bShiftHeld);
+	bool UpdateBoxSelection(float fMouseX, float fMouseY, bool bDown, bool bReleased);
 	void HandleSheetKeyboard();
 	static Zenith_AnimSelectMode SelectModeFromModifiers();
 	// The key whose recorded rect contains (fX, fY), if any.
@@ -1762,6 +1767,8 @@ private:
 	// when it is not: the rows were never painted, so their rects were never
 	// recorded.
 	void DrawCurveView(ImDrawList* pxDraw, const SheetLayout& xLayout);
+	void DrawCurveKeysAndHandles(ImDrawList* pxDraw, const Zenith_AnimTrackId& xTrack, u_int uRow,
+		u_int uComponent, uint32_t uColour, float fPointHalf, float fHandleHalf);
 	// The handle drag and the point click. The ONLY curve function that reads
 	// ImGui state, and every branch ends in an Action_*.
 	//

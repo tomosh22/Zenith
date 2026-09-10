@@ -475,6 +475,54 @@ namespace
 		xOut.m_abBodyFound[ZENITH_HUMAN_BODY_SHOULDER] = true;
 		return true;
 	}
+
+	void MeasureFootFacing(const Zenith_SkinDeformView& xView, float fSoleY, float fHeight,
+		Zenith_HumanLandmarks& xOut)
+	{
+		const float fCut = xOut.m_abBodyFound[ZENITH_HUMAN_BODY_ANKLE]
+			? xOut.m_afBodyY[ZENITH_HUMAN_BODY_ANKLE] : (fSoleY + 0.06f * fHeight);
+		float fMinZ = 0.0f;
+		float fMaxZ = 0.0f;
+		bool bAny = false;
+		for (u_int v = 0u; v < xView.m_uNumVerts; ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xView.m_pxPositions[v];
+			if (xP.y >= fCut || xP.x <= 0.0f) { continue; }
+			if (!bAny) { fMinZ = fMaxZ = xP.z; bAny = true; }
+			else { fMinZ = std::min(fMinZ, xP.z); fMaxZ = std::max(fMaxZ, xP.z); }
+		}
+		if (!bAny || (fMaxZ - fMinZ) <= 1.0e-4f) { return; }
+
+		float fShinSum = 0.0f;
+		u_int uShinCount = 0u;
+		const float fShinHi = fCut + 0.10f * fHeight;
+		for (u_int v = 0u; v < xView.m_uNumVerts; ++v)
+		{
+			const Zenith_Maths::Vector3& xP = xView.m_pxPositions[v];
+			if (xP.x <= 0.0f || xP.y < fCut || xP.y > fShinHi) { continue; }
+			fShinSum += xP.z;
+			++uShinCount;
+		}
+		if (uShinCount > 0u)
+		{
+			const float fShinZ = fShinSum / static_cast<float>(uShinCount);
+			const float fForward = fMaxZ - fShinZ;
+			const float fBack = fShinZ - fMinZ;
+			const float fBigger = std::max(fForward, fBack);
+			if (fBigger > 1.0e-5f && std::fabs(fForward - fBack) > 0.29f * fBigger)
+			{
+				xOut.m_fFacingSign = (fForward > fBack) ? 1.0f : -1.0f;
+				xOut.m_bFootFacingMeasured = true;
+				xOut.m_fToeZ = (fForward > fBack) ? fMaxZ : fMinZ;
+				xOut.m_fHeelZ = (fForward > fBack) ? fMinZ : fMaxZ;
+			}
+		}
+		if (!xOut.m_bFootFacingMeasured)
+		{
+			xOut.m_fHeelZ = fMinZ;
+			xOut.m_fToeZ = fMaxZ;
+		}
+	}
 }
 
 bool Zenith_MeasureHumanLandmarks(const Zenith_SkinDeformView& xView, ZENITH_HUMAN_POSE ePose,
@@ -599,82 +647,9 @@ bool Zenith_MeasureHumanLandmarks(const Zenith_SkinDeformView& xView, ZENITH_HUM
 		}
 	}
 
-	//--- The foot, and with it WHICH WAY THE BODY FACES.
-	//
-	// ★★ A HEEL IS TALL AND A TOE IS THIN, so the extremes of the foot slab are
-	// not interchangeable and "which is the toe" is a MEASUREMENT, not a naming
-	// convention. This used to read max-Z as the toe by definition, which meant it
-	// agreed with whatever the caller already believed and could never say
-	// otherwise -- and a 180-degree-wrong character duly shipped through a
-	// screenshot pass, because at head-thumbnail size the back of a head reads as
-	// a face.
-	//
-	// One leg only (x > 0): the two feet sit at opposite X and merging them says
-	// nothing about either.
-	{
-		const float fCut = xOut.m_abBodyFound[ZENITH_HUMAN_BODY_ANKLE]
-			? xOut.m_afBodyY[ZENITH_HUMAN_BODY_ANKLE] : (fSoleY + 0.06f * fHeight);
-
-		float fMinZ = 0.0f, fMaxZ = 0.0f;
-		bool bAny = false;
-		for (u_int v = 0u; v < xView.m_uNumVerts; ++v)
-		{
-			const Zenith_Maths::Vector3& xP = xView.m_pxPositions[v];
-			if (xP.y >= fCut || xP.x <= 0.0f) { continue; }
-			if (!bAny) { fMinZ = fMaxZ = xP.z; bAny = true; }
-			else { fMinZ = std::min(fMinZ, xP.z); fMaxZ = std::max(fMaxZ, xP.z); }
-		}
-
-		if (bAny && (fMaxZ - fMinZ) > 1.0e-4f)
-		{
-			// ★★ THE ANKLE SITS AT THE BACK OF THE FOOT, and that 3:1 lever is the
-			// discriminator -- NOT which end is taller.
-			//
-			// "The heel is the taller end" is true of a bare foot and false of a
-			// trainer with a built-up toe box, and it got this exactly wrong on the
-			// artist mesh while getting it right on the generated loft. Two meshes,
-			// opposite answers, no way to tell from inside the test. How far the
-			// foot reaches PAST THE LEG is anatomy rather than footwear: measured
-			// from the shin's own axis, a foot runs about three times further
-			// forward than back, on everybody, in every shoe.
-			//
-			// The shin band is taken just ABOVE the ankle, so it is leg and not
-			// foot, and one leg only -- the two sit at opposite X and averaging
-			// them describes neither.
-			float fShinSum = 0.0f;
-			u_int fShinCount = 0u;
-			const float fShinLo = fCut;
-			const float fShinHi = fCut + 0.10f * fHeight;
-			for (u_int v = 0u; v < xView.m_uNumVerts; ++v)
-			{
-				const Zenith_Maths::Vector3& xP = xView.m_pxPositions[v];
-				if (xP.x <= 0.0f || xP.y < fShinLo || xP.y > fShinHi) { continue; }
-				fShinSum += xP.z;
-				++fShinCount;
-			}
-			if (fShinCount > 0u)
-			{
-				const float fShinZ = fShinSum / static_cast<float>(fShinCount);
-				const float fForward = fMaxZ - fShinZ;   // reach toward +Z
-				const float fBack = fShinZ - fMinZ;      // reach toward -Z
-				const float fBigger = std::max(fForward, fBack);
-				// A real foot is 3:1; anything under 1.4:1 is not a foot sticking
-				// out of a leg, and the honest answer there is "unmeasured".
-				if (fBigger > 1.0e-5f && std::fabs(fForward - fBack) > 0.29f * fBigger)
-				{
-					xOut.m_fFacingSign = (fForward > fBack) ? 1.0f : -1.0f;
-					xOut.m_bFootFacingMeasured = true;
-					xOut.m_fToeZ = (fForward > fBack) ? fMaxZ : fMinZ;
-					xOut.m_fHeelZ = (fForward > fBack) ? fMinZ : fMaxZ;
-				}
-			}
-			if (!xOut.m_bFootFacingMeasured)
-			{
-				xOut.m_fHeelZ = fMinZ;
-				xOut.m_fToeZ = fMaxZ;
-			}
-		}
-	}
+	//--- The foot, and with it WHICH WAY THE BODY FACES. One leg only (x > 0):
+	// the two feet sit at opposite X and merging them says nothing about either.
+	MeasureFootFacing(xView, fSoleY, fHeight, xOut);
 
 	xOut.m_bValid = true;
 	return true;

@@ -215,6 +215,8 @@ private:
 		TerrainSparseLoadDiagnostics& xDiagnosticsOut);
 	static void LogSparseLoadDiagnostics(const char* szSourceKind,
 		const TerrainSparseLoadDiagnostics& xDiagnostics);
+	static void RecordSkippedSparseChunk(TerrainSparseLoadDiagnostics& xDiagnostics,
+		uint32_t uX, uint32_t uY);
 
 public:
 	// Buffer accessors forward into the owning Flux_TerrainStreamingState.

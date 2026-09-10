@@ -1447,6 +1447,17 @@ void Zenith_TerrainComponent::LogSparseLoadDiagnostics(const char* szSourceKind,
 	}
 }
 
+void Zenith_TerrainComponent::RecordSkippedSparseChunk(TerrainSparseLoadDiagnostics& xDiagnostics,
+	uint32_t uX, uint32_t uY)
+{
+	xDiagnostics.m_uSkippedCount++;
+	if (xDiagnostics.m_uSampleCount >= uMAX_SPARSE_WARNING_SAMPLES)
+		return;
+	xDiagnostics.m_auSampleX[xDiagnostics.m_uSampleCount] = uX;
+	xDiagnostics.m_auSampleY[xDiagnostics.m_uSampleCount] = uY;
+	xDiagnostics.m_uSampleCount++;
+}
+
 bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSizeX, uint32_t uGridSizeZ,
 	uint32_t uTotalVerts, uint32_t uTotalIndices,
 	TerrainChunkLoadCallback pfnLoadChunk, void* pLoadContext,
@@ -1583,17 +1594,6 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSizeX, u
 	xCombinedGeometry.m_ulReservedIndexDataSize = ulIndexDataSize;
 	xCombinedGeometry.m_ulReservedPositionDataSize = ulPositionDataSize;
 
-	auto RecordSkippedChunk = [&](uint32_t uX, uint32_t uY)
-	{
-		xDiagnosticsOut.m_uSkippedCount++;
-		if (xDiagnosticsOut.m_uSampleCount < uMAX_SPARSE_WARNING_SAMPLES)
-		{
-			xDiagnosticsOut.m_auSampleX[xDiagnosticsOut.m_uSampleCount] = uX;
-			xDiagnosticsOut.m_auSampleY[xDiagnosticsOut.m_uSampleCount] = uY;
-			xDiagnosticsOut.m_uSampleCount++;
-		}
-	};
-
 	for (uint32_t uX = 0u; uX < uGridSizeX; ++uX)
 	{
 		for (uint32_t uY = 0u; uY < uGridSizeZ; ++uY)
@@ -1603,7 +1603,7 @@ bool Zenith_TerrainComponent::CombineTerrainChunkGridCore(uint32_t uGridSizeX, u
 			Flux_MeshGeometry xChunkGeometry;
 			if (!pfnLoadChunk(pLoadContext, uX, uY, xChunkGeometry))
 			{
-				RecordSkippedChunk(uX, uY);
+				RecordSkippedSparseChunk(xDiagnosticsOut, uX, uY);
 				continue;
 			}
 

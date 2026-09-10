@@ -1112,6 +1112,104 @@ bool Zenith_EditorPanel_AnimStateMachine::FindTransitionAtScreenPos(float fX, fl
 	return false;
 }
 
+void Zenith_EditorPanel_AnimStateMachine::BeginCanvasGesture(const CanvasLayout& xLayout,
+	float fMouseX, float fMouseY, bool bCtrlHeld)
+{
+	std::string strState;
+	if (!FindStateAtScreenPos(fMouseX, fMouseY, strState))
+	{
+		std::string strFrom;
+		u_int uIndex = 0u;
+		if (FindTransitionAtScreenPos(fMouseX, fMouseY, strFrom, uIndex))
+		{
+			Action_SelectTransition(strFrom, uIndex);
+		}
+		else
+		{
+			Action_ClearSelection();
+		}
+		return;
+	}
+	if (strState.empty()) { Action_SelectAnyState(); }
+	else { Action_SelectState(strState); }
+	if (bCtrlHeld)
+	{
+		m_bDraggingTransition = true;
+		m_strTransitionDragFrom = strState;
+		return;
+	}
+	Zenith_Maths::Vector2 xGraph(0.0f);
+	if (!GetNodePosition(strState, xGraph)) { return; }
+	m_bDraggingNode = true;
+	m_strDraggingState = strState;
+	m_xDragStartPosition = xGraph;
+	Zenith_AnimCtrlPanelRect xRect;
+	if (ComputeNodeScreenRect(xLayout, strState, xRect))
+	{
+		m_xDragGrabOffset = Zenith_Maths::Vector2(fMouseX - xRect.m_fMinX, fMouseY - xRect.m_fMinY);
+	}
+}
+
+void Zenith_EditorPanel_AnimStateMachine::FinishCanvasGesture(const CanvasLayout& xLayout,
+	float fMouseX, float fMouseY, float fScale)
+{
+	if (m_bDraggingTransition)
+	{
+		std::string strTarget;
+		if (FindStateAtScreenPos(fMouseX, fMouseY, strTarget) && !strTarget.empty())
+		{
+			Action_AddTransition(m_strTransitionDragFrom, strTarget);
+		}
+		m_bDraggingTransition = false;
+		m_strTransitionDragFrom.clear();
+		return;
+	}
+	if (!m_bDraggingNode) { return; }
+	const float fNewX = (fMouseX - m_xDragGrabOffset.x - xLayout.m_fLeft) / fScale + m_fScrollX;
+	const float fNewY = (fMouseY - m_xDragGrabOffset.y - xLayout.m_fTop) / fScale + m_fScrollY;
+	const float fSlop = fANIMSM_CLICK_SLOP_1X;
+	if (IsFiniteFloat(fNewX) && IsFiniteFloat(fNewY)
+		&& (std::fabs(fNewX - m_xDragStartPosition.x) > fSlop
+		 || std::fabs(fNewY - m_xDragStartPosition.y) > fSlop))
+	{
+		Action_SetStatePosition(m_strDraggingState, fNewX, fNewY);
+	}
+	m_bDraggingNode = false;
+	m_strDraggingState.clear();
+}
+
+void Zenith_EditorPanel_AnimStateMachine::RenderCanvasContextMenu(float fMouseX, float fMouseY, bool bCanvasHovered)
+{
+	if (bCanvasHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+	{
+		std::string strState;
+		if (FindStateAtScreenPos(fMouseX, fMouseY, strState))
+		{
+			if (strState.empty()) { Action_SelectAnyState(); }
+			else { Action_SelectState(strState); }
+			ImGui::OpenPopup("##AnimSmNodeMenu");
+		}
+	}
+	if (!ImGui::BeginPopup("##AnimSmNodeMenu")) { return; }
+	if (m_bAnyStateSelected)
+	{
+		ImGui::BeginDisabled();
+		ImGui::MenuItem("Set As Default");
+		ImGui::MenuItem("Delete State");
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+		{
+			ImGui::SetTooltip("%s", szANIMSM_ANY_STATE_REFUSAL);
+		}
+	}
+	else if (!m_strSelectedState.empty())
+	{
+		if (ImGui::MenuItem("Set As Default")) { Action_SetDefaultState(m_strSelectedState); }
+		if (ImGui::MenuItem("Delete State")) { Action_RemoveState(m_strSelectedState); }
+	}
+	ImGui::EndPopup();
+}
+
 void Zenith_EditorPanel_AnimStateMachine::HandleCanvasInput(const CanvasLayout& xLayout, bool bCanvasHovered)
 {
 	const ImGuiIO& xIO = ImGui::GetIO();
@@ -1130,61 +1228,7 @@ void Zenith_EditorPanel_AnimStateMachine::HandleCanvasInput(const CanvasLayout& 
 	// ---- press ------------------------------------------------------------
 	if (bCanvasHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
 	{
-		std::string strState;
-		if (FindStateAtScreenPos(fMouseX, fMouseY, strState))
-		{
-			// An EMPTY name is the any-state pseudo-node, and it has its own
-			// selection flag: Action_SelectState("") would refuse (the machine has
-			// no state called ""), leaving the click doing nothing at all.
-			if (strState.empty())
-			{
-				Action_SelectAnyState();
-			}
-			else
-			{
-				Action_SelectState(strState);
-			}
-			if (xIO.KeyCtrl)
-			{
-				// Ctrl-drag from a node draws a TRANSITION rather than moving it.
-				// From the pseudo-node that is strState == "", which is exactly
-				// what Action_AddTransition takes for the any-state list.
-				m_bDraggingTransition = true;
-				m_strTransitionDragFrom = strState;
-			}
-			else
-			{
-				// ★ AND THE PLAIN DRAG NEVER STARTS FOR THE PSEUDO-NODE. Its box is
-				// canvas-anchored and there is no verb that could store a position
-				// for it — GetNodePosition("") answers false, which is the gate, and
-				// it is a gate on purpose rather than an accident to be tidied away.
-				Zenith_Maths::Vector2 xGraph(0.0f);
-				if (GetNodePosition(strState, xGraph))
-				{
-					m_bDraggingNode = true;
-					m_strDraggingState = strState;
-					m_xDragStartPosition = xGraph;
-					Zenith_AnimCtrlPanelRect xRect;
-					if (ComputeNodeScreenRect(xLayout, strState, xRect))
-					{
-						m_xDragGrabOffset = Zenith_Maths::Vector2(fMouseX - xRect.m_fMinX, fMouseY - xRect.m_fMinY);
-					}
-				}
-			}
-		}
-		else
-		{
-			std::string strFrom;
-			u_int uIndex = 0;
-			if (FindTransitionAtScreenPos(fMouseX, fMouseY, strFrom, uIndex))
-			{
-				Action_SelectTransition(strFrom, uIndex);
-			}
-			else
-			{
-				Action_ClearSelection();
-			}
-		}
+		BeginCanvasGesture(xLayout, fMouseX, fMouseY, xIO.KeyCtrl);
 	}
 
 	// ---- drag preview -----------------------------------------------------
@@ -1202,85 +1246,10 @@ void Zenith_EditorPanel_AnimStateMachine::HandleCanvasInput(const CanvasLayout& 
 	// ---- release ----------------------------------------------------------
 	if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
 	{
-		if (m_bDraggingTransition)
-		{
-			std::string strTarget;
-			// ★ A DROP ONTO THE PSEUDO-NODE IS REFUSED, AND THE REFUSAL IS WRITTEN
-			// HERE RATHER THAN LEFT TO THE DOCUMENT. AddTransition(from, "") already
-			// returns false — nothing transitions INTO the any-state list, it is a
-			// source only — but relying on that would make an empty target look like
-			// a target that was simply not found, and the next reader would "fix"
-			// the emptiness check.
-			if (FindStateAtScreenPos(fMouseX, fMouseY, strTarget) && !strTarget.empty())
-			{
-				Action_AddTransition(m_strTransitionDragFrom, strTarget);
-			}
-			m_bDraggingTransition = false;
-			m_strTransitionDragFrom.clear();
-		}
-		else if (m_bDraggingNode)
-		{
-			// ★ ONE DRAG IS ONE UNDO STEP, whatever it spanned, and a click that
-			// never moved records nothing — Zenith_Editor::RecordGizmoDragUndo's
-			// shape. Nothing was written between press and release: the node
-			// followed the cursor through the LIVE position below, and the
-			// document sees exactly one SetStateEditorPosition here.
-			const float fNewX = (fMouseX - m_xDragGrabOffset.x - xLayout.m_fLeft) / fScale + m_fScrollX;
-			const float fNewY = (fMouseY - m_xDragGrabOffset.y - xLayout.m_fTop) / fScale + m_fScrollY;
-			const float fSlop = fANIMSM_CLICK_SLOP_1X;
-			if (IsFiniteFloat(fNewX) && IsFiniteFloat(fNewY)
-				&& (std::fabs(fNewX - m_xDragStartPosition.x) > fSlop
-				 || std::fabs(fNewY - m_xDragStartPosition.y) > fSlop))
-			{
-				Action_SetStatePosition(m_strDraggingState, fNewX, fNewY);
-			}
-			m_bDraggingNode = false;
-			m_strDraggingState.clear();
-		}
+		FinishCanvasGesture(xLayout, fMouseX, fMouseY, fScale);
 	}
 
-	// ---- right-click on a node --------------------------------------------
-	if (bCanvasHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-	{
-		std::string strState;
-		if (FindStateAtScreenPos(fMouseX, fMouseY, strState))
-		{
-			if (strState.empty())
-			{
-				Action_SelectAnyState();
-			}
-			else
-			{
-				Action_SelectState(strState);
-			}
-			ImGui::OpenPopup("##AnimSmNodeMenu");
-		}
-	}
-	if (ImGui::BeginPopup("##AnimSmNodeMenu"))
-	{
-		if (m_bAnyStateSelected)
-		{
-			// ★ DISABLED AND EXPLAINED, NOT ABSENT. Both verbs refuse an empty name
-			// in the document (RemoveState finds no such state, RenameState finds no
-			// such state to rename), so the pseudo-node cannot be renamed or deleted
-			// either way — but a popup that simply showed nothing reads as a broken
-			// menu, and this is a rule worth stating where it bites.
-			ImGui::BeginDisabled();
-			ImGui::MenuItem("Set As Default");
-			ImGui::MenuItem("Delete State");
-			ImGui::EndDisabled();
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
-			{
-				ImGui::SetTooltip("%s", szANIMSM_ANY_STATE_REFUSAL);
-			}
-		}
-		else if (!m_strSelectedState.empty())
-		{
-			if (ImGui::MenuItem("Set As Default")) { Action_SetDefaultState(m_strSelectedState); }
-			if (ImGui::MenuItem("Delete State"))   { Action_RemoveState(m_strSelectedState); }
-		}
-		ImGui::EndPopup();
-	}
+	RenderCanvasContextMenu(fMouseX, fMouseY, bCanvasHovered);
 }
 
 //=============================================================================
@@ -1505,6 +1474,73 @@ void Zenith_EditorPanel_AnimStateMachine::RenderStateInspector()
 // is a modal CRT dialog nothing logs.
 //=============================================================================
 
+void Zenith_EditorPanel_AnimStateMachine::RenderBlendAxisBindings(const std::string& strStateName, bool bIs2D,
+	const Zenith_Vector<std::string>& axFloatParams)
+{
+	const u_int uAxisCount = bIs2D ? 2u : 1u;
+	for (u_int uAxis = 0; uAxis < uAxisCount; ++uAxis)
+	{
+		const Zenith_AnimCtrlBlendAxis eAxis = uAxis == 0u ? ZENITH_ANIMCTRL_BLEND_AXIS_X : ZENITH_ANIMCTRL_BLEND_AXIS_Y;
+		std::string strBound;
+		m_xDocument.GetBlendSpaceParameterName(strStateName, eAxis, strBound);
+		ImGui::PushID(static_cast<int>(4000u + uAxis));
+		ImGui::SetNextItemWidth(Zenith_EditorUI::Px(150.0f));
+		const char* szLabel = bIs2D ? (uAxis == 0u ? "X parameter" : "Y parameter") : "Parameter";
+		if (ImGui::BeginCombo(szLabel, strBound.empty() ? "(unbound)" : strBound.c_str()))
+		{
+			if (ImGui::Selectable("(unbound)", strBound.empty()))
+			{
+				Action_SetBlendSpaceParameter(strStateName, eAxis, std::string());
+			}
+			for (u_int u = 0; u < axFloatParams.GetSize(); ++u)
+			{
+				if (ImGui::Selectable(axFloatParams.Get(u).c_str(), axFloatParams.Get(u) == strBound))
+				{
+					Action_SetBlendSpaceParameter(strStateName, eAxis, axFloatParams.Get(u));
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::PopID();
+	}
+	if (axFloatParams.GetSize() == 0u)
+	{
+		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(Zenith_EditorUI::Palette().m_uWarning),
+			"declare a Float parameter to drive this space — an unbound one never moves");
+	}
+}
+
+bool Zenith_EditorPanel_AnimStateMachine::UpdateBlendAxisRanges(const std::string& strStateName,
+	u_int uPointCount, float& fMaxXOut)
+{
+	float fMinX = 0.0f;
+	float fMaxX = 0.0f;
+	float fMinY = 0.0f;
+	float fMaxY = 0.0f;
+	bool bAnyPoint = false;
+	for (u_int u = 0; u < uPointCount; ++u)
+	{
+		std::string strClip;
+		Zenith_Maths::Vector2 xPosition(0.0f);
+		if (!m_xDocument.GetBlendPoint(strStateName, u, strClip, xPosition)) { continue; }
+		if (!bAnyPoint)
+		{
+			fMinX = fMaxX = xPosition.x;
+			fMinY = fMaxY = xPosition.y;
+			bAnyPoint = true;
+			continue;
+		}
+		fMinX = xPosition.x < fMinX ? xPosition.x : fMinX;
+		fMaxX = xPosition.x > fMaxX ? xPosition.x : fMaxX;
+		fMinY = xPosition.y < fMinY ? xPosition.y : fMinY;
+		fMaxY = xPosition.y > fMaxY ? xPosition.y : fMaxY;
+	}
+	ComputeBlendAxisRange(fMinX, fMaxX, m_fBlendRangeMinX, m_fBlendRangeMaxX);
+	ComputeBlendAxisRange(fMinY, fMaxY, m_fBlendRangeMinY, m_fBlendRangeMaxY);
+	fMaxXOut = fMaxX;
+	return bAnyPoint;
+}
+
 void Zenith_EditorPanel_AnimStateMachine::RenderBlendStrip(const std::string& strStateName,
 	Zenith_AnimCtrlStateTreeKind eKind)
 {
@@ -1535,74 +1571,14 @@ void Zenith_EditorPanel_AnimStateMachine::RenderBlendStrip(const std::string& st
 		}
 	}
 
-	const u_int uAxisCount = bIs2D ? 2u : 1u;
-	for (u_int uAxis = 0; uAxis < uAxisCount; ++uAxis)
-	{
-		const Zenith_AnimCtrlBlendAxis eAxis = (uAxis == 0)
-			? ZENITH_ANIMCTRL_BLEND_AXIS_X : ZENITH_ANIMCTRL_BLEND_AXIS_Y;
-		std::string strBound;
-		m_xDocument.GetBlendSpaceParameterName(strStateName, eAxis, strBound);
-
-		ImGui::PushID(static_cast<int>(4000 + uAxis));
-		ImGui::SetNextItemWidth(Zenith_EditorUI::Px(150.0f));
-		const char* szLabel = bIs2D ? (uAxis == 0 ? "X parameter" : "Y parameter") : "Parameter";
-		if (ImGui::BeginCombo(szLabel, strBound.empty() ? "(unbound)" : strBound.c_str()))
-		{
-			// ★ UNBINDING IS AN OFFERED CHOICE, not something you achieve by
-			// deleting a parameter. A space left on its authored literal is a
-			// legitimate state (D48), and the only way back to it is an empty name.
-			if (ImGui::Selectable("(unbound)", strBound.empty()))
-			{
-				Action_SetBlendSpaceParameter(strStateName, eAxis, std::string());
-			}
-			for (u_int u = 0; u < axFloatParams.GetSize(); ++u)
-			{
-				if (ImGui::Selectable(axFloatParams.Get(u).c_str(), axFloatParams.Get(u) == strBound))
-				{
-					Action_SetBlendSpaceParameter(strStateName, eAxis, axFloatParams.Get(u));
-				}
-			}
-			ImGui::EndCombo();
-		}
-		ImGui::PopID();
-	}
-	if (axFloatParams.GetSize() == 0)
-	{
-		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(xPalette.m_uWarning),
-			"declare a Float parameter to drive this space — an unbound one never moves");
-	}
+	RenderBlendAxisBindings(strStateName, bIs2D, axFloatParams);
 
 	// ---- the axis RANGE the frame is drawn with -----------------------------
 	// Derived from the points, then padded and floored by the pure helper, and
 	// RECORDED — Action_DragBlendPointToPixel maps through exactly this, so the
 	// drag and the draw cannot use two different ranges.
-	float fMinX = 0.0f;
 	float fMaxX = 0.0f;
-	float fMinY = 0.0f;
-	float fMaxY = 0.0f;
-	bool bAnyPoint = false;
-	for (u_int u = 0; u < uPointCount; ++u)
-	{
-		std::string strClip;
-		Zenith_Maths::Vector2 xPosition(0.0f);
-		if (!m_xDocument.GetBlendPoint(strStateName, u, strClip, xPosition))
-		{
-			continue;
-		}
-		if (!bAnyPoint)
-		{
-			fMinX = fMaxX = xPosition.x;
-			fMinY = fMaxY = xPosition.y;
-			bAnyPoint = true;
-			continue;
-		}
-		fMinX = xPosition.x < fMinX ? xPosition.x : fMinX;
-		fMaxX = xPosition.x > fMaxX ? xPosition.x : fMaxX;
-		fMinY = xPosition.y < fMinY ? xPosition.y : fMinY;
-		fMaxY = xPosition.y > fMaxY ? xPosition.y : fMaxY;
-	}
-	ComputeBlendAxisRange(fMinX, fMaxX, m_fBlendRangeMinX, m_fBlendRangeMaxX);
-	ComputeBlendAxisRange(fMinY, fMaxY, m_fBlendRangeMinY, m_fBlendRangeMaxY);
+	const bool bAnyPoint = UpdateBlendAxisRanges(strStateName, uPointCount, fMaxX);
 
 	// ---- the strip surface ---------------------------------------------------
 	const float fWidth = Zenith_EditorUI::Px(fANIMSM_BLEND_CANVAS_SIZE_1X) * (bIs2D ? 1.0f : 2.4f);

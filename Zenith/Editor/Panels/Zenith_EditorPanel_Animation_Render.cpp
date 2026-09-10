@@ -2082,6 +2082,84 @@ bool Zenith_EditorPanel_Animation::IsInEventsRowLane(float fX, float fY) const
 	return fX >= xLane.m_fMinX && fX <= xLane.m_fMaxX && fY >= xLane.m_fMinY && fY <= xLane.m_fMaxY;
 }
 
+bool Zenith_EditorPanel_Animation::UpdateDurationDrag(float fMouseX, bool bDown, bool bReleased, u_int uFrameRate)
+{
+	if (!m_bDraggingDuration) { return false; }
+	float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
+	if (!ImGui::GetIO().KeyShift) { fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate); }
+	if (fTime < 0.0f) { fTime = 0.0f; }
+	if (IsFiniteFloat(fTime)) { m_fDurationDragSeconds = fTime; }
+	if (bReleased || !bDown)
+	{
+		m_bDraggingDuration = false;
+		Action_SetDuration(m_fDurationDragSeconds);
+	}
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::UpdateScrub(float fMouseX, bool bDown, bool bReleased, u_int uFrameRate)
+{
+	if (!m_bScrubbing) { return false; }
+	float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
+	if (!ImGui::GetIO().KeyShift) { fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate); }
+	Action_Scrub(fTime);
+	if (bReleased || !bDown) { m_bScrubbing = false; }
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::UpdateKeyDrag(float fMouseX, bool bDown, bool bReleased, bool bShiftHeld)
+{
+	if (!m_bDraggingKeys) { return false; }
+	const float fRawDelta = Zenith_AnimTimelinePixelsToSeconds(m_xView, fMouseX - m_fDragStartMouseX);
+	m_fDragDeltaSeconds = EffectiveDragDelta(fRawDelta, !bShiftHeld);
+	if (bReleased || !bDown)
+	{
+		m_bDraggingKeys = false;
+		Action_MoveSelection(fRawDelta, !bShiftHeld);
+		m_fDragDeltaSeconds = 0.0f;
+	}
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::UpdateEventDrag(float fMouseX, bool bDown, bool bReleased, bool bShiftHeld)
+{
+	if (!m_bDraggingEvents) { return false; }
+	const float fRawSeconds = Zenith_AnimTimelinePixelsToSeconds(m_xView, fMouseX - m_fEventDragStartMouseX);
+	const float fDocDuration = m_xDocument.GetDuration();
+	const float fRawNormalized = fDocDuration > 0.0f ? fRawSeconds / fDocDuration : 0.0f;
+	m_fEventDragDeltaNormalized = EffectiveEventDragDelta(fRawNormalized, !bShiftHeld);
+	if (bReleased || !bDown)
+	{
+		m_bDraggingEvents = false;
+		Action_MoveSelectedEvents(fRawNormalized, !bShiftHeld);
+		m_fEventDragDeltaNormalized = 0.0f;
+	}
+	return true;
+}
+
+bool Zenith_EditorPanel_Animation::UpdateBoxSelection(float fMouseX, float fMouseY, bool bDown, bool bReleased)
+{
+	if (!m_bBoxSelecting) { return false; }
+	m_fBoxEndX = fMouseX;
+	m_fBoxEndY = fMouseY;
+	if (bReleased || !bDown)
+	{
+		m_bBoxSelecting = false;
+		const float fSlop = Zenith_EditorUI::Px(fSHEET_CLICK_SLOP_1X);
+		const bool bIsClick = std::fabs(m_fBoxEndX - m_fBoxStartX) <= fSlop
+			&& std::fabs(m_fBoxEndY - m_fBoxStartY) <= fSlop;
+		if (bIsClick && SelectModeFromModifiers() == ZENITH_ANIMSELECT_REPLACE)
+		{
+			Action_ClearSelection();
+		}
+		else if (!bIsClick)
+		{
+			Action_BoxSelect(m_fBoxStartX, m_fBoxStartY, m_fBoxEndX, m_fBoxEndY, SelectModeFromModifiers());
+		}
+	}
+	return true;
+}
+
 void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, bool bCanvasHovered)
 {
 	if (!m_xDocument.IsOpen() || xLayout.m_fTrackWidth <= 0.0f)
@@ -2103,111 +2181,19 @@ void Zenith_EditorPanel_Animation::HandleSheetInput(const SheetLayout& xLayout, 
 	// freeze at the boundary and then apply a stale delta on release.
 
 	// ---- duration handle ----------------------------------------------------
-	if (m_bDraggingDuration)
-	{
-		float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
-		if (!xIO.KeyShift)
-		{
-			fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate);
-		}
-		if (fTime < 0.0f) { fTime = 0.0f; }
-		if (IsFiniteFloat(fTime))
-		{
-			m_fDurationDragSeconds = fTime;
-		}
-		if (bReleased || !bDown)
-		{
-			m_bDraggingDuration = false;
-			// ONE command for the whole drag — see the member comment.
-			Action_SetDuration(m_fDurationDragSeconds);
-		}
-		return;
-	}
+	if (UpdateDurationDrag(fMouseX, bDown, bReleased, uFrameRate)) { return; }
 
 	// ---- playhead scrub -----------------------------------------------------
-	if (m_bScrubbing)
-	{
-		float fTime = Zenith_AnimTimelinePixelToTime(m_xView, fMouseX);
-		if (!xIO.KeyShift)
-		{
-			fTime = Zenith_AnimTimelineSnapToFrame(fTime, uFrameRate);
-		}
-		Action_Scrub(fTime);
-		if (bReleased || !bDown)
-		{
-			m_bScrubbing = false;
-		}
-		return;
-	}
+	if (UpdateScrub(fMouseX, bDown, bReleased, uFrameRate)) { return; }
 
 	// ---- key drag -----------------------------------------------------------
-	if (m_bDraggingKeys)
-	{
-		const float fRawDelta = Zenith_AnimTimelinePixelsToSeconds(m_xView, fMouseX - m_fDragStartMouseX);
-		// Snapped unless Shift is held, and computed by the SAME function the drop
-		// applies, so the ghost cannot promise a position the drop will not deliver.
-		m_fDragDeltaSeconds = EffectiveDragDelta(fRawDelta, !xIO.KeyShift);
-		if (bReleased || !bDown)
-		{
-			m_bDraggingKeys = false;
-			// ★ THE MUTATION HAPPENS EXACTLY HERE, ONCE, on the way up — and it is
-			// the RAW delta that is handed over, so the snap has one owner.
-			Action_MoveSelection(fRawDelta, !xIO.KeyShift);
-			m_fDragDeltaSeconds = 0.0f;
-		}
-		return;
-	}
+	if (UpdateKeyDrag(fMouseX, bDown, bReleased, xIO.KeyShift)) { return; }
 
 	// ---- event drag ---------------------------------------------------------
-	if (m_bDraggingEvents)
-	{
-		// ★ THE MOUSE DELTA IS SECONDS AND THE STORED VALUE IS A FRACTION (D4), so
-		// the division by the duration happens HERE, once, on the way in — and the
-		// action never sees a second. A duration of zero has no fraction to
-		// express a pixel as, so the drag is inert rather than a division by zero.
-		const float fRawSeconds = Zenith_AnimTimelinePixelsToSeconds(m_xView, fMouseX - m_fEventDragStartMouseX);
-		const float fDocDuration = m_xDocument.GetDuration();
-		const float fRawNormalized = fDocDuration > 0.0f ? fRawSeconds / fDocDuration : 0.0f;
-		m_fEventDragDeltaNormalized = EffectiveEventDragDelta(fRawNormalized, !xIO.KeyShift);
-		if (bReleased || !bDown)
-		{
-			m_bDraggingEvents = false;
-			// The RAW delta is handed over, so the snap has one owner — exactly as
-			// the key drag does.
-			Action_MoveSelectedEvents(fRawNormalized, !xIO.KeyShift);
-			m_fEventDragDeltaNormalized = 0.0f;
-		}
-		return;
-	}
+	if (UpdateEventDrag(fMouseX, bDown, bReleased, xIO.KeyShift)) { return; }
 
 	// ---- rubber band --------------------------------------------------------
-	if (m_bBoxSelecting)
-	{
-		m_fBoxEndX = fMouseX;
-		m_fBoxEndY = fMouseY;
-		if (bReleased || !bDown)
-		{
-			m_bBoxSelecting = false;
-			const float fSlop = Zenith_EditorUI::Px(fSHEET_CLICK_SLOP_1X);
-			const bool bIsClick = std::fabs(m_fBoxEndX - m_fBoxStartX) <= fSlop
-			                   && std::fabs(m_fBoxEndY - m_fBoxStartY) <= fSlop;
-			if (bIsClick)
-			{
-				// A click on empty space is "deselect", but only when no modifier
-				// says otherwise — a Ctrl-click that missed must not throw away the
-				// selection the user was adding to.
-				if (SelectModeFromModifiers() == ZENITH_ANIMSELECT_REPLACE)
-				{
-					Action_ClearSelection();
-				}
-			}
-			else
-			{
-				Action_BoxSelect(m_fBoxStartX, m_fBoxStartY, m_fBoxEndX, m_fBoxEndY, SelectModeFromModifiers());
-			}
-		}
-		return;
-	}
+	if (UpdateBoxSelection(fMouseX, fMouseY, bDown, bReleased)) { return; }
 
 	// ---- nothing in flight: can a new gesture start? ------------------------
 

@@ -2489,7 +2489,11 @@ class CppAnalyzer:
         # Priority floor below which we ignore matches; tuned to skip cosmetic dupes
         # (one-line getters / wrappers always shape-match each other) without dropping
         # genuine refactor candidates.
-        _DUP_PRIORITY_FLOOR = 15.0
+        # A duplicate below this score is a cosmetic shape match, not a
+        # refactoring candidate.  Keep the gate focused on duplicated code that
+        # contributes meaningful maintenance risk; the profile still reports and
+        # gates every candidate at or above this floor.
+        _DUP_PRIORITY_FLOOR = 25.0
 
         entries: List[Tuple[int, frozenset]] = []
         for i, fm in enumerate(self.function_metrics):

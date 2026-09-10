@@ -350,7 +350,8 @@ markdown report flags this in the section header.
 The base detector flags any near-duplicate Jaccard >= 85%. The `engine-ci`
 profile additionally drops:
 
-- functions with priority score < 15 (cosmetic dupes -- one-line getters and
+- functions with priority score < 25 (cosmetic dupes -- small symmetric
+  helpers, one-line getters and
   ZENITH_TEST wrappers always shape-match each other)
 - functions in `*.Tests.inl` files, `UnitTests/`, and `tests/` directories
 

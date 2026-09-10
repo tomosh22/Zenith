@@ -773,6 +773,9 @@ private:
 	// learned the expensive way (Editor/CLAUDE.md → "NOTHING SHOWN DRAWS
 	// NOTHING").
 	void RenderBlendStrip(const std::string& strStateName, Zenith_AnimCtrlStateTreeKind eKind);
+	void RenderBlendAxisBindings(const std::string& strStateName, bool bIs2D,
+		const Zenith_Vector<std::string>& axFloatParams);
+	bool UpdateBlendAxisRanges(const std::string& strStateName, u_int uPointCount, float& fMaxXOut);
 	void RenderTransitionInspector();
 	void RenderCanvas();
 	void DrawCanvasBackground(ImDrawList* pxDraw, const CanvasLayout& xLayout);
@@ -780,6 +783,9 @@ private:
 	void DrawNodes(ImDrawList* pxDraw, const CanvasLayout& xLayout);
 	// The ONLY functions that read ImGui state; each ends in an Action_*.
 	void HandleCanvasInput(const CanvasLayout& xLayout, bool bCanvasHovered);
+	void BeginCanvasGesture(const CanvasLayout& xLayout, float fMouseX, float fMouseY, bool bCtrlHeld);
+	void FinishCanvasGesture(const CanvasLayout& xLayout, float fMouseX, float fMouseY, float fScale);
+	void RenderCanvasContextMenu(float fMouseX, float fMouseY, bool bCanvasHovered);
 	bool FindStateAtScreenPos(float fX, float fY, std::string& strOut) const;
 	bool FindTransitionAtScreenPos(float fX, float fY, std::string& strOutFrom, u_int& uOutIndex) const;
 
