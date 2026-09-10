@@ -6,10 +6,9 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #ifdef ZENITH_TOOLS
 // The offset editor reads the sibling model's LOCAL bounds so an author can see
-// the box a bulb has to sit inside. Both edges are TOOLS-only and panel-only.
+// the box a bulb has to sit inside. The model component exposes these as plain
+// vectors, keeping this editor panel independent of Flux mesh implementation.
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "Maths/Zenith_FrustumCulling.h"   // Zenith_AABB
 #endif
 #include "ZenithECS/Zenith_ComponentMeta.h"
 
@@ -374,10 +373,10 @@ void Zenith_LightComponent::RenderTransformOffsets()
 		const Zenith_ModelComponent* pxModel = m_xParentEntity.IsValid()
 			? m_xParentEntity.TryGetComponent<Zenith_ModelComponent>()
 			: nullptr;
-		const Flux_MeshInstance* pxInstance =
-			(pxModel != nullptr && pxModel->GetNumMeshes() > 0u)
-				? pxModel->GetMeshInstance(0u)
-				: nullptr;
+		Zenith_Maths::Vector3 xBoundsMin;
+		Zenith_Maths::Vector3 xBoundsMax;
+		const bool bHasLocalBounds = pxModel != nullptr &&
+			pxModel->GetFirstMeshLocalBounds(xBoundsMin, xBoundsMax);
 
 		float afPos[3] = { m_xLocalPositionOffset.x, m_xLocalPositionOffset.y,
 			m_xLocalPositionOffset.z };
@@ -394,15 +393,14 @@ void Zenith_LightComponent::RenderTransformOffsets()
 				"if the asset is re-exported at another size.");
 		}
 
-		if (pxInstance != nullptr)
+		if (bHasLocalBounds)
 		{
-			const Zenith_AABB& xLocal = pxInstance->GetLocalBounds();
-			const Zenith_Maths::Vector3 xSize = xLocal.m_xMax - xLocal.m_xMin;
-			const Zenith_Maths::Vector3 xCentre = (xLocal.m_xMin + xLocal.m_xMax) * 0.5f;
+			const Zenith_Maths::Vector3 xSize = xBoundsMax - xBoundsMin;
+			const Zenith_Maths::Vector3 xCentre = (xBoundsMin + xBoundsMax) * 0.5f;
 
 			ImGui::TextDisabled("model bounds  (%.4f, %.4f, %.4f) .. (%.4f, %.4f, %.4f)",
-				xLocal.m_xMin.x, xLocal.m_xMin.y, xLocal.m_xMin.z,
-				xLocal.m_xMax.x, xLocal.m_xMax.y, xLocal.m_xMax.z);
+				xBoundsMin.x, xBoundsMin.y, xBoundsMin.z,
+				xBoundsMax.x, xBoundsMax.y, xBoundsMax.z);
 
 			// Where the offset sits inside those bounds, per axis, as a fraction.
 			// A denominator of zero is a flat axis; report the centre for it rather
@@ -412,14 +410,14 @@ void Zenith_LightComponent::RenderTransformOffsets()
 				return (fExtent > 1.0e-6f) ? ((fValue - fMin) / fExtent) : 0.5f;
 			};
 			ImGui::TextDisabled("as a fraction  (%.3f, %.3f, %.3f) of those bounds",
-				Fraction(m_xLocalPositionOffset.x, xLocal.m_xMin.x, xSize.x),
-				Fraction(m_xLocalPositionOffset.y, xLocal.m_xMin.y, xSize.y),
-				Fraction(m_xLocalPositionOffset.z, xLocal.m_xMin.z, xSize.z));
+				Fraction(m_xLocalPositionOffset.x, xBoundsMin.x, xSize.x),
+				Fraction(m_xLocalPositionOffset.y, xBoundsMin.y, xSize.y),
+				Fraction(m_xLocalPositionOffset.z, xBoundsMin.z, xSize.z));
 
 			const bool bInside =
-				m_xLocalPositionOffset.x >= xLocal.m_xMin.x && m_xLocalPositionOffset.x <= xLocal.m_xMax.x &&
-				m_xLocalPositionOffset.y >= xLocal.m_xMin.y && m_xLocalPositionOffset.y <= xLocal.m_xMax.y &&
-				m_xLocalPositionOffset.z >= xLocal.m_xMin.z && m_xLocalPositionOffset.z <= xLocal.m_xMax.z;
+				m_xLocalPositionOffset.x >= xBoundsMin.x && m_xLocalPositionOffset.x <= xBoundsMax.x &&
+				m_xLocalPositionOffset.y >= xBoundsMin.y && m_xLocalPositionOffset.y <= xBoundsMax.y &&
+				m_xLocalPositionOffset.z >= xBoundsMin.z && m_xLocalPositionOffset.z <= xBoundsMax.z;
 			if (bInside)
 			{
 				ImGui::TextDisabled("inside the model's bounds");

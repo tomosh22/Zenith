@@ -62,6 +62,16 @@ class Zenith_AssetRegistry
 	friend class Zenith_UnitTests;
 
 public:
+	using AssetLoaderFn = Zenith_Result<Zenith_Asset*>(*)(const std::string&);
+
+	// Composition-time extension point for concrete modules.  The registry owns
+	// caching and lifetime, but does not include a feature module just to know
+	// how that module deserializes its asset type.
+	static void RegisterExternalLoader(Zenith_TypeIndex xType, AssetLoaderFn pfnLoader)
+	{
+		Zenith_Assert(s_pxInstance != nullptr, "RegisterExternalLoader called before AssetRegistry::Initialize");
+		s_pxInstance->RegisterLoader(xType, pfnLoader);
+	}
 
 	//--------------------------------------------------------------------------
 	// Path Resolution
@@ -325,7 +335,6 @@ private:
 	// Plain function pointer (not std::function — house rule). The free loaders
 	// register directly as &LoadXxxAsset; the RegisterAssetType<T> loader lambda
 	// is captureless and decays to a function pointer.
-	using AssetLoaderFn = Zenith_Result<Zenith_Asset*>(*)(const std::string&);
 	static_assert(std::is_trivially_destructible_v<Zenith_Result<Zenith_Asset*>>);
 	void RegisterLoader(Zenith_TypeIndex xType, AssetLoaderFn pfnLoader);
 

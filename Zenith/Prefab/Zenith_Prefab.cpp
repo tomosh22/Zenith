@@ -2,6 +2,7 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "Core/Zenith_Engine.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "AssetHandling/Zenith_AssetHandle.inl"
 #include "ZenithECS/Zenith_ComponentMeta.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -36,6 +37,30 @@ namespace
 		return nullptr;
 	}
 }
+
+Zenith_Result<Zenith_Asset*> Zenith_LoadPrefabAsset(const std::string& strPath)
+{
+	Zenith_Prefab* pxPrefab = new Zenith_Prefab();
+	if (strPath.empty())
+	{
+		return static_cast<Zenith_Asset*>(pxPrefab);
+	}
+	const Zenith_Status xStatus = pxPrefab->LoadFromFile(strPath);
+	if (!xStatus.IsOk())
+	{
+		delete pxPrefab;
+		return xStatus.Error();
+	}
+	return static_cast<Zenith_Asset*>(pxPrefab);
+}
+
+void Zenith_Prefab_RegisterAssetLoader()
+{
+	Zenith_AssetRegistry::RegisterExternalLoader(
+		Zenith_TypeIndex::Of<Zenith_Prefab>(), &Zenith_LoadPrefabAsset);
+}
+
+template class Zenith_AssetHandle<Zenith_Prefab>;
 
 //=============================================================================
 // PropertyOverride Implementation

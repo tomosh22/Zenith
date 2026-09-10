@@ -7,17 +7,12 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderGraph/Flux_RenderGraph.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
-#include "Flux/Terrain/Flux_TerrainImpl.h"   // Flux_TerrainConstantsBufferBytes — the renderer owns the CB struct
+#include "Core/Zenith_TerrainRenderConstants.h"
 #include "Core/Zenith_TerrainChunkLayout.h"
 #include "Core/Zenith_BakedMeshReader.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Maths/Zenith_FrustumCulling.h"
-// Phase 1 of the terrain indirect-count compatibility plan: the terrain
-// indirect-command allocation/seed and the per-backend recorder all name the
-// shared 20-byte / five-word ABI defined in Flux/Backend/Flux_IndirectDraw.h.
-// The header is dependency-light (<cstdint>/<cstddef>) so EntityComponent can
-// include it without re-entering the Flux.h cycle.
-#include "Flux/Backend/Flux_IndirectDraw.h"
+#include "Core/Zenith_IndirectDraw.h"
 // Wave 3 PART B: terrain render-record gather (so Flux_Terrain drops Zenith_TerrainComponent.h).
 #include "Core/Zenith_Engine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -1912,14 +1907,14 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	// the CPU-side struct; filled and uploaded per record in PreRenderUpdate.
 	xVulkanMemory.InitialiseDynamicConstantBuffer(
 		nullptr,
-		Flux_TerrainConstantsBufferBytes(),
+		uZENITH_TERRAIN_CONSTANTS_BUFFER_BYTES,
 		m_pxStreamingState->m_xTerrainConstantsBuffer
 	);
 
 	// Indirect draw command buffer (one command per chunk, max).
 	//
 	// The ABI is the shared 20-byte / five-word indexed-indirect-command record
-	// pinned by Flux_IndirectDrawIndexedCommand (see Flux/Backend/Flux_IndirectDraw.h)
+	// pinned by the backend-neutral indexed-indirect ABI in Core.
 	// — indexCount, instanceCount, firstIndex, vertexOffset (signed int),
 	// firstInstance. The same contract the Slang shader writes, the Slang shared
 	// include reads, the test pinned ABI POD asserts against, and the per-backend
@@ -1940,7 +1935,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	const size_t indirectBufferSize =
 		static_cast<size_t>(uINDIRECT_RECORD_COUNT) * uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE;
 	static_assert(sizeof(Flux_IndirectDrawIndexedCommand) == 20u,
-		"Zenith_TerrainComponent: indirect-command ABI drifted from 20 bytes — Flux_IndirectDraw.h is the contract;");
+		"Zenith_TerrainComponent: indirect-command ABI drifted from 20 bytes.");
 	Flux_IndirectDrawIndexedCommand* pZeroCommands =
 		new Flux_IndirectDrawIndexedCommand[uINDIRECT_RECORD_COUNT];
 	for (uint32_t u = 0u; u < uINDIRECT_RECORD_COUNT; ++u)

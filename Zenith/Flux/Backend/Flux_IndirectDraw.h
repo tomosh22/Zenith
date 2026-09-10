@@ -48,6 +48,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <limits>
+#include "Core/Zenith_IndirectDraw.h"
 
 // ----------------------------------------------------------------------------
 // Caller policy for a semantic counted-indirect draw.
@@ -368,54 +369,4 @@ struct Flux_IndirectDrawBatchPlan
 inline uint32_t Flux_ResolveFixedDrawPerCallLimit(const Flux_IndirectDrawCapabilities& xCaps)
 {
 	return xCaps.m_bMultiDrawIndirect ? xCaps.m_uMaxDrawIndirectCount : 1u;
-}
-
-// ----------------------------------------------------------------------------
-// The 20-byte indexed-indirect-command ABI: five 32-bit words. Defined here as
-// a stable POD so C++ allocation sizing, the Slang shared include, allocation
-// seeding in Zenith_TerrainComponent, and the per-backend recorders all name
-// the same contract. The struct is intentionally trivially-copyable; the GPU
-// reads it as a raw byte sequence.
-//
-//   word 0: indexCount    (uint32_t)
-//   word 1: instanceCount (uint32_t)
-//   word 2: firstIndex    (uint32_t)
-//   word 3: vertexOffset  (int32_t — signed, per VkDrawIndexedIndirectCommand)
-//   word 4: firstInstance (uint32_t)
-// ----------------------------------------------------------------------------
-struct Flux_IndirectDrawIndexedCommand
-{
-	uint32_t m_uIndexCount;
-	uint32_t m_uInstanceCount;
-	uint32_t m_uFirstIndex;
-	int32_t  m_iVertexOffset;
-	uint32_t m_uFirstInstance;
-};
-static_assert(sizeof(Flux_IndirectDrawIndexedCommand) == 20u,
-	"Flux_IndirectDrawIndexedCommand must be exactly five 32-bit words / 20 bytes — "
-	"it is the cross-API indirect-argument ABI pinned by tests, allocation sizing, "
-	"the Slang shared include and every backend recorder.");
-static_assert(alignof(Flux_IndirectDrawIndexedCommand) == alignof(uint32_t),
-	"Flux_IndirectDrawIndexedCommand must have uint32 alignment so a packed array of "
-	"records has no implicit padding between entries — the GPU reads a flat stride.");
-
-// Named word/byte/record constants derived from the ABI. The Slang shared include
-// re-declares the same constants on its side; a static_assert in
-// Flux_Terrain.cpp pins both halves to the same values.
-inline constexpr uint32_t uFLUX_INDIRECT_DRAW_INDEXED_WORD_COUNT = 5u;
-inline constexpr uint32_t uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE = sizeof(Flux_IndirectDrawIndexedCommand);
-static_assert(uFLUX_INDIRECT_DRAW_INDEXED_BYTE_STRIDE ==
-		uFLUX_INDIRECT_DRAW_INDEXED_WORD_COUNT * sizeof(uint32_t),
-	"Flux_IndirectDrawIndexedCommand stride must be exactly word_count * sizeof(uint32_t)");
-
-// Zero-initialise every word of an indirect command to the legal no-op. Used
-// by allocation seeding (CPU one-shot at buffer creation) and by tests; the
-// GPU reset pass writes its own zeroed records from the shader.
-inline void Flux_ZeroIndirectDrawIndexedCommand(Flux_IndirectDrawIndexedCommand& xOut)
-{
-	xOut.m_uIndexCount    = 0u;
-	xOut.m_uInstanceCount = 0u;
-	xOut.m_uFirstIndex    = 0u;
-	xOut.m_iVertexOffset  = 0;
-	xOut.m_uFirstInstance = 0u;
 }

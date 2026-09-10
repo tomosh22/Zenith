@@ -30,15 +30,6 @@ extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const 
 extern void ExportHeightmapFromMat(const Zenith_Image& xHeightmap, const std::string& strOutputDir,
 	const Zenith_TerrainDimensions& xDims);
 
-// The four knobs the creation panel stages before the first bake. They are
-// applied to the component through SetTerrainDimensions, which refuses an
-// already-initialised terrain -- so this UI only ever appears (and only ever
-// bites) before there is baked geometry to invalidate.
-static float s_fPendingChunkWorldSize = 64.0f;
-static float s_fPendingVertexSpacing = 1.0f;
-static int s_iPendingGridChunksX = 64;
-static int s_iPendingGridChunksZ = 64;
-
 // Spacing is the number an artist thinks in; quads-per-edge is what the format
 // stores. Round to the nearest power of two so the divisor-4 bakes stay
 // integral, then clamp into the validated range.
@@ -58,29 +49,29 @@ static u_int ResolveQuadsPerChunkEdge(float fChunkWorldSize, float fVertexSpacin
 	return uQuads;
 }
 
-static Zenith_TerrainDimensions ResolvePendingTerrainDimensions()
+static Zenith_TerrainDimensions ResolvePendingTerrainDimensions(const Zenith_TerrainEditorState& xState)
 {
 	Zenith_TerrainDimensions xDims;
-	xDims.m_fChunkWorldSize = s_fPendingChunkWorldSize;
-	xDims.m_uQuadsPerChunkEdge = ResolveQuadsPerChunkEdge(s_fPendingChunkWorldSize, s_fPendingVertexSpacing);
-	xDims.m_uGridChunksX = static_cast<u_int>(s_iPendingGridChunksX);
-	xDims.m_uGridChunksZ = static_cast<u_int>(s_iPendingGridChunksZ);
+	xDims.m_fChunkWorldSize = xState.m_fPendingChunkWorldSize;
+	xDims.m_uQuadsPerChunkEdge = ResolveQuadsPerChunkEdge(xState.m_fPendingChunkWorldSize, xState.m_fPendingVertexSpacing);
+	xDims.m_uGridChunksX = static_cast<u_int>(xState.m_iPendingGridChunksX);
+	xDims.m_uGridChunksZ = static_cast<u_int>(xState.m_iPendingGridChunksZ);
 	return xDims;
 }
 
 // The four staged fields plus the derived read-outs an artist needs to judge
 // them: real vertex spacing after the power-of-two snap, the world extent the
 // grid produces, and the advisory streaming cost.
-static void RenderTerrainDimensionFields()
+static void RenderTerrainDimensionFields(Zenith_TerrainEditorState& xState)
 {
-	ImGui::DragFloat("Chunk Size (m)", &s_fPendingChunkWorldSize, 1.0f, 1.0f, 1024.0f, "%.1f");
-	ImGui::DragFloat("Vertex Spacing (m)", &s_fPendingVertexSpacing, 0.05f, 0.01f, 64.0f, "%.3f");
-	ImGui::DragInt("Grid Chunks X", &s_iPendingGridChunksX, 1.0f, 1,
+	ImGui::DragFloat("Chunk Size (m)", &xState.m_fPendingChunkWorldSize, 1.0f, 1.0f, 1024.0f, "%.1f");
+	ImGui::DragFloat("Vertex Spacing (m)", &xState.m_fPendingVertexSpacing, 0.05f, 0.01f, 64.0f, "%.3f");
+	ImGui::DragInt("Grid Chunks X", &xState.m_iPendingGridChunksX, 1.0f, 1,
 		static_cast<int>(Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY));
-	ImGui::DragInt("Grid Chunks Z", &s_iPendingGridChunksZ, 1.0f, 1,
+	ImGui::DragInt("Grid Chunks Z", &xState.m_iPendingGridChunksZ, 1.0f, 1,
 		static_cast<int>(Zenith_TerrainDimensionsLimits::uCHUNK_GRID_CAPACITY));
 
-	const Zenith_TerrainDimensions xDims = ResolvePendingTerrainDimensions();
+	const Zenith_TerrainDimensions xDims = ResolvePendingTerrainDimensions(xState);
 	if (!xDims.IsValid())
 	{
 		ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
@@ -121,11 +112,6 @@ static void RenderTerrainDimensionFields()
 // Separated from runtime code to improve maintainability.
 //=============================================================================
 
-// Static state for terrain creation UI
-static char s_szHeightmapPath[512] = "";
-static bool s_bTerrainExportInProgress = false;
-static std::string s_strTerrainExportStatus = "";
-
 static std::filesystem::path NormalizeDirectoryPathForComparison(
 	const std::filesystem::path& xPath);
 
@@ -156,13 +142,13 @@ static std::string ShowHeightmapOpenFileDialog()
 //-----------------------------------------------------------------------------
 // Helper: Render heightmap path input with drag-drop and browse button
 //-----------------------------------------------------------------------------
-static void RenderHeightmapPathInput(const char* szImGuiId)
+static void RenderHeightmapPathInput(const char* szImGuiId, Zenith_TerrainEditorState& xState)
 {
 	ImGui::Text("Heightmap Texture:");
 	ImGui::PushItemWidth(300);
 	char szInputId[64];
 	snprintf(szInputId, sizeof(szInputId), "##%s", szImGuiId);
-	ImGui::InputText(szInputId, s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
+	ImGui::InputText(szInputId, xState.m_szHeightmapPath, sizeof(xState.m_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
 	ImGui::PopItemWidth();
 
 	if (ImGui::BeginDragDropTarget())
@@ -171,8 +157,8 @@ static void RenderHeightmapPathInput(const char* szImGuiId)
 		{
 			const DragDropFilePayload* pFilePayload =
 				static_cast<const DragDropFilePayload*>(pPayload->Data);
-			strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped heightmap: %s", s_szHeightmapPath);
+			strncpy_s(xState.m_szHeightmapPath, sizeof(xState.m_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped heightmap: %s", xState.m_szHeightmapPath);
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -185,8 +171,8 @@ static void RenderHeightmapPathInput(const char* szImGuiId)
 		std::string strPath = ShowHeightmapOpenFileDialog();
 		if (!strPath.empty())
 		{
-			strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected heightmap: %s", s_szHeightmapPath);
+			strncpy_s(xState.m_szHeightmapPath, sizeof(xState.m_szHeightmapPath), strPath.c_str(), _TRUNCATE);
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected heightmap: %s", xState.m_szHeightmapPath);
 		}
 	}
 }
@@ -194,24 +180,24 @@ static void RenderHeightmapPathInput(const char* szImGuiId)
 //-----------------------------------------------------------------------------
 // Helper: Render terrain export status with color coding
 //-----------------------------------------------------------------------------
-static void RenderTerrainStatusDisplay()
+static void RenderTerrainStatusDisplay(const Zenith_TerrainEditorState& xState)
 {
-	if (s_strTerrainExportStatus.empty())
+	if (xState.m_strExportStatus.empty())
 		return;
 
 	ImGui::Separator();
-	if (s_bTerrainExportInProgress)
+	if (xState.m_bExportInProgress)
 	{
-		ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+		ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", xState.m_strExportStatus.c_str());
 	}
-	else if (s_strTerrainExportStatus.find("success") != std::string::npos ||
-	         s_strTerrainExportStatus.find("complete") != std::string::npos)
+	else if (xState.m_strExportStatus.find("success") != std::string::npos ||
+	         xState.m_strExportStatus.find("complete") != std::string::npos)
 	{
-		ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+		ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", xState.m_strExportStatus.c_str());
 	}
 	else
 	{
-		ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+		ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", xState.m_strExportStatus.c_str());
 	}
 }
 
@@ -274,20 +260,20 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 	ImGui::TextWrapped("Specify a heightmap texture to generate terrain geometry. Use .ztxtr files (preferred) or 16-bit PNG. Textures should be 4096x4096 single-channel (grayscale).");
 	ImGui::Separator();
 
-	RenderHeightmapPathInput("HeightmapPath");
+	RenderHeightmapPathInput("HeightmapPath", m_xEditorState);
 
 	ImGui::Separator();
 	ImGui::TextWrapped("Terrain dimensions. These are baked into the chunk bytes and cannot be "
 		"changed after creation without a full re-bake.");
-	RenderTerrainDimensionFields();
+	RenderTerrainDimensionFields(m_xEditorState);
 
 	ImGui::Separator();
 
 	const std::string strOutputDir = GetTerrainAssetDirectory();
 	ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
-	const bool bCanCreate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress &&
-		ResolvePendingTerrainDimensions().IsValid();
+	const bool bCanCreate = strlen(m_xEditorState.m_szHeightmapPath) > 0 && !m_xEditorState.m_bExportInProgress &&
+		ResolvePendingTerrainDimensions(m_xEditorState).IsValid();
 
 	if (!bCanCreate)
 		ImGui::BeginDisabled();
@@ -319,22 +305,22 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			// handed the same spec the component will decode the result with, and
 			// SetTerrainDimensions refuses an already-initialised terrain, so a
 			// second Create cannot silently re-shape live geometry.
-			if (!xSelf.SetTerrainDimensions(ResolvePendingTerrainDimensions()))
+			if (!xSelf.SetTerrainDimensions(ResolvePendingTerrainDimensions(xSelf.m_xEditorState)))
 			{
-				s_strTerrainExportStatus = "Terrain creation refused the staged dimensions.";
+				xSelf.m_xEditorState.m_strExportStatus = "Terrain creation refused the staged dimensions.";
 				return false;
 			}
 
-			s_bTerrainExportInProgress = true;
-			s_strTerrainExportStatus = "Exporting terrain meshes...";
+			xSelf.m_xEditorState.m_bExportInProgress = true;
+			xSelf.m_xEditorState.m_strExportStatus = "Exporting terrain meshes...";
 
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain export...");
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", xSelf.m_xEditorState.m_szHeightmapPath);
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strValidatedOutputDir.c_str());
 
-			ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedOutputDir, xSelf.m_xDims);
+			ExportHeightmapFromPaths(xSelf.m_xEditorState.m_szHeightmapPath, strValidatedOutputDir, xSelf.m_xDims);
 
-			s_strTerrainExportStatus = "Export complete. Initializing terrain...";
+			xSelf.m_xEditorState.m_strExportStatus = "Export complete. Initializing terrain...";
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Export complete. Initializing terrain...");
 
 			// Create blank materials for initial rendering
@@ -355,17 +341,17 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 			xSelf.InitializeRenderResources();
 			xSelf.LoadCombinedPhysicsGeometry();
 
-			s_bTerrainExportInProgress = false;
+			xSelf.m_xEditorState.m_bExportInProgress = false;
 			const bool bInitialized = xSelf.IsTerrainInitializedForEditor() &&
 				xSelf.HasPhysicsGeometry() && !xSelf.m_bTerrainGeometryUnusable;
 			if (bInitialized)
 			{
-				s_strTerrainExportStatus = "Terrain created successfully!";
+				xSelf.m_xEditorState.m_strExportStatus = "Terrain created successfully!";
 				Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation complete!");
 			}
 			else
 			{
-				s_strTerrainExportStatus = "Terrain creation failed to initialize render/physics state.";
+				xSelf.m_xEditorState.m_strExportStatus = "Terrain creation failed to initialize render/physics state.";
 				Zenith_Warning(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation did not produce complete live state");
 			}
 			return bInitialized;
@@ -373,7 +359,7 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 		{
 			if (!bLeaseEntered)
 			{
-				s_strTerrainExportStatus = "Terrain creation refused an unsafe asset-set target.";
+				m_xEditorState.m_strExportStatus = "Terrain creation refused an unsafe asset-set target.";
 			}
 		}
 	}
@@ -381,7 +367,7 @@ void Zenith_TerrainComponent::RenderTerrainCreationSection()
 	if (!bCanCreate)
 		ImGui::EndDisabled();
 
-	RenderTerrainStatusDisplay();
+	RenderTerrainStatusDisplay(m_xEditorState);
 	ImGui::TreePop();
 }
 
@@ -1154,21 +1140,21 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 			return false;
 		}
 
-	s_bTerrainExportInProgress = true;
-	s_strTerrainExportStatus = "Cleaning up existing terrain...";
+	xSelf.m_xEditorState.m_bExportInProgress = true;
+	xSelf.m_xEditorState.m_strExportStatus = "Cleaning up existing terrain...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
 
 	xSelf.CleanupPriorGenerationForRegenerate();
 
-	s_strTerrainExportStatus = "Deleting existing terrain meshes...";
+	xSelf.m_xEditorState.m_strExportStatus = "Deleting existing terrain meshes...";
 	if (!DeleteExistingTerrainFilesInDirectory(strValidatedDirectory))
 	{
-		s_bTerrainExportInProgress = false;
-		s_strTerrainExportStatus = "Terrain regeneration failed while cleaning existing meshes.";
+		xSelf.m_xEditorState.m_bExportInProgress = false;
+		xSelf.m_xEditorState.m_strExportStatus = "Terrain regeneration failed while cleaning existing meshes.";
 		return false;
 	}
 
-	s_strTerrainExportStatus = "Exporting new terrain meshes...";
+	xSelf.m_xEditorState.m_strExportStatus = "Exporting new terrain meshes...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strValidatedDirectory.c_str());
 	if (pxHeightfield != nullptr)
@@ -1177,30 +1163,30 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 	}
 	else
 	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-		ExportHeightmapFromPaths(s_szHeightmapPath, strValidatedDirectory, xSelf.m_xDims);
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", xSelf.m_xEditorState.m_szHeightmapPath);
+		ExportHeightmapFromPaths(xSelf.m_xEditorState.m_szHeightmapPath, strValidatedDirectory, xSelf.m_xDims);
 	}
 
-	s_strTerrainExportStatus = "Initializing render resources...";
+	xSelf.m_xEditorState.m_strExportStatus = "Initializing render resources...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
 	xSelf.EnsureMaterialSlotsPopulated();
 	xSelf.InitializeRenderResources();
 
-	s_strTerrainExportStatus = "Loading physics geometry...";
+	xSelf.m_xEditorState.m_strExportStatus = "Loading physics geometry...";
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
 	xSelf.LoadCombinedPhysicsGeometry();
 
-	s_bTerrainExportInProgress = false;
+	xSelf.m_xEditorState.m_bExportInProgress = false;
 	const bool bInitialized = xSelf.IsTerrainInitializedForEditor() &&
 		xSelf.HasPhysicsGeometry() && !xSelf.m_bTerrainGeometryUnusable;
 	if (bInitialized)
 	{
-		s_strTerrainExportStatus = "Terrain regenerated successfully!";
+		xSelf.m_xEditorState.m_strExportStatus = "Terrain regenerated successfully!";
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain regeneration complete!");
 	}
 	else
 	{
-		s_strTerrainExportStatus = "Terrain regeneration failed to initialize complete render/physics state.";
+		xSelf.m_xEditorState.m_strExportStatus = "Terrain regeneration failed to initialize complete render/physics state.";
 		Zenith_Warning(LOG_CATEGORY_TERRAIN,
 			"[TerrainComponent] Terrain regeneration did not produce complete live state");
 	}
@@ -1208,7 +1194,7 @@ bool Zenith_TerrainComponent::RunTerrainRegenerationInternalForTerrainRoot(
 		}, &xRegenContext);
 	if (!bLeaseEntered)
 	{
-		s_strTerrainExportStatus = "Terrain regeneration refused an unvalidated output directory.";
+		m_xEditorState.m_strExportStatus = "Terrain regeneration refused an unvalidated output directory.";
 		Zenith_Warning(LOG_CATEGORY_TERRAIN,
 			"[TerrainComponent] Refusing terrain regeneration outside the handle-bound component asset set");
 	}
@@ -1224,14 +1210,14 @@ void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 	ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Warning: This operation cannot be undone!");
 	ImGui::Separator();
 
-	RenderHeightmapPathInput("RegenHeightmapPath");
+	RenderHeightmapPathInput("RegenHeightmapPath", m_xEditorState);
 
 	ImGui::Separator();
 
 	const std::string strOutputDir = GetTerrainAssetDirectory();
 	ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
-	const bool bCanRegenerate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
+	const bool bCanRegenerate = strlen(m_xEditorState.m_szHeightmapPath) > 0 && !m_xEditorState.m_bExportInProgress;
 
 	if (!bCanRegenerate) ImGui::BeginDisabled();
 
@@ -1242,7 +1228,7 @@ void Zenith_TerrainComponent::RenderTerrainRegenerationSection()
 
 	if (!bCanRegenerate) ImGui::EndDisabled();
 
-	RenderTerrainStatusDisplay();
+	RenderTerrainStatusDisplay(m_xEditorState);
 	ImGui::TreePop();
 }
 

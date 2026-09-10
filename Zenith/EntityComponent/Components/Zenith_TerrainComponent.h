@@ -29,6 +29,19 @@ class Zenith_Image;
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentEditorRegistry.h"
+
+// Per-component editor draft.  Terrain creation and regeneration must never
+// share file paths or in-progress state between two selected terrain entities.
+struct Zenith_TerrainEditorState
+{
+	float m_fPendingChunkWorldSize = 64.0f;
+	float m_fPendingVertexSpacing = 1.0f;
+	int m_iPendingGridChunksX = 64;
+	int m_iPendingGridChunksZ = 64;
+	char m_szHeightmapPath[512] = {};
+	bool m_bExportInProgress = false;
+	std::string m_strExportStatus;
+};
 #endif
 
 class Zenith_TerrainComponent
@@ -780,6 +793,10 @@ private:
 private:
 	// Kept private so every mutation passes through the validating setter.
 	std::string m_strTerrainAssetSet;
+
+#ifdef ZENITH_TOOLS
+	Zenith_TerrainEditorState m_xEditorState;
+#endif
 	// Likewise: the dimensions must never move under a terrain that has already
 	// decoded chunks against them.
 	Zenith_TerrainDimensions m_xDims = Zenith_TerrainDimensions::Default();

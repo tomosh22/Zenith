@@ -4,6 +4,7 @@
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Prefab/Zenith_Prefab.h"
 #include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "Core/FrameContext.h"
@@ -538,6 +539,7 @@ void Zenith_Engine::InitialiseAssets()
 	m_pxAssets = new Zenith_AssetRegistry();
 	Zenith_AssetRegistry::s_pxInstance = m_pxAssets;
 	Zenith_AssetRegistry::Initialize();
+	Zenith_Prefab_RegisterAssetLoader();
 
 #ifdef ZENITH_TOOLS
 	if (HasCommandLineFlag("--skip-tool-exports"))

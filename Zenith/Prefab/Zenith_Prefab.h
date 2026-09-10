@@ -119,6 +119,7 @@ public:
 
 private:
 	friend class Zenith_AssetRegistry;
+	friend Zenith_Result<Zenith_Asset*> Zenith_LoadPrefabAsset(const std::string& strPath);
 	template<typename U> friend struct Zenith_AssetLoadTraits;   // DoLoad calls private LoadFromFile
 
 	/**
@@ -164,3 +165,6 @@ private:
 	// its own ancestor chain, or IS `this`).
 	bool WouldFormVariantCycle(const PrefabHandle& xProposedBase) const;
 };
+
+// Called by the engine composition root after the registry instance exists.
+void Zenith_Prefab_RegisterAssetLoader();

@@ -284,6 +284,20 @@ Flux_MeshInstance* Zenith_ModelComponent::GetMeshInstance(uint32_t uIndex) const
 	return m_pxModelInstance ? m_pxModelInstance->GetMeshInstance(uIndex) : nullptr;
 }
 
+bool Zenith_ModelComponent::GetFirstMeshLocalBounds(
+	Zenith_Maths::Vector3& xMinOut, Zenith_Maths::Vector3& xMaxOut) const
+{
+	const Flux_MeshInstance* pxMesh = GetMeshInstance(0u);
+	if (pxMesh == nullptr)
+	{
+		return false;
+	}
+	const Zenith_AABB& xBounds = pxMesh->GetLocalBounds();
+	xMinOut = xBounds.m_xMin;
+	xMaxOut = xBounds.m_xMax;
+	return true;
+}
+
 Zenith_MaterialAsset* Zenith_ModelComponent::GetMaterial(uint32_t uIndex) const
 {
 	return m_pxModelInstance ? m_pxModelInstance->GetMaterial(uIndex) : nullptr;

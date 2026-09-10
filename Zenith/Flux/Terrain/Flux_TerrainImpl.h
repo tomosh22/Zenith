@@ -93,13 +93,12 @@ public:
 	Flux_RootSig  m_xResetCountersRootSig;
 
 	// Per-frame stats.
+	float m_fTerrainUVScale = 0.07f;
+	float m_fTerrainShadowDepthBiasSlope = 3.0f;
+	u_int m_uTerrainShadowForceLowFromCascade = 3u;
+	bool m_bTerrainCastsShadows = true;
 	uint32_t m_uLastVisibleChunks  = 0;
 	float    m_fCullingTimeMs      = 0.0f;
 	float    m_fStreamingTimeMs    = 0.0f;
 
 };
-
-// Byte size of the TerrainConstants CB. The struct itself stays .cpp-local (it
-// is pinned there against the reflected layout), but Zenith_TerrainComponent has
-// to size one PER TERRAIN, so the size -- and only the size -- is published.
-uint32_t Flux_TerrainConstantsBufferBytes();

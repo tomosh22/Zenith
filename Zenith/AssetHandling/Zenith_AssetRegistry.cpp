@@ -13,7 +13,6 @@
 #include "AssetHandling/Zenith_FontAsset.h"
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "AssetHandling/Zenith_GrassTypeTableAsset.h"
-#include "Prefab/Zenith_Prefab.h"
 #include "Collections/Zenith_Vector.h"
 #include "Profiling/Zenith_Profiling.h"
 #include <fstream>
@@ -275,7 +274,6 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshAsset>(), &LoadAssetViaStaticFactory<Zenith_MeshAsset>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_SkeletonAsset>(), &LoadAssetViaStaticFactory<Zenith_SkeletonAsset>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_ModelAsset>(), &LoadAssetViaStaticFactory<Zenith_ModelAsset>);
-	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_Prefab>(), &LoadAssetGeneric<Zenith_Prefab>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), &LoadAssetGeneric<Zenith_AnimationAsset>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), &LoadAssetGeneric<Zenith_MeshGeometryAsset>);
 	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_FontAsset>(), &LoadAssetGeneric<Zenith_FontAsset>);

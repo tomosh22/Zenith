@@ -2,6 +2,7 @@
 #include "Flux/Terrain/Flux_Terrain_Shaders.h"
 
 #include "Flux/Terrain/Flux_TerrainImpl.h"
+#include "Core/Zenith_TerrainRenderConstants.h"
 #include "Flux/Terrain/Flux_TerrainPipelineSelect.h"
 #include "Core/Zenith_Engine.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManagerImpl.h"
@@ -104,15 +105,6 @@ struct TerrainConstants
 // first's extent. Each Flux_TerrainStreamingState owns its own CB, filled and
 // uploaded per record in PreRenderUpdate and bound INSIDE the record loop.
 //
-// m_fUVScale stays a single process-wide debug variable (it is a look knob, not
-// a property of a terrain); it is folded into every record's upload.
-static float s_fTerrainUVScale = 0.07f;
-
-uint32_t Flux_TerrainConstantsBufferBytes()
-{
-	return static_cast<uint32_t>(sizeof(TerrainConstants));
-}
-
 static_assert(sizeof(TerrainConstants) == sizeof(Flux_Generated_Terrain::Terrain_ToGBuffer::TerrainConstants_CB),
 	"TerrainConstants CPU size != reflected CB size — regenerate codegen or update padding");
 static_assert(offsetof(TerrainConstants, m_fUVScale) == 0,
@@ -121,12 +113,14 @@ static_assert(offsetof(TerrainConstants, m_afPosQuantScale) == 16 && offsetof(Te
 	"TerrainConstants dequant lanes must sit on the std140 float4 boundaries the shader reads them from");
 static_assert(offsetof(TerrainConstants, m_afTerrainDims) == 48,
 	"TerrainConstants.m_afTerrainDims must sit on the std140 float4 boundary the shader reads it from");
+static_assert(sizeof(TerrainConstants) == uZENITH_TERRAIN_CONSTANTS_BUFFER_BYTES,
+	"Core terrain constant allocation must match the reflected Flux layout.");
 
 // Fills the per-terrain dequantisation constants from one terrain's dimensions.
 // The box comes from the SAME helper the exporter and the live-edit hooks pack
 // against -- a chunk decodes where the shader is looking only because both sides
 // read Flux_MakeTerrainPosQuant.
-static void Flux_FillTerrainConstants(const Zenith_TerrainDimensions& xDims, TerrainConstants& xOut)
+static void Flux_FillTerrainConstants(const Zenith_TerrainDimensions& xDims, float fUVScale, TerrainConstants& xOut)
 {
 	const Flux_PosQuant xQuant = Flux_MakeTerrainPosQuant(xDims);
 	for (int i = 0; i < 3; i++)
@@ -139,11 +133,18 @@ static void Flux_FillTerrainConstants(const Zenith_TerrainDimensions& xDims, Ter
 	// what keeps a material's world-space tiling correct at any terrain size
 	// without re-tuning m_fUVScale per terrain.
 	xOut.m_afPosQuantScale[3] = Flux_TerrainUVBoxMax(xDims);
-	xOut.m_fUVScale = s_fTerrainUVScale;
+	xOut.m_fUVScale = fUVScale;
 	xOut.m_afTerrainDims[0] = xDims.m_fChunkWorldSize;
 	xOut.m_afTerrainDims[1] = xDims.WorldSizeX();
 	xOut.m_afTerrainDims[2] = xDims.WorldSizeZ();
 	xOut.m_afTerrainDims[3] = 0.0f;
+}
+
+// Test and tooling callers that do not own the renderer instance use the
+// shipping default look value; frame rendering passes the instance-owned value.
+static void Flux_FillTerrainConstants(const Zenith_TerrainDimensions& xDims, TerrainConstants& xOut)
+{
+	Flux_FillTerrainConstants(xDims, 0.07f, xOut);
 }
 
 // The velocity and shadow TerrainConstants blocks are HAND-MAINTAINED COPIES in
@@ -242,15 +243,12 @@ u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals,
 //  - Force-LOW-from cascade: cascades at/above this index cast the always-resident LOW
 //    mesh instead of the camera-matched LOD (see Flux_TerrainShadowCasterLOD for why
 //    camera-matched is the default). 3 = only the far cascade; 4 = never.
-static float s_fTerrainShadowDepthBiasSlope   = 3.0f;
-static u_int s_uTerrainShadowForceLowFromCascade = 3u;
 // Terrain shadow casting, on/off at runtime. Every other shadow caster can be
 // A/B'd this way (grass has m_bGrassShadowsEnabled; the Render/Shadows tree
 // already carries booleans for contact shadows, PCSS and the cheap far tier),
 // and terrain was the odd one out: the only way to remove its shadow was to
 // disable the terrain itself, which removes the receiver too and so cannot
 // isolate what the casting is contributing.
-static bool  s_bTerrainCastsShadows = true;
 // Visibility culling is entirely GPU-side (Flux_TerrainCulling.slang reads the
 // frustum planes from the CB; there is no CPU visibility test left to bias or
 // bypass), so the old Visiblity Multiplier / Ignore Visibility Check knobs and
@@ -411,15 +409,15 @@ void Flux_TerrainImpl::Initialise()
 	// PreRenderUpdate.
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, s_fTerrainUVScale, 0., 10.);
+	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, m_fTerrainUVScale, 0., 10.);
 	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 13);
 	// Beside the shared shadow knobs in Flux_Shadows.cpp, since that is where a
 	// person tuning acne will be looking. uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER
 	// (== cascade count) is a legal setting meaning "every cascade camera-matched".
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Terrain Casts Shadows" }, s_bTerrainCastsShadows);
-	g_xEngine.DebugVariables().AddFloat ({ "Render", "Shadows", "Terrain Slope Bias" }, s_fTerrainShadowDepthBiasSlope, 0.f, 16.f);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Terrain LOW LOD From Cascade" }, s_uTerrainShadowForceLowFromCascade, 0u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
+	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Terrain Casts Shadows" }, m_bTerrainCastsShadows);
+	g_xEngine.DebugVariables().AddFloat ({ "Render", "Shadows", "Terrain Slope Bias" }, m_fTerrainShadowDepthBiasSlope, 0.f, 16.f);
+	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Terrain LOW LOD From Cascade" }, m_uTerrainShadowForceLowFromCascade, 0u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========
@@ -621,7 +619,7 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		if (xRec.m_pxState == nullptr || !xRec.m_pxState->m_bCullingResourcesInitialized)
 			continue;
 		TerrainConstants xConstants;
-		Flux_FillTerrainConstants(xRec.m_pxState->m_xDims, xConstants);
+		Flux_FillTerrainConstants(xRec.m_pxState->m_xDims, m_fTerrainUVScale, xConstants);
 		g_xEngine.FluxMemory().UploadBufferData(
 			xRec.m_pxState->m_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle,
 			&xConstants, sizeof(TerrainConstants));
@@ -663,8 +661,8 @@ void Flux_TerrainImpl::PreRenderUpdate(void* /*pUserData*/)
 		// Shadows off, or terrain casting toggled off, resolves to ZERO active
 		// cascades — which is what removes the cull work, not just the draw.
 		const u_int uActiveCascades = Flux_TerrainShadowActiveCascades(
-			Zenith_GraphicsOptions::Get().m_bShadowsEnabled, s_bTerrainCastsShadows, uViewCascades);
-		const u_int uForceLow = glm::min(s_uTerrainShadowForceLowFromCascade, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
+			Zenith_GraphicsOptions::Get().m_bShadowsEnabled, m_bTerrainCastsShadows, uViewCascades);
+		const u_int uForceLow = glm::min(m_uTerrainShadowForceLowFromCascade, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
 		Flux_BuildTerrainShadowCullData(axCascadeViewProj, uActiveCascades, uForceLow, xShadowCull);
 	}
 
@@ -939,7 +937,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 // work only. Backend-neutral: every call below is a Flux_CommandBuffer no-op on Null/D3D12.
 void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCascade)
 {
-	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled || !s_bTerrainCastsShadows)
+	if (!Zenith_GraphicsOptions::Get().m_bTerrainEnabled || !m_bTerrainCastsShadows)
 	{
 		return;
 	}
@@ -995,17 +993,17 @@ void Flux_TerrainImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCas
 
 float Flux_TerrainImpl::GetShadowDepthBiasSlope() const
 {
-	return s_fTerrainShadowDepthBiasSlope;
+	return m_fTerrainShadowDepthBiasSlope;
 }
 
 bool Flux_TerrainImpl::GetCastsShadows() const
 {
-	return s_bTerrainCastsShadows;
+	return m_bTerrainCastsShadows;
 }
 
 void Flux_TerrainImpl::SetCastsShadows(bool bCasts)
 {
-	s_bTerrainCastsShadows = bCasts;
+	m_bTerrainCastsShadows = bCasts;
 }
 
 u_int& Flux_TerrainImpl::GetDebugMode()

@@ -88,6 +88,11 @@ public:
 	 */
 	Flux_MeshInstance* GetMeshInstance(uint32_t uIndex) const;
 
+	// Renderer-neutral local bounds query for sibling components and editor
+	// panels.  Keeping Flux_MeshInstance behind this component prevents those
+	// clients from depending on the renderer's implementation headers.
+	bool GetFirstMeshLocalBounds(Zenith_Maths::Vector3& xMinOut, Zenith_Maths::Vector3& xMaxOut) const;
+
 	/**
 	 * Get material at index
 	 */
