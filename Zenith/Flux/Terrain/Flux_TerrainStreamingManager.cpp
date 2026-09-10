@@ -454,13 +454,13 @@ void Flux_TerrainStreamingManagerImpl::Initialize()
 	// can't take injected params). The *Impl objects are all allocated up-front
 	// in Zenith_Engine::Initialise, so storing the pointer here is safe even if
 	// FluxRenderer hasn't finished its own init yet.
-	m_pxFluxRenderer = &g_xEngine.FluxRenderer();
-	m_pxFrame        = &g_xEngine.Frame();
+	m_pxFluxRenderer = &Zenith_ActiveFluxRenderer();
+	m_pxFrame        = &Zenith_ActiveFrame();
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManagerImpl::Initialize()");
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Log Streaming" }, dbg_bLogTerrainStreaming);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "Terrain", "Log Streaming" }, dbg_bLogTerrainStreaming);
 #endif
 
 	m_bInitialized = true;

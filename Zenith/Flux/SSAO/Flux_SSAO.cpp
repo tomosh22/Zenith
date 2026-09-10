@@ -145,23 +145,23 @@ void Flux_SSAOImpl::Initialise()
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Radius" }, dbg_xGenerateConstants.m_fRadius, 0.01f, 2.f);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Bias" }, dbg_xGenerateConstants.m_fBias, 0.01f, 2.f);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Intensity" }, dbg_xGenerateConstants.m_fIntensity, 0.01f, 2.f);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Use Non-Separable Blur" }, dbg_bUseNonSeparableBlur);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Quarter Resolution" }, dbg_bQuarterResolution);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Use 16 Sample Kernel" }, dbg_bUse16SampleKernel);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Use Legacy Rotation Hash" }, dbg_bUseLegacyRotationHash);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "SSAO", "Radius" }, dbg_xGenerateConstants.m_fRadius, 0.01f, 2.f);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "SSAO", "Bias" }, dbg_xGenerateConstants.m_fBias, 0.01f, 2.f);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "SSAO", "Intensity" }, dbg_xGenerateConstants.m_fIntensity, 0.01f, 2.f);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Use Non-Separable Blur" }, dbg_bUseNonSeparableBlur);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Quarter Resolution" }, dbg_bQuarterResolution);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Use 16 Sample Kernel" }, dbg_bUse16SampleKernel);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "SSAO", "Quality", "Use Legacy Rotation Hash" }, dbg_bUseLegacyRotationHash);
 
-	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Blur", "Spatial Sigma" }, dbg_xBlurConstants.m_fSpatialSigma, 0.5f, 4.f);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Blur", "Depth Sigma" }, dbg_xBlurConstants.m_fDepthSigma, 0.005f, 0.1f);
-	g_xEngine.DebugVariables().AddFloat({ "Render", "SSAO", "Blur", "Normal Sigma" }, dbg_xBlurConstants.m_fNormalSigma, 0.1f, 1.f);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "SSAO", "Blur", "Kernel Radius" }, dbg_xBlurConstants.m_uKernelRadius, 1, 5);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "SSAO", "Blur", "Spatial Sigma" }, dbg_xBlurConstants.m_fSpatialSigma, 0.5f, 4.f);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "SSAO", "Blur", "Depth Sigma" }, dbg_xBlurConstants.m_fDepthSigma, 0.005f, 0.1f);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "SSAO", "Blur", "Normal Sigma" }, dbg_xBlurConstants.m_fNormalSigma, 0.1f, 1.f);
+	Zenith_ActiveDebugVariables().AddUInt32({ "Render", "SSAO", "Blur", "Kernel Radius" }, dbg_xBlurConstants.m_uKernelRadius, 1, 5);
 
 	// Transient-SRV previews: Output resolves through the committed selector, so
 	// it stays descriptor-safe during the one frame between a toggle and rebuild.
-	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "SSAO", "Textures", "Raw" },     &DebugGetRawOcclusionSRV);
-	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "SSAO", "Textures", "Output" },  &DebugGetOutputSRV);
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Render", "SSAO", "Textures", "Raw" },     &DebugGetRawOcclusionSRV);
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Render", "SSAO", "Textures", "Output" },  &DebugGetOutputSRV);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO initialised");

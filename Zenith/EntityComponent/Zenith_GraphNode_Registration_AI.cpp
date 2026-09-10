@@ -157,7 +157,7 @@ namespace
 			// name. First match wins; a scene with two navmeshes should name one
 			// through m_strNavMeshVar rather than rely on query order.
 			Zenith_NavMeshComponent* pxFound = nullptr;
-			g_xEngine.Scenes().QueryActiveScene<Zenith_NavMeshComponent>().ForEach(
+			Zenith_ActiveScenes().QueryActiveScene<Zenith_NavMeshComponent>().ForEach(
 				[&pxFound](Zenith_EntityID, Zenith_NavMeshComponent& xComponent)
 				{
 					if (pxFound == nullptr)
@@ -266,7 +266,7 @@ namespace
 			// Stop the LATCHED mover, not whatever the target var says now.
 			if (m_ulMoverPacked != 0)
 			{
-				Zenith_Entity xMover = g_xEngine.Scenes().ResolveEntity(Zenith_EntityID::FromPacked(m_ulMoverPacked));
+				Zenith_Entity xMover = Zenith_ActiveScenes().ResolveEntity(Zenith_EntityID::FromPacked(m_ulMoverPacked));
 				if (xMover.IsValid())
 				{
 					if (Zenith_AIAgentComponent* pxAgent = xMover.TryGetComponent<Zenith_AIAgentComponent>())

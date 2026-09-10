@@ -309,3 +309,19 @@ static_assert(std::is_trivially_destructible_v<Zenith_Engine>,
 	"run at static-destruction time.");
 
 extern Zenith_Engine g_xEngine;
+
+// Runtime service accessors are the narrow composition-root boundary for leaf
+// modules which need an engine-owned service.  Keeping the singleton reach in
+// Zenith_Engine.cpp prevents leaf implementations from taking a dependency on
+// the engine instance itself while retaining their concrete service dependency.
+Zenith_SceneSystem& Zenith_ActiveScenes();
+FrameContext& Zenith_ActiveFrame();
+Flux_MemoryManager& Zenith_ActiveFluxMemory();
+Flux_GraphicsImpl& Zenith_ActiveFluxGraphics();
+Flux_RendererImpl& Zenith_ActiveFluxRenderer();
+Flux_ParticleGPUImpl& Zenith_ActiveParticleGPU();
+Flux_ParticlesImpl& Zenith_ActiveParticles();
+Flux_TerrainStreamingManagerImpl& Zenith_ActiveTerrainStreaming();
+#ifdef ZENITH_TOOLS
+Zenith_DebugVariables& Zenith_ActiveDebugVariables();
+#endif

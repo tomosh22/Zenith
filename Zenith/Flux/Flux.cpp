@@ -522,15 +522,15 @@ void Flux_RendererImpl::LateInitialise()
 	// SetupTransients, which re-runs on resize) and resolve the current SRV
 	// via callback every ImGui draw — rebuilds that invalidate the underlying
 	// TransientResource don't leave a dangling pointer in the tree.
-	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTDiffuse(); });
-	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTNormalsAO(); });
-	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "MRT Material" },      [](){ return g_xEngine.FluxGraphics().GetDebugSRV_MRTMaterial(); });
-	g_xEngine.DebugVariables().AddTextureCallback({ "Render", "Debug", "Depth" },             [](){ return g_xEngine.FluxGraphics().GetDebugSRV_Depth(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Render", "Debug", "MRT Diffuse" },       [](){ return Zenith_ActiveFluxGraphics().GetDebugSRV_MRTDiffuse(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Render", "Debug", "MRT NormalsAO" },     [](){ return Zenith_ActiveFluxGraphics().GetDebugSRV_MRTNormalsAO(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Render", "Debug", "MRT Material" },      [](){ return Zenith_ActiveFluxGraphics().GetDebugSRV_MRTMaterial(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Render", "Debug", "Depth" },             [](){ return Zenith_ActiveFluxGraphics().GetDebugSRV_Depth(); });
 	// HDR textures follow Flux_HDR.cpp's established "Flux/HDR/..." convention.
-	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, [](){ return g_xEngine.FluxGraphics().GetDebugSRV_HDRScene(); });
-	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom0(); });
-	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom1(); });
-	g_xEngine.DebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom2(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "HDRScene"  }, [](){ return Zenith_ActiveFluxGraphics().GetDebugSRV_HDRScene(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip0" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom0(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip1" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom1(); });
+	Zenith_ActiveDebugVariables().AddTextureCallback({ "Flux",   "HDR",   "Textures", "BloomMip2" }, [](){ return g_xEngine.HDR().GetDebugSRV_Bloom2(); });
 #endif
 
 	// Initialise any game render features registered BEFORE Flux came up (their

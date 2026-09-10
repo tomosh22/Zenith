@@ -409,15 +409,15 @@ void Flux_TerrainImpl::Initialise()
 	// PreRenderUpdate.
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, m_fTerrainUVScale, 0., 10.);
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 13);
+	Zenith_ActiveDebugVariables().AddFloat({ "Render", "Terrain", "UV Scale" }, m_fTerrainUVScale, 0., 10.);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
+	Zenith_ActiveDebugVariables().AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 13);
 	// Beside the shared shadow knobs in Flux_Shadows.cpp, since that is where a
 	// person tuning acne will be looking. uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER
 	// (== cascade count) is a legal setting meaning "every cascade camera-matched".
-	g_xEngine.DebugVariables().AddBoolean({ "Render", "Shadows", "Terrain Casts Shadows" }, m_bTerrainCastsShadows);
-	g_xEngine.DebugVariables().AddFloat ({ "Render", "Shadows", "Terrain Slope Bias" }, m_fTerrainShadowDepthBiasSlope, 0.f, 16.f);
-	g_xEngine.DebugVariables().AddUInt32({ "Render", "Shadows", "Terrain LOW LOD From Cascade" }, m_uTerrainShadowForceLowFromCascade, 0u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
+	Zenith_ActiveDebugVariables().AddBoolean({ "Render", "Shadows", "Terrain Casts Shadows" }, m_bTerrainCastsShadows);
+	Zenith_ActiveDebugVariables().AddFloat ({ "Render", "Shadows", "Terrain Slope Bias" }, m_fTerrainShadowDepthBiasSlope, 0.f, 16.f);
+	Zenith_ActiveDebugVariables().AddUInt32({ "Render", "Shadows", "Terrain LOW LOD From Cascade" }, m_uTerrainShadowForceLowFromCascade, 0u, uFLUX_TERRAIN_SHADOW_FORCE_LOW_NEVER);
 #endif
 
 	// ========== Initialize Terrain Streaming Manager ==========

@@ -83,7 +83,7 @@ void Zenith_ParticleEmitterComponent::ReleaseGPUEmitter()
 {
 	if (m_uGPUEmitterID != UINT32_MAX)
 	{
-		g_xEngine.ParticleGPU().UnregisterEmitter(m_uGPUEmitterID);
+		Zenith_ActiveParticleGPU().UnregisterEmitter(m_uGPUEmitterID);
 		m_uGPUEmitterID = UINT32_MAX;
 	}
 }
@@ -118,7 +118,7 @@ void Zenith_ParticleEmitterComponent::SetConfig(Flux_ParticleEmitterConfig* pxCo
 
 	if (pxConfig->m_bUseGPUCompute)
 	{
-		m_uGPUEmitterID = g_xEngine.ParticleGPU().RegisterEmitter(pxConfig, pxConfig->m_uMaxParticles);
+		m_uGPUEmitterID = Zenith_ActiveParticleGPU().RegisterEmitter(pxConfig, pxConfig->m_uMaxParticles);
 		if (m_uGPUEmitterID != UINT32_MAX)
 		{
 			// GPU emitters keep NO CPU particle array — the pool slice is their storage.
@@ -162,7 +162,7 @@ void Zenith_ParticleEmitterComponent::Emit(uint32_t uCount)
 		// The pool builds the particle records itself (it owns the RNG that has to
 		// agree with the compute step's slot addressing); this only says how many,
 		// from where, in which direction.
-		g_xEngine.ParticleGPU().QueueSpawn(m_uGPUEmitterID, uCount, xPos, xDir);
+		Zenith_ActiveParticleGPU().QueueSpawn(m_uGPUEmitterID, uCount, xPos, xDir);
 		return;
 	}
 
@@ -500,7 +500,7 @@ void Zenith_ParticleEmitterComponent::RenderPropertiesPanel()
 			// draw command and is never read back), so report what the CPU does know:
 			// how much of this emitter's ring it has spawned into.
 			ImGui::Text("Pool Slots Used: %u (GPU-simulated; alive count is not read back)",
-				g_xEngine.ParticleGPU().GetEmitterParticleCount(m_uGPUEmitterID));
+				Zenith_ActiveParticleGPU().GetEmitterParticleCount(m_uGPUEmitterID));
 		}
 		else
 		{
@@ -554,7 +554,7 @@ void Zenith_ParticleEmitterComponent::RenderPropertiesPanel()
 // ---------------------------------------------------------------------------
 static void Zenith_GatherParticleEmittersImpl(float fDt, Zenith_Vector<Zenith_ParticleEmitterRenderData>& xOut)
 {
-	g_xEngine.Scenes().QueryAllScenes<Zenith_ParticleEmitterComponent>()
+	Zenith_ActiveScenes().QueryAllScenes<Zenith_ParticleEmitterComponent>()
 		.ForEach([&xOut, fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
 	{
 		// Update ALL emitters (handles spawning for both CPU and GPU).

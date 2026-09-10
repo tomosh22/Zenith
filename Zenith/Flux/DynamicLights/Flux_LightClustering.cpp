@@ -81,7 +81,7 @@ void Flux_LightClusteringImpl::Initialise()
 	BuildPipelines();
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	g_xEngine.DebugVariables().AddBoolean(
+	Zenith_ActiveDebugVariables().AddBoolean(
 		{ "Render", "Dynamic Lights", "Limit Cluster Lists to 16" },
 		dbg_bLimitClusterLightsTo16);
 #endif
@@ -192,4 +192,3 @@ Flux_ShaderResourceView_Buffer& Flux_LightClusteringImpl::GetClusterLightIndices
 {
 	return m_xClusterLightIndices.GetSRV();
 }
-

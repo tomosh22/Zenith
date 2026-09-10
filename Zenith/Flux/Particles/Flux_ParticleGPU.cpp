@@ -116,7 +116,7 @@ void Flux_ParticleGPUImpl::Initialise()
 	m_uStagingBufferSize = s_uMaxGPUParticles;
 	std::memset(m_pxStagingBuffer, 0, sizeof(Flux_Particle) * s_uMaxGPUParticles);
 
-	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = Zenith_ActiveFluxMemory();
 
 	// Both pool halves are created FROM the zeroed block, not from nullptr. A never-
 	// spawned slot must read back age 0 / lifetime 0 so the compute step classifies it
@@ -162,7 +162,7 @@ void Flux_ParticleGPUImpl::Shutdown()
 	m_xComputeShader.Reset();
 	m_xComputeRootSig = Flux_RootSig();
 
-	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = Zenith_ActiveFluxMemory();
 	xVulkanMemory.DestroyReadWriteBuffer(m_xParticleBufferA);
 	xVulkanMemory.DestroyReadWriteBuffer(m_xParticleBufferB);
 	xVulkanMemory.DestroyReadWriteBuffer(m_xInstanceBuffer);
@@ -214,7 +214,7 @@ void Flux_ParticleGPUImpl::SeedIndirectCommands()
 		Flux_PackResetIndirectCommand(&auArgs[u * uFLUX_PARTICLE_INDIRECT_WORDS], uFLUX_PARTICLE_QUAD_INDEX_COUNT);
 	}
 
-	g_xEngine.FluxMemory().UploadBufferData(
+	Zenith_ActiveFluxMemory().UploadBufferData(
 		m_xIndirectArgsBuffer.GetBuffer().m_xVRAMHandle,
 		auArgs,
 		sizeof(auArgs)
@@ -234,7 +234,7 @@ void Flux_ParticleGPUImpl::ZeroEmitterRange(const EmitterData& xEmitter)
 
 	// BOTH halves of the ping-pong: whichever is the input on the next dispatch has
 	// to read dead slots, and the other becomes the input the frame after.
-	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = Zenith_ActiveFluxMemory();
 	xVulkanMemory.UploadBufferDataAtOffset(m_xParticleBufferA.GetBuffer().m_xVRAMHandle, m_pxStagingBuffer, uBytes, uDest);
 	xVulkanMemory.UploadBufferDataAtOffset(m_xParticleBufferB.GetBuffer().m_xVRAMHandle, m_pxStagingBuffer, uBytes, uDest);
 }
@@ -410,7 +410,7 @@ void Flux_ParticleGPUImpl::ProcessPendingSpawns()
 		}
 
 		// Up to two contiguous runs — the ring can wrap mid-burst.
-		Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+		Flux_MemoryManager& xVulkanMemory = Zenith_ActiveFluxMemory();
 		xVulkanMemory.UploadBufferDataAtOffset(
 			xInputBuffer.GetBuffer().m_xVRAMHandle,
 			m_pxStagingBuffer,
@@ -539,7 +539,7 @@ uint32_t Flux_ParticleGPUImpl::ReadbackPartitionInstanceCount(u_int uPartition)
 	// Explicit slow path — see the header. Reads the WHOLE block in one download
 	// (it is 40 bytes) and picks the partition's instanceCount out of it.
 	uint32_t auArgs[uFLUX_PARTICLE_PARTITION_COUNT * uFLUX_PARTICLE_INDIRECT_WORDS] = {};
-	g_xEngine.FluxMemory().DownloadBufferData(
+	Zenith_ActiveFluxMemory().DownloadBufferData(
 		m_xIndirectArgsBuffer.GetBuffer().m_xVRAMHandle, auArgs, sizeof(auArgs));
 
 	return auArgs[uPartition * uFLUX_PARTICLE_INDIRECT_WORDS + 1u];   // word 1 = instanceCount

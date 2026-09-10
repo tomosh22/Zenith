@@ -653,10 +653,10 @@ void Zenith_AnimatorComponent::RenderPropertiesPanel()
 	// (An animation-preview panel does NOT contend here — Zenith_AnimationPreviewSession
 	// owns a private controller per D30 — but any future second inspector would.)
 	if (!g_xEditorQuery.m_pfnIsEditorPlaying() && xController.IsInitialized() &&
-		xController.TryBeginFrameDrive(this, g_xEngine.Frame().GetFrameIndex()))
+		xController.TryBeginFrameDrive(this, Zenith_ActiveFrame().GetFrameIndex()))
 	{
 		UpdateWorldMatrix();
-		xController.Update(g_xEngine.Frame().GetDt());
+		xController.Update(Zenith_ActiveFrame().GetDt());
 		SyncModelInstanceAnimation();
 	}
 

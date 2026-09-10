@@ -76,7 +76,7 @@ void Flux_ParticlesImpl::BuildPipelines()
 	// Rebuild the GPU compute pipeline alongside the rasterisation ones so a
 	// shader edit to either Particles.slang or ParticleUpdate.slang triggers a
 	// single coordinated rebuild.
-	g_xEngine.ParticleGPU().BuildPipelines();
+	Zenith_ActiveParticleGPU().BuildPipelines();
 }
 
 void Flux_ParticlesImpl::Initialise()
@@ -86,7 +86,7 @@ void Flux_ParticlesImpl::Initialise()
 	// The GPU compute path's VRAM. Its pipeline was already built by the
 	// BuildPipelines above (one feature owns both programs, so one rebuild covers
 	// both on hot-reload) — Initialise here allocates resources only.
-	g_xEngine.ParticleGPU().Initialise();
+	Zenith_ActiveParticleGPU().Initialise();
 
 	// Allocate instance buffers for both blend modes
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
@@ -111,7 +111,7 @@ void Flux_ParticlesImpl::Reset()
 {
 	m_uAlphaInstanceCount = 0;
 	m_uAdditiveInstanceCount = 0;
-	g_xEngine.ParticleGPU().Reset();
+	Zenith_ActiveParticleGPU().Reset();
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_ParticlesImpl::Reset()");
 }
 
@@ -122,7 +122,7 @@ void Flux_ParticlesImpl::ReleaseAssetReferences()
 
 void Flux_ParticlesImpl::Shutdown()
 {
-	g_xEngine.ParticleGPU().Shutdown();
+	Zenith_ActiveParticleGPU().Shutdown();
 	auto& xVulkanMemory = g_xEngine.FluxMemory();
 	xVulkanMemory.DestroyDynamicVertexBuffer(m_xInstanceBufferAlpha);
 	xVulkanMemory.DestroyDynamicVertexBuffer(m_xInstanceBufferAdditive);
@@ -216,7 +216,7 @@ void Flux_ParticlesImpl::Render(void*)
 	// here spawns on the SAME frame. (Hanging this off the compute pass's own
 	// Prepare would work too — every Prepare runs before any record — but splitting
 	// it across two callbacks is how it silently acquired a frame of latency before.)
-	g_xEngine.ParticleGPU().PreExecuteCompute();
+	Zenith_ActiveParticleGPU().PreExecuteCompute();
 }
 
 static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
@@ -242,7 +242,7 @@ static void ExecuteParticles(Flux_CommandBuffer* pxCommandList, void* pUserData)
 	// use (mirrors ExecuteSSAOGenerate / ExecuteQuads).
 	Flux_ParticlesImpl& xParticles = g_xEngine.Particles();
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
-	Flux_ParticleGPUImpl& xParticleGPU = g_xEngine.ParticleGPU();
+	Flux_ParticleGPUImpl& xParticleGPU = Zenith_ActiveParticleGPU();
 
 	// The two paths are independent — a scene can run either, both or neither — so
 	// each is gated on its OWN option. The GPU half reads the frame latch rather
@@ -339,7 +339,7 @@ static void ExecuteParticleCompute(Flux_CommandBuffer* pxCmdList, void*)
 {
 	// Non-capturing graph callback: ParticleGPU is reached via g_xEngine at
 	// point of use (mirrors ExecuteParticles).
-	g_xEngine.ParticleGPU().DispatchCompute(pxCmdList);
+	Zenith_ActiveParticleGPU().DispatchCompute(pxCmdList);
 }
 
 // TODO(taa-translucent-velocity): particles write NO TAA motion vectors, deliberately.
@@ -450,7 +450,7 @@ void Flux_ParticlesImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 	// SetupViewPasses, still after these, so the per-resource write-before-read
 	// declaration order is what it always was.
 	Flux_GraphicsImpl&    xGraphics    = g_xEngine.FluxGraphics();
-	Flux_ParticleGPUImpl& xParticleGPU = g_xEngine.ParticleGPU();
+	Flux_ParticleGPUImpl& xParticleGPU = Zenith_ActiveParticleGPU();
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.m_xParticleBufferA.GetBuffer(),      RESOURCE_ACCESS_READWRITE_UAV);
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.m_xParticleBufferB.GetBuffer(),      RESOURCE_ACCESS_READWRITE_UAV);
 	xGraph.WriteBuffer(xComputePass, xParticleGPU.GetInstanceBuffer().GetBuffer(),     RESOURCE_ACCESS_WRITE_UAV);

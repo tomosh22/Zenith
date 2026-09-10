@@ -483,7 +483,7 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void* pUserData);
 
 void Flux_PrimitivesImpl::Initialise()
 {
-	Flux_MemoryManager& xVulkanMemory = g_xEngine.FluxMemory();
+	Flux_MemoryManager& xVulkanMemory = Zenith_ActiveFluxMemory();
 
 	// Generate procedural meshes
 	Zenith_Vector<PrimitiveVertex> xVertices;
