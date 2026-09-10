@@ -801,8 +801,7 @@ void Zenith_EditorPanel_Animation::RenderBanners()
 		ImGui::SameLine();
 		if (ImGui::Button("Save##AnimCloseSave"))
 		{
-			m_xDocument.Save();
-			m_bCloseRefusedDirty = false;
+			Action_Save();
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Discard##AnimCloseDiscard"))

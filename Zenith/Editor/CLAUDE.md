@@ -1497,13 +1497,13 @@ asserts at boot via `GrassTypeActionChecked`. `GrassTypesSave` writes
 `game:Vegetation/GrassTypes.zdata` through `Zenith_GrassTypeTableAsset` and then
 applies, so a file that reached disk but never took effect cannot go unnoticed.
 
-### The split dispatcher: twenty-one contiguous ranges
+### The split dispatcher: twenty-six contiguous ranges
 
 `ExecuteAction` is a **router, not a switch**. Before its (now small) main switch
-it forwards **twenty-one CONTIGUOUS enum ranges** to twenty-one sub-executors,
+it forwards **twenty-six CONTIGUOUS enum ranges** to twenty-six sub-executors,
 which is what keeps the dispatcher inside the complexity gate. The table below is
-the **twelve non-animation** ranges, in router order; the nine animation ranges
-follow them and are described under "NINE ANIMATION ranges" below:
+the **twelve non-animation** ranges, in router order; the fourteen animation ranges
+follow them:
 
 | Range | Sub-executor |
 |---|---|
@@ -1520,7 +1520,7 @@ follow them and are described under "NINE ANIMATION ranges" below:
 | `SET_TERRAIN_MATERIAL` .. `SET_TERRAIN_SPLATMAP_PATH` | `ExecuteTerrainMaterialAction` |
 | `CREATE_PREFAB_FROM_SELECTED` .. `INSTANTIATE_PREFAB` | `ExecutePrefabAction` |
 
-...and the nine animation ranges that follow them, in router order:
+...and the fourteen animation ranges that follow them, in router order:
 
 | Range | Sub-executor |
 |---|---|
@@ -1533,58 +1533,54 @@ follow them and are described under "NINE ANIMATION ranges" below:
 | `ANIM_CURVE_SET_VIEW` .. `ANIM_CURVE_EXPECT_KEY_TANGENT` | `ExecuteAnimCurveAction` |
 | `ANIM_TANGENT_SET_KEY_MODE` .. `ANIM_TANGENT_EXPECT_KEY_MODE` | `ExecuteAnimTangentAction` |
 | `ANIM_IK_BAKE_TO_TARGET` .. `ANIM_IK_BAKE_TO_TARGET` | `ExecuteAnimIkAction` |
+| `ANIM_EVENT_ADD` .. `ANIM_EVENT_SET_EMIT_ON_SCRUB` | `ExecuteAnimEventAction` |
+| `ANIM_CLIP_SAVE` .. `ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE` | `ExecuteAnimClipAction` |
+| `ANIM_POSE_CONTROL_SET_ANGLE_SNAP` .. `ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT` | `ExecuteAnimPoseControlAction` |
+| `ANIM_SM_EDIT_SELECT_STATE` .. `ANIM_SM_EDIT_REMOVE_CLIP_PATH` | `ExecuteAnimSmEditAction` |
+| `ANIM_SM_PREVIEW_SET_ENABLED` .. `ANIM_SM_PREVIEW_EXPECT_STATE` | `ExecuteAnimSmPreviewAction` |
 
-The last row is **one member wide, and is still a range**, which is deliberate:
-the router's shape does not change when a second IK verb is appended, where a
-`case` in the main switch would have to be promoted to a range and would move the
-boundary a `static_assert` and two units pin.
+**Ranges are COMPARED, never numbered.** Each router row compares against its
+first and last enumerator. Every capability is an APPENDED contiguous block;
+do not widen a previous capability's pinned range. Each block has a width
+`static_assert`, an `EnumBlockIsContiguous` unit checking every member's
+position and BOTH neighbours, payload-packing units, and dispatcher execution
+tests with direct read-back. Reordering within a fixed width must fail the unit.
 
-**Ranges are COMPARED, never numbered.** Each row is a pair of `>=` / `<=` tests
-against its block's first and last member, so:
+**A ONE-MEMBER BLOCK IS PINNED FROM THE FAR SIDE.** IK remains one member:
+`ANIM_EVENT_ADD - ANIM_IK_BAKE_TO_TARGET == 1` pins its width. Its unit also
+checks adjacency to `ANIM_TANGENT_EXPECT_KEY_MODE`. A self-subtraction would
+prove nothing. `SET_NAVMESH_ASSET` immediately follows ALL animation blocks;
+`AnimSmPreviewEnumBlockIsContiguous` now pins that final boundary. When adding
+a new block, move that assertion to the new final block and preserve the old
+block's adjacency assertion against the new neighbour.
 
-- adding an action type at the **end of a block** is free;
-- adding one **between two members of another block** silently routes it to that
-  block's executor, where it hits the `default: Zenith_Assert` at boot;
-- reordering members **inside** a block is invisible to the router but breaks the
-  payload contract every step's `AddStep_*` packs into.
+The event block follows IK. Event steps address the CURRENT sorted event index,
+resolved to a stable ID when executed, and use normalized time (key retime steps
+use seconds). Selection mode uses `Zenith_AnimSelectMode`; payload is XYZW.
+The scrub toggle accepts repeated assignments but requires an open preview.
 
-So every block carries a "must stay CONTIGUOUS" comment naming its first and last
-member. **Every block added since is pinned twice** — a `static_assert` on its
-WIDTH in `Zenith_EditorAutomation.h`, and a unit test on each member's POSITION
-plus both neighbouring boundaries, so a reorder that preserves the width fails
-naming the member that moved instead of at boot inside a neighbour's `default:`
-assert — ten of them now: `Automation, GrassTypesEnumBlockIsContiguous`,
-`… AnimEnumBlockIsContiguous`, `… AnimPoseEnumBlockIsContiguous`,
-`… AnimSmEnumBlockIsContiguous`, `… AnimMaskEnumBlockIsContiguous`,
-`… AnimLayerEnumBlockIsContiguous`, `… AnimBlendEnumBlockIsContiguous`,
-`… AnimCurveEnumBlockIsContiguous`, `… AnimTangentEnumBlockIsContiguous` and
-`… AnimIkEnumBlockIsContiguous`.
+Clip persistence uses `AddStep_AnimSave`, `AddStep_AnimSaveAs` and
+`AddStep_AnimPromoteToAuthoredOverride`. Save and SaveAs call the panel's
+`Action_Save/Action_SaveAs`; promotion calls `PromoteAndOpenAuthoredOverride`.
+The UI save action uses the same wrapper. Save refuses external conflicts and
+keeps dirty edits; SaveAs adopts the new path. Promotion copies into Authored.
+Tests set the document's authored-root override to a temp directory before
+promotion, and use only scratch paths for saves. Close still discards edits:
+recipes must explicitly save first. Disk round trips evict unused registry
+assets before reopening so cached data cannot masquerade as persisted bytes.
 
-**A ONE-MEMBER BLOCK IS PINNED FROM THE FAR SIDE**, and `ANIM_IK` is the first
-one. Its first and last member are the same value, so the usual
-`last - first == N` assert would compare a value against itself and pin nothing;
-what its `static_assert` states instead is the distance to the NEXT block
-(`SET_NAVMESH_ASSET - ANIM_IK_BAKE_TO_TARGET == 1`), which fails the build if a
-verb is inserted in front of the block rather than appended to it — the exact
-mistake the whole apparatus exists to catch.
+P2 additions use APPENDED blocks to preserve the existing pose and SM widths:
+`ANIM_POSE_CONTROL_*` owns angle snap, clear bone selection and root translation
+keying; `ANIM_SM_EDIT_*` owns selection, node position and clip-path removal;
+`ANIM_SM_PREVIEW_*` owns preview enable/tick/parameters and the current-state
+expectation. Snap and clears accept an already-satisfied request. The two formerly
+test-only pose verbs now have automation paths; root translation keying requires
+a selected root and writes rotation plus translation as one undoable edit.
 
-**NINE ANIMATION ranges sit at the end of the enum, and they are nine rather
-than one for a mechanical reason.** `ANIM_*` (WU-3.4, the dope sheet),
-`ANIM_POSE_*` (WU-4.3, the bone manipulator), `ANIM_SM_*` (WU-6.5, the
-animator-controller state machine), `ANIM_MASK_*` (WU-7.1, the bone-mask
-sub-panel), `ANIM_LAYER_*` (WU-7.2, the layer strip), `ANIM_BLEND_*` (WU-7.3, the
-blend-tree strip), `ANIM_CURVE_*` (WU-8.2, the curve view), `ANIM_TANGENT_*`
-(B3, the per-end tangent MODE) and `ANIM_IK_*` (E1, the IK target widget) each
-route to their own sub-executor, and each new family was APPENDED as its own
-block rather than added to the one before it — because appending into an existing
-block moves its LAST member, which is the upper bound both the router's range
-test and the header's `static_assert` compare against and which that block's unit
-pins by position. `SET_NAVMESH_ASSET` follows all nine and must stay outside every
-range; `AnimIkEnumBlockIsContiguous` is where that is now pinned — the assertion
-has been re-pointed eight times (off `ANIM`'s unit, then `ANIM_POSE`'s,
-`ANIM_SM`'s, `ANIM_MASK`'s, `ANIM_LAYER`'s, `ANIM_BLEND`'s, `ANIM_CURVE`'s and
-`ANIM_TANGENT`'s: WU-4.3, WU-6.5, WU-7.1, WU-7.2, WU-7.3, WU-8.2, B3, E1) rather
-than deleted, which is the mechanism working.
+Execution coverage is in `Zenith_EditorAutomation_Animation.Tests.inl`, included
+after the existing probe writers by `Zenith_EditorAutomation.Tests.inl`. Its
+success helper also captures unexpected checked-wrapper assertions, so a silent
+refusal cannot pass merely because an unrelated state read-back looks right.
 
 ## Selection System
 

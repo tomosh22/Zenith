@@ -1425,6 +1425,215 @@ void Zenith_EditorAutomation::AddStep_AnimBakeIK(float fTargetModelX, float fTar
 	m_axActions.PushBack(xAction);
 }
 
+void Zenith_EditorAutomation::AddStep_AnimEventAdd(float fTime, const char* szName)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_EVENT_ADD;
+	xAction.m_afArgs[0] = fTime;
+	xAction.m_szArg1 = szName;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimEventSelect(int iEventIndex, int iMode)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_EVENT_SELECT;
+	xAction.m_aiArgs[0] = iEventIndex;
+	xAction.m_aiArgs[2] = iMode;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimEventMoveSelected(float fDeltaNormalized, bool bSnap)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_EVENT_MOVE_SELECTED;
+	xAction.m_afArgs[0] = fDeltaNormalized;
+	xAction.m_bArg = bSnap;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimEventRename(int iEventIndex, const char* szName)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_EVENT_RENAME;
+	xAction.m_aiArgs[0] = iEventIndex;
+	xAction.m_szArg1 = szName;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimEventSetPayload(int iEventIndex, float fX, float fY, float fZ, float fW)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_EVENT_SET_PAYLOAD;
+	xAction.m_aiArgs[0] = iEventIndex;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	xAction.m_afArgs[2] = fZ;
+	xAction.m_afArgs[3] = fW;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimEventSetEmitEventsOnScrub(bool bEmit)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB;
+	xAction.m_bArg = bEmit;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSave()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_CLIP_SAVE;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSaveAs(const char* szPath)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_CLIP_SAVE_AS;
+	xAction.m_szArg1 = szPath;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimPromoteToAuthoredOverride(const char* szSourcePath)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE;
+	xAction.m_szArg1 = szSourcePath;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSetPoseAngleSnap(bool bEnabled)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP;
+	xAction.m_bArg = bEnabled;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimClearBoneSelection()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_POSE_CONTROL_CLEAR_BONE_SELECTION;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSetKeyTranslationForRoot()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSelectState(const char* szState)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_EDIT_SELECT_STATE;
+	xAction.m_szArg1 = szState;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSelectTransition(const char* szFrom, int iIndex)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_EDIT_SELECT_TRANSITION;
+	xAction.m_szArg1 = szFrom;
+	xAction.m_aiArgs[0] = iIndex;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSelectAnyState()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_EDIT_SELECT_ANY_STATE;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmClearSelection()
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_EDIT_CLEAR_SELECTION;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetStatePosition(const char* szState, float fX, float fY)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_EDIT_SET_STATE_POSITION;
+	xAction.m_szArg1 = szState;
+	xAction.m_afArgs[0] = fX;
+	xAction.m_afArgs[1] = fY;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmRemoveClipPath(const char* szPath)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH;
+	xAction.m_szArg1 = szPath;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetPreviewEnabled(bool bEnabled)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_SET_ENABLED;
+	xAction.m_bArg = bEnabled;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmTickPreview(float fDtSeconds)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_TICK;
+	xAction.m_afArgs[0] = fDtSeconds;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetPreviewFloat(const char* szName, float fValue)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_SET_FLOAT;
+	xAction.m_szArg1 = szName;
+	xAction.m_afArgs[0] = fValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetPreviewInt(const char* szName, int iValue)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_SET_INT;
+	xAction.m_szArg1 = szName;
+	xAction.m_aiArgs[0] = iValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetPreviewBool(const char* szName, bool bValue)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_SET_BOOL;
+	xAction.m_szArg1 = szName;
+	xAction.m_bArg = bValue;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmSetPreviewTrigger(const char* szName)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_SET_TRIGGER;
+	xAction.m_szArg1 = szName;
+	m_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AnimSmExpectPreviewState(const char* szState)
+{
+	Zenith_EditorAction xAction;
+	xAction.m_eType = ActionType::ANIM_SM_PREVIEW_EXPECT_STATE;
+	xAction.m_szArg1 = szState;
+	m_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_AnimSetAutoKey(bool bEnabled)
 {
 	Zenith_EditorAction xAction = {};
@@ -4211,6 +4420,176 @@ namespace
 	}
 }
 
+static void ExecuteAnimEventAction(const Zenith_EditorAction& xAction)
+{
+	auto& xPanel = Zenith_EditorPanel_Animation::Instance();
+	auto check = [&](bool bSuccess)
+	{
+		AnimActionChecked(bSuccess, "AnimEvent", xAction.m_szArg1.c_str());
+	};
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_EVENT_ADD:
+		check(xPanel.Action_AddEvent(xAction.m_afArgs[0], xAction.m_szArg1));
+		break;
+	case Zenith_EditorActionType::ANIM_EVENT_SELECT:
+		check(xPanel.Action_SelectEvent(xPanel.Document().GetEventIdAtIndex(xAction.m_aiArgs[0]), static_cast<Zenith_AnimSelectMode>(xAction.m_aiArgs[2])));
+		break;
+	case Zenith_EditorActionType::ANIM_EVENT_MOVE_SELECTED:
+		check(xPanel.Action_MoveSelectedEvents(xAction.m_afArgs[0], xAction.m_bArg));
+		break;
+	case Zenith_EditorActionType::ANIM_EVENT_RENAME:
+		check(xPanel.Action_RenameEvent(xPanel.Document().GetEventIdAtIndex(xAction.m_aiArgs[0]), xAction.m_szArg1));
+		break;
+	case Zenith_EditorActionType::ANIM_EVENT_SET_PAYLOAD:
+		check(xPanel.Action_SetEventPayload(xPanel.Document().GetEventIdAtIndex(xAction.m_aiArgs[0]), Zenith_Maths::Vector4(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3])));
+		break;
+	case Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB:
+		xPanel.Action_SetEmitEventsOnScrub(xAction.m_bArg);
+		check(xPanel.Session().IsOpen() && xPanel.GetEmitEventsOnScrub() == xAction.m_bArg);
+		break;
+	default:
+		Zenith_Assert(false, "Non-AnimEvent action routed to ExecuteAnimEventAction");
+		break;
+	}
+}
+
+static void ExecuteAnimClipAction(const Zenith_EditorAction& xAction)
+{
+	auto& xPanel = Zenith_EditorPanel_Animation::Instance();
+	auto check = [&](bool bSuccess)
+	{
+		AnimActionChecked(bSuccess, "AnimClip", xAction.m_szArg1.c_str());
+	};
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_CLIP_SAVE:
+		check(xPanel.Action_Save());
+		break;
+	case Zenith_EditorActionType::ANIM_CLIP_SAVE_AS:
+		check(xPanel.Action_SaveAs(xAction.m_szArg1));
+		break;
+	case Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE:
+		check(xPanel.PromoteAndOpenAuthoredOverride(xAction.m_szArg1));
+		break;
+	default:
+		Zenith_Assert(false, "Non-AnimClip action routed to ExecuteAnimClipAction");
+		break;
+	}
+}
+
+static void ExecuteAnimPoseControlAction(const Zenith_EditorAction& xAction)
+{
+	auto& xPanel = Zenith_EditorPanel_Animation::Instance();
+	auto check = [&](bool bSuccess)
+	{
+		AnimActionChecked(bSuccess, "AnimPoseControl", xAction.m_szArg1.c_str());
+	};
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP:
+		xPanel.Action_SetPoseAngleSnap(xAction.m_bArg);
+		check(xPanel.Action_GetPoseAngleSnap() == xAction.m_bArg);
+		break;
+	case Zenith_EditorActionType::ANIM_POSE_CONTROL_CLEAR_BONE_SELECTION:
+		xPanel.Action_ClearBoneSelection();
+		check(!xPanel.Session().HasBoneSelection());
+		break;
+	case Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT:
+		check(xPanel.Action_SetKeyTranslationForRoot());
+		break;
+	default:
+		Zenith_Assert(false, "Non-AnimPoseControl action routed to ExecuteAnimPoseControlAction");
+		break;
+	}
+}
+
+static void ExecuteAnimSmEditAction(const Zenith_EditorAction& xAction)
+{
+	auto& xPanel = Zenith_EditorPanel_AnimStateMachine::Instance();
+	auto check = [&](bool bSuccess)
+	{
+		AnimSmActionChecked(bSuccess, "AnimSmEdit", xAction.m_szArg1.c_str());
+	};
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE:
+		check(xPanel.Action_SelectState(xAction.m_szArg1));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_TRANSITION:
+		check(xPanel.Action_SelectTransition(xAction.m_szArg1, xAction.m_aiArgs[0]));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_ANY_STATE:
+		check(xPanel.Action_SelectAnyState());
+		break;
+	case Zenith_EditorActionType::ANIM_SM_EDIT_CLEAR_SELECTION:
+	{
+		xPanel.Action_ClearSelection();
+		std::string strFrom;
+		u_int uIndex = 0;
+		check(xPanel.GetSelectedStateName().empty() && !xPanel.IsAnyStateSelected() && !xPanel.GetSelectedTransition(strFrom, uIndex));
+		break;
+	}
+	case Zenith_EditorActionType::ANIM_SM_EDIT_SET_STATE_POSITION:
+		check(xPanel.Action_SetStatePosition(xAction.m_szArg1, xAction.m_afArgs[0], xAction.m_afArgs[1]));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH:
+		check(xPanel.Action_RemoveClipPath(xAction.m_szArg1));
+		break;
+	default:
+		Zenith_Assert(false, "Non-AnimSmEdit action routed to ExecuteAnimSmEditAction");
+		break;
+	}
+}
+
+static void ExecuteAnimSmPreviewAction(const Zenith_EditorAction& xAction)
+{
+	auto& xPanel = Zenith_EditorPanel_AnimStateMachine::Instance();
+	// Runtime setters silently ignore undeclared names. A recipe must report
+	// those typos (and wrong parameter types) instead of claiming success.
+	const auto pfnHasParameter = [&](Flux_AnimationParameters::ParamType eType)
+	{
+		const auto& xParameters = xPanel.PreviewController().GetParameters();
+		return xParameters.HasParameter(xAction.m_szArg1) &&
+			xParameters.GetParameterType(xAction.m_szArg1) == eType;
+	};
+	auto check = [&](bool bSuccess)
+	{
+		AnimSmActionChecked(bSuccess, "AnimSmPreview", xAction.m_szArg1.c_str());
+	};
+	switch (xAction.m_eType)
+	{
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED:
+		check(xPanel.Action_SetPreviewEnabled(xAction.m_bArg));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_TICK:
+		check(xPanel.Action_TickPreview(xAction.m_afArgs[0]));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_FLOAT:
+		check(pfnHasParameter(Flux_AnimationParameters::ParamType::Float) &&
+			xPanel.Action_SetPreviewFloat(xAction.m_szArg1, xAction.m_afArgs[0]));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_INT:
+		check(pfnHasParameter(Flux_AnimationParameters::ParamType::Int) &&
+			xPanel.Action_SetPreviewInt(xAction.m_szArg1, xAction.m_aiArgs[0]));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_BOOL:
+		check(pfnHasParameter(Flux_AnimationParameters::ParamType::Bool) &&
+			xPanel.Action_SetPreviewBool(xAction.m_szArg1, xAction.m_bArg));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_TRIGGER:
+		check(pfnHasParameter(Flux_AnimationParameters::ParamType::Trigger) &&
+			xPanel.Action_SetPreviewTrigger(xAction.m_szArg1));
+		break;
+	case Zenith_EditorActionType::ANIM_SM_PREVIEW_EXPECT_STATE:
+		check(xPanel.GetHighlightedStateName() == xAction.m_szArg1);
+		break;
+	default:
+		Zenith_Assert(false, "Non-AnimSmPreview action routed to ExecuteAnimSmPreviewAction");
+		break;
+	}
+}
+
 static void ExecuteAnimIkAction(const Zenith_EditorAction& xAction)
 {
 	Zenith_EditorPanel_Animation& xPanel = Zenith_EditorPanel_Animation::Instance();
@@ -4685,6 +5064,43 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		ExecuteAnimIkAction(xAction);
 		return;
 	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_EVENT_ADD &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB)
+	{
+		ExecuteAnimEventAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_CLIP_SAVE &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE)
+	{
+		ExecuteAnimClipAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT)
+	{
+		ExecuteAnimPoseControlAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH)
+	{
+		ExecuteAnimSmEditAction(xAction);
+		return;
+	}
+
+	if (xAction.m_eType >= Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED &&
+		xAction.m_eType <= Zenith_EditorActionType::ANIM_SM_PREVIEW_EXPECT_STATE)
+	{
+		ExecuteAnimSmPreviewAction(xAction);
+		return;
+	}
+
+
 
 	switch (xAction.m_eType)
 	{

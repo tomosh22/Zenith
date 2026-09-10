@@ -596,6 +596,41 @@ enum class Zenith_EditorActionType
 	// and last member — which are the same member while it is one wide).
 	ANIM_IK_BAKE_TO_TARGET,	// END of the contiguous ANIM_IK range (and its start)
 
+	// CONTIGUOUS: ANIM_EVENT_ADD .. ANIM_EVENT_SET_EMIT_ON_SCRUB; routed to ExecuteAnimEventAction.
+	ANIM_EVENT_ADD,
+	ANIM_EVENT_SELECT,
+	ANIM_EVENT_MOVE_SELECTED,
+	ANIM_EVENT_RENAME,
+	ANIM_EVENT_SET_PAYLOAD,
+	ANIM_EVENT_SET_EMIT_ON_SCRUB,
+
+	// CONTIGUOUS: ANIM_CLIP_SAVE .. ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE; routed to ExecuteAnimClipAction.
+	ANIM_CLIP_SAVE,
+	ANIM_CLIP_SAVE_AS,
+	ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE,
+
+	// CONTIGUOUS: ANIM_POSE_CONTROL_SET_ANGLE_SNAP .. ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT; routed to ExecuteAnimPoseControlAction.
+	ANIM_POSE_CONTROL_SET_ANGLE_SNAP,
+	ANIM_POSE_CONTROL_CLEAR_BONE_SELECTION,
+	ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT,
+
+	// CONTIGUOUS: ANIM_SM_EDIT_SELECT_STATE .. ANIM_SM_EDIT_REMOVE_CLIP_PATH; routed to ExecuteAnimSmEditAction.
+	ANIM_SM_EDIT_SELECT_STATE,
+	ANIM_SM_EDIT_SELECT_TRANSITION,
+	ANIM_SM_EDIT_SELECT_ANY_STATE,
+	ANIM_SM_EDIT_CLEAR_SELECTION,
+	ANIM_SM_EDIT_SET_STATE_POSITION,
+	ANIM_SM_EDIT_REMOVE_CLIP_PATH,
+
+	// CONTIGUOUS: ANIM_SM_PREVIEW_SET_ENABLED .. ANIM_SM_PREVIEW_EXPECT_STATE; routed to ExecuteAnimSmPreviewAction.
+	ANIM_SM_PREVIEW_SET_ENABLED,
+	ANIM_SM_PREVIEW_TICK,
+	ANIM_SM_PREVIEW_SET_FLOAT,
+	ANIM_SM_PREVIEW_SET_INT,
+	ANIM_SM_PREVIEW_SET_BOOL,
+	ANIM_SM_PREVIEW_SET_TRIGGER,
+	ANIM_SM_PREVIEW_EXPECT_STATE,
+
 	// NavMesh. Deliberately NOT appended to the Terrain block above, which is
 	// routed by a range comparison: a standalone action sits outside every
 	// range and reaches ExecuteAction's own switch, which is what a
@@ -691,19 +726,25 @@ static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_CURVE_EXPECT_KEY_TA
 static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_SET_KEY_MODE) == 2,
 	"the ANIM_TANGENT block must stay CONTIGUOUS and three wide — ExecuteAction routes it by range");
-// And the same pin for the ANIM_IK block (E1), the NINTH animation range and
-// now the youngest block in the enum. It is ONE wide, so its own first and last
-// member are the same value and a `last - first == 0` assert would pin nothing —
-// the WIDTH is therefore pinned from the far side, against the neighbour it
-// pushed along. That neighbour is SET_NAVMESH_ASSET's "must stay outside every
-// range", whose predecessor this block has become (it was ANIM_TANGENT's until
-// this one was appended; that assertion has now been re-pointed eight times,
-// which is the mechanism working rather than a smell). The
-// `Automation, AnimIkEnumBlockIsContiguous` unit pins both boundaries.
-static_assert(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
+// A one-member range pins its width against the next block.
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_ADD) -
 	static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET) == 1,
-	"the ANIM_IK block is ONE wide — a second IK verb is APPENDED to it (which moves "
-	"SET_NAVMESH_ASSET and this line with it), never inserted in front of it");
+	"ANIM_IK stays one wide, immediately before ANIM_EVENT");
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_ADD) == 5,
+	"ANIM_EVENT_ must stay contiguous and 6 wide");
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_SAVE) == 2,
+	"ANIM_CLIP_ must stay contiguous and 3 wide");
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP) == 2,
+	"ANIM_POSE_CONTROL_ must stay contiguous and 3 wide");
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE) == 5,
+	"ANIM_SM_EDIT_ must stay contiguous and 6 wide");
+static_assert(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_EXPECT_STATE) -
+	static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED) == 6,
+	"ANIM_SM_PREVIEW_ must stay contiguous and 7 wide");
 
 //-----------------------------------------------------------------------------
 // Action Data
@@ -1462,6 +1503,48 @@ void AddStep_AnimSmRemoveParameter(const char* szName);
 void AddStep_AnimSmUndo();
 void AddStep_AnimSmRedo();
 void AddStep_AnimSmSave();
+
+	// Events use NORMALIZED time. Indices address the current sorted event list
+	// at execution, then resolve to stable document IDs, just like key steps.
+	// Selection modes are Zenith_AnimSelectMode. Payload is the full XYZW vector.
+	void AddStep_AnimEventAdd(float fTime, const char* szName);
+	void AddStep_AnimEventSelect(int iEventIndex, int iMode);
+	void AddStep_AnimEventMoveSelected(float fDeltaNormalized, bool bSnap);
+	void AddStep_AnimEventRename(int iEventIndex, const char* szName);
+	void AddStep_AnimEventSetPayload(int iEventIndex, float fX, float fY, float fZ, float fW);
+	void AddStep_AnimEventSetEmitEventsOnScrub(bool bEmit);
+
+	// Save refuses external conflicts. SaveAs adopts a new path. Promotion uses
+	// the document's Authored root (tests MUST set its scratch root override).
+	void AddStep_AnimSave();
+	void AddStep_AnimSaveAs(const char* szPath);
+	void AddStep_AnimPromoteToAuthoredOverride(const char* szSourcePath);
+
+	// Snap and clear are idempotent. Root translation keying requires a selected
+	// root on a resolved rig and keys its translation AND rotation in one edit.
+	void AddStep_AnimSetPoseAngleSnap(bool bEnabled);
+	void AddStep_AnimClearBoneSelection();
+	void AddStep_AnimSetKeyTranslationForRoot();
+
+	// SM selection/layout: an empty transition source names the any-state list.
+	// Clear is idempotent; positions are graph coordinates, clip paths are owned.
+	void AddStep_AnimSmSelectState(const char* szState);
+	void AddStep_AnimSmSelectTransition(const char* szFrom, int iIndex);
+	void AddStep_AnimSmSelectAnyState();
+	void AddStep_AnimSmClearSelection();
+	void AddStep_AnimSmSetStatePosition(const char* szState, float fX, float fY);
+	void AddStep_AnimSmRemoveClipPath(const char* szPath);
+
+	// Preview parameters affect the live preview, not authored defaults. Tick is
+	// in seconds. ExpectPreviewState observes the selected machine's highlight.
+	void AddStep_AnimSmSetPreviewEnabled(bool bEnabled);
+	void AddStep_AnimSmTickPreview(float fDtSeconds);
+	void AddStep_AnimSmSetPreviewFloat(const char* szName, float fValue);
+	void AddStep_AnimSmSetPreviewInt(const char* szName, int iValue);
+	void AddStep_AnimSmSetPreviewBool(const char* szName, bool bValue);
+	void AddStep_AnimSmSetPreviewTrigger(const char* szName);
+	void AddStep_AnimSmExpectPreviewState(const char* szState);
+
 	// Hands the working def to the preview controller through
 	// ReloadFromControllerDef (D45), so the current state, the matched parameter
 	// values and the layer weights survive the edit. Builds the preview when

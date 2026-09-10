@@ -122,6 +122,28 @@ bool Zenith_EditorPanel_Animation::OpenClip(const std::string& strAssetPath)
 	return true;
 }
 
+bool Zenith_EditorPanel_Animation::Action_Save()
+{
+	const auto eResult = m_xDocument.Save();
+	m_bExternalConflict = eResult == ZENITH_ANIMDOC_SAVE_CONFLICT_EXTERNAL;
+	if (eResult == ZENITH_ANIMDOC_SAVE_OK)
+	{
+		m_bCloseRefusedDirty = false;
+	}
+	return eResult == ZENITH_ANIMDOC_SAVE_OK;
+}
+
+bool Zenith_EditorPanel_Animation::Action_SaveAs(const std::string& strAssetPath)
+{
+	const auto eResult = m_xDocument.SaveAs(strAssetPath);
+	m_bExternalConflict = eResult == ZENITH_ANIMDOC_SAVE_CONFLICT_EXTERNAL;
+	if (eResult == ZENITH_ANIMDOC_SAVE_OK)
+	{
+		m_bCloseRefusedDirty = false;
+	}
+	return eResult == ZENITH_ANIMDOC_SAVE_OK;
+}
+
 bool Zenith_EditorPanel_Animation::PromoteAndOpenAuthoredOverride(const std::string& strSourceAssetPath)
 {
 	m_strLastOpenAttemptPath = strSourceAssetPath;

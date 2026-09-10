@@ -546,6 +546,10 @@ public:
 	bool OpenClip(const std::string& strAssetPath);
 
 	// D21's escape hatch, wired to that offer.
+	// Save refuses external conflicts; SaveAs writes a separate document path.
+	bool Action_Save();
+	bool Action_SaveAs(const std::string& strAssetPath);
+
 	bool PromoteAndOpenAuthoredOverride(const std::string& strSourceAssetPath);
 
 	// FORCED close: unsaved edits are discarded. This is what Shutdown and the

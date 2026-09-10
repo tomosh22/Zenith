@@ -3662,35 +3662,327 @@ ZENITH_TEST(Automation, AnimTangentEnumBlockIsContiguous)
 
 ZENITH_TEST(Automation, AnimIkEnumBlockIsContiguous)
 {
-	// The youngest block (E1), and the FIRST one-member block in the enum — which
-	// is why it is pinned differently from its eight predecessors and worth saying
-	// out loud rather than looking like a gap. Those pin "member N is N past the
-	// first"; here the first IS the last, so every such assertion would compare a
-	// value against itself and pin nothing at all. What is pinnable is the pair of
-	// BOUNDARIES, and they are what the router actually compares against.
-	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET);
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET) - static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 1, "previous boundary");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_ADD) - static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET), 1, "next boundary pins width");
+}
 
-	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 1,
-		"the ANIM_IK block must start immediately after the ANIM_TANGENT range ends");
+ZENITH_TEST(Automation, AnimEventEnumBlockIsContiguous)
+{
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_ADD);
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_IK_BAKE_TO_TARGET), 1, "previous boundary");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_ADD) - iFirst, 0, "ANIM_EVENT_ADD");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_SELECT) - iFirst, 1, "ANIM_EVENT_SELECT");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_MOVE_SELECTED) - iFirst, 2, "ANIM_EVENT_MOVE_SELECTED");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_RENAME) - iFirst, 3, "ANIM_EVENT_RENAME");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_SET_PAYLOAD) - iFirst, 4, "ANIM_EVENT_SET_PAYLOAD");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB) - iFirst, 5, "ANIM_EVENT_SET_EMIT_ON_SCRUB");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_SAVE) - static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB), 1, "next boundary stays outside this range");
+}
 
-	// SET_NAVMESH_ASSET is a STANDALONE verb that has to keep reaching
-	// ExecuteAction's own switch: swallowed into this range it would land in
-	// ExecuteAnimIkAction's `default:` assert at boot, which is a run-time failure
-	// for a compile-time mistake. This is the same clause that has followed the
-	// youngest animation block through eight appends.
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) - iFirst, 1,
-		"SET_NAVMESH_ASSET must sit immediately after the ANIM_IK range — inside it, the "
-		"router would hand it to ExecuteAnimIkAction's default: assert");
+ZENITH_TEST(Automation, AnimEventAddPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimEventAdd(1.25f, "owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_EVENT_ADD, "action type");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 1.25f, 0.0f, "float preserved");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
 
-	// ★ AND THE WIDTH, WHICH IS THE THING THE HEADER'S static_assert CANNOT STATE
-	// FROM THE INSIDE. A second IK verb is APPENDED (moving SET_NAVMESH_ASSET and
-	// this line with it); one inserted BEFORE ANIM_IK_BAKE_TO_TARGET would silently
-	// join the ANIM_TANGENT range instead, which is the exact mistake the whole
-	// contiguity apparatus exists to catch.
-	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) -
-		static_cast<int>(Zenith_EditorActionType::ANIM_TANGENT_EXPECT_KEY_MODE), 2,
-		"the ANIM_IK block is exactly ONE wide — it sits alone between the ANIM_TANGENT range and "
-		"the navmesh verb");
+ZENITH_TEST(Automation, AnimEventSelectPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimEventSelect(2, 3);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_EVENT_SELECT, "action type");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 2, "payload preserved");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[2], 3, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimEventMoveSelectedPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimEventMoveSelected(1.25f, true);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_EVENT_MOVE_SELECTED, "action type");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 1.25f, 0.0f, "float preserved");
+	ZENITH_ASSERT_EQ(xAction.m_bArg, true, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimEventRenamePacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimEventRename(2, "owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_EVENT_RENAME, "action type");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 2, "payload preserved");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
+
+ZENITH_TEST(Automation, AnimEventSetPayloadPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimEventSetPayload(2, 2.25f, 3.25f, 4.25f, 5.25f);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_EVENT_SET_PAYLOAD, "action type");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 2, "payload preserved");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 2.25f, 0.0f, "float preserved");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[1], 3.25f, 0.0f, "float preserved");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[2], 4.25f, 0.0f, "float preserved");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[3], 5.25f, 0.0f, "float preserved");
+}
+
+ZENITH_TEST(Automation, AnimEventSetEmitEventsOnScrubPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimEventSetEmitEventsOnScrub(true);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB, "action type");
+	ZENITH_ASSERT_EQ(xAction.m_bArg, true, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimClipEnumBlockIsContiguous)
+{
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_SAVE);
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_EVENT_SET_EMIT_ON_SCRUB), 1, "previous boundary");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_SAVE) - iFirst, 0, "ANIM_CLIP_SAVE");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_SAVE_AS) - iFirst, 1, "ANIM_CLIP_SAVE_AS");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE) - iFirst, 2, "ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP) - static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE), 1, "next boundary stays outside this range");
+}
+
+ZENITH_TEST(Automation, AnimSavePacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSave();
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_CLIP_SAVE, "action type");
+}
+
+ZENITH_TEST(Automation, AnimSaveAsPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSaveAs("owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_CLIP_SAVE_AS, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
+
+ZENITH_TEST(Automation, AnimPromoteToAuthoredOverridePacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimPromoteToAuthoredOverride("owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
+
+ZENITH_TEST(Automation, AnimPoseControlEnumBlockIsContiguous)
+{
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP);
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_CLIP_PROMOTE_TO_AUTHORED_OVERRIDE), 1, "previous boundary");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP) - iFirst, 0, "ANIM_POSE_CONTROL_SET_ANGLE_SNAP");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_CLEAR_BONE_SELECTION) - iFirst, 1, "ANIM_POSE_CONTROL_CLEAR_BONE_SELECTION");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT) - iFirst, 2, "ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE) - static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT), 1, "next boundary stays outside this range");
+}
+
+ZENITH_TEST(Automation, AnimSetPoseAngleSnapPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSetPoseAngleSnap(true);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_ANGLE_SNAP, "action type");
+	ZENITH_ASSERT_EQ(xAction.m_bArg, true, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimClearBoneSelectionPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimClearBoneSelection();
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_POSE_CONTROL_CLEAR_BONE_SELECTION, "action type");
+}
+
+ZENITH_TEST(Automation, AnimSetKeyTranslationForRootPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSetKeyTranslationForRoot();
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT, "action type");
+}
+
+ZENITH_TEST(Automation, AnimSmEditEnumBlockIsContiguous)
+{
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE);
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_POSE_CONTROL_SET_KEY_TRANSLATION_FOR_ROOT), 1, "previous boundary");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE) - iFirst, 0, "ANIM_SM_EDIT_SELECT_STATE");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_TRANSITION) - iFirst, 1, "ANIM_SM_EDIT_SELECT_TRANSITION");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_ANY_STATE) - iFirst, 2, "ANIM_SM_EDIT_SELECT_ANY_STATE");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_CLEAR_SELECTION) - iFirst, 3, "ANIM_SM_EDIT_CLEAR_SELECTION");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_SET_STATE_POSITION) - iFirst, 4, "ANIM_SM_EDIT_SET_STATE_POSITION");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH) - iFirst, 5, "ANIM_SM_EDIT_REMOVE_CLIP_PATH");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED) - static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH), 1, "next boundary stays outside this range");
+}
+
+ZENITH_TEST(Automation, AnimSmSelectStatePacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSelectState("owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_STATE, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
+
+ZENITH_TEST(Automation, AnimSmSelectTransitionPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSelectTransition("owned value", 3);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_TRANSITION, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 3, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmSelectAnyStatePacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSelectAnyState();
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_EDIT_SELECT_ANY_STATE, "action type");
+}
+
+ZENITH_TEST(Automation, AnimSmClearSelectionPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmClearSelection();
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_EDIT_CLEAR_SELECTION, "action type");
+}
+
+ZENITH_TEST(Automation, AnimSmSetStatePositionPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSetStatePosition("owned value", 2.25f, 3.25f);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_EDIT_SET_STATE_POSITION, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 2.25f, 0.0f, "float preserved");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[1], 3.25f, 0.0f, "float preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmRemoveClipPathPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmRemoveClipPath("owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
+
+ZENITH_TEST(Automation, AnimSmPreviewEnumBlockIsContiguous)
+{
+	const int iFirst = static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED);
+	ZENITH_ASSERT_EQ(iFirst - static_cast<int>(Zenith_EditorActionType::ANIM_SM_EDIT_REMOVE_CLIP_PATH), 1, "previous boundary");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED) - iFirst, 0, "ANIM_SM_PREVIEW_SET_ENABLED");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_TICK) - iFirst, 1, "ANIM_SM_PREVIEW_TICK");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_FLOAT) - iFirst, 2, "ANIM_SM_PREVIEW_SET_FLOAT");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_INT) - iFirst, 3, "ANIM_SM_PREVIEW_SET_INT");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_BOOL) - iFirst, 4, "ANIM_SM_PREVIEW_SET_BOOL");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_TRIGGER) - iFirst, 5, "ANIM_SM_PREVIEW_SET_TRIGGER");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_EXPECT_STATE) - iFirst, 6, "ANIM_SM_PREVIEW_EXPECT_STATE");
+	ZENITH_ASSERT_EQ(static_cast<int>(Zenith_EditorActionType::SET_NAVMESH_ASSET) - static_cast<int>(Zenith_EditorActionType::ANIM_SM_PREVIEW_EXPECT_STATE), 1, "next boundary stays outside this range");
+}
+
+ZENITH_TEST(Automation, AnimSmSetPreviewEnabledPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSetPreviewEnabled(true);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_ENABLED, "action type");
+	ZENITH_ASSERT_EQ(xAction.m_bArg, true, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmTickPreviewPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmTickPreview(1.25f);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_TICK, "action type");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 1.25f, 0.0f, "float preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmSetPreviewFloatPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSetPreviewFloat("owned value", 2.25f);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_FLOAT, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+	ZENITH_ASSERT_EQ_FLOAT(xAction.m_afArgs[0], 2.25f, 0.0f, "float preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmSetPreviewIntPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSetPreviewInt("owned value", 3);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_INT, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+	ZENITH_ASSERT_EQ(xAction.m_aiArgs[0], 3, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmSetPreviewBoolPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSetPreviewBool("owned value", true);
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_BOOL, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+	ZENITH_ASSERT_EQ(xAction.m_bArg, true, "payload preserved");
+}
+
+ZENITH_TEST(Automation, AnimSmSetPreviewTriggerPacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmSetPreviewTrigger("owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_SET_TRIGGER, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
+}
+
+ZENITH_TEST(Automation, AnimSmExpectPreviewStatePacksPayload)
+{
+	Zenith_EditorAutomation xAuto;
+	xAuto.AddStep_AnimSmExpectPreviewState("owned value");
+	ZENITH_ASSERT_EQ(xAuto.m_axActions.GetSize(), 1u, "one step");
+	const auto& xAction = xAuto.m_axActions.Get(0);
+	ZENITH_ASSERT_TRUE(xAction.m_eType == Zenith_EditorActionType::ANIM_SM_PREVIEW_EXPECT_STATE, "action type");
+	ZENITH_ASSERT_STREQ(xAction.m_szArg1.c_str(), "owned value", "owned string");
 }
 
 ZENITH_TEST(Automation, AnimIkStepPacksItsPayload)
@@ -4526,5 +4818,7 @@ ZENITH_TEST(Automation, AnimPoseAuthoringStepsDriveTheDopeSheet)
 	std::filesystem::remove_all(xDirectory, xError);
 	Flux_PreviewSlotArbiter::ResetForTesting();
 }
+
+#include "Zenith_EditorAutomation_Animation.Tests.inl"
 
 #endif // ZENITH_TOOLS
