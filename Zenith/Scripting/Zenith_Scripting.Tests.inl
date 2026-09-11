@@ -173,6 +173,93 @@ namespace
 		int32_t m_iElapsed = 0;
 	};
 
+	//--------------------------------------------------------------------------
+	// Routable failure pin (A-3) scratch types.
+	//--------------------------------------------------------------------------
+
+	// The only shape the registry honours the flag on: fixed-pin, non-flow.
+	// Logs the same hooks the lifecycle probe does, so the "-f before +h"
+	// ordering (the failing node's run is COMPLETE before the handler starts)
+	// is readable straight off the log.
+	class GraphTestFailurePinNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestFailurePinNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strTag, "f")
+		ZENITH_PROPERTY(int32_t, m_iReturnStatus, 1)	// 0=SUCCESS 1=FAILURE 2=RUNNING
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override
+		{
+			g_strLifecycleLog += "*" + m_strTag;
+			return static_cast<GraphNodeStatus>(m_iReturnStatus);
+		}
+		void OnEnter(Zenith_GraphContext&) override { g_strLifecycleLog += "+" + m_strTag; }
+		void OnExit(Zenith_GraphContext&) override { g_strLifecycleLog += "-" + m_strTag; }
+		void OnAbort(Zenith_GraphContext&) override { g_strLifecycleLog += "!" + m_strTag; }
+		const char* GetTypeName() const override { return "Test_FailurePin"; }
+	};
+
+	// Dynamic-pin type: the flag must be REFUSED (the failure index would move
+	// with the branch count).
+	class GraphTestDynamicPinNode : public Zenith_GraphNode
+	{
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		int32_t GetDynamicExecOutputCount() const override { return 2; }
+		const char* GetTypeName() const override { return "Test_DynPin"; }
+	};
+
+	// Fixed-pin FLOW type: also refused - a flow node's FAILURE is the status it
+	// propagated out of a sub-chain it ran itself, not a failure of its own.
+	class GraphTestFixedFlowNode : public Zenith_GraphNode
+	{
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			return xContext.m_pxGraph->RunChainFromPin(GetNodeID(), 0, xContext);
+		}
+		const char* GetTypeName() const override { return "Test_FixedFlow"; }
+	};
+
+	// Registered with 255 exec outputs: the failure index would be 255, which the
+	// chain-cursor key's low byte cannot address. Also refused.
+	class GraphTestWidePinNode : public Zenith_GraphNode
+	{
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_WidePins"; }
+	};
+
+	// An event SOURCE registered WITH the flag - must be refused (its FAILURE is
+	// a gate that returns before any chain walk, so the pin would be dead).
+	class GraphTestFlaggedSource : public GraphTestCustomSource
+	{
+	public:
+		const char* GetTypeName() const override { return "Test_FlaggedSource"; }
+	};
+
+	// Publishes RunChainFromPin's RETURN STATUS for its pin-0 chain to the
+	// blackboard - the direct probe for "the chain's status is the
+	// continuation's terminal status", which no lifecycle log can show.
+	class GraphTestChainStatusNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestChainStatusNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strStatusVar, "status")
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const GraphNodeStatus eStatus = xContext.m_pxGraph->RunChainFromPin(GetNodeID(), 0, xContext);
+			Zenith_PropertyValue xValue;
+			xValue.SetInt32(static_cast<int32_t>(eStatus));
+			xContext.m_pxBlackboard->SetValue(m_strStatusVar, xValue);
+			return eStatus;
+		}
+		const char* GetTypeName() const override { return "Test_ChainStatus"; }
+	};
+
 	// Registers the scratch types once (idempotent via the registry dup guard,
 	// which logs - so gate on a static instead).
 	void EnsureTestNodesRegistered()
@@ -192,6 +279,16 @@ namespace
 		xRegistry.RegisterNodeType<GraphTestCustomSource>("Test_CustomSource", GRAPH_EVENT_CUSTOM, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestLifecycleProbe>("Test_LifecycleProbe", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestResumeDriveProbe>("Test_ResumeDriveProbe", GRAPH_EVENT_NONE, 1, false, "Test");
+		// A-3: the one honoured failure-pin flag, plus the three refusal shapes.
+		// Each refused registration logs a Zenith_Error naming its reason - the
+		// tests below read the stored flag back, which is what the runtime and the
+		// editor read too.
+		xRegistry.RegisterNodeType<GraphTestFailurePinNode>("Test_FailurePin", GRAPH_EVENT_NONE, 1, false, "Test", true);
+		xRegistry.RegisterNodeType<GraphTestDynamicPinNode>("Test_DynPin", GRAPH_EVENT_NONE, 1, false, "Test", true);
+		xRegistry.RegisterNodeType<GraphTestFixedFlowNode>("Test_FixedFlow", GRAPH_EVENT_NONE, 1, true, "Test", true);
+		xRegistry.RegisterNodeType<GraphTestWidePinNode>("Test_WidePins", GRAPH_EVENT_NONE, 255, false, "Test", true);
+		xRegistry.RegisterNodeType<GraphTestFlaggedSource>("Test_FlaggedSource", GRAPH_EVENT_CUSTOM, 1, false, "Test", true);
+		xRegistry.RegisterNodeType<GraphTestChainStatusNode>("Test_ChainStatus", GRAPH_EVENT_NONE, 1, true, "Test");
 	}
 
 	Zenith_GraphContext MakeTestContext(Zenith_BehaviourGraph& xGraph, float fDt = 0.016f)
@@ -1848,6 +1945,451 @@ ZENITH_TEST(BehaviourGraph, ResumeDrive_FlagNeverSetOutsideTheTwoPaths)
 		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
 		ZENITH_ASSERT_TRUE(pxProbe->m_bLastResumeDrive);
 		ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+	}
+}
+
+//------------------------------------------------------------------------------
+// Routable failure pin (A-3).
+//
+// The pin is optional and OPT-IN per node TYPE: unwired it changes nothing, and
+// an edge at the failure index on an UNFLAGGED type is inert. When the type
+// carries the flag and the edge exists, the walk continues down it under the
+// SAME chain key - so the failing node still gets OnExit, a suspending handler
+// writes the anchor's cursor, and the chain's status is the continuation's
+// terminal status.
+//------------------------------------------------------------------------------
+
+namespace
+{
+	// Adds a Test_FailurePin node on (uAnchorID, uPin) with a tag and a status.
+	u_int AddFailurePinNode(Zenith_GraphDefinition& xDef, u_int uAnchorID, u_int uPin, const char* szTag,
+		int32_t iReturnStatus = static_cast<int32_t>(GRAPH_NODE_STATUS_FAILURE))
+	{
+		const u_int uNode = xDef.AddNode("Test_FailurePin");
+		GraphTestFailurePinNode xTemp;
+		xTemp.m_strTag = szTag;
+		xTemp.m_iReturnStatus = iReturnStatus;
+		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
+		xDef.AddEdge(uAnchorID, uPin, uNode, 0);
+		return uNode;
+	}
+
+	// The registered failure-pin index of a type, or 0 when it carries none.
+	u_int FailurePinIndexOfType(const char* szTypeName)
+	{
+		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find(szTypeName);
+		return (pxInfo && pxInfo->m_bHasFailurePin) ? pxInfo->m_uExecOutputCount : 0u;
+	}
+
+	// A Test_Counter on (uAnchorID, uPin) with an explicit terminal status - the
+	// configurable HANDLER behind the chain-status legs.
+	u_int AddStatusCounter(Zenith_GraphDefinition& xDef, u_int uAnchorID, u_int uPin, const char* szName, int32_t iStatus)
+	{
+		const u_int uNode = xDef.AddNode("Test_Counter");
+		GraphTestCounterNode xTemp;
+		xTemp.m_strCounterName = szName;
+		xTemp.m_iReturnStatus = iStatus;
+		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
+		xDef.AddEdge(uAnchorID, uPin, uNode, 0);
+		return uNode;
+	}
+
+	// One leg of FailurePin_ChainStatusIsContinuationsTerminalStatus: a failing
+	// node whose handler ends in iHandlerStatus, with the failing node's chain
+	// run by a status-publishing flow node. Returns the published status (-1 if
+	// the node never ran).
+	int32_t RunChainStatusLeg(int32_t iHandlerStatus)
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_CustomSource");	// matches "evt"
+		const u_int uStatus = xDef.AddNode("Test_ChainStatus");
+		xDef.AddEdge(uSource, 0, uStatus, 0);
+		const u_int uFail = AddFailurePinNode(xDef, uStatus, 0, "f");
+		AddStatusCounter(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "handler", iHandlerStatus);
+
+		Zenith_BehaviourGraph xGraph;
+		xGraph.InitialiseFromDefinition(xDef);
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		xGraph.FireCustomEvent("evt", xContext);
+		// The handler must have run exactly once, or the FAILURE leg would pass
+		// on a dead implementation (an unrouted abort also yields FAILURE).
+		if (xGraph.GetBlackboard().GetInt32("handler", 0) != 1)
+		{
+			return -1;
+		}
+		return xGraph.GetBlackboard().GetInt32("status", -1);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_UnwiredBehavesAsToday)
+{
+	EnsureTestNodesRegistered();
+
+	// The flag alone changes NOTHING. A flagged node whose failure pin has no
+	// edge aborts its chain exactly as before - and pin 0's successor (the
+	// SUCCESS continuation) must not run either.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uFail = AddFailurePinNode(xDef, uSource, 0, "f");
+	BuildProbe(xDef, uFail, 0, "s", 0);	// pin 0: the SUCCESS continuation
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f");
+	ZENITH_ASSERT_FALSE(xGraph.HasHitChainStepCap());
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_WiredContinuesUnderSameKey)
+{
+	EnsureTestNodesRegistered();
+
+	// Wired: the walk continues down the failure edge. The failing node has
+	// already had OnExit ("-f" before "+h") - failing is a COMPLETED run of it -
+	// and pin 0's successor still never runs.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_CustomSource");	// one-shot anchor: a live cursor is observable
+	const u_int uFail = AddFailurePinNode(xDef, uSource, 0, "f");
+	BuildProbe(xDef, uFail, 0, "s", 0);
+	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", 0);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h-h");
+
+	// The continuation completed, so the ANCHOR's cursor is cleared - the routed
+	// walk ran under that key rather than starting a chain of its own.
+	ZENITH_ASSERT_FALSE(xGraph.NeedsUpdateDispatch());
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_SuspendingHandlerResumes)
+{
+	EnsureTestNodesRegistered();
+
+	// A handler that returns RUNNING suspends the chain under the ANCHOR's key,
+	// so the next drive resumes AT THE HANDLER: the failing node is not
+	// re-executed, and the handler is re-executed WITHOUT OnEnter.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_CustomSource");
+	const u_int uFail = AddFailurePinNode(xDef, uSource, 0, "f");
+	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", 2);	// RUNNING once, then SUCCESS
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h");	// RUNNING: no -h
+	ZENITH_ASSERT_TRUE(xGraph.NeedsUpdateDispatch());				// a cursor is live
+
+	// The ON_UPDATE re-drive of the suspended one-shot anchor: no "+f", no "*f",
+	// no second "+h".
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h*h-h");
+	ZENITH_ASSERT_FALSE(xGraph.NeedsUpdateDispatch());
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_AbortReachesHandler)
+{
+	EnsureTestNodesRegistered();
+
+	// The preemption primitive still works through a routed walk: the cursor
+	// written under the anchor's key names the HANDLER, so AbortChain(anchor, 0)
+	// reaches the handler's OnAbort.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_CustomSource");
+	const u_int uFail = AddFailurePinNode(xDef, uSource, 0, "f");
+	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", -1);	// RUNNING forever
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h");
+
+	xGraph.AbortChain(uSource, 0, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h!h");
+
+	// Idempotent, and a fresh fire restarts from the chain head.
+	xGraph.AbortChain(uSource, 0, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h!h");
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h!h+f*f-f+h*h");
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_HandlerSuccessSuppressesSelectorFallthrough)
+{
+	EnsureTestNodesRegistered();
+
+	// ★ THE SURPRISE. A Selector's pin-0 branch fails, but its failure handler
+	// SUCCEEDS - so the branch's chain returns SUCCESS and the Selector never
+	// falls through to pin 1. A failure handler is not "run this too"; it
+	// REPLACES the branch's answer.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uSelector = xDef.AddNode("Selector");
+	xDef.AddEdge(uSource, 0, uSelector, 0);
+	const u_int uFail = AddFailurePinNode(xDef, uSelector, 0, "f");
+	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", 0);
+	BuildProbe(xDef, uSelector, 1, "fb", 0);	// the fallback that must NOT run
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h-h");
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_HandlerSuccessKeepsRepeatUntilFailureRunning)
+{
+	EnsureTestNodesRegistered();
+
+	// The same surprise on the other well-known consumer of branch FAILURE:
+	// Repeat(m_bUntilFailure) completes when its BODY fails, so a body whose
+	// failure handler succeeds never reaches the done pin - it iterates forever.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uRepeat = xDef.AddNode("Repeat");
+	{
+		Zenith_GraphNode* pxTemp = Zenith_GraphNodeRegistry::Get().Find("Repeat")->m_pfnCreate();
+		Zenith_PropertyValue xValue;
+		xValue.SetBool(true);
+		Zenith_PropertySystem::SetPropertyValue(pxTemp,
+			*Zenith_GraphNodeRegistry::Get().Find("Repeat")->m_pfnGetPropertyTable()->FindProperty("m_bUntilFailure"), xValue);
+		xDef.SetNodeParamsFromInstance(uRepeat, pxTemp);
+		delete pxTemp;
+	}
+	xDef.AddEdge(uSource, 0, uRepeat, 0);
+	const u_int uFail = AddFailurePinNode(xDef, uRepeat, 0, "f");
+	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", 0);
+	BuildProbe(xDef, uRepeat, 1, "d", 0);	// the done chain, never reached
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+f*f-f+h*h-h+f*f-f+h*h-h");
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_ChainStatusIsContinuationsTerminalStatus)
+{
+	EnsureTestNodesRegistered();
+
+	// The core contract, read directly off RunChainFromPin's return value rather
+	// than inferred from a Selector's behaviour: the chain's status IS the
+	// handler's, for all three terminal statuses.
+	ZENITH_ASSERT_EQ(RunChainStatusLeg(static_cast<int32_t>(GRAPH_NODE_STATUS_SUCCESS)),
+		static_cast<int32_t>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ(RunChainStatusLeg(static_cast<int32_t>(GRAPH_NODE_STATUS_FAILURE)),
+		static_cast<int32_t>(GRAPH_NODE_STATUS_FAILURE));
+	ZENITH_ASSERT_EQ(RunChainStatusLeg(static_cast<int32_t>(GRAPH_NODE_STATUS_RUNNING)),
+		static_cast<int32_t>(GRAPH_NODE_STATUS_RUNNING));
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_UnflaggedTypeIgnoresAnEdgeAtTheFailureIndex)
+{
+	EnsureTestNodesRegistered();
+
+	// The runtime consults the SOURCE TYPE's flag, never just FindSuccessor. An
+	// edge at the would-be failure index of an unflagged type is inert: today's
+	// silent abort, unchanged.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uCounter = AddStatusCounter(xDef, uSource, 0, "c", static_cast<int32_t>(GRAPH_NODE_STATUS_FAILURE));
+	const Zenith_GraphNodeTypeInfo* pxCounterInfo = Zenith_GraphNodeRegistry::Get().Find("Test_Counter");
+	ZENITH_ASSERT_NOT_NULL(pxCounterInfo);
+	if (pxCounterInfo == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_FALSE(pxCounterInfo->m_bHasFailurePin);
+	BuildProbe(xDef, uCounter, pxCounterInfo->m_uExecOutputCount, "h", 0);	// the inert wire
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "");			// the handler never ran
+	ZENITH_ASSERT_EQ(xGraph.GetBlackboard().GetInt32("c"), 1);	// ...and the node did
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_UnresolvedAbortNotRouted)
+{
+	EnsureTestNodesRegistered();
+
+	// The unresolved-node abort is a DIFFERENT path and is deliberately not
+	// routable: there is no type info to carry a flag, so neither pin 0 nor the
+	// pin a failure wire would occupy is followed.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uMissing = xDef.AddNode("Test_DoesNotExistInThisBuild");
+	ZENITH_ASSERT_NE(uMissing, 0u);
+	xDef.AddEdge(uSource, 0, uMissing, 0);
+	BuildProbe(xDef, uMissing, 0, "a", 0);
+	BuildProbe(xDef, uMissing, 1, "b", 0);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 1u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "");
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_DynamicPinNodeRefusesFlag)
+{
+	EnsureTestNodesRegistered();
+
+	// Refusal is OBSERVABLE (a Zenith_Error plus a forced-false flag), not an
+	// assert: an assert DebugBreaks a developer and vanishes in Release, so a
+	// refusal nothing can read back would be indistinguishable from an honoured
+	// flag. Both types below asked for the pin at registration.
+	const Zenith_GraphNodeTypeInfo* pxDynamic = Zenith_GraphNodeRegistry::Get().Find("Test_DynPin");
+	const Zenith_GraphNodeTypeInfo* pxFixed = Zenith_GraphNodeRegistry::Get().Find("Test_FailurePin");
+	ZENITH_ASSERT_NOT_NULL(pxDynamic);
+	ZENITH_ASSERT_NOT_NULL(pxFixed);
+	if (pxDynamic == nullptr || pxFixed == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_FALSE(pxDynamic->m_bHasFailurePin);
+	ZENITH_ASSERT_TRUE(pxFixed->m_bHasFailurePin);	// the companion: the flag IS honoured where it is legal
+	ZENITH_ASSERT_EQ(FailurePinIndexOfType("Test_FailurePin"), 1u);
+	ZENITH_ASSERT_EQ(FailurePinIndexOfType("Test_DynPin"), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_FlowNodeRefusesFlag)
+{
+	EnsureTestNodesRegistered();
+
+	// A FLOW node's FAILURE is the propagated status of a sub-chain it ran
+	// itself, so "On Failure" on one would mean "the child failed" - refused
+	// even with a fixed pin count. The 255 boundary shares this test: the
+	// chain-cursor key packs the pin into its low byte, so a failure index of
+	// 255 is unaddressable.
+	const Zenith_GraphNodeTypeInfo* pxFlow = Zenith_GraphNodeRegistry::Get().Find("Test_FixedFlow");
+	const Zenith_GraphNodeTypeInfo* pxWide = Zenith_GraphNodeRegistry::Get().Find("Test_WidePins");
+	ZENITH_ASSERT_NOT_NULL(pxFlow);
+	ZENITH_ASSERT_NOT_NULL(pxWide);
+	if (pxFlow == nullptr || pxWide == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_TRUE(pxFlow->m_bFlowNode);
+	ZENITH_ASSERT_FALSE(pxFlow->m_bHasFailurePin);
+	ZENITH_ASSERT_EQ(pxWide->m_uExecOutputCount, 255u);
+	ZENITH_ASSERT_FALSE(pxWide->m_bHasFailurePin);
+
+	// Fourth refused shape: an event SOURCE. Its FAILURE returns from
+	// RunSourceNode before any chain walk, so a failure wire on it is dead by
+	// construction and the flag is refused rather than drawn.
+	const Zenith_GraphNodeTypeInfo* pxSource = Zenith_GraphNodeRegistry::Get().Find("Test_FlaggedSource");
+	ZENITH_ASSERT_NOT_NULL(pxSource);
+	if (pxSource != nullptr)
+	{
+		ZENITH_ASSERT_EQ(static_cast<int>(pxSource->m_eEventType), static_cast<int>(GRAPH_EVENT_CUSTOM));
+		ZENITH_ASSERT_FALSE(pxSource->m_bHasFailurePin);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_CycleIsCappedNotHung)
+{
+	EnsureTestNodesRegistered();
+
+	// A failure wire back into an earlier node is a cycle - and AddEdge rejects
+	// only SELF-loops, so nothing at authoring time refuses it. (The hazard is
+	// PRE-EXISTING on the SUCCESS path: a -> b -> a hangs identically.) The walk
+	// gives up at uGRAPH_MAX_CHAIN_STEPS rather than spinning, because a hung
+	// headless unit batch is a watchdog kill with no failing test.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_CustomSource");
+	const u_int uStatus = xDef.AddNode("Test_ChainStatus");
+	xDef.AddEdge(uSource, 0, uStatus, 0);
+	const u_int uFailPin = FailurePinIndexOfType("Test_FailurePin");
+	const u_int uA = AddFailurePinNode(xDef, uStatus, 0, "a");
+	const u_int uB = AddFailurePinNode(xDef, uA, uFailPin, "b");
+	ZENITH_ASSERT_TRUE(xDef.AddEdge(uB, uFailPin, uA, 0));	// ...and back: the cycle
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);	// terminates - that IS the assertion
+	g_strLifecycleLog.clear();
+
+	ZENITH_ASSERT_TRUE(xGraph.HasHitChainStepCap());
+	ZENITH_ASSERT_EQ(xGraph.GetBlackboard().GetInt32("status", -1), static_cast<int32_t>(GRAPH_NODE_STATUS_FAILURE));
+	ZENITH_ASSERT_FALSE(xGraph.NeedsUpdateDispatch());	// the cursor was cleared, nothing is suspended
+}
+
+ZENITH_TEST(BehaviourGraph, FailurePin_BuilderFailPinResolvesAndLatches)
+{
+	EnsureTestNodesRegistered();
+
+	// Happy path: FailPin names the index so a boot-authored graph never
+	// hard-codes it, and the wire it builds routes at runtime.
+	{
+		Zenith_GraphDefinition xDef;
+		u_int uFail = 0;
+		{
+			Zenith_GraphBuilder xBuilder(xDef);
+			const u_int uSource = xBuilder.Node("Test_OnUpdate");
+			uFail = xBuilder.Node("Test_FailurePin");
+			const u_int uHandler = xBuilder.Node("Test_Counter");
+			ZENITH_ASSERT_EQ(xBuilder.FailPin(uFail), 1u);
+			xBuilder.ParamString(uHandler, "m_strCounterName", "handled")
+				.Chain(uSource, uFail)
+				.Edge(uFail, xBuilder.FailPin(uFail), uHandler);
+			ZENITH_ASSERT_FALSE(xBuilder.HasErrors());
+			ZENITH_ASSERT_TRUE(xBuilder.Build());
+		}
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_EQ(xGraph.GetBlackboard().GetInt32("handled", -1), 1);
+	}
+
+	// Failure paths: an unflagged node and an ID this builder never made both
+	// return 0 AND latch the error state - a graph authored on a wrong
+	// assumption fails its Build() rather than silently wiring pin 0.
+	{
+		Zenith_GraphDefinition xDef;
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uCounter = xBuilder.Node("Test_Counter");
+		ZENITH_ASSERT_NE(uCounter, 0u);
+		ZENITH_ASSERT_EQ(xBuilder.FailPin(uCounter), 0u);
+		ZENITH_ASSERT_TRUE(xBuilder.HasErrors());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());
+	}
+	{
+		Zenith_GraphDefinition xDef;
+		Zenith_GraphBuilder xBuilder(xDef);
+		ZENITH_ASSERT_EQ(xBuilder.FailPin(4242u), 0u);
+		ZENITH_ASSERT_TRUE(xBuilder.HasErrors());
 	}
 }
 

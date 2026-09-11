@@ -58,9 +58,13 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   into their active pins via `AbortChain`) and `GetDynamicExecOutputCount`
   (variable-pin flow nodes; pin ≤ 255 by the cursor-key layout)).
 - `Zenith_GraphNodeRegistry.{h,cpp}` — `RegisterNodeType<T>(name, eventType,
-  outputCount, bFlowNode, category)` derives the create-fn, property table
-  (via `ZENITH_PROPERTY`), and type version from the node class; name-keyed;
-  duplicate-guarded; registrar inversion keeps this module leaf-safe.
+  outputCount, bFlowNode, category, bHasFailurePin = false)` derives the
+  create-fn, property table (via `ZENITH_PROPERTY`), and type version from the
+  node class; name-keyed; duplicate-guarded; registrar inversion keeps this
+  module leaf-safe. `bHasFailurePin` opts the type into the routable
+  **On Failure** exec pin (see "Routable failure" below) and is VALIDATED at
+  registration — a refused flag is a `Zenith_Error` plus a forced `false`, never
+  an assert, so the refusal is something a test (and the editor) can read back.
 - `Zenith_GraphBlackboard.{h,cpp}` — name → `Zenith_PropertyValue` store with
   typed getters (`GetFloat/GetBool/GetInt32/GetVector2/3/4/GetString/
   GetPackedEntityID(name, default)` — return the default on missing OR type
@@ -82,8 +86,15 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   suspension/resume, branch flow semantics, serialization round-trip,
   unresolved-node preservation, custom-event name matching, blackboard
   type-safe migration, corrupt-definition rejection, the flow-node family
-  (Selector/Switch/StateMachine/Repeat/ForEach/**Sequence**), and the
-  resume-drive flag per anchor class (`ResumeDrive_FlagNeverSetOutsideTheTwoPaths`).
+  (Selector/Switch/StateMachine/Repeat/ForEach/**Sequence**), the
+  resume-drive flag per anchor class (`ResumeDrive_FlagNeverSetOutsideTheTwoPaths`),
+  and the **routable failure pin** (the `FailurePin_*` block: unwired parity,
+  wired continuation under the same key, a suspending handler, abort, the
+  Selector and Repeat surprises, the three registration refusals, the inert
+  edge on an unflagged type, the unresolved abort, the cycle cap, and
+  `Zenith_GraphBuilder::FailPin`). The editor half — the extra pin laid out and
+  keyed, and `Action_Connect` accepting it only on a flagged type — is
+  `Editor/Panels/Zenith_EditorPanel_GraphEditor.Tests.inl`.
 
 ## Execution model
 
@@ -103,9 +114,56 @@ seeded from the declared variables.
   reaches its interval, then subtracts it). Downstream action/flow nodes, by
   contrast, always `Execute` when the chain reaches them.
 - **Chains:** one outgoing edge per (node, pin). A plain node's SUCCESS
-  auto-continues from its pin 0; FAILURE aborts the chain; flow nodes
-  (`bFlowNode`, e.g. Branch/Loop) drive their own output pins from inside
-  `Execute` via `RunChainFromPin`.
+  auto-continues from its pin 0; FAILURE aborts the chain **unless the node's
+  type carries a wired failure pin** (below); flow nodes (`bFlowNode`, e.g.
+  Branch/Loop) drive their own output pins from inside `Execute` via
+  `RunChainFromPin`.
+- **Routable failure (`m_bHasFailurePin`):** a node type may opt into ONE extra
+  exec output at index `m_uExecOutputCount` — "On Failure". The tri-state is
+  unchanged; this is only where the walk goes next.
+  - **Unwired = today's behaviour**, exactly: the chain aborts. The flag alone
+    changes nothing.
+  - **Wired:** the walk CONTINUES down the failure edge **under the same chain
+    key** (the key is the anchor's, captured before the walk), so a handler that
+    returns RUNNING suspends the anchor's chain and resumes at the handler —
+    without re-running the failing node and without a second `OnEnter` — and
+    `AbortChain(anchor, pin)` reaches the handler's `OnAbort`.
+  - **The failing node has already had `OnExit`.** Failing is a completed run of
+    that node whatever happens to the chain next (`-f` precedes `+h` in the
+    lifecycle log).
+  - **The chain's status is the continuation's terminal status** (precedent:
+    `Repeat m_bUntilFailure`). ★ **This is the surprise**, and it is not a bug:
+    a failure handler REPLACES the branch's answer rather than adding to it. A
+    `Selector` whose pin-0 branch fails but whose handler SUCCEEDS sees SUCCESS
+    and never falls through to pin 1; `Repeat(m_bUntilFailure)` never reaches
+    its done pin; `Loop`/`ForEach` keep iterating; `RunGraphCall`'s
+    `bAnyCompleted` flips the call to SUCCESS. Put a handler on a node inside a
+    Selector branch only when you mean "this branch has now succeeded".
+  - **The flag is read off the SOURCE TYPE, never inferred from the edge.** An
+    edge at that index on an unflagged type is inert.
+  - **Refused, observably, on four shapes** (`Zenith_Error` + forced `false`):
+    any **flow node** (fixed or dynamic — a flow node's FAILURE is the status it
+    propagated out of a sub-chain it ran itself, so "Branch › On Failure" would
+    mean "the child failed"), any **event source** (its FAILURE is a gate that
+    returns from `RunSourceNode` before any chain walk, so the pin would be dead
+    by construction), any **dynamic-pin** type (the index would move with the
+    branch count), and `m_uExecOutputCount >= 255` (the cursor key packs the
+    pin into its low byte). A type info with no create fn cannot be probed and
+    is refused too.
+  - **The unresolved-node abort is NOT routable** — there is no type info there
+    to carry a flag.
+  - **No format change.** An edge already carries a source pin index, so a
+    failure wire is an ordinary edge at pin `m_uExecOutputCount`.
+  - Authoring: `Zenith_GraphBuilder::FailPin(nodeID)` names the index (and
+    error-latches on an unflagged or unknown node) so no builder hard-codes it.
+- **Cycle cap (`uGRAPH_MAX_CHAIN_STEPS` = 4096):** `AddEdge` rejects only
+  SELF-loops, so a chain wired back into a node it already passed spins forever
+  — a **pre-existing** hazard on the SUCCESS path (`a → b → a` hangs identically
+  and always did), which a failure wire makes easier to author by accident.
+  `RunChainFromPin` therefore counts steps per walk and, on exceeding the cap,
+  reports once per graph instance (`HasHitChainStepCap()`), clears the cursor
+  and returns FAILURE. A hung walk inside a headless unit batch is a watchdog
+  kill with no failing test; this turns it into an ordinary failure.
 - **RUNNING suspension:** a node returning RUNNING stores a chain cursor
   (`m_xChainCursors`, keyed `(anchorID << 8) | pin`) and the chain resumes AT
   that node on the next fire. One-shot anchors (OnStart, collisions, custom

@@ -534,11 +534,30 @@ namespace
 	constexpr float fPIN_SPACING = 18.0f;
 	constexpr float fPIN_RADIUS = 5.0f;
 
+	// Sentinel for "this node has no failure pin" in the pin-drawing pass.
+	constexpr u_int uNO_FAILURE_PIN = 0xFFFFFFFFu;
+
+	// The index of a node type's routable "On Failure" exec pin, or
+	// uNO_FAILURE_PIN. One past the last normal output, and only ever on a
+	// static-pin non-flow type (Zenith_GraphNodeRegistry::Register refuses the
+	// flag on anything else), which is why this needs no param-applied instance.
+	u_int GetFailurePinIndex(const Zenith_GraphNodeTypeInfo* pxInfo)
+	{
+		return (pxInfo && pxInfo->m_bHasFailurePin) ? pxInfo->m_uExecOutputCount : uNO_FAILURE_PIN;
+	}
+
 	// Effective exec-pin count for a node def. Variable-pin flow nodes
 	// (Switch/StateMachine/Selector) report their configured count through
 	// GetDynamicExecOutputCount on a param-applied temp instance; every other
 	// type uses the registered static count. Editor-scale cost (one temp
 	// instance per dynamic node per query).
+	//
+	// This is the ONE funnel the whole panel asks - BuildPinPositions (drawing
+	// + hit rects), RenderCanvasNode (box height) and Action_Connect (connect
+	// validation) - so a flagged type's extra failure pin is added here exactly
+	// once and every consumer follows. Deliberately NOT added inside
+	// GetDynamicExecOutputCount: that is the NODE's answer about its own branch
+	// count, and a dynamic-pin type cannot carry the flag anyway.
 	u_int GetNodeExecOutputCount(const Zenith_GraphNodeDef& xNodeDef, const Zenith_GraphNodeTypeInfo* pxInfo)
 	{
 		if (!pxInfo)
@@ -549,7 +568,8 @@ namespace
 		if (pxTemp->GetDynamicExecOutputCount() < 0)
 		{
 			delete pxTemp;
-			return pxInfo->m_uExecOutputCount;	// static-pin type
+			// Static-pin type: + the failure pin when the type carries one.
+			return pxInfo->m_uExecOutputCount + (pxInfo->m_bHasFailurePin ? 1u : 0u);
 		}
 		if (pxInfo->m_pfnGetPropertyTable && xNodeDef.m_xParamBlob.GetCursor() > 0)
 		{
@@ -647,7 +667,13 @@ namespace
 
 	// Pin visuals + interaction for one node (input pin accepts pending links;
 	// output pins start links / right-click-disconnect).
-	void RenderNodePins(ImDrawList* pxDrawList, Zenith_GraphDefinition& xDef, u_int uNodeID, const PinPos& xPins)
+	//
+	// uFailurePinIndex (uNO_FAILURE_PIN when the type has none) only changes the
+	// pin's COLOUR: this panel draws bare circles and has no pin labels at all,
+	// so a red-ish "On Failure" pin is the whole affordance. Its rect, its key
+	// and its drag behaviour are those of any other output pin.
+	void RenderNodePins(ImDrawList* pxDrawList, Zenith_GraphDefinition& xDef, u_int uNodeID, const PinPos& xPins,
+		u_int uFailurePinIndex)
 	{
 		const ImVec2& xPinCentre = xPins.m_xInput;
 		pxDrawList->AddCircleFilled(xPinCentre, fPIN_RADIUS, IM_COL32(220, 220, 220, 255));
@@ -667,7 +693,10 @@ namespace
 		for (u_int uPin = 0; uPin < xPins.m_axOutputs.GetSize(); ++uPin)
 		{
 			const ImVec2& xOutCentre = xPins.m_axOutputs.Get(uPin);
-			pxDrawList->AddCircleFilled(xOutCentre, fPIN_RADIUS, IM_COL32(160, 220, 160, 255));
+			const ImU32 uPinColour = (uPin == uFailurePinIndex)
+				? IM_COL32(220, 100, 90, 255)		// On Failure
+				: IM_COL32(160, 220, 160, 255);		// normal exec output
+			pxDrawList->AddCircleFilled(xOutCentre, fPIN_RADIUS, uPinColour);
 			g_xGraphEditor.m_xPinRects[MakePinKey(uNodeID, uPin, false)] = MakeRect(
 				ImVec2(xOutCentre.x - 8.0f, xOutCentre.y - 8.0f), ImVec2(xOutCentre.x + 8.0f, xOutCentre.y + 8.0f));
 			ImGui::PushID(static_cast<int>(uPin));
@@ -737,7 +766,7 @@ namespace
 		const PinPos* pxPins = xPinPositions.TryGet(uNodeID);
 		if (pxPins)
 		{
-			RenderNodePins(pxDrawList, xDef, uNodeID, *pxPins);
+			RenderNodePins(pxDrawList, xDef, uNodeID, *pxPins, GetFailurePinIndex(pxInfo));
 		}
 		ImGui::PopID();
 
@@ -1333,5 +1362,11 @@ bool Zenith_GraphEditorPanel::GetSelectedNodeParamFloat(const char* szPropertyNa
 }
 
 #endif // ZENITH_TESTING
+
+// Unit tests for this panel. Included unconditionally (the .inl guards its own
+// body with ZENITH_TESTING) and INSIDE the ZENITH_TOOLS block, because
+// everything it drives - the panel, its Action_* verbs, its rect accessors -
+// exists only in a tools build.
+#include "Editor/Panels/Zenith_EditorPanel_GraphEditor.Tests.inl"
 
 #endif // ZENITH_TOOLS

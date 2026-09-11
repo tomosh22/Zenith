@@ -72,6 +72,17 @@ public:
 	// Pin-0 linear sugar: Chain(a, b) == Edge(a, 0, b).
 	Zenith_GraphBuilder& Chain(u_int uFrom, u_int uTo);
 
+	// The node's routable "On Failure" exec pin index, so a builder never
+	// hard-codes it: Edge(uNode, xBuilder.FailPin(uNode), uHandler). Returns
+	// m_uExecOutputCount for a type registered with a failure pin; for an
+	// unflagged or unknown node it LATCHES the error state (the mechanism every
+	// other authoring mistake uses) and returns 0 - which is pin 0, a wire the
+	// author can see, on a build that already reports false.
+	//
+	// Resolves through the builder's pending state, so it must be called BEFORE
+	// Build() (which commits and frees that state).
+	u_int FailPin(u_int uNodeID);
+
 	// Commits every touched node's params into its blob and lays nodes out on
 	// an auto grid (column = chain depth) so the editor opens boot-authored
 	// graphs legibly. Returns !HasErrors(). Single-shot.

@@ -153,6 +153,30 @@ Zenith_GraphBuilder& Zenith_GraphBuilder::Chain(u_int uFrom, u_int uTo)
 	return Edge(uFrom, 0, uTo);
 }
 
+u_int Zenith_GraphBuilder::FailPin(u_int uNodeID)
+{
+	PendingNode* pxPending = uNodeID != 0 ? FindPending(uNodeID) : nullptr;
+	if (pxPending == nullptr)
+	{
+		// A 0 ID from a failed Node() is already latched upstream - only report
+		// NEW information (a live ID we never made, or a post-Build call).
+		if (uNodeID != 0)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE, "Zenith_GraphBuilder: FailPin on unknown node ID %u", uNodeID);
+		}
+		m_bErrors = true;
+		return 0;
+	}
+	if (!pxPending->m_pxInfo->m_bHasFailurePin)
+	{
+		Zenith_Log(LOG_CATEGORY_CORE, "Zenith_GraphBuilder: node '%s' has no failure pin",
+			pxPending->m_pxInfo->m_strTypeName.c_str());
+		m_bErrors = true;
+		return 0;
+	}
+	return pxPending->m_pxInfo->m_uExecOutputCount;
+}
+
 void Zenith_GraphBuilder::AssignEditorPositions()
 {
 	// Column = longest edge-path depth from any in-degree-0 node; row = order
@@ -164,8 +188,12 @@ void Zenith_GraphBuilder::AssignEditorPositions()
 		xDepths[m_xDefinition.GetNodeAt(u).m_uNodeID] = 0;
 	}
 
-	// Relax edges nodeCount times (graphs are small; cycles are impossible -
-	// AddEdge rejects self-loops and chains are forward-built).
+	// Relax edges nodeCount times (graphs are small). AddEdge rejects only
+	// SELF-loops, so a longer cycle is authorable - a failure wire back into an
+	// earlier node is the easy way to write one - and the relaxation is bounded
+	// by the pass count rather than by acyclicity. A cycle just produces a
+	// depth-saturated layout here; the RUNTIME guard against one is
+	// Zenith_BehaviourGraph::uGRAPH_MAX_CHAIN_STEPS.
 	for (u_int uPass = 0; uPass < uNodeCount; ++uPass)
 	{
 		bool bChanged = false;

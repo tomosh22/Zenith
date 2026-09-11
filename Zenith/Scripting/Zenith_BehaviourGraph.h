@@ -175,6 +175,20 @@ public:
 	// nodes (Branch/Loop) to drive their output sub-chains from inside Execute.
 	GraphNodeStatus RunChainFromPin(u_int uNodeID, u_int uPin, Zenith_GraphContext& xContext);
 
+	// Per-walk step cap. A (node, pin) has one outgoing edge, but nothing stops
+	// an author wiring a chain back into a node it already passed: a plain
+	// SUCCESS chain a -> b -> a already spins forever (AddEdge rejects only
+	// self-loops), and a routed FAILURE wire is a second way to author the same
+	// shape. A hung walk inside a headless unit batch is a watchdog kill with no
+	// failing test, so the walk gives up instead: Zenith_Error once per graph
+	// instance, cursor cleared, FAILURE returned. 4096 is far above any authored
+	// chain and far below anything that looks like a hang.
+	static constexpr u_int uGRAPH_MAX_CHAIN_STEPS = 4096;
+
+	// True once a walk on this instance hit uGRAPH_MAX_CHAIN_STEPS - the
+	// observable half of the report above (the log line alone is not testable).
+	bool HasHitChainStepCap() const { return m_bChainStepCapHit; }
+
 	// Aborts the suspended chain hanging off (uNodeID, uPin), if any: calls
 	// OnAbort on the cursor node (flow nodes forward the abort into their own
 	// active pins from there) and clears the cursor + any matching suspended
@@ -230,4 +244,5 @@ private:
 	Zenith_Vector<u_int> m_auRecentlyExecuted;
 	u_int m_uUnresolvedCount = 0;
 	u_int m_uExecutingNodeID = 0;
+	bool m_bChainStepCapHit = false;	// latched report: one log line per instance, not per walk
 };

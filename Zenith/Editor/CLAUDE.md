@@ -66,6 +66,7 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 - `Zenith_Editor.Tests.inl` / `Zenith_EditorAutomation.Tests.inl` - Unit tests for the editor controller and the automation step queue (included into the unit-test TU)
 - `Panels/` - Panel implementations (AnimStateMachine, Animation, Console, ContentBrowser, GraphEditor, Hierarchy, MaterialEditor, Memory, Properties, RenderGraph, StatusBar, TerrainEditor, Toolbar, VariantEditor, Viewport). Toolbar and StatusBar are strips drawn inside the dockspace host window, not dockable windows
 - `Panels/Zenith_EditorPanel_Animation.h/cpp` (+ `_Render.cpp`, `_Ops.cpp`, `_Pose.cpp`, `_IK.cpp`, `_Curve.cpp`) - The animation DOPE SHEET over one `Zenith_AnimationDocument` and one `Zenith_AnimationPreviewSession`. A CLASS, not a pile of file statics (see "Animation Dope Sheet Panel" below); the `_Render` TU holds the drawing half and `_Curve` holds WU-8.2's curve view (its pure value↔pixel mapping, its drawing and its input translation — see "The Curve view" below). Tests in `Zenith_EditorPanel_Animation.Tests.inl`
+- `Panels/Zenith_EditorPanel_GraphEditor.Tests.inl` - Headless unit tests for the Behaviour Graph panel (included at the bottom of its .cpp, inside `ZENITH_TOOLS`), driving a real ImGui frame like the Animation panel's
 - `Panels/Zenith_EditorPanel_AnimStateMachine.h/cpp` (+ `_Ops.cpp`, `_Render.cpp`) - The animator-controller STATE-MACHINE GRAPH over one `Zenith_AnimControllerDocument` (see "Animator State Machine Panel" below). A CLASS with undo, like the dope sheet and unlike the graph editor. Tests in `Zenith_EditorPanel_AnimStateMachine.Tests.inl`
 - `../Core/Zenith_ImGuiWidgets.h/cpp` - Layer-0 ImGui widgets (`Vec3Field`, `PropertyLabel`) that component inspectors in EntityComponent may use without including `Editor/`
 - `../Core/Zenith_EditorFontHook.h` - `Zenith_EditorFonts_Load()`, called by the Vulkan and Null backends right after `ImGui::CreateContext` so the editor font is registered before either backend builds the atlas (the Null backend's legacy atlas is locked at the first NewFrame)
@@ -870,6 +871,24 @@ is `Zenith/Scripting/` — see its CLAUDE.md):
   `"float" / "int" / "bool" / "string" / "vector3"` + numeric default.
 - **Unresolved nodes** render error-red ("UNRESOLVED") when the type isn't in
   `Zenith_GraphNodeRegistry`; the asset round-trips them verbatim.
+- **The "On Failure" pin** — a node type registered with `bHasFailurePin` draws
+  ONE extra output pin at index `m_uExecOutputCount`, one past its last normal
+  output, in a distinct **red-ish** colour (the routing semantics are
+  `Scripting/CLAUDE.md` → *Routable failure*). The colour is the whole
+  affordance: this panel draws bare circles and has no pin labels at all. The
+  extra pin is an ordinary output in every other respect — same rect size, same
+  key (`MakePinKey`), draggable, right-click-disconnectable — and the node box
+  grows for free because its height already derives from the pin count. The
+  `+1` lives in **`GetNodeExecOutputCount`** and nowhere else: that funnel feeds
+  `BuildPinPositions` (drawing + hit rects), `RenderCanvasNode` (box height) and
+  `Action_Connect` (connect validation), so drawing, drag-authoring and connect
+  validation cannot disagree. It is deliberately NOT added inside a node's
+  `GetDynamicExecOutputCount` — that is the node's answer about its own branch
+  count, and the registry refuses the flag on dynamic-pin (and flow) types
+  anyway. Unit: `FailurePin_EditorLaysOutAndKeysExtraPin` in
+  `Panels/Zenith_EditorPanel_GraphEditor.Tests.inl` (headless, a real ImGui
+  frame — the rect assertions are INSIDE the open frame because `IsOnScreen`
+  re-reads `DisplaySize` at query time).
 - **Live execution highlighting** — while Playing, recently-executed nodes of
   the selected entity's matching graph slot glow (fed by
   `Zenith_BehaviourGraph::GetRecentlyExecuted`).

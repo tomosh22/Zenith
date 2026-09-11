@@ -462,6 +462,7 @@ void Zenith_BehaviourGraph::Shutdown()
 	m_xBlackboard.Clear();
 	m_uUnresolvedCount = 0;
 	m_uExecutingNodeID = 0;
+	m_bChainStepCapHit = false;
 }
 
 bool Zenith_BehaviourGraph::HasEventSource(GraphEventType eEvent) const
@@ -642,8 +643,24 @@ GraphNodeStatus Zenith_BehaviourGraph::RunChainFromPin(u_int uNodeID, u_int uPin
 		return GRAPH_NODE_STATUS_SUCCESS;	// empty chain
 	}
 
+	u_int uSteps = 0;
 	while (uCurrent != 0)
 	{
+		// Cycle guard - see uGRAPH_MAX_CHAIN_STEPS. Counted per WALK, so a chain
+		// that legitimately runs thousands of nodes over many fires is unaffected.
+		if (++uSteps > uGRAPH_MAX_CHAIN_STEPS)
+		{
+			if (!m_bChainStepCapHit)
+			{
+				Zenith_Error(LOG_CATEGORY_CORE,
+					"BehaviourGraph: chain from (node %u, pin %u) exceeded %u steps - a cyclic exec wiring; aborting the walk",
+					uNodeID, uPin, uGRAPH_MAX_CHAIN_STEPS);
+				m_bChainStepCapHit = true;
+			}
+			m_xChainCursors.Remove(ulKey);
+			return GRAPH_NODE_STATUS_FAILURE;
+		}
+
 		NodeInstance* pxInstance = FindInstance(uCurrent);
 		if (!pxInstance || !pxInstance->m_pxNode)
 		{
@@ -681,8 +698,29 @@ GraphNodeStatus Zenith_BehaviourGraph::RunChainFromPin(u_int uNodeID, u_int uPin
 		}
 		if (eStatus == GRAPH_NODE_STATUS_FAILURE)
 		{
-			m_xChainCursors.Remove(ulKey);
-			return GRAPH_NODE_STATUS_FAILURE;
+			// Routable failure. The flag is read off the SOURCE TYPE, never
+			// inferred from the edge: an edge at this index on an unflagged type
+			// is inert (today's abort), so a stray wire can never quietly change
+			// how a node fails. m_pxNode non-null implies m_pxTypeInfo non-null
+			// (InitialiseFromDefinition only creates the node when the type
+			// resolved), so no null check here.
+			//
+			// The failing node has ALREADY had OnExit (above) - failing is a
+			// completed run of that node, whatever happens to the chain next.
+			const u_int uHandler = pxInstance->m_pxTypeInfo->m_bHasFailurePin
+				? FindSuccessor(uCurrent, pxInstance->m_pxTypeInfo->m_uExecOutputCount) : 0u;
+			if (uHandler == 0)
+			{
+				m_xChainCursors.Remove(ulKey);
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			// Continue the SAME walk under the SAME key (ulKey is the anchor's,
+			// captured before the loop), and deliberately do NOT clear the cursor:
+			// a handler that returns RUNNING must write it below, and a handler
+			// chain that completes clears it at the bottom. The chain's status is
+			// therefore the continuation's terminal status.
+			uCurrent = uHandler;
+			continue;
 		}
 
 		// SUCCESS. Flow nodes (Branch/Loop) drive their outputs from inside

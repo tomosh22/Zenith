@@ -42,6 +42,15 @@ struct Zenith_GraphNodeTypeInfo
 	GraphEventType m_eEventType = GRAPH_EVENT_NONE;	// != NONE for event-source nodes
 	u_int m_uExecOutputCount = 1;					// number of output exec pins
 	bool m_bFlowNode = false;						// true = runs its output sub-chains from inside Execute (Branch/Loop); false = chain auto-continues via pin 0 on SUCCESS
+	// Routable FAILURE: when true the type owns ONE extra exec output at index
+	// m_uExecOutputCount ("On Failure"). Unwired it changes nothing (the chain
+	// still aborts); wired, RunChainFromPin continues down that edge under the
+	// same chain key. Registration REFUSES the flag - Zenith_Error + forced
+	// false - on a flow node (whose FAILURE is its sub-chain's propagated
+	// status), on a dynamic-pin type (the index would move with the branch
+	// count), and at m_uExecOutputCount >= 255 (the chain-cursor key packs the
+	// pin into its low byte).
+	bool m_bHasFailurePin = false;
 	Zenith_GraphNodeCreateFn m_pfnCreate = nullptr;
 	Zenith_GraphNodeTableFn m_pfnGetPropertyTable = nullptr;	// null = parameterless node
 #ifdef ZENITH_TOOLS
@@ -58,16 +67,19 @@ public:
 
 	// Type-safe registration helper: derives create fn, property table, and
 	// type version from the class. szCategory is editor metadata (ignored in
-	// non-tools builds).
+	// non-tools builds). bHasFailurePin opts the type into the routable
+	// "On Failure" exec pin (see Zenith_GraphNodeTypeInfo::m_bHasFailurePin);
+	// Register() validates it and refuses it observably.
 	template<typename T>
 	void RegisterNodeType(const char* szTypeName, GraphEventType eEventType, u_int uExecOutputCount,
-		bool bFlowNode, const char* szCategory)
+		bool bFlowNode, const char* szCategory, bool bHasFailurePin = false)
 	{
 		Zenith_GraphNodeTypeInfo xInfo;
 		xInfo.m_strTypeName = szTypeName;
 		xInfo.m_eEventType = eEventType;
 		xInfo.m_uExecOutputCount = uExecOutputCount;
 		xInfo.m_bFlowNode = bFlowNode;
+		xInfo.m_bHasFailurePin = bHasFailurePin;
 		xInfo.m_pfnCreate = +[]() -> Zenith_GraphNode* { return new T(); };
 		if constexpr (HasGraphNodeProperties<T>)
 		{

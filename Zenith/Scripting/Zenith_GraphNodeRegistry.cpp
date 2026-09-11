@@ -19,7 +19,75 @@ void Zenith_GraphNodeRegistry::Register(const Zenith_GraphNodeTypeInfo& xInfo)
 		Zenith_Error(LOG_CATEGORY_CORE, "GraphNodeRegistry: duplicate node type '%s' ignored", xInfo.m_strTypeName.c_str());
 		return;
 	}
-	m_axTypes.PushBack(xInfo);
+
+	// The failure-pin flag is VALIDATED here, not asserted: an assert
+	// DebugBreaks a developer and vanishes in Release, so a refusal nothing can
+	// observe would be indistinguishable from an honoured flag. A refused flag
+	// is reported and FORCED false, and the stored type info is what every
+	// caller (runtime + editor) reads back.
+	Zenith_GraphNodeTypeInfo xValidated = xInfo;
+	if (xValidated.m_bHasFailurePin)
+	{
+		if (xValidated.m_bFlowNode)
+		{
+			// A flow node's FAILURE is the propagated status of the sub-chain it
+			// ran itself (Branch/Loop/Repeat/ForEach/StateMachine/Selector), so
+			// "Branch > On Failure" would mean "the child failed" - a different
+			// thing wearing the same wire.
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"GraphNodeRegistry: '%s' requested a failure pin but is a flow node; flag refused",
+				xValidated.m_strTypeName.c_str());
+			xValidated.m_bHasFailurePin = false;
+		}
+		else if (xValidated.m_eEventType != GRAPH_EVENT_NONE)
+		{
+			// An event SOURCE gates itself: its own FAILURE returns from
+			// RunSourceNode before any chain is walked, so a failure wire on it
+			// could never be consulted - the editor would draw a pin that is
+			// dead by construction.
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"GraphNodeRegistry: '%s' requested a failure pin but is an event source; its FAILURE is a gate, not a chain outcome, flag refused",
+				xValidated.m_strTypeName.c_str());
+			xValidated.m_bHasFailurePin = false;
+		}
+		else if (xValidated.m_uExecOutputCount >= 255)
+		{
+			// The chain-cursor key packs the pin into its low byte
+			// (Zenith_BehaviourGraph::MakeChainKey), and the editor's pin key
+			// masks to 0xFF - index 255 and up cannot be addressed.
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"GraphNodeRegistry: '%s' requested a failure pin at index %u; pins are capped at 255, flag refused",
+				xValidated.m_strTypeName.c_str(), xValidated.m_uExecOutputCount);
+			xValidated.m_bHasFailurePin = false;
+		}
+		else if (xValidated.m_pfnCreate == nullptr)
+		{
+			// Without a create fn the dynamic-pin probe below cannot run, and an
+			// UNCHECKED flag must not read as an honoured one.
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"GraphNodeRegistry: '%s' requested a failure pin but has no create fn to validate against; flag refused",
+				xValidated.m_strTypeName.c_str());
+			xValidated.m_bHasFailurePin = false;
+		}
+		else
+		{
+			// GetDynamicExecOutputCount is a non-static virtual, so the only way
+			// to ask a TYPE is to build one. Registration-time only (once per
+			// type, at boot), never per frame.
+			Zenith_GraphNode* pxTemp = xValidated.m_pfnCreate();
+			const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
+			delete pxTemp;
+			if (iDynamic >= 0)
+			{
+				Zenith_Error(LOG_CATEGORY_CORE,
+					"GraphNodeRegistry: '%s' requested a failure pin but reports %d dynamic exec pins; the failure index would move with the branch count, flag refused",
+					xValidated.m_strTypeName.c_str(), iDynamic);
+				xValidated.m_bHasFailurePin = false;
+			}
+		}
+	}
+
+	m_axTypes.PushBack(xValidated);
 }
 
 const Zenith_GraphNodeTypeInfo* Zenith_GraphNodeRegistry::Find(const char* szTypeName) const
