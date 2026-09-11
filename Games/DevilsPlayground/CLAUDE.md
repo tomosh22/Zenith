@@ -460,11 +460,14 @@ and `Docs/Status.md` remain the SPEC; the board is the queue and the audit
 log. **Nothing here changes if you ignore it** — but four things bite if
 you do not know it exists.
 
-**1. `DP` is its own board project**, alongside `ZM` (Zenithmon) and `ZEN`
-(the engine). One board per game area, because each wants its own epics,
-sprints and releases. All three are served by this one checkout, so the
-loop still runs exactly one ticket at a time across all of them — a
-refusal naming a Zenithmon ticket is that invariant working, not a bug.
+**1. `DP` is its own board project**, alongside `ZM` (Zenithmon), `ZEN`
+(the engine) and — since 2026-09 — `UV` (Undervault), `HE` (Hearth) and
+`FD` (Foundry), bootstrapped from their TDDs with milestone epics and
+planned sprints and nothing else. One board per game area, because each
+wants its own epics, sprints and releases. All six are served by this one
+checkout, so the loop still runs exactly one ticket at a time across all
+of them — a refusal naming a Zenithmon ticket is that invariant working,
+not a bug.
 
 **2. DP is the one area that BRANCHES.** The `DevilsPlayground` category
 overrides `branching: "branch"` with `branchPrefix: "agent/"`, because

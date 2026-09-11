@@ -233,8 +233,11 @@ what bites if you do not know the board exists.
 **Zenithmon has its OWN board project — `ZM`.** It used to be a category
 inside `ZEN`; it is a project now, because epics, sprints, releases and a
 burndown are things a project has and a component cannot. The engine
-keeps `ZEN` and DevilsPlayground has `DP`. All three are served by this
-one checkout, so the loop still runs exactly one ticket at a time.
+keeps `ZEN`, DevilsPlayground has `DP`, and — since 2026-09 — Undervault,
+Hearth and Foundry have `UV`/`HE`/`FD`, bootstrapped from their TDDs with
+milestone epics and planned sprints and nothing else. All six are served
+by this one checkout, so the loop still runs exactly one ticket at a
+time.
 
 **What moved, and what did not.** `Docs/Roadmap.md` and `Docs/Status.md`
 remain the SPEC — the roadmap carries each stage's epic key and each

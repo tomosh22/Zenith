@@ -351,7 +351,7 @@ can develop here and ignore it entirely, with three exceptions.
 |---|---|
 | `zagent.project.json` | Gate command lines, pinned unit baselines, per-category conventions, branching mode, living-doc directories. **Sent to the board with every request** |
 | `.claude/commands/tick.md` | The `/tick` protocol — nine steps, seven invariants |
-| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (the assert script — it prints its own count; do not pin one here, this line has been stale twice), `zagent.cmd` shim. **No Node, no `node_modules`** |
+| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (the assert script — it prints its own count; do not pin one here, this line has been stale twice), `zagent.cmd` shim, and `contract.json` — the golden wire contract (protocol version, path-valued flags, docs-tree commands) that BOTH sides' test suites assert against. **No Node, no `node_modules`** |
 | `.zagent/` | Run scratch (`last.json`, `run/<KEY>/`). **Gitignored**, so the dirty-tree precondition still holds |
 
 The board keeps only POLICY — the agent account, the complexity→model
@@ -366,12 +366,28 @@ separate machines.
 its own epics, sprints, releases and burndown, which is what a project is
 for; a component could carry none of them.
 
+**Three more joined, bootstrapped from their TDDs (2026-09): `UV`
+Undervault, `HE` Hearth, `FD` Foundry.** Each has docs but no `.zproj`
+yet, so each project carries ONE milestone epic + ONE PLANNED sprint per
+documented milestone and nothing else. The bootstrap transition: the
+game's first ticket is THE SCAFOLD (`<Name>.zproj`, directory skeleton, a
+CLAUDE.md carrying the TDD's conventions), its category gates
+(`Build\regen.ps1` + `zenith build <Name>` + `zenith test <Name>`)
+FAIL until that diff lands and pass exactly when it is real — so the
+scaffold needs no protected-path edit, ever — and nothing starts a game
+sprint or files implementation tickets until a human starts the first
+one. Two HUMAN edits follow a landed scaffold: a `build <Name>` line
+joins the Engine gate list (a `.zproj`-carrying game missing from it
+fails `Test-ZagentClient.ps1`), and the game's baseline row joins
+`Tools/unit_baselines.json` when its first units land. The full
+transition is `packages/agent/OPERATIONS.md` §5 in the board repo.
+
 **I5 is unaffected, and that is deliberate.** Every project this file
 declares resolves to the SAME checkout, so the advisory lock and the
 in-flight check still mean **one ticket at a time for `C:\dev\Zenith`**,
-not one per board. `zagent next` with no `--project` walks all three in
-declaration order and reports "nothing to claim" only when every one is
-empty.
+not one per board. `zagent next` with no `--project` walks every declared
+board in declaration order and reports "nothing to claim" only when every
+one is empty.
 
 **Blockers are mechanical now.** A `BLOCKS` link between tickets is the
 one thing on the board that changes what the loop DOES: the claim query
@@ -512,6 +528,18 @@ If `zagent` is not on PATH, `Tools/zagent/README.md` has the one-time
 setup; you can always call `pwsh -NoProfile -File Tools\zagent\zagent.ps1`
 directly.
 
+**Every request names a protocol version, and the board answers with
+its own.** A client speaking a version the board does not understand is
+refused BEFORE dispatch — a clear, non-mutating refusal naming both
+versions, since a claim parsed under a stale grammar could claim a
+different ticket than the caller typed. An older board is detected the
+same way: it answers without `protocolVersion`, the client says so and
+proceeds. `zagent contract --json` prints the board's command contract
+as data — the golden copy of which lives HERE, in
+`Tools/zagent/contract.json`, asserted against by both sides' tests so
+the path-valued flags and docs-tree commands cannot drift without
+failing a run on each side.
+
 The client has its own tests — a plain assert script, matching
 `Tools/Test_T0Harness_*`, because the only PowerShell this repo requires
 is the `pwsh` every gate already needs:
@@ -557,8 +585,9 @@ Commands you would actually use from here:
 | `link <KEY> blocks\|relates\|duplicates\|causes <KEY> --reason "…"` | one directed link; `blocks` is the one the claim query reads, and the only LINK that REQUIRES `--reason` (a row resolve requires one too) |
 | `blocked --project ZM` | everything waiting, and on what |
 | `links <KEY>` / `epic <KEY>` / `parent <KEY> <PARENT>` | the dependency graph and the hierarchy |
-| `sprint list\|create\|start\|complete\|add\|remove` | one ACTIVE sprint per project |
+| `sprint list\|create\|start\|complete\|add\|remove\|gate` | one ACTIVE sprint per project (a DB constraint). `gate` designates the sprint's milestone-acceptance ticket — an ordinary member of the sprint, never an EPIC. Completing a milestone sprint is REFUSED while that gate is unmet, and `--force` does not reach the check; `--force` with unfinished work and NO designated gate is also a refusal, so the old silent carry-over is honest now or not at all |
 | `version list\|create\|release\|set` | milestones — what a BUILD contains |
+| `contract` | the wire contract as data: the protocol version, which flags are path-valued, which commands ship the docs tree |
 | `check ZEN-6` | would a claim take it? **exit 4 if not** — writes nothing, claims nothing |
 | `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
 | `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log |
@@ -647,12 +676,17 @@ the same duplication the manifest refactor removed from the build, just
 re-introduced one ticket at a time. Say the OUTCOME; the plumbing is
 allowed to move.
 
-Always pass `--category`: `Zenithmon`, `Engine`, `DevilsPlayground` or
-`ScriptTest`. It selects the gate list, the conventions inlined into the
-worker's prompt, the branching mode, **and now which board the ticket is
-filed on**. `ScriptTest` declares no `project` of its own, so it files on
-the checkout default (`ZEN`) and inherits `direct` branching — a game
-area is not automatically a board.
+Always pass `--category`: `Zenithmon`, `Engine`, `DevilsPlayground`,
+`ScriptTest`, `Undervault`, `Hearth` or `Foundry`. It selects the gate
+list, the conventions inlined into the worker's prompt, the branching
+mode, **and now which board the ticket is filed on**. `ScriptTest`
+declares no `project` of its own, so it files on the checkout default
+(`ZEN`) and inherits `direct` branching — a game area is not
+automatically a board. `Undervault`/`Hearth`/`Foundry` file onto `UV` /
+`HE` / `FD`, which carry NO sprint started and NO delivery tickets: the
+only ticket those categories accept today is a game's first scaffold,
+and the milestone a sprint serves begins when a human runs
+`zagent sprint start`.
 
 `create` also takes `--type EPIC|STORY|TASK|BUG|SUBTASK`, `--parent`,
 `--points N`, `--severity S1_CRITICAL…`, `--repro ALWAYS…`,
