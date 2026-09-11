@@ -82,6 +82,16 @@ namespace
 		// "" = self. Declared LAST, per the AI-family convention.
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// BOTH are ENTITY references: FindNavMeshComponent (below) resolves
+		// m_strNavMeshVar through xContext.ResolveTargetEntity exactly the way the
+		// Execute resolves m_strTargetVar, so an EntityID is the only legal value
+		// for either. "" is the discovery/self path in both cases.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EnsureNavAgent)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(NavMesh, "m_strNavMeshVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -187,6 +197,15 @@ namespace
 		ZENITH_PROPERTY(bool, m_bXZDistance, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Destination is a POSITION ref, re-resolved every repath - an EntityID
+		// var gives entity-follow, a vec3 var a fixed point. The radii, the
+		// repath interval and the XZ flag are consts with no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_NavMoveTo)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Destination, "m_strDestinationVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		void OnEnter(Zenith_GraphContext&) override
 		{
 			// Prime for an immediate first path (the BT MoveToEntity pattern).
@@ -298,6 +317,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strDestinationVar, "target")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetNavDestination)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Destination, "m_strDestinationVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_NavMeshAgent* pxNav = ResolveNavAgent(xContext, m_strTargetVar);
@@ -325,6 +350,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StopNav)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_NavMeshAgent* pxNav = ResolveNavAgent(xContext, m_strTargetVar);
@@ -353,6 +383,17 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// All three are the node's own COMPUTED reads of the agent (SetValue in
+		// the Execute below), typed by the Zenith_PropertyValue::Set* that feeds
+		// each one - State is the 0-3 code this node derives, not a name.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadNavState)
+		ZENITH_GRAPH_PIN_OUTPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Remaining, "m_strRemainingVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Velocity, "m_strVelocityVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_NavMeshAgent* pxNav = ResolveNavAgent(xContext, m_strTargetVar);
@@ -410,6 +451,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strSpeedVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetNavSpeed)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Speed, "m_strSpeedVar", "m_fSpeed", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_NavMeshAgent* pxNav = ResolveNavAgent(xContext, m_strTargetVar);
@@ -438,6 +485,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "wanderPoint")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Center is a POSITION ref ("" = self); Radius is the const-or-var
+		// ternary; Result is the point this node COMPUTES and writes.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindRandomReachablePoint)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Radius, "m_strRadiusVar", "m_fRadius", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_NavMeshAgent* pxNav = ResolveNavAgent(xContext, m_strTargetVar);
@@ -483,6 +540,17 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strCountVar, "perceivedCount")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// List names the blackboard's parallel LIST store (GetOrCreateList in the
+		// Execute below), which holds no Zenith_PropertyValue and is therefore
+		// never typed. Count is an ordinary computed OUTPUT beside it. The two
+		// filter flags are consts with no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryPerceivedTargets)
+		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xAgent = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -531,6 +599,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "target")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Result carries a PACKED EntityID (SetPackedEntityID below), so it is an
+		// ENTITY_ID output - the same type a TARGET_ENTITY pin downstream accepts.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryPrimaryPerceivedTarget)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xAgent = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -564,6 +640,18 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strAgeVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// ★ Position here is an OUTPUT, not a position REF: this node WRITES the
+		// heard position (SetVector3 + SetValue below). Contrast
+		// EmitSoundStimulus, whose identically-named property is a
+		// Zenith_GraphNode_ResolvePositionRef input.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryLastHeardSound)
+		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Source, "m_strSourceVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Age, "m_strAgeVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xAgent = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -609,6 +697,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "awareness")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// TWO entity references in one node: Target is the agent DOING the
+		// perceiving, Of is the entity it is asked about - both go through
+		// xContext.ResolveTargetEntity, so both accept an EntityID only.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryAwarenessOf)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Of, "m_strOfVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xAgent = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -638,6 +736,15 @@ namespace
 		ZENITH_PROPERTY_RANGED(float, m_fRadius, 10.0f, 0.1f, 10000.0f)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Position is a POSITION ref here (Zenith_GraphNode_ResolvePositionRef
+		// below; "" = self), unlike QueryLastHeardSound's output of the same name.
+		// Loudness and radius are consts with no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EmitSoundStimulus)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xSource = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -668,6 +775,11 @@ namespace
 		ZENITH_PROPERTY(bool, m_bUnregister, false)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RegisterPerceptionTarget)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);

@@ -90,4 +90,66 @@ ZENITH_TEST(GraphNodeFailurePin, AIOptIns)
 	Zenith_CheckNodeIsNotOptedIn("StopNav");
 }
 
+//------------------------------------------------------------------------------
+// Pin-table coverage for this TU. What the totality walk proves, why the
+// registry is SWAPPED rather than filtered, and why the restore is RAII all live
+// ONCE, in Zenith_GraphPinTotality.TestHarness.inl; only this TU's registrar and
+// its representative pins are here.
+//------------------------------------------------------------------------------
+
+#include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
+
+ZENITH_TEST(GraphPinTable, AITotality)
+{
+	// No exemptions: every m_str*Var* property in this TU is expressible as a
+	// pin - m_strListVar names ONE list, not a comma-separated set.
+	Zenith_CheckPinTableTotality(&Zenith_RegisterEngineGraphNodes_AI, "_AI.cpp", nullptr, 0u);
+}
+
+ZENITH_TEST(GraphPinTable, AIRoleSpotCheck)
+{
+	// LIST: the blackboard's parallel list store, which holds no
+	// Zenith_PropertyValue and is therefore never typed. Count beside it is an
+	// ordinary computed OUTPUT.
+	Zenith_CheckGraphPin("QueryPerceivedTargets", "List", GRAPH_PIN_ROLE_LIST, eGRAPH_PIN_TYPE_ANY, "m_strListVar");
+	Zenith_CheckGraphPin("QueryPerceivedTargets", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strCountVar");
+
+	// INPUT_VAR_OR_CONST with both halves bound.
+	Zenith_CheckGraphPin("SetNavSpeed", "Speed", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strSpeedVar");
+	const Zenith_GraphPinDesc* pxSpeed = Zenith_FindGraphPin("SetNavSpeed", "Speed");
+	ZENITH_ASSERT_NOT_NULL(pxSpeed, "SetNavSpeed must declare a Speed pin");
+	if (pxSpeed != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxSpeed->m_szConstProperty, "m_fSpeed",
+			"SetNavSpeed.Speed lost its inline-constant half");
+	}
+
+	// ★ The two TARGET flavours differ ONLY in the accepted-type mask: a
+	// destination may be an EntityID (follow) or a VECTOR3 (a fixed point),
+	// while the mover itself must be an EntityID.
+	const Zenith_GraphPinDesc* pxDestination = Zenith_FindGraphPin("NavMoveTo", "Destination");
+	const Zenith_GraphPinDesc* pxMover = Zenith_FindGraphPin("NavMoveTo", "Target");
+	ZENITH_ASSERT_NOT_NULL(pxDestination, "NavMoveTo must declare a Destination pin");
+	ZENITH_ASSERT_NOT_NULL(pxMover, "NavMoveTo must declare a Target pin");
+	if (pxDestination != nullptr && pxMover != nullptr)
+	{
+		ZENITH_ASSERT_EQ(static_cast<int>(pxDestination->m_eRole), static_cast<int>(GRAPH_PIN_ROLE_TARGET_REF),
+			"NavMoveTo.Destination is a runtime-resolved reference, not a value input");
+		ZENITH_ASSERT_EQ(pxDestination->m_uAcceptedTypeMask, uGRAPH_PIN_ACCEPT_TARGET_POSITION,
+			"NavMoveTo.Destination must accept ENTITY_ID or VECTOR3");
+		ZENITH_ASSERT_EQ(pxMover->m_uAcceptedTypeMask, uGRAPH_PIN_ACCEPT_TARGET_ENTITY,
+			"NavMoveTo.Target must accept a packed ENTITY_ID and nothing else");
+	}
+
+	// Nav state reads are the node's own computed OUTPUTs - m_strStateVar holds
+	// the 0-3 code this node derives, not a state NAME.
+	Zenith_CheckGraphPin("ReadNavState", "State", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strStateVar");
+
+	// ★ SAME PROPERTY NAME, OPPOSITE ROLES: QueryLastHeardSound WRITES the heard
+	// position; EmitSoundStimulus RESOLVES one to emit at. The role follows the
+	// Execute body, never the spelling.
+	Zenith_CheckGraphPin("QueryLastHeardSound", "Position", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "m_strPositionVar");
+	Zenith_CheckGraphPin("EmitSoundStimulus", "Position", GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, "m_strPositionVar");
+}
+
 #endif // ZENITH_TESTING

@@ -66,6 +66,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_strParameter names an ANIMATOR parameter declared by the game's
+		// animator setup - not a blackboard variable, so it is not a pin. Target
+		// reaches xContext.ResolveTargetEntity through ResolveTargetAnimator
+		// (this TU's resolver, top of file).
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorFloat)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_fValue", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_AnimatorComponent* pxAnimator = ResolveTargetAnimator(xContext, m_strTargetVar);
@@ -90,6 +100,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorInt)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_iValue", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_AnimatorComponent* pxAnimator = ResolveTargetAnimator(xContext, m_strTargetVar);
@@ -114,6 +130,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorBool)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_bValue", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_AnimatorComponent* pxAnimator = ResolveTargetAnimator(xContext, m_strTargetVar);
@@ -137,6 +159,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strParameter, "Attack")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_strParameter is an animator TRIGGER name, not a blackboard variable.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorTrigger)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_AnimatorComponent* pxAnimator = ResolveTargetAnimator(xContext, m_strTargetVar);
@@ -162,6 +190,13 @@ namespace
 		ZENITH_PROPERTY_RANGED(float, m_fDuration, 0.15f, 0.0f, 10.0f)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_strState names an animator STATE and m_fDuration is a const with no
+		// var partner - neither is a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CrossFadeAnimation)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_AnimatorComponent* pxAnimator = ResolveTargetAnimator(xContext, m_strTargetVar);
@@ -190,6 +225,18 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strHasLoopedVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// All four are the node's own READ RESULTS (SetValue in the Execute
+		// below), each typed by the Zenith_PropertyValue::Set* that feeds it - an
+		// empty property simply skips that output, which no role expresses.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadAnimatorState)
+		ZENITH_GRAPH_PIN_OUTPUT(StateName, "m_strStateNameVar", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PIN_OUTPUT(NormalizedTime, "m_strNormalizedTimeVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Transitioning, "m_strTransitioningVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(HasLooped, "m_strHasLoopedVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_AnimatorComponent* pxAnimator = ResolveTargetAnimator(xContext, m_strTargetVar);
@@ -265,6 +312,14 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Target reaches xContext.ResolveTargetEntity through ResolveOrAddTween.
+		// m_fDuration and m_iEasing are consts with no var partner - not pins.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenPosition)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xTo", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_TweenComponent* pxTween = ResolveOrAddTween(xContext, m_strTargetVar);
@@ -291,6 +346,12 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenScale)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xTo", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_TweenComponent* pxTween = ResolveOrAddTween(xContext, m_strTargetVar);
@@ -319,6 +380,13 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The const half is the EULER-DEGREES property, not an m_xTo.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenRotation)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xToEulerDegrees", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_TweenComponent* pxTween = ResolveOrAddTween(xContext, m_strTargetVar);
@@ -345,6 +413,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_WaitForTween)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -373,6 +446,12 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iProperty, -1)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_iProperty is a const selector (-1 = all) with no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StopTweens)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -424,6 +503,13 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strConfigName, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_strConfigName names a registered emitter CONFIG asset, not a
+		// blackboard variable; m_iCount is a const with no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EmitParticles)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ParticleEmitterComponent* pxEmitter = ResolveTargetEmitter(xContext, m_strTargetVar);
@@ -455,6 +541,11 @@ namespace
 		ZENITH_PROPERTY(bool, m_bEmitting, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetParticleEmitting)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ParticleEmitterComponent* pxEmitter = ResolveTargetEmitter(xContext, m_strTargetVar);
@@ -485,6 +576,15 @@ namespace
 		ZENITH_PROPERTY(bool, m_bClear, false)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Position is a POSITION ref (Zenith_GraphNode_ResolvePositionRef in the
+		// Execute below; "" = self). m_xOffset, m_xDirection, m_bSetDirection and
+		// m_bClear are consts with no var partner - none is a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetParticleEmitPosition)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ParticleEmitterComponent* pxEmitter = ResolveTargetEmitter(xContext, m_strTargetVar);
@@ -537,3 +637,5 @@ void Zenith_RegisterEngineGraphNodes_Animation()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetParticleEmitting>("SetParticleEmitting", GRAPH_EVENT_NONE, 1, false, "Particles");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetParticleEmitPosition>("SetParticleEmitPosition", GRAPH_EVENT_NONE, 1, false, "Particles");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Animation.Tests.inl"

@@ -49,9 +49,10 @@
 //     siblings), never through SetNodeRegistrar, so `ResetForTests +
 //     EnsureInitialized` alone - the shape ScriptTest_Contracts.cpp uses, which
 //     is safe there only because ScriptTest registers none - would DELETE them
-//     for the rest of the process. The guard re-registers any snapshot row the
-//     engine registrar did not bring back, in snapshot order (game rows append
-//     after the engine's, which is where they were).
+//     for the rest of the process. The guard therefore does NOT run the engine
+//     registrar at all on restore: it installs a no-op registrar and replays
+//     EVERY snapshot row in snapshot order - game rows sit at 0..N-1 because a
+//     game's project hook registers BEFORE the engine registrar drains.
 // It then ASSERTS the restored registry matches the snapshot by name, index-wise,
 // AND by row address: Zenith_Vector::Clear() keeps the buffer, so re-registering
 // the same N types refills the same N addresses and a live graph's cached

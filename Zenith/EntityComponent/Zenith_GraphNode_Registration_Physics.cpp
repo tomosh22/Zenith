@@ -59,6 +59,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strImpulseVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Target reaches xContext.ResolveTargetEntity through ResolveTargetBody
+		// (this TU's resolver, top of file), so it is an ENTITY reference, not a
+		// value input. Every node in this TU targets the same way.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ApplyImpulse)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Impulse, "m_strImpulseVar", "m_xImpulse", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -85,6 +94,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strForceVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ApplyForce)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Force, "m_strForceVar", "m_xForce", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -115,6 +130,14 @@ namespace
 		ZENITH_PROPERTY(bool, m_bSetZ, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The three per-axis SET flags are pin-less consts with no var partner:
+		// they select which components of Velocity land, not a blackboard value.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetVelocity)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Velocity, "m_strVelocityVar", "m_xVelocity", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -147,6 +170,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "velocity")
 
+		// Result is the node's own COMPUTED value (SetVector3 + SetValue in the
+		// Execute below), so it registers a writer - OUTPUT, not SELECTOR_WRITE.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadVelocity)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -173,6 +204,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAngularVelocity)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Velocity, "m_strVelocityVar", "m_xAngularVelocity", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -201,6 +238,12 @@ namespace
 		ZENITH_PROPERTY(bool, m_bLockZ, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The three lock flags are consts with no var partner - not pins.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_LockRotation)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -223,6 +266,11 @@ namespace
 		ZENITH_PROPERTY(bool, m_bEnabled, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetGravityEnabled)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -245,6 +293,11 @@ namespace
 		ZENITH_PROPERTY(bool, m_bSensor, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetSensor)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_ColliderComponent* pxCollider = ResolveTargetBody(xContext, m_strTargetVar);
@@ -278,6 +331,22 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strHitNormalVar, "")
 		ZENITH_PROPERTY(std::string, m_strHitDistanceVar, "")
 
+		// Origin is a POSITION ref (Zenith_GraphNode_ResolvePositionRef in the
+		// Execute below takes an EntityID var or a vec3 var; "" = self). The four
+		// hit vars are the node's own computed results, each typed by the
+		// Zenith_PropertyValue::Set* the Execute actually calls.
+		// m_xOriginOffset, m_fMaxDistance and m_bIgnoreSelf are consts with no
+		// var partner - not pins.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Raycast)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Origin, "m_strOriginVar")
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Direction, "m_strDirectionVar", "m_xDirection", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(HitEntity, "m_strHitEntityVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(HitPoint, "m_strHitPointVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(HitNormal, "m_strHitNormalVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(HitDistance, "m_strHitDistanceVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector3 xOrigin;
@@ -344,6 +413,17 @@ namespace
 		ZENITH_PROPERTY(bool, m_bTeleport, false)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Position is a POSITION ref; Target is resolved directly by
+		// xContext.ResolveTargetEntity rather than through ResolveTargetBody
+		// (this node also drives a bodyless transform), which is the same ENTITY
+		// reference either way. m_xOffset and m_bTeleport are consts with no var
+		// partner - not pins.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetEntityPosition)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
