@@ -6,7 +6,10 @@ answers "why is it arranged this way".
 
 **Board:** project **`ZM`**, org `pink-goat`, on the machine named by `ZAGENT_URL`.
 Engine work is **`ZEN`** and DevilsPlayground is **`DP`** -- one board per game area,
-all three served by the same `C:\dev\Zenith` checkout.
+all served by the same `C:\dev\Zenith` checkout. Three more joined in 2026-09,
+bootstrapped from their TDDs: **`UV`** Undervault, **`HE`** Hearth and **`FD`**
+Foundry, each carrying milestone epics and PLANNED sprints and nothing else
+until a human starts its first sprint.
 
 ---
 
@@ -181,10 +184,16 @@ agent could rewrite is a workflow that gates nothing.
 move somebody chose -- a workflow edit that dropped one edge would stall
 the queue with work in it and nothing saying why.
 
-`zagent move` needs the claim too, with ONE exception: a move to **To
-Do** on a ticket nobody holds. Putting a card back in the queue by
-definition happens before ownership exists, and the advertised set and
-the accepted set have to agree.
+`zagent move` needs the claim too, with TWO exceptions, both moves that by
+definition happen before ownership exists. The first is a move to **To
+Do** on a ticket nobody holds: putting a card back in the queue. The
+second, added when claims became atomic (2026-09), is **To Do -> Blocked**
+on a ticket nobody holds: a refused claim now validates before it writes
+anything, so the refused candidate stays in To Do unclaimed, and the
+tick's step-2 cleanup -- comment the contractError, move Blocked -- runs
+on a ticket nobody holds. Leaving it in the lane would put it back at the
+head of every later firing; reporting it out is the queue's own hygiene
+move. The advertised set and the accepted set have to agree.
 
 Three kinds of rule can hang off an edge, and they are Jira's:
 a **condition** (who may move it) hides the option, a **validator**
@@ -339,6 +348,9 @@ stage" cannot drift into two answers.
 
 **The epics themselves carry no sprint.** An epic spans sprints; putting `ZM-9` inside
 the sprint its own children fill would double-count the stage in every report.
+Both writers refuse it now -- `zagent sprint add` and the board's own move -- and
+the sprint and velocity aggregates exclude `EPIC` rows, so a card dragged in
+through the UI counts for nothing.
 
 **S0-S7 have no sprint, deliberately.** They completed before the board existed in this
 shape and hold no child tickets, so a sprint each would be empty -- and because a sprint
@@ -347,7 +359,19 @@ would land eight zero-point entries on the same day of the velocity chart. The D
 epics in §2 are the audit trail for those stages; sprints would only add noise.
 
 **One is ACTIVE at a time**, which the board enforces -- `sprint start` refuses while
-another is active. `S8` is it.
+another is active, and since migration 0030 a partial UNIQUE INDEX on the table
+enforces it for every writer, the UI's start button included. `S8` is it.
+
+★ **Completing a stage needs its GATE.** `zagent sprint gate "S8 — Vertical
+slice, go/no-go" <TICKET_KEY>` designates the sprint's milestone-acceptance
+ticket -- an ordinary MEMBER of the sprint, never an EPIC -- and `sprint
+complete` refuses while that ticket has not reached a DONE-category status.
+`--force` does not reach the gate check: it may carry unfinished delivery
+work to the backlog, but it can never sign off an unmet gate. And `--force`
+with unfinished work and NO designated gate is itself refused, so the old
+silent carry-over is honest now or not at all: force a stage closed only
+once something named the acceptance ticket and it passed. `none` clears the
+gate, and `sprint list` shows whether it is unmet.
 
 ★ **The sprints are on the BACKLOG page, not the board.** `ZM`'s board is `KANBAN`, and
 per §6a a KANBAN board draws every issue while a SCRUM board draws only the active
@@ -355,7 +379,7 @@ sprint. Looking for the sprint structure on the board tab and finding an undiffe
 wall of cards is the expected result, not a sign that no sprints exist.
 
 ★ **`zagent sprint` cannot rename or delete one.** It is
-`list|create|start|complete|add|remove`; renaming and deleting exist only as server
+`list|create|start|complete|add|remove|gate`; renaming and deleting exist only as server
 actions in the app, so those two are done in the browser.
 
 ---
