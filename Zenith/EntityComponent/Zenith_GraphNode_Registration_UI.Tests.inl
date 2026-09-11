@@ -93,4 +93,50 @@ ZENITH_TEST(GraphNodeFailurePin, UIOptIns)
 	Zenith_CheckNodeIsNotOptedIn("OnUIButtonClicked");
 }
 
+//------------------------------------------------------------------------------
+// Pin-table coverage (A-6). The shared machinery - the totality walk, the
+// registrar swap and its RAII restore - is Zenith_GraphPinTotality.TestHarness.inl.
+//------------------------------------------------------------------------------
+
+#include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
+
+ZENITH_TEST(GraphPinTable, UITotality)
+{
+	Zenith_CheckPinTableTotality(&Zenith_RegisterEngineGraphNodes_UI, "_UI.cpp", nullptr, 0u);
+}
+
+ZENITH_TEST(GraphPinTable, UIRoleSpotCheck)
+{
+	// Every node in this TU targets an entity through ResolveTargetUI, which
+	// wraps xContext.ResolveTargetEntity - so every m_strTargetVar is a
+	// TARGET_REF accepting a packed ENTITY_ID and nothing else.
+	Zenith_CheckGraphPin("SetUIText", "Target", GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, "m_strTargetVar");
+	const Zenith_GraphPinDesc* pxTarget = Zenith_FindGraphPin("SetUIText", "Target");
+	ZENITH_ASSERT_NOT_NULL(pxTarget);
+	if (pxTarget != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxTarget->m_uAcceptedTypeMask, uGRAPH_PIN_ACCEPT_TARGET_ENTITY,
+			"a STRING entity name is never legal at runtime");
+	}
+	// OnUIButtonClicked reaches ResolveTargetEntity directly rather than through
+	// the wrapper; same pin either way.
+	Zenith_CheckGraphPin("OnUIButtonClicked", "Target", GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, "m_strTargetVar");
+
+	// ★ ANY: SetUIText fetches the value with TryGetValue and type-dispatches it
+	// into a display string, so every property type is legal.
+	Zenith_CheckGraphPin("SetUIText", "Value", GRAPH_PIN_ROLE_INPUT, eGRAPH_PIN_TYPE_ANY, "m_strValueVar");
+
+	// The two const-or-var pairs: the var half is read only when it is named,
+	// otherwise the inline constant is used.
+	Zenith_CheckGraphPin("SetUIColor", "Color", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_VECTOR4, "m_strColorVar");
+	Zenith_CheckGraphPin("SetUIFillAmount", "Amount", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strAmountVar");
+	const Zenith_GraphPinDesc* pxAmount = Zenith_FindGraphPin("SetUIFillAmount", "Amount");
+	ZENITH_ASSERT_NOT_NULL(pxAmount);
+	if (pxAmount != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxAmount->m_szConstProperty, "m_fAmount",
+			"the Amount pin lost its inline-constant half");
+	}
+}
+
 #endif // ZENITH_TESTING

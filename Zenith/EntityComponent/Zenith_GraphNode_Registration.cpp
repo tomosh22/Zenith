@@ -55,6 +55,16 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strStoreEntityVar, "other")
 
+		// Annotated on the BASE only: OnCollisionEnter/Stay/Exit declare no table
+		// of their own and therefore SHARE this one (pin tables inherit exactly
+		// like property tables). A PINS_BEGIN in a derived class would SHADOW it.
+		// The payload is always the other entity's packed EntityID, so the pin is
+		// ENTITY_ID rather than ANY.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CollisionSourceBase)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(StoreEntity, "m_strStoreEntityVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (xContext.m_pxEventPayload && !m_strStoreEntityVar.empty())
@@ -116,6 +126,15 @@ namespace
 		// variable (same pattern as the collision sources' packed EntityID).
 		ZENITH_PROPERTY(std::string, m_strStorePayloadVar, "payload")
 
+		// The one stash var that is genuinely ANY: the firer chooses the payload
+		// type. (m_strEventName is not a blackboard name and so is not a pin. The
+		// FireCustomEventWithArgs args stashed below are named by the FIRER at
+		// runtime - no property carries them, so no pin can either.)
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_OnCustomEvent)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(StorePayload, "m_strStorePayloadVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (xContext.m_pxEventPayload && !m_strStorePayloadVar.empty())
@@ -152,6 +171,13 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CompareBlackboardFloat)
+		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(CompareTo, "m_strCompareVar", "m_fCompareTo", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const float fValue = xContext.m_pxBlackboard->GetFloat(m_strVar);
@@ -226,6 +252,12 @@ namespace
 		ZENITH_PROPERTY_RANGED(float, m_fDegreesPerSecond, 90.0f, -1080.0f, 1080.0f)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_fDegreesPerSecond has no var partner, so it is not a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RotateEntity)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -260,6 +292,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strUnitsVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TranslateEntity)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(UnitsPerSecond, "m_strUnitsVar", "m_xUnitsPerSecond", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -289,6 +327,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_DestroyEntity)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -310,6 +353,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "flag")
 		ZENITH_PROPERTY(bool, m_bValue, true)
 
+		// The SetBlackboard* shape: the destination is a configured NAME
+		// (SELECTOR_WRITE, never a wire) and the value is the const half that
+		// becomes a wire when value pins land.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardBool)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_bValue", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -328,6 +380,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "value")
 		ZENITH_PROPERTY(float, m_fValue, 0.0f)
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardFloat)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_fValue", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -351,6 +409,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strDeltaVar, "")
 		ZENITH_PROPERTY(bool, m_bScaleByDt, false)
 
+		// READWRITE: m_strVariable is READ (:GetFloat below) and WRITTEN
+		// (:SetValue below) in the same Execute - unlike Branch.m_strConditionVar,
+		// which shares the shape of a condition name but is read-only.
+		// m_bScaleByDt has no var partner and so is not a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AddBlackboardFloat)
+		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Variable, "m_strVariable", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Delta, "m_strDeltaVar", "m_fDelta", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			float fDelta = m_strDeltaVar.empty()
@@ -375,6 +443,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "value")
 		ZENITH_PROPERTY(int32_t, m_iValue, 0)
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardInt)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_iValue", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -393,6 +467,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "vec")
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xValue, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardVector3)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_xValue", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -411,6 +491,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "text")
 		ZENITH_PROPERTY(std::string, m_strValue, "")
 
+		// m_strValue is the literal STRING written, not a variable name (it does
+		// not match the m_str*Var* matcher either) - hence INPUT_CONST.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardString)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_strValue", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -435,6 +523,13 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iOp, 4)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CompareBlackboardInt)
+		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(CompareTo, "m_strCompareVar", "m_iCompareTo", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const int32_t iValue = xContext.m_pxBlackboard->GetInt32(m_strVar);
@@ -468,6 +563,13 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVariable, "self")
 
+		// OUTPUT, not SELECTOR_WRITE: the value is this node's own COMPUTED
+		// result (self's packed EntityID), not a value routed from a const.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StoreSelfEntityID)
+		ZENITH_GRAPH_PIN_OUTPUT(Variable, "m_strVariable", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (!xContext.m_xSelf.IsValid())
@@ -495,6 +597,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 		ZENITH_PROPERTY(std::string, m_strPayloadVar, "")
 
+		// The payload is READ (TryGetValue below) and passed on verbatim, so its
+		// type is whatever the sender put there: ANY.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FireCustomEvent)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PIN_INPUT(Payload, "m_strPayloadVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -524,6 +634,11 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strEventName, "event")
 		ZENITH_PROPERTY(std::string, m_strPayloadVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_BroadcastCustomEvent)
+		ZENITH_GRAPH_PIN_INPUT(Payload, "m_strPayloadVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const Zenith_PropertyValue* pxPayload = m_strPayloadVar.empty()
@@ -549,6 +664,11 @@ namespace
 		ZENITH_PROPERTY_RANGED(float, m_fSeconds, 1.0f, 0.0f, 3600.0f)
 		ZENITH_PROPERTY(std::string, m_strSecondsVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Wait)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Seconds, "m_strSecondsVar", "m_fSeconds", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const float fSeconds = m_strSecondsVar.empty()
@@ -576,6 +696,15 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strConditionVar, "condition")
 
+		// ★ READ-ONLY (GetBool below, no write anywhere in Execute) - the same
+		// property NAME as WaitForCondition's, whose node DOES write it back
+		// under m_bResetOnPass and is therefore READWRITE. The role follows the
+		// Execute body, never the property name.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Branch)
+		ZENITH_GRAPH_PIN_INPUT(Condition, "m_strConditionVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			// While a taken branch is suspended, keep re-driving THAT pin.
@@ -613,6 +742,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strOpenVar, "open")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Gate)
+		ZENITH_GRAPH_PIN_INPUT(Open, "m_strOpenVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			return xContext.m_pxBlackboard->GetBool(m_strOpenVar, false)
@@ -653,6 +787,11 @@ namespace
 		ZENITH_PROPERTY_RANGED(int32_t, m_iCount, 1, 1, 10000)
 		ZENITH_PROPERTY(std::string, m_strCountVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Loop)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Count, "m_strCountVar", "m_iCount", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (m_iRemaining < 0)

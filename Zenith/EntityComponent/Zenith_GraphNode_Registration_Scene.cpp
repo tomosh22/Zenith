@@ -102,6 +102,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strScenePath, "")
 		ZENITH_PROPERTY(std::string, m_strStorePathVar, "loadedScene")
 
+		// This TU's ONLY pin. m_strScenePath is an asset path (a suffix FILTER
+		// here), not a blackboard name - the same reason the other three Scene
+		// nodes carry no pin table at all.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_OnSceneLoaded)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(StorePath, "m_strStorePathVar", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (!xContext.m_pxEventPayload || xContext.m_pxEventPayload->GetType() != PROPERTY_TYPE_STRING)
@@ -137,3 +145,5 @@ void Zenith_RegisterEngineGraphNodes_Scene()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetActiveScene>("SetActiveScene", GRAPH_EVENT_NONE, 1, false, "Scene");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_OnSceneLoaded>("OnSceneLoaded", GRAPH_EVENT_CUSTOM, 1, false, "Scene");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Scene.Tests.inl"

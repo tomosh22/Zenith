@@ -104,6 +104,17 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iDecimals, -1)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Value is ANY: it is fetched with TryGetValue and TYPE-DISPATCHED into a
+		// display string (PropertyValueToDisplayString above), so every property
+		// type is legal here. m_strText is the label template and m_strElement the
+		// element name - neither is a blackboard name. m_strTargetVar goes through
+		// ResolveTargetUI -> xContext.ResolveTargetEntity, hence TARGET_ENTITY.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIText)
+		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_UIComponent* pxUI = ResolveTargetUI(xContext, m_strTargetVar);
@@ -162,6 +173,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strColorVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIColor)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Color, "m_strColorVar", "m_xColor", PROPERTY_TYPE_VECTOR4)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_UIComponent* pxUI = ResolveTargetUI(xContext, m_strTargetVar);
@@ -200,6 +217,13 @@ namespace
 		ZENITH_PROPERTY(bool, m_bVisible, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_bVisible has no var partner, so it is not a pin (INPUT_CONST is only
+		// for the SetBlackboard* value).
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIVisible)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_UIComponent* pxUI = ResolveTargetUI(xContext, m_strTargetVar);
@@ -235,6 +259,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strAmountVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIFillAmount)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Amount, "m_strAmountVar", "m_fAmount", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_UIComponent* pxUI = ResolveTargetUI(xContext, m_strTargetVar);
@@ -324,6 +354,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strButton, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// m_strButton is a UI ELEMENT name, not a blackboard variable.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_OnUIButtonClicked)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (m_strButton.empty())

@@ -55,6 +55,13 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iCaseBase, 0)
 		ZENITH_PROPERTY_RANGED(int32_t, m_iCaseCount, 4, 1, 254)
 
+		// The case BASE and COUNT are pin-layout numbers, not blackboard values,
+		// so neither is a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SwitchOnInt)
+		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			// While a taken case is suspended, keep re-driving THAT pin (the
@@ -99,6 +106,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVar, "state")
 		ZENITH_PROPERTY(std::string, m_strCases, "")
 
+		// m_strCases is a COMMA-SEPARATED LIST of case labels, not a blackboard
+		// name (and it escapes the m_str*Var* matcher by not containing "Var"),
+		// so it is deliberately not a pin: a descriptor would make the validator
+		// check the literal "a,b,c" as one variable name.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SwitchOnString)
+		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			EnsureCasesParsed();
@@ -172,6 +188,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strStateNames, "")
 		ZENITH_PROPERTY(std::string, m_strEventPrefix, "")
 
+		// READ-ONLY: the machine never writes its own state var (a transition is
+		// caused by SOMETHING ELSE writing it). m_strStateNames is a comma list
+		// and m_strEventPrefix an event-name fragment - neither is a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StateMachine)
+		ZENITH_GRAPH_PIN_INPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			int32_t iState = xContext.m_pxBlackboard->GetInt32(m_strStateVar, 0);
@@ -493,6 +517,17 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strElementVar, "item")
 		ZENITH_PROPERTY(std::string, m_strIndexVar, "")
 
+		// m_strListVar names the blackboard's parallel LIST store (TryGetList
+		// below), which is not a Zenith_PropertyValue at all. The element and
+		// index vars are configured DESTINATIONS the node publishes into -
+		// SELECTOR_WRITE, and the element's type is whatever the list holds.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ForEach)
+		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Element, "m_strElementVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Index, "m_strIndexVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (m_iCursor < 0)
@@ -711,6 +746,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strConditionVar, "ready")
 		ZENITH_PROPERTY(bool, m_bResetOnPass, false)
 
+		// ★ READWRITE: the condition is READ every tick (GetBool below) and,
+		// under m_bResetOnPass, WRITTEN back to false on the pass (SetValue
+		// below) - the consume-a-flag primitive. Contrast Branch, which carries
+		// the same property name read-only.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_WaitForCondition)
+		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Condition, "m_strConditionVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (!xContext.m_pxBlackboard->GetBool(m_strConditionVar, false))
@@ -746,3 +790,5 @@ void Zenith_RegisterEngineGraphNodes_Flow()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Cooldown>("Cooldown", GRAPH_EVENT_NONE, 1, false, "Flow");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_WaitForCondition>("WaitForCondition", GRAPH_EVENT_NONE, 1, false, "Flow");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Flow.Tests.inl"

@@ -514,4 +514,76 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListOmittedArgsKeepNodeDefaults)
 	}
 }
 
+// --- 4. Pin-table totality + role spot-check (A-6) ----------------------------
+
+#include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
+
+// ★ The CORE registrar is not core's set. Zenith_RegisterEngineGraphNodes calls
+// every sibling sub-registrar at its bottom, so running it alone would sweep
+// nine other TUs' node types into this test. Core's own set is the DIFFERENCE:
+// each sub-registrar is run first and its names subtracted. That keeps the test
+// total by construction - a node added to the core TU tomorrow is covered with
+// no list to maintain - and it is the only way to say "this TU's types" without
+// filtering on m_strCategory, which is ZENITH_TOOLS-only (so a _False build
+// would not compile) and aliases across TUs anyway ("Blackboard" is core's AND
+// _Math's, "Flow" core's AND _Flow's, "Scene" core's AND _Scene's).
+ZENITH_TEST(GraphPinTable, RegistrationTotality)
+{
+	Zenith_GraphNodeRegistrarFn const apfnSubRegistrars[] =
+	{
+		&Zenith_RegisterEngineGraphNodes_Input,
+		&Zenith_RegisterEngineGraphNodes_Physics,
+		&Zenith_RegisterEngineGraphNodes_Animation,
+		&Zenith_RegisterEngineGraphNodes_UI,
+		&Zenith_RegisterEngineGraphNodes_Scene,
+		&Zenith_RegisterEngineGraphNodes_Entity,
+		&Zenith_RegisterEngineGraphNodes_Math,
+		&Zenith_RegisterEngineGraphNodes_Flow,
+		&Zenith_RegisterEngineGraphNodes_AI,
+	};
+	Zenith_CheckPinTableTotalityEx(&Zenith_RegisterEngineGraphNodes,
+		apfnSubRegistrars, static_cast<u_int>(sizeof(apfnSubRegistrars) / sizeof(apfnSubRegistrars[0])),
+		"Registration.cpp", nullptr, 0u);
+}
+
+// One representative of each ROLE this TU declares. Roles are what the validator
+// consumes (a WRITE role registers a writer that satisfies other readers; a READ
+// role registers a read that must be satisfied), so a role typo is invisible to
+// the totality walk - it would still count as "covered".
+ZENITH_TEST(GraphPinTable, RegistrationRoleSpotCheck)
+{
+	// READWRITE: read AND written in one Execute. Its own write never satisfies
+	// its own read (the validator's SELF_READWRITE rule).
+	Zenith_CheckGraphPin("AddBlackboardFloat", "Variable", GRAPH_PIN_ROLE_SELECTOR_READWRITE, PROPERTY_TYPE_FLOAT, "m_strVariable");
+	// ★ The trap: the SAME property name on Branch is read-only.
+	Zenith_CheckGraphPin("Branch", "Condition", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_BOOL, "m_strConditionVar");
+
+	// INPUT_VAR_OR_CONST: the ternary shape, both halves declared.
+	Zenith_CheckGraphPin("AddBlackboardFloat", "Delta", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strDeltaVar");
+	const Zenith_GraphPinDesc* pxDelta = Zenith_FindGraphPin("AddBlackboardFloat", "Delta");
+	ZENITH_ASSERT_NOT_NULL(pxDelta);
+	if (pxDelta != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxDelta->m_szConstProperty, "m_fDelta",
+			"the Delta pin lost its inline-constant half, so an unset delta var would look like an unsatisfied read");
+	}
+
+	// TARGET_REF, with the mask that makes a STRING entity name illegal.
+	Zenith_CheckGraphPin("DestroyEntity", "Target", GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, "m_strTargetVar");
+	const Zenith_GraphPinDesc* pxTarget = Zenith_FindGraphPin("DestroyEntity", "Target");
+	ZENITH_ASSERT_NOT_NULL(pxTarget);
+	if (pxTarget != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxTarget->m_uAcceptedTypeMask, uGRAPH_PIN_ACCEPT_TARGET_ENTITY,
+			"ResolveTargetEntity accepts a packed ENTITY_ID and nothing else");
+	}
+
+	// OUTPUT: a computed result, not a configured destination.
+	Zenith_CheckGraphPin("StoreSelfEntityID", "Variable", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_ENTITY_ID, "m_strVariable");
+	// SELECTOR_WRITE, INHERITED: the collision family declares no table of its
+	// own and must resolve to Zenith_GraphNode_CollisionSourceBase's.
+	Zenith_CheckGraphPin("OnCollisionEnter", "StoreEntity", GRAPH_PIN_ROLE_SELECTOR_WRITE, PROPERTY_TYPE_ENTITY_ID, "m_strStoreEntityVar");
+	Zenith_CheckGraphPin("OnCollisionExit", "StoreEntity", GRAPH_PIN_ROLE_SELECTOR_WRITE, PROPERTY_TYPE_ENTITY_ID, "m_strStoreEntityVar");
+}
+
 #endif // ZENITH_TESTING

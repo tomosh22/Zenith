@@ -146,6 +146,13 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strStoreDeltaVar, "mouseDelta")
 
+		// The event-source STASH shape (the collision sources' pattern): a
+		// configured destination the source publishes its payload into.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_OnMouseMoved)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(StoreDelta, "m_strStoreDeltaVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector2_64 xDelta;
@@ -179,6 +186,12 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iMode, 0)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "key")
 
+		// Key codes and modes are device configuration, never blackboard values.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadKeyState)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const bool bState = (m_iMode == 1)
@@ -207,6 +220,11 @@ namespace
 		ZENITH_PROPERTY(bool, m_bNormalize, true)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "moveDir")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMovementAxis)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Input& xInput = DeviceInput();
@@ -237,6 +255,11 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iPositiveKey, ZENITH_KEY_D)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "axis")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadInputAxis)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			float fAxis = 0.0f;
@@ -257,6 +280,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strResultVar, "mousePos")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMousePosition)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector2_64 xPosition;
@@ -277,6 +305,12 @@ namespace
 		ZENITH_PROPERTY(float, m_fSensitivity, 1.0f)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "mouseDelta")
 
+		// m_fSensitivity has no var partner: a scale factor, not an input pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseDelta)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector2_64 xDelta;
@@ -299,6 +333,11 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iButton, ZENITH_MOUSE_BUTTON_LEFT)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "mouseHeld")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseButtonHeld)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -316,6 +355,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strResultVar, "wheel")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseWheel)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_PropertyValue xValue;
@@ -347,6 +391,17 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTapVar, "")
 		ZENITH_PROPERTY(std::string, m_strCountVar, "")
 
+		// Four independent computed results; each write is guarded by its own
+		// "is the var named" test, which is what an OUTPUT with an empty var
+		// already means to the validator. m_iPointerIndex is a slot selector.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadPointer)
+		ZENITH_GRAPH_PIN_OUTPUT(Down, "m_strDownVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PIN_OUTPUT(Tap, "m_strTapVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Pointers& xPointers = g_xEngine.Pointers();
@@ -394,6 +449,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strOriginVar, "rayOrigin")
 		ZENITH_PROPERTY(std::string, m_strDirectionVar, "rayDir")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMousePickRay)
+		ZENITH_GRAPH_PIN_OUTPUT(Origin, "m_strOriginVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Direction, "m_strDirectionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
@@ -546,6 +607,13 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strAction, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "axis")
 
+		// m_strAction names a registered INPUT ACTION, not a blackboard
+		// variable - it is resolved against g_xEngine.Actions() and is not a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadActionAxis1D)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
@@ -576,6 +644,11 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strAction, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "axis2D")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadActionAxis2D)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
@@ -628,3 +701,5 @@ void Zenith_RegisterEngineGraphNodes_Input()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadActionAxis1D>("ReadActionAxis1D", GRAPH_EVENT_NONE, 1, false, "Input");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadActionAxis2D>("ReadActionAxis2D", GRAPH_EVENT_NONE, 1, false, "Input");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Input.Tests.inl"
