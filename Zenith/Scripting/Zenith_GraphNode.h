@@ -79,6 +79,19 @@ struct Zenith_GraphContext
 	const Zenith_GraphEventArg* m_pxEventArgs = nullptr;	// named multi-field payload (FireCustomEventWithArgs), null otherwise
 	u_int m_uEventArgCount = 0;
 
+	// True while a RESUME drive is in progress: the drive reached its chain
+	// through a cursor (a suspended node is being re-executed) AND the anchor is
+	// not one of the two periodic ones. A fresh fire nested inside a resume drive
+	// (a node firing a custom event on the same graph) inherits it - harmless
+	// for the only consumer, since a freshly-entered node gets OnEnter.
+	// A suspended flow node is re-executed without OnEnter, so a fan-out node
+	// (Sequence) cannot otherwise tell "resume the branch that is still running"
+	// from "fire every branch again". Set - and restored - in exactly two places
+	// (Zenith_BehaviourGraph.cpp): RunSourceNode's cursor branch and FireEvent's
+	// one-shot re-drive loop. false is not a compatibility default: false IS the
+	// OnUpdate/OnFixedUpdate semantics (every tick re-fires every branch).
+	bool m_bResumeDrive = false;
+
 	// The standard entity-targeting convention: a node that acts on an entity
 	// declares ZENITH_PROPERTY(std::string, m_strTargetVar, "") and resolves it
 	// here - empty var = self; otherwise the blackboard var must hold a packed

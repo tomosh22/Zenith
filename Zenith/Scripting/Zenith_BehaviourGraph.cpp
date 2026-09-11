@@ -482,10 +482,24 @@ void Zenith_BehaviourGraph::RunSourceNode(NodeInstance& xSource, Zenith_GraphCon
 {
 	const u_int64 ulKey = MakeChainKey(xSource.m_uNodeID, 0);
 
-	// A suspended chain resumes in place of re-firing its source.
+	// A suspended chain resumes in place of re-firing its source. That makes
+	// this a RESUME drive: the cursor node is re-executed WITHOUT OnEnter, so a
+	// fan-out flow node (Sequence) needs the flag to tell "resume the branch
+	// still running" from "fire every branch again". The two periodic anchors
+	// are excluded - an OnUpdate/OnFixedUpdate tick IS the fire, and Blueprint's
+	// Event Tick -> Sequence fires every pin every tick. TIMER is deliberately
+	// INCLUDED (a timer occurrence is one occurrence, resumed until it
+	// finishes), so this predicate is NOT the three-way periodic test below.
+	// The context object is caller-owned and reused across sources and frames,
+	// hence the save/restore: a leak into the next source is the bug.
 	if (m_xChainCursors.Contains(ulKey))
 	{
+		const bool bPreviousResumeDrive = xContext.m_bResumeDrive;
+		xContext.m_bResumeDrive = xSource.m_pxTypeInfo != nullptr
+			&& xSource.m_pxTypeInfo->m_eEventType != GRAPH_EVENT_ON_UPDATE
+			&& xSource.m_pxTypeInfo->m_eEventType != GRAPH_EVENT_ON_FIXED_UPDATE;
 		RunChainFromPin(xSource.m_uNodeID, 0, xContext);
+		xContext.m_bResumeDrive = bPreviousResumeDrive;
 		return;
 	}
 
@@ -560,6 +574,13 @@ void Zenith_BehaviourGraph::FireEvent(GraphEventType eEvent, Zenith_GraphContext
 	// Resume suspended one-shot chains.
 	if (eEvent == GRAPH_EVENT_ON_UPDATE && m_auSuspendedOneShotAnchors.GetSize() > 0)
 	{
+		// Every anchor in this list is one-shot (the periodic ones are never
+		// pushed into it), so every drive from here is a resume drive - no
+		// per-anchor predicate. Restored afterwards: the context is the
+		// caller's and is reused by the next source and the next frame.
+		const bool bPreviousResumeDrive = xContext.m_bResumeDrive;
+		xContext.m_bResumeDrive = true;
+
 		Zenith_Vector<u_int> auStillSuspended;
 		for (u_int u = 0; u < m_auSuspendedOneShotAnchors.GetSize(); ++u)
 		{
@@ -571,6 +592,8 @@ void Zenith_BehaviourGraph::FireEvent(GraphEventType eEvent, Zenith_GraphContext
 			}
 		}
 		m_auSuspendedOneShotAnchors = std::move(auStillSuspended);
+
+		xContext.m_bResumeDrive = bPreviousResumeDrive;
 	}
 }
 

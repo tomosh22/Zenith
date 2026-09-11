@@ -22,8 +22,13 @@
 // index <= 255 by the chain-cursor key layout).
 //
 // BT-parity notes:
-//   - Sequence is deliberately ABSENT: a linear exec chain IS a sequence
-//     (SUCCESS auto-continues, FAILURE aborts, RUNNING resumes at the node).
+//   - There are TWO things called "Sequence" and only one of them is here. The
+//     BT-Sequence (run children in order, stop at the first FAILURE) is ABSENT
+//     and stays absent: a linear exec chain IS that (SUCCESS auto-continues,
+//     FAILURE aborts, RUNNING resumes at the node). The Blueprint-Sequence -
+//     exec FAN-OUT, N independent chains off one source - is the `Sequence`
+//     node below, because a (node, pin) has at most one outgoing edge, so one
+//     source feeding many chains has no other spelling.
 //   - Selector + the reactive StateMachine are the two preemption constructs;
 //     both abort a RUNNING lower-priority/old-state body via AbortChain, which
 //     cascades OnAbort through suspended nodes (per-run state resets, nav
@@ -319,6 +324,100 @@ namespace
 	};
 
 	//==========================================================================
+	// Sequence - Blueprint-style exec FAN-OUT over N branch pins: every pin gets
+	// its own independent chain, driven in pin order within one fire. NOT the BT
+	// sequence (a linear exec chain already is that): a branch FAILURE stops
+	// only that branch, and this node never returns FAILURE. RUNNING while any
+	// branch is suspended, SUCCESS once none is.
+	//
+	// Re-fire rule (the whole reason m_bResumeDrive exists): a suspended flow
+	// node is re-executed WITHOUT OnEnter, so on the next drive this node cannot
+	// see for itself whether it is being ticked afresh or resumed.
+	//   - xContext.m_bResumeDrive CLEAR (an OnUpdate/OnFixedUpdate tick, or a
+	//     fresh fire of any anchor): the mask is reset and EVERY pin fires. This
+	//     is Blueprint's Event Tick -> Sequence.
+	//   - xContext.m_bResumeDrive SET (a one-shot or Timer anchor resuming
+	//     through its cursor): only pins that have not completed this run fire,
+	//     so a completed branch is not re-run while a sibling is still going.
+	// A branch counts as completed on SUCCESS **or** FAILURE - only RUNNING
+	// leaves its bit clear. Swallowing branch FAILURE is a decision: the pins
+	// are independent, so one failing chain is not this node's failure, and a
+	// failed branch must not be retried on every resume drive either.
+	//
+	// The completed mask is per node INSTANCE, like Selector::m_iRunningPin, so
+	// two anchors feeding one Sequence share it (the same pre-existing
+	// limitation - give each anchor its own Sequence).
+	//==========================================================================
+	class Zenith_GraphNode_Sequence : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_Sequence)
+	public:
+		// 64 pins is the mask's width, not the cursor key's (255) - a wider
+		// fan-out wants a second Sequence on the last pin.
+		ZENITH_PROPERTY_RANGED(int32_t, m_iBranchCount, 2, 1, 64)
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			const bool bResumeDrive = xContext.m_bResumeDrive;
+			if (!bResumeDrive)
+			{
+				// Fire-everything drive: the mask is not merely ignored, it is
+				// cleared, so bits left by a suspended run never leak into the
+				// next one.
+				m_ulCompletedMask = 0ull;
+			}
+
+			bool bAnyRunning = false;
+			const int32_t iBranchCount = GetClampedBranchCount();
+			for (int32_t iPin = 0; iPin < iBranchCount; ++iPin)
+			{
+				const u_int64 ulBit = 1ull << static_cast<u_int>(iPin);
+				if (bResumeDrive && (m_ulCompletedMask & ulBit) != 0ull)
+				{
+					continue;	// this branch already finished this run
+				}
+				const GraphNodeStatus eStatus = xContext.m_pxGraph->RunChainFromPin(GetNodeID(), static_cast<u_int>(iPin), xContext);
+				if (eStatus == GRAPH_NODE_STATUS_RUNNING)
+				{
+					bAnyRunning = true;
+				}
+				else
+				{
+					m_ulCompletedMask |= ulBit;	// SUCCESS or FAILURE: done for this run
+				}
+			}
+			return bAnyRunning ? GRAPH_NODE_STATUS_RUNNING : GRAPH_NODE_STATUS_SUCCESS;
+		}
+		// OnEnter is the only hook that means "a fresh run starts here" (it is
+		// NOT called on resume), so it owns the reset. OnExit must not touch the
+		// mask: the run it ends is already over.
+		void OnEnter(Zenith_GraphContext& /*xContext*/) override { m_ulCompletedMask = 0ull; }
+		void OnAbort(Zenith_GraphContext& xContext) override
+		{
+			const int32_t iBranchCount = GetClampedBranchCount();
+			for (int32_t iPin = 0; iPin < iBranchCount; ++iPin)
+			{
+				xContext.m_pxGraph->AbortChain(GetNodeID(), static_cast<u_int>(iPin), xContext);
+			}
+			m_ulCompletedMask = 0ull;
+		}
+		int32_t GetDynamicExecOutputCount() const override { return GetClampedBranchCount(); }
+		const char* GetTypeName() const override { return "Sequence"; }
+
+	private:
+		// The declared range is 1..64, but the param blob is data on disk: a
+		// hand-edited or corrupt one must not shift the mask by 64+ (UB), and a
+		// pin count must not disagree between Execute and the editor.
+		int32_t GetClampedBranchCount() const
+		{
+			return m_iBranchCount < 1 ? 1 : (m_iBranchCount > 64 ? 64 : m_iBranchCount);
+		}
+
+		u_int64 m_ulCompletedMask = 0ull;	// bit i = branch i finished this run
+	};
+
+	//==========================================================================
 	// Repeat - ticked repetition of the body pin (0); done chain on pin 1.
 	// One body iteration per fire (RUNNING between iterations) - unlike Loop,
 	// which runs its N iterations synchronously in one fire. m_iCount -1 =
@@ -511,6 +610,12 @@ namespace
 			}
 
 			// Child runs against the CALLER's blackboard (shared scope).
+			// LOAD-BEARING: this is a WHOLE-STRUCT copy, which is how the
+			// child inherits the caller's m_bResumeDrive - a child Sequence
+			// under a one-shot parent must skip the branches it already
+			// finished, exactly as the parent's own Sequence would. Copying
+			// member-by-member here would silently drop that (pinned by the two
+			// Sequence_CallGraphInheritsFlag_* tests).
 			Zenith_GraphContext xChildContext = xContext;
 			xChildContext.m_pxGraph = m_pxChild;
 
@@ -634,6 +739,7 @@ void Zenith_RegisterEngineGraphNodes_Flow()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SwitchOnString>("SwitchOnString", GRAPH_EVENT_NONE, 1, true, "Flow");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_StateMachine>("StateMachine", GRAPH_EVENT_NONE, 4, true, "Flow");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Selector>("Selector", GRAPH_EVENT_NONE, 2, true, "Flow");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_Sequence>("Sequence", GRAPH_EVENT_NONE, 2, true, "Flow");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Repeat>("Repeat", GRAPH_EVENT_NONE, 2, true, "Flow");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ForEach>("ForEach", GRAPH_EVENT_NONE, 2, true, "Flow");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_CallGraph>("CallGraph", GRAPH_EVENT_NONE, 1, false, "Flow");

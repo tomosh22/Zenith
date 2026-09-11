@@ -21,7 +21,7 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   (slot list, blackboard overrides, lifecycle/collision dispatch, custom-event
   firing with optional payload, registered at meta order 60 as "Graph").
 - `EntityComponent/Zenith_GraphNode_Registration.cpp` — the engine node library
-  (**138 nodes** — count them with
+  (**139 nodes** — count them with
   `grep -c "RegisterNodeType<" EntityComponent/Zenith_GraphNode_Registration*.cpp`
   rather than trusting this line, which has been stale before: core
   events/blackboard/flow in
@@ -47,7 +47,8 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   never serialized), `Zenith_GraphEventArg` (named multi-field payload element),
   `Zenith_GraphContext` (`m_xSelf`, `m_fDt`, `m_fTimeSeconds` wall-clock,
   graph/blackboard pointers, optional `m_pxEventPayload` + named
-  `m_pxEventArgs`/count, and `ResolveTargetEntity(var)` — the entity-targeting
+  `m_pxEventArgs`/count, `m_bResumeDrive` (see "Resume drives" below), and
+  `ResolveTargetEntity(var)` — the entity-targeting
   seam: "" = self, else a packed-EntityID blackboard var, resolved leaf-safe via
   `Zenith_SceneSystem::Get()`), and the node base class (`Execute`,
   `GetTypeName`, `MatchesCustomEvent`, chain-lifecycle `OnEnter`/`OnExit` —
@@ -80,7 +81,9 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
 - `Zenith_Scripting.Tests.inl` — chain execution order/params, RUNNING
   suspension/resume, branch flow semantics, serialization round-trip,
   unresolved-node preservation, custom-event name matching, blackboard
-  type-safe migration, and corrupt-definition rejection.
+  type-safe migration, corrupt-definition rejection, the flow-node family
+  (Selector/Switch/StateMachine/Repeat/ForEach/**Sequence**), and the
+  resume-drive flag per anchor class (`ResumeDrive_FlagNeverSetOutsideTheTwoPaths`).
 
 ## Execution model
 
@@ -116,8 +119,36 @@ seeded from the declared variables.
   a suspended chain — OnAbort on the cursor node (flow nodes cascade into
   their active pins), cursor + matching one-shot anchor cleared;
   `AbortAllChains` for whole-graph teardown (CallGraph). This is what makes
-  the reactive `Selector`/`StateMachine` flow nodes BT-equivalent. `Sequence`
-  is deliberately absent — a linear exec chain IS a sequence.
+  the reactive `Selector`/`StateMachine` flow nodes BT-equivalent. The
+  **BT**-sequence (children in order, stop at the first FAILURE) is
+  deliberately absent — a linear exec chain IS that. The **Blueprint**-sequence
+  (exec fan-out) is the `Sequence` flow node, below.
+- **Exec fan-out is a node, not an edge rule:** a (node, pin) has at most ONE
+  outgoing edge, so one source feeding N independent chains is the `Sequence`
+  node (`_Flow.cpp`), never a raw fan-out. Branches are independent: they run
+  in pin order within a fire, a branch FAILURE stops only that branch and is
+  swallowed (Sequence returns RUNNING while any branch is suspended, SUCCESS
+  otherwise, and never FAILURE). `OnAbort` forwards `AbortChain` into every
+  pin.
+- **Resume drives (`Zenith_GraphContext::m_bResumeDrive`):** a suspended node
+  is re-executed WITHOUT `OnEnter`, so a fan-out node cannot otherwise tell a
+  fresh fire from a resume. The flag means *this drive reached the chain
+  through a cursor AND the anchor is not OnUpdate/OnFixedUpdate*. It is set —
+  and scope-restored, because the context object is caller-owned and reused
+  across sources and frames — in exactly two places, both in
+  `Zenith_BehaviourGraph.cpp`: `RunSourceNode`'s cursor branch and `FireEvent`'s
+  one-shot re-drive loop. `RunGraphCall`'s cursor branch does NOT decide; the
+  `CallGraph` node copies the caller's context whole, so a child graph inherits
+  the caller's answer. Set ⇒ `Sequence` fires only its uncompleted pins
+  (per-instance u64 mask, reset in `OnEnter`, a pin completing on SUCCESS *or*
+  FAILURE); clear ⇒ every pin fires. `false` is not a compatibility default:
+  clear IS the OnUpdate semantics (Blueprint's Event Tick → Sequence re-fires
+  every pin every tick).
+- **Timer → Sequence is one occurrence at a time — NOT Blueprint parity.**
+  `RunSourceNode` returns at the cursor before the Timer's own `Execute`, so
+  while the chain is suspended the interval does not advance at all, and the
+  chain is resumed on EVERY ON_UPDATE dispatch rather than once per interval.
+  A Timer occurrence therefore never overlaps itself.
 - **Sub-graphs:** `RunGraphCall(ctx)` runs every `OnGraphCall` entry anchor
   (RUNNING if any suspended, FAILURE when all anchors failed). The `CallGraph`
   node executes a child asset against the CALLER's blackboard (shared scope;

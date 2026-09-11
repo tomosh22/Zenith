@@ -1094,6 +1094,122 @@ ZENITH_TEST(GraphComponent, CallGraphRecursionCapAndMissingAsset)
 	}
 }
 
+namespace
+{
+	// Child sub-graph for the flag-inheritance pair: OnGraphCall -> Sequence.
+	// Pin 0 bumps a counter and COMPLETES; pin 1 waits far longer than any test
+	// dispatch, so the call stays RUNNING and every later call is a RESUME.
+	std::string SaveSequenceChildAsset(const char* szLeafName, const char* szCounterVar)
+	{
+		const std::string strAssetPath = std::string("game:Graphs/") + szLeafName;
+		std::error_code xEC;
+		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
+
+		Zenith_BehaviourGraphAsset xAsset;
+		Zenith_GraphDefinition& xDef = xAsset.GetDefinition();
+		const u_int uEntry = xDef.AddNode("OnGraphCall");
+		const u_int uSequence = xDef.AddNode("Sequence");	// 2 branches (the default)
+		xDef.AddEdge(uEntry, 0, uSequence, 0);
+
+		const u_int uCounter = xDef.AddNode("AddBlackboardFloat");
+		{
+			NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
+			xParams.SetString("m_strVariable", szCounterVar);
+		}
+		xDef.AddEdge(uSequence, 0, uCounter, 0);
+
+		const u_int uWait = xDef.AddNode("Wait");
+		{
+			NodeParamWriter xParams(xDef, uWait, "Wait");
+			Zenith_PropertyValue xSeconds;
+			xSeconds.SetFloat(600.0f);
+			xParams.Set("m_fSeconds", xSeconds);
+		}
+		xDef.AddEdge(uSequence, 1, uWait, 0);
+
+		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
+		return strAssetPath;
+	}
+
+	// SaveCallGraphParentAsset's custom-event twin. The parent's ANCHOR CLASS is
+	// what decides m_bResumeDrive, so it is the whole variable between the two
+	// CallGraph inheritance tests: OnUpdate -> unflagged, custom -> flagged.
+	std::string SaveCustomEventCallGraphParentAsset(const char* szLeafName, const std::string& strChildPath, const char* szEventName)
+	{
+		const std::string strAssetPath = std::string("game:Graphs/") + szLeafName;
+		std::error_code xEC;
+		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
+
+		Zenith_BehaviourGraphAsset xAsset;
+		Zenith_GraphDefinition& xDef = xAsset.GetDefinition();
+		const u_int uSource = xDef.AddNode("OnCustomEvent");
+		{
+			NodeParamWriter xParams(xDef, uSource, "OnCustomEvent");
+			xParams.SetString("m_strEventName", szEventName);
+		}
+		const u_int uCall = xDef.AddNode("CallGraph");
+		{
+			NodeParamWriter xParams(xDef, uCall, "CallGraph");
+			xParams.SetString("m_strGraphAssetPath", strChildPath.c_str());
+		}
+		xDef.AddEdge(uSource, 0, uCall, 0);
+		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
+		return strAssetPath;
+	}
+}
+
+ZENITH_TEST(GraphComponent, Sequence_CallGraphInheritsFlag_OnUpdateParentFiresAll)
+{
+	// CallGraph copies the caller's context WHOLE, so the child inherits
+	// m_bResumeDrive. Under an ON_UPDATE parent the flag is clear on every
+	// drive, so the child's Sequence re-fires its completed branch each tick.
+	const std::string strChildPath = SaveSequenceChildAsset("UnitTest_SequenceChildTick.bgraph", "pinTickCount");
+	const std::string strParentPath = SaveCallGraphParentAsset("UnitTest_SequenceParentTick.bgraph", strChildPath);
+
+	Zenith_TempScene xTempScene("TestSequenceCallTickScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "SequenceCallTickHost");
+	Zenith_BehaviourGraph* pxParent = xEntity.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath(strParentPath.c_str());
+	ZENITH_ASSERT_NOT_NULL(pxParent);
+	if (!pxParent) return;
+	ZENITH_ASSERT_EQ(pxParent->GetUnresolvedCount(), 0u);
+
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+	ZENITH_ASSERT_EQ_FLOAT(pxParent->GetBlackboard().GetFloat("pinTickCount"), 1.0f, 0.0001f);
+
+	// The child's wait branch is still suspended, so these drives reach the
+	// child through the cursor - and still fire pin 0, because the parent is
+	// periodic.
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+	ZENITH_ASSERT_EQ_FLOAT(pxParent->GetBlackboard().GetFloat("pinTickCount"), 3.0f, 0.0001f);
+}
+
+ZENITH_TEST(GraphComponent, Sequence_CallGraphInheritsFlag_OneShotParentSkipsCompleted)
+{
+	// Same child, one-shot (custom-event) parent: re-firing the event resumes
+	// the suspended branch through the parent's cursor, and the inherited flag
+	// keeps the completed branch from running a second time.
+	const std::string strChildPath = SaveSequenceChildAsset("UnitTest_SequenceChildEvent.bgraph", "pinEventCount");
+	const std::string strParentPath = SaveCustomEventCallGraphParentAsset("UnitTest_SequenceParentEvent.bgraph", strChildPath, "callSequenceChild");
+
+	Zenith_TempScene xTempScene("TestSequenceCallEventScene");
+	Zenith_SceneData* pxSceneData = xTempScene.Data();
+	Zenith_Entity xEntity = g_xEngine.Scenes().CreateEntity(pxSceneData, "SequenceCallEventHost");
+	Zenith_GraphComponent& xComponent = xEntity.AddComponent<Zenith_GraphComponent>();
+	Zenith_BehaviourGraph* pxParent = xComponent.AddGraphByAssetPath(strParentPath.c_str());
+	ZENITH_ASSERT_NOT_NULL(pxParent);
+	if (!pxParent) return;
+	ZENITH_ASSERT_EQ(pxParent->GetUnresolvedCount(), 0u);
+
+	xComponent.FireCustomEvent("callSequenceChild");
+	ZENITH_ASSERT_EQ_FLOAT(pxParent->GetBlackboard().GetFloat("pinEventCount"), 1.0f, 0.0001f);
+
+	xComponent.FireCustomEvent("callSequenceChild");
+	xComponent.FireCustomEvent("callSequenceChild");
+	ZENITH_ASSERT_EQ_FLOAT(pxParent->GetBlackboard().GetFloat("pinEventCount"), 1.0f, 0.0001f);
+}
+
 ZENITH_TEST(GraphComponent, OnSceneLoadedFilterAndStash)
 {
 	// The OnSceneLoaded anchor rides the "__SceneLoaded" broadcast the engine's

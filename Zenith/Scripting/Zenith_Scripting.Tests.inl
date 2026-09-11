@@ -141,6 +141,38 @@ namespace
 		int32_t m_iElapsed = 0;
 	};
 
+	// Records xContext.m_bResumeDrive as seen from inside Execute - the direct
+	// probe behind ResumeDrive_FlagNeverSetOutsideTheTwoPaths (no engine-side
+	// spy hook exists, and none should). m_iRunningTicks -1 = RUNNING forever,
+	// so every drive after the first reaches this node through a CURSOR.
+	class GraphTestResumeDriveProbe : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestResumeDriveProbe)
+	public:
+		ZENITH_PROPERTY(int32_t, m_iRunningTicks, 0)
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			m_bLastResumeDrive = xContext.m_bResumeDrive;
+			++m_iExecuteCount;
+			++m_iElapsed;
+			if (m_iRunningTicks < 0 || m_iElapsed < m_iRunningTicks)
+			{
+				return GRAPH_NODE_STATUS_RUNNING;
+			}
+			m_iElapsed = 0;
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_ResumeDriveProbe"; }
+
+		bool m_bLastResumeDrive = false;
+		int32_t m_iExecuteCount = 0;	// the helper asserts == 2, so a never-run probe cannot pass vacuously
+
+	private:
+		int32_t m_iElapsed = 0;
+	};
+
 	// Registers the scratch types once (idempotent via the registry dup guard,
 	// which logs - so gate on a static instead).
 	void EnsureTestNodesRegistered()
@@ -159,6 +191,7 @@ namespace
 		xRegistry.RegisterNodeType<GraphTestBranchNode>("Test_Branch", GRAPH_EVENT_NONE, 2, true, "Test");
 		xRegistry.RegisterNodeType<GraphTestCustomSource>("Test_CustomSource", GRAPH_EVENT_CUSTOM, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestLifecycleProbe>("Test_LifecycleProbe", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestResumeDriveProbe>("Test_ResumeDriveProbe", GRAPH_EVENT_NONE, 1, false, "Test");
 	}
 
 	Zenith_GraphContext MakeTestContext(Zenith_BehaviourGraph& xGraph, float fDt = 0.016f)
@@ -1201,6 +1234,621 @@ ZENITH_TEST(BehaviourGraph, BuilderParamEqualToDefaultIsLegalNoOp)
 	const u_int uBadCounter = xBadBuilder.Node("Test_Counter");
 	xBadBuilder.ParamFloat(uBadCounter, "m_iReturnStatus", 1.0f);	// float into int32
 	ZENITH_ASSERT_TRUE(xBadBuilder.HasErrors());
+}
+
+//------------------------------------------------------------------------------
+// Sequence (Blueprint-style exec fan-out) + the resume-drive flag.
+//------------------------------------------------------------------------------
+
+namespace
+{
+	// Adds a Sequence with an explicit branch count, configured through the
+	// param-blob path (the route the editor and .bgraph loading use).
+	u_int AddSequence(Zenith_GraphDefinition& xDef, int32_t iBranchCount)
+	{
+		const u_int uSequence = xDef.AddNode("Sequence");
+		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find("Sequence");
+		if (pxInfo == nullptr || pxInfo->m_pfnGetPropertyTable == nullptr)
+		{
+			return uSequence;
+		}
+		Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
+		Zenith_PropertyValue xValue;
+		xValue.SetInt32(iBranchCount);
+		Zenith_PropertySystem::SetPropertyValue(pxTemp, *pxInfo->m_pfnGetPropertyTable()->FindProperty("m_iBranchCount"), xValue);
+		xDef.SetNodeParamsFromInstance(uSequence, pxTemp);
+		delete pxTemp;
+		return uSequence;
+	}
+
+	// Adds an engine Gate on (uAnchorID, uPin) keyed on szOpenVar: a branch that
+	// FAILS until the test sets that variable true.
+	u_int AddGate(Zenith_GraphDefinition& xDef, u_int uAnchorID, u_int uPin, const char* szOpenVar)
+	{
+		const u_int uGate = xDef.AddNode("Gate");
+		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find("Gate");
+		if (pxInfo != nullptr && pxInfo->m_pfnGetPropertyTable != nullptr)
+		{
+			Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
+			Zenith_PropertyValue xValue;
+			xValue.SetString(szOpenVar);
+			Zenith_PropertySystem::SetPropertyValue(pxTemp, *pxInfo->m_pfnGetPropertyTable()->FindProperty("m_strOpenVar"), xValue);
+			xDef.SetNodeParamsFromInstance(uGate, pxTemp);
+			delete pxTemp;
+		}
+		xDef.AddEdge(uAnchorID, uPin, uGate, 0);
+		return uGate;
+	}
+
+	// Named for the helper it is, not for the engine node type of the same name.
+	void SetTestBlackboardBool(Zenith_BehaviourGraph& xGraph, const char* szName, bool bValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetBool(bValue);
+		xGraph.GetBlackboard().SetValue(szName, xValue);
+	}
+
+	// Drives one anchor class twice against a forever-RUNNING probe: the first
+	// drive is FRESH, the second reaches the probe through the chain cursor.
+	// szCustomEvent non-null selects FireCustomEvent instead of FireEvent.
+	// Returns how many times the probe executed (expected 2: one fresh, one
+	// cursor drive) so the clear-flag legs cannot pass with a probe that never ran.
+	int32_t ProbeResumeDriveForAnchor(const char* szAnchorType, GraphEventType eDispatch, const char* szCustomEvent,
+		bool& bOutFresh, bool& bOutCursor)
+	{
+		// Sentinels: a probe that never executed must FAIL both expectations
+		// rather than pass one vacuously.
+		bOutFresh = true;
+		bOutCursor = false;
+
+		Zenith_GraphDefinition xDef;
+		const u_int uAnchor = xDef.AddNode(szAnchorType);
+		const u_int uProbe = xDef.AddNode("Test_ResumeDriveProbe");
+		{
+			GraphTestResumeDriveProbe xTemp;
+			xTemp.m_iRunningTicks = -1;	// RUNNING forever: every later drive is a cursor drive
+			xDef.SetNodeParamsFromInstance(uProbe, &xTemp);
+		}
+		xDef.AddEdge(uAnchor, 0, uProbe, 0);
+
+		Zenith_BehaviourGraph xGraph;
+		xGraph.InitialiseFromDefinition(xDef);
+		// 1 s dt so the Timer anchor's interval elapses on its FIRST dispatch.
+		Zenith_GraphContext xContext = MakeTestContext(xGraph, 1.0f);
+		GraphTestResumeDriveProbe* pxProbe = static_cast<GraphTestResumeDriveProbe*>(xGraph.FindNode(uProbe));
+		if (pxProbe == nullptr)
+		{
+			return 0;	// caller's == 2 assertion names the anchor
+		}
+
+		if (szCustomEvent != nullptr)
+		{
+			xGraph.FireCustomEvent(szCustomEvent, xContext);
+			bOutFresh = pxProbe->m_bLastResumeDrive;
+			xGraph.FireCustomEvent(szCustomEvent, xContext);
+			bOutCursor = pxProbe->m_bLastResumeDrive;
+		}
+		else
+		{
+			xGraph.FireEvent(eDispatch, xContext);
+			bOutFresh = pxProbe->m_bLastResumeDrive;
+			xGraph.FireEvent(eDispatch, xContext);
+			bOutCursor = pxProbe->m_bLastResumeDrive;
+		}
+		return pxProbe->m_iExecuteCount;
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_BranchesAreIndependent)
+{
+	EnsureTestNodesRegistered();
+
+	// pin 0 completes, pin 1 FAILS at a closed gate, pin 2 must still run: a
+	// failing branch is not a BT-sequence abort of its siblings.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uSequence = AddSequence(xDef, 3);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "a", 0);
+	const u_int uGate = AddGate(xDef, uSequence, 1, "indepOpen");
+	BuildProbe(xDef, uGate, 0, "b", 0);
+	BuildProbe(xDef, uSequence, 2, "c", 0);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+c*c-c");
+
+	// Opening the gate reaches ONLY branch 1; the others are unchanged.
+	SetTestBlackboardBool(xGraph, "indepOpen", true);
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+b*b-b+c*c-c");
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_TwoBranchesRunningAtOnce)
+{
+	EnsureTestNodesRegistered();
+
+	// The fan-out property a linear chain cannot express: two branches suspended
+	// SIMULTANEOUSLY, each resuming on its own schedule (2 ticks vs 3).
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "x", 2);
+	BuildProbe(xDef, uSequence, 1, "y", 3);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+x*x+y*y");			// both suspended
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+x*x+y*y*x-x*y");	// x finishes, y still going
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+x*x+y*y*x-x*y+x*x*y-y");	// x restarts, y finishes
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_AbortCascadesToEveryPin)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uSequence = AddSequence(xDef, 3);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "a", -1);	// RUNNING forever
+	BuildProbe(xDef, uSequence, 1, "b", -1);	// RUNNING forever
+	BuildProbe(xDef, uSequence, 2, "c", 0);		// completed - nothing to abort
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a+b*b+c*c-c");
+
+	// Aborting the ANCHOR reaches the Sequence's OnAbort, which must forward
+	// into EVERY pin (both suspended probes reset), not just one.
+	xGraph.AbortChain(uSource, 0, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a+b*b+c*c-c!a!b");
+
+	// Idempotent: nothing is suspended now.
+	xGraph.AbortChain(uSource, 0, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a+b*b+c*c-c!a!b");
+
+	// The next fire is a FRESH run of every branch (the completed mask was
+	// cleared with the abort).
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a+b*b+c*c-c");
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_ReturnStatusContract)
+{
+	EnsureTestNodesRegistered();
+
+	// The status is read through a Selector: its pin 1 runs ONLY if pin 0 (the
+	// Sequence) returned FAILURE, so "fb" appearing is the failure detector.
+
+	// (1) One branch FAILS, one succeeds -> SUCCESS.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uSelector = xDef.AddNode("Selector");
+		xDef.AddEdge(uSource, 0, uSelector, 0);
+		const u_int uSequence = AddSequence(xDef, 2);
+		xDef.AddEdge(uSelector, 0, uSequence, 0);
+		const u_int uGate = AddGate(xDef, uSequence, 0, "statusOpen");	// never opened
+		BuildProbe(xDef, uGate, 0, "g", 0);
+		BuildProbe(xDef, uSequence, 1, "s", 0);
+		BuildProbe(xDef, uSelector, 1, "fb", 0);
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		g_strLifecycleLog.clear();
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+s*s-s");
+	}
+
+	// (2) EVERY branch fails -> still SUCCESS. Sequence never returns FAILURE.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uSelector = xDef.AddNode("Selector");
+		xDef.AddEdge(uSource, 0, uSelector, 0);
+		const u_int uSequence = AddSequence(xDef, 2);
+		xDef.AddEdge(uSelector, 0, uSequence, 0);
+		const u_int uGateA = AddGate(xDef, uSequence, 0, "statusOpen");
+		BuildProbe(xDef, uGateA, 0, "ga", 0);
+		const u_int uGateB = AddGate(xDef, uSequence, 1, "statusOpen");
+		BuildProbe(xDef, uGateB, 0, "gb", 0);
+		BuildProbe(xDef, uSelector, 1, "fb", 0);
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		g_strLifecycleLog.clear();
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "");	// no branch body, and no fallback
+	}
+
+	// (3) Any branch suspended -> RUNNING (again: no fallback).
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uSelector = xDef.AddNode("Selector");
+		xDef.AddEdge(uSource, 0, uSelector, 0);
+		const u_int uSequence = AddSequence(xDef, 2);
+		xDef.AddEdge(uSelector, 0, uSequence, 0);
+		BuildProbe(xDef, uSequence, 0, "r", -1);
+		BuildProbe(xDef, uSequence, 1, "s", 0);
+		BuildProbe(xDef, uSelector, 1, "fb", 0);
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		g_strLifecycleLog.clear();
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+r*r+s*s-s");
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_OnUpdateRefiresEveryPinEveryTick)
+{
+	EnsureTestNodesRegistered();
+
+	// Blueprint's Event Tick -> Sequence: pin 0 fires again on the next tick
+	// even though it completed, while pin 1 resumes where it was.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "a", 0);
+	BuildProbe(xDef, uSequence, 1, "w", -1);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w");
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w+a*a-a*w");
+	ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_OneShotRedriveSkipsCompletedPins)
+{
+	EnsureTestNodesRegistered();
+
+	// OnStart anchor: the ON_UPDATE re-drive loop resumes the suspended branch
+	// WITHOUT re-firing the completed one - an OnStart chain must not run twice.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("OnStart");
+	const u_int uSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "a", 0);
+	BuildProbe(xDef, uSequence, 1, "w", 3);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_START, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w");
+	ZENITH_ASSERT_TRUE(xGraph.NeedsUpdateDispatch());
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w*w");
+	ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w*w*w-w");
+	ZENITH_ASSERT_FALSE(xGraph.NeedsUpdateDispatch());	// the one-shot run finished
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_RepeatedCustomEventSkipsCompletedPins)
+{
+	EnsureTestNodesRegistered();
+
+	// The review regression: re-firing the SAME custom event while a branch is
+	// still suspended must resume it, not re-run the branch that finished.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_CustomSource");	// matches "evt"
+	const u_int uSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "a", 0);
+	BuildProbe(xDef, uSequence, 1, "w", -1);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w");
+
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w*w");
+
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w*w*w");
+	ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_FailedBranchIsNotRefiredOnRedrive)
+{
+	EnsureTestNodesRegistered();
+
+	// A branch that FAILED is completed for this run (only RUNNING keeps a pin
+	// live), so a resume drive must not retry it - even once its gate opens.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_CustomSource");
+	const u_int uSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	const u_int uGate = AddGate(xDef, uSequence, 0, "retryOpen");
+	BuildProbe(xDef, uGate, 0, "g", 0);
+	BuildProbe(xDef, uSequence, 1, "w", -1);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+w*w");	// branch 0 failed at the gate
+
+	SetTestBlackboardBool(xGraph, "retryOpen", true);
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+w*w*w");	// still skipped
+
+	// ...and it IS the mask, not the gate: a fresh run (after an abort) reaches
+	// the now-open branch.
+	xGraph.AbortChain(uSource, 0, xContext);
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+w*w*w!w+g*g-g+w*w");
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_TimerIsOneOccurrenceAtATime)
+{
+	EnsureTestNodesRegistered();
+
+	// Documented NON-parity: a Timer occurrence whose Sequence is still running
+	// is resumed rather than re-fired, and because RunSourceNode returns before
+	// the Timer's own Execute, the interval does not advance while suspended -
+	// the chain resumes on EVERY ON_UPDATE dispatch, not once per interval.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Timer");	// 1 s default interval
+	const u_int uSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 0, "a", 0);
+	BuildProbe(xDef, uSequence, 1, "w", -1);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph, 0.6f);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);	// 0.6 s: interval not reached
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "");
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);	// 1.2 s: the occurrence fires
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w");
+
+	// Zero dt from here: resumption is dispatch-driven, not interval-driven.
+	xContext.m_fDt = 0.0f;
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w*w");
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+a*a-a+w*w*w*w");	// one occurrence, still
+	ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_FlagDoesNotLeakAcrossSourcesInOneDispatch)
+{
+	EnsureTestNodesRegistered();
+
+	// One graph, two Sequences: one under an ON_UPDATE anchor, one under a
+	// custom anchor left suspended. A single ON_UPDATE dispatch drives both -
+	// the re-drive loop's flag must not survive into the next dispatch's
+	// ON_UPDATE source (which would silently stop it re-firing its pins).
+	Zenith_GraphDefinition xDef;
+	const u_int uTickSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uTickSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uTickSource, 0, uTickSequence, 0);
+	BuildProbe(xDef, uTickSequence, 0, "a", 0);
+	BuildProbe(xDef, uTickSequence, 1, "u", -1);
+
+	const u_int uCustomSource = xDef.AddNode("Test_CustomSource");	// "evt"
+	const u_int uCustomSequence = AddSequence(xDef, 2);
+	xDef.AddEdge(uCustomSource, 0, uCustomSequence, 0);
+	BuildProbe(xDef, uCustomSequence, 0, "b", 0);
+	BuildProbe(xDef, uCustomSequence, 1, "v", -1);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	g_strLifecycleLog.clear();
+	xGraph.FireCustomEvent("evt", xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+b*b-b+v*v");
+
+	// Source first (fresh, fires both pins), then the one-shot re-drive loop
+	// (flagged, resumes only "v").
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+b*b-b+v*v+a*a-a+u*u*v");
+	ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+
+	// The tick Sequence is suspended now, so this dispatch takes its source's
+	// CURSOR branch: still unflagged, so "a" fires again.
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+b*b-b+v*v+a*a-a+u*u*v+a*a-a*u*v");
+	ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_ParamRoundTrip)
+{
+	EnsureTestNodesRegistered();
+
+	// RegistryWideNodeRoundTrip is quarantined, so a new node type owes its own
+	// round-trip: a NON-default branch count must survive definition
+	// serialization and still drive the pin it configures.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uSequence = AddSequence(xDef, 5);
+	xDef.AddEdge(uSource, 0, uSequence, 0);
+	BuildProbe(xDef, uSequence, 4, "e", 0);	// only reachable if 5 pins survived
+
+	Zenith_DataStream xStream;
+	xDef.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+	Zenith_GraphDefinition xLoaded;
+	ZENITH_ASSERT_TRUE(xLoaded.ReadFromDataStream(xStream));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xLoaded));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 0u);
+	Zenith_GraphNode* pxSequence = xGraph.FindNode(uSequence);
+	ZENITH_ASSERT_NOT_NULL(pxSequence);
+	if (pxSequence == nullptr) return;
+	ZENITH_ASSERT_EQ(pxSequence->GetDynamicExecOutputCount(), 5);
+
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	g_strLifecycleLog.clear();
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+e*e-e");
+}
+
+ZENITH_TEST(BehaviourGraph, Sequence_BranchCountBoundary_1And64)
+{
+	EnsureTestNodesRegistered();
+
+	// Lower bound: a 1-branch Sequence is a degenerate pass-through, not an
+	// empty loop.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uSequence = AddSequence(xDef, 1);
+		xDef.AddEdge(uSource, 0, uSequence, 0);
+		BuildProbe(xDef, uSequence, 0, "o", 0);
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphNode* pxSequence = xGraph.FindNode(uSequence);
+		ZENITH_ASSERT_NOT_NULL(pxSequence);
+		if (pxSequence == nullptr) return;
+		ZENITH_ASSERT_EQ(pxSequence->GetDynamicExecOutputCount(), 1);
+
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		g_strLifecycleLog.clear();
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+o*o-o");
+	}
+
+	// Upper bound: pin 63 is a real bit of the u64 mask (a 32-bit shift would
+	// lose it and re-fire the branch on the flagged drive), while pin 0 - still
+	// RUNNING - is not skipped.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_CustomSource");
+		const u_int uSequence = AddSequence(xDef, 64);
+		xDef.AddEdge(uSource, 0, uSequence, 0);
+		BuildProbe(xDef, uSequence, 0, "r", -1);	// never completes
+		BuildProbe(xDef, uSequence, 63, "d", 0);	// completes on the first drive
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphNode* pxSequence = xGraph.FindNode(uSequence);
+		ZENITH_ASSERT_NOT_NULL(pxSequence);
+		if (pxSequence == nullptr) return;
+		ZENITH_ASSERT_EQ(pxSequence->GetDynamicExecOutputCount(), 64);
+
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		g_strLifecycleLog.clear();
+		xGraph.FireCustomEvent("evt", xContext);
+		ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+r*r+d*d-d");
+
+		xGraph.FireCustomEvent("evt", xContext);
+		ZENITH_ASSERT_STREQ(g_strLifecycleLog.c_str(), "+r*r+d*d-d*r");
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, ResumeDrive_FlagNeverSetOutsideTheTwoPaths)
+{
+	EnsureTestNodesRegistered();
+
+	// Direct probe of the context bool, one graph per anchor class: a FRESH
+	// drive is never flagged; a CURSOR drive is, except under the two periodic
+	// anchors.
+	bool bFresh = true;
+	bool bCursor = false;
+
+	ZENITH_ASSERT_EQ(ProbeResumeDriveForAnchor("OnStart", GRAPH_EVENT_ON_START, nullptr, bFresh, bCursor), 2);
+	ZENITH_ASSERT_FALSE(bFresh);
+	ZENITH_ASSERT_TRUE(bCursor);
+
+	ZENITH_ASSERT_EQ(ProbeResumeDriveForAnchor("OnCustomEvent", GRAPH_EVENT_CUSTOM, "event", bFresh, bCursor), 2);
+	ZENITH_ASSERT_FALSE(bFresh);
+	ZENITH_ASSERT_TRUE(bCursor);
+
+	ZENITH_ASSERT_EQ(ProbeResumeDriveForAnchor("Timer", GRAPH_EVENT_ON_UPDATE, nullptr, bFresh, bCursor), 2);
+	ZENITH_ASSERT_FALSE(bFresh);
+	ZENITH_ASSERT_TRUE(bCursor);	// Timer IS flagged - one occurrence at a time
+
+	ZENITH_ASSERT_EQ(ProbeResumeDriveForAnchor("OnUpdate", GRAPH_EVENT_ON_UPDATE, nullptr, bFresh, bCursor), 2);
+	ZENITH_ASSERT_FALSE(bFresh);
+	ZENITH_ASSERT_FALSE(bCursor);	// a tick is never a resume drive
+
+	ZENITH_ASSERT_EQ(ProbeResumeDriveForAnchor("OnFixedUpdate", GRAPH_EVENT_ON_FIXED_UPDATE, nullptr, bFresh, bCursor), 2);
+	ZENITH_ASSERT_FALSE(bFresh);
+	ZENITH_ASSERT_FALSE(bCursor);
+
+	// The second of the two paths: the ON_UPDATE one-shot re-drive loop, in a
+	// graph with no ON_UPDATE source at all. Scoped, so the caller's context
+	// comes back untouched.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uAnchor = xDef.AddNode("OnStart");
+		const u_int uProbe = xDef.AddNode("Test_ResumeDriveProbe");
+		{
+			GraphTestResumeDriveProbe xTemp;
+			xTemp.m_iRunningTicks = -1;
+			xDef.SetNodeParamsFromInstance(uProbe, &xTemp);
+		}
+		xDef.AddEdge(uAnchor, 0, uProbe, 0);
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		GraphTestResumeDriveProbe* pxProbe = static_cast<GraphTestResumeDriveProbe*>(xGraph.FindNode(uProbe));
+		ZENITH_ASSERT_NOT_NULL(pxProbe);
+		if (pxProbe == nullptr) return;
+
+		xGraph.FireEvent(GRAPH_EVENT_ON_START, xContext);
+		ZENITH_ASSERT_FALSE(pxProbe->m_bLastResumeDrive);
+		ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_TRUE(pxProbe->m_bLastResumeDrive);
+		ZENITH_ASSERT_FALSE(xContext.m_bResumeDrive);
+	}
 }
 
 #endif // ZENITH_TESTING
