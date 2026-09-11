@@ -518,4 +518,131 @@ ZENITH_TEST(GraphNodeFailurePin, BlackboardMathOptIns)
 	Zenith_CheckNodeIsNotOptedIn("GetListCount");
 }
 
+//==============================================================================
+// Pin-table coverage for this TU (the A-6 annotation sweep).
+//
+// What the totality walk proves, why the registry is SWAPPED to this TU's
+// registrar rather than filtered by category, and why the restore is RAII all
+// live ONCE, in the shared harness: Zenith_GraphPinTotality.TestHarness.inl.
+// Only this TU's registrar, its exemption and its representative pins are here.
+//==============================================================================
+
+#include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
+
+ZENITH_TEST(GraphPinTable, MathTotality)
+{
+	// ★ THE SWEEP'S ONE EXEMPTION, and it is passed HERE rather than baked into
+	// the harness, so it can never quietly excuse a property in another TU.
+	// LogicBlackboardBool.m_strVars matches the m_str*Var* matcher but holds a
+	// COMMA-SEPARATED LIST of operand names (Zenith_GraphNode_ParseCommaList):
+	// no descriptor can express N names, and one pointing at it would make the
+	// validator check the literal "a,b" as a single variable name.
+	const char* const aszExempt[] = { "m_strVars" };
+	Zenith_CheckPinTableTotality(&Zenith_RegisterEngineGraphNodes_Math, "_Math.cpp",
+		aszExempt, static_cast<u_int>(sizeof(aszExempt) / sizeof(aszExempt[0])));
+}
+
+// One representative of each ROLE this TU declares. Roles are what the validator
+// consumes (a WRITE role registers a writer that satisfies other readers; a READ
+// role registers a read that must be satisfied), so a role typo is invisible to
+// the totality walk - the pin would still count as "covered".
+ZENITH_TEST(GraphPinTable, MathRoleSpotCheck)
+{
+	// READWRITE: read AND written under the SAME name in one Execute, with no
+	// result-var alternative. Its own write never satisfies its own read.
+	Zenith_CheckGraphPin("AddBlackboardInt", "Variable", GRAPH_PIN_ROLE_SELECTOR_READWRITE, PROPERTY_TYPE_INT32, "m_strVariable");
+	Zenith_CheckGraphPin("ClampBlackboardFloat", "Value", GRAPH_PIN_ROLE_SELECTOR_READWRITE, PROPERTY_TYPE_FLOAT, "m_strVar");
+
+	// ★ THE TRAP, and the reason the two are asserted side by side: the maths
+	// nodes carry the same in-place SHAPE but m_strVar is SELECTOR_READ there.
+	// Their write happens only when m_strResultVar is empty, and that write is
+	// the Result pin's FALLBACK - a READWRITE would fabricate a writer in the
+	// out-of-place case, where m_strVar is never written at all.
+	Zenith_CheckGraphPin("MathBlackboardFloat", "Value", GRAPH_PIN_ROLE_SELECTOR_READ, PROPERTY_TYPE_FLOAT, "m_strVar");
+	Zenith_CheckGraphPin("MathBlackboardFloat", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_FLOAT, "m_strResultVar");
+	const Zenith_GraphPinDesc* pxMathResult = Zenith_FindGraphPin("MathBlackboardFloat", "Result");
+	ZENITH_ASSERT_NOT_NULL(pxMathResult);
+	if (pxMathResult != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxMathResult->m_szFallbackVarNameProperty, "m_strVar",
+			"the fallback is the ONLY thing expressing the in-place write back into m_strVar");
+	}
+
+	// INPUT_VAR_OR_CONST: the ternary shape, both halves declared. Losing the
+	// constant half would make an unset min var look like an unsatisfied read.
+	Zenith_CheckGraphPin("ClampBlackboardFloat", "Min", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strMinVar");
+	const Zenith_GraphPinDesc* pxMin = Zenith_FindGraphPin("ClampBlackboardFloat", "Min");
+	ZENITH_ASSERT_NOT_NULL(pxMin);
+	if (pxMin != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxMin->m_szConstProperty, "m_fMin",
+			"the Min pin lost its inline-constant half");
+	}
+
+	// LIST: the blackboard's parallel list store, which holds no
+	// Zenith_PropertyValue and is therefore never typed...
+	Zenith_CheckGraphPin("ListAdd", "List", GRAPH_PIN_ROLE_LIST, eGRAPH_PIN_TYPE_ANY, "m_strListVar");
+	// ...and the element appended to it is genuinely ANY, as is the element
+	// GetListElement reads back out.
+	Zenith_CheckGraphPin("ListAdd", "Value", GRAPH_PIN_ROLE_INPUT, eGRAPH_PIN_TYPE_ANY, "m_strValueVar");
+	Zenith_CheckGraphPin("GetListElement", "Result", GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, "m_strResultVar");
+
+	// OUTPUT: a computed result, not a configured destination.
+	Zenith_CheckGraphPin("GetListCount", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strResultVar");
+}
+
+// The one instance-resolved pin in this TU. MathBlackboardVector3's ops 4
+// (length) and 5 (dot) collapse the vector to a FLOAT while every other op
+// writes a VECTOR3, so the Result pin's type cannot be static - and a node that
+// declined to answer would leave the validator treating every result as ANY.
+ZENITH_TEST(GraphPinTable, MathVector3ResultTypeFollowsOp)
+{
+	// ★ THE INDEX COMES FROM THE TABLE, never from a literal: a pin inserted
+	// above Result tomorrow must fail this test rather than silently move it on
+	// to a different pin.
+	const Zenith_GraphPinTable& xPins = Zenith_GraphNode_MathBlackboardVector3::GetPinTableStatic();
+	u_int uResultIndex = xPins.GetPinCount();
+	for (u_int u = 0; u < xPins.GetPinCount(); ++u)
+	{
+		if (xPins.GetPinAt(u).m_szName != nullptr && std::strcmp(xPins.GetPinAt(u).m_szName, "Result") == 0)
+		{
+			uResultIndex = u;
+		}
+	}
+	ZENITH_ASSERT_LT(uResultIndex, xPins.GetPinCount(), "MathBlackboardVector3 declares no pin named 'Result'");
+	if (uResultIndex >= xPins.GetPinCount())
+	{
+		return;
+	}
+	ZENITH_ASSERT_TRUE(xPins.GetPinAt(uResultIndex).m_bInstanceResolved,
+		"the Result pin stopped being instance-resolved, so GetPinType is never consulted");
+
+	Zenith_GraphNode_MathBlackboardVector3 xNode;
+	// Past the last real op (6) as well: an out-of-range op FAILS at execute
+	// time and must still not answer FLOAT.
+	for (int32_t iOp = 0; iOp <= 8; ++iOp)
+	{
+		xNode.m_iOp = iOp;
+		Zenith_PropertyType eType = eGRAPH_PIN_TYPE_ANY;
+		ZENITH_ASSERT_TRUE(xNode.GetPinType(uResultIndex, eType), "op %d: the Result pin must answer", iOp);
+		const Zenith_PropertyType eExpected = (iOp == 4 || iOp == 5) ? PROPERTY_TYPE_FLOAT : PROPERTY_TYPE_VECTOR3;
+		ZENITH_ASSERT_EQ(static_cast<int>(eType), static_cast<int>(eExpected),
+			"op %d resolved the Result pin to the wrong type", iOp);
+	}
+
+	// Every OTHER pin DECLINES. Answering for a statically typed pin would let a
+	// per-instance guess override the declared type.
+	xNode.m_iOp = 4;
+	for (u_int u = 0; u < xPins.GetPinCount(); ++u)
+	{
+		if (u == uResultIndex)
+		{
+			continue;
+		}
+		Zenith_PropertyType eType = eGRAPH_PIN_TYPE_ANY;
+		ZENITH_ASSERT_FALSE(xNode.GetPinType(u, eType), "pin '%s' must decline to answer GetPinType",
+			xPins.GetPinAt(u).m_szName != nullptr ? xPins.GetPinAt(u).m_szName : "(null)");
+	}
+}
+
 #endif // ZENITH_TESTING

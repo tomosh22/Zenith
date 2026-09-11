@@ -45,6 +45,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "pos")
 
+		// ResolveTargetEntity below: an ENTITY reference, so the accepted-type
+		// mask is ENTITY_ID alone - a string entity name is never legal at
+		// runtime. The position is the node's own computed answer.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadEntityPosition)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -77,6 +86,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strScaleVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetEntityScale)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Scale, "m_strScaleVar", "m_xScale", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -107,6 +122,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strEntityVar, "target")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "hasTarget")
 
+		// m_strEntityVar goes through ResolveTargetEntity below like any other
+		// entity reference - it is a TARGET_REF under a different property name,
+		// not an ordinary INPUT.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryEntityValid)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Entity, "m_strEntityVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			const Zenith_Entity xEntity = xContext.ResolveTargetEntity(m_strEntityVar);
@@ -129,6 +153,16 @@ namespace
 		ZENITH_PROPERTY(bool, m_bXZOnly, false)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "dist")
 
+		// Both ends are POSITION references (ResolvePositionRef below): the var
+		// may hold a VECTOR3 world position OR a packed ENTITY_ID, which is the
+		// wider of the two TARGET masks. m_bXZOnly is a mode, not a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ComputeDistance)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(From, "m_strFromVar")
+		ZENITH_GRAPH_PIN_TARGET_POSITION(To, "m_strToVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector3 xFrom, xTo;
@@ -163,6 +197,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strListVar, "found")
 		ZENITH_PROPERTY(std::string, m_strCountVar, "foundCount")
 
+		// m_strComponentType is a component META DISPLAY NAME, not a blackboard
+		// name, so it is not a pin (and it escapes the m_str*Var* matcher too).
+		// m_fRadius is a const with no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindEntitiesInRadius)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
+		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector3 xCenter;
@@ -232,6 +276,14 @@ namespace
 		ZENITH_PROPERTY(bool, m_bXZOnly, false)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "dir")
 
+		// The ComputeDistance shape, with a VECTOR3 answer.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ComputeDirection)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(From, "m_strFromVar")
+		ZENITH_GRAPH_PIN_TARGET_POSITION(To, "m_strToVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector3 xFrom, xTo;
@@ -273,6 +325,15 @@ namespace
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 		ZENITH_PROPERTY(std::string, m_strResultVar, "spawned")
 
+		// m_strPrefabPath and m_strEntityName are an ASSET PATH and an entity
+		// name, not blackboard names; m_xOffset is a const with no var partner.
+		// The spawned root's packed EntityID is the node's computed result.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SpawnPrefab)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (m_strPrefabPath.empty())
@@ -336,6 +397,13 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strName, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "found")
 
+		// m_strName is an ENTITY name looked up in the scene, not a blackboard
+		// name, so it is not a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindEntityByName)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			if (m_strName.empty())
@@ -382,6 +450,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "nearest")
 		ZENITH_PROPERTY(std::string, m_strDistanceVar, "")
 
+		// Two OUTPUTs: both are computed here, and the optional distance is a
+		// second result rather than a configured destination (an empty name just
+		// skips the write).
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindNearestEntity)
+		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Distance, "m_strDistanceVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Maths::Vector3 xCenter;
@@ -463,6 +541,16 @@ namespace
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xOffsetPosition, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// TWO entity references, both through ResolveTargetEntity below: the
+		// skeleton to attach TO and the item being attached. m_strBone is a bone
+		// name inside the skeleton and m_xOffsetPosition a const with no var
+		// partner, so neither is a pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AttachToBone)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Skeleton, "m_strSkeletonVar")
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xItem = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -492,6 +580,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_DetachFromBone)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xItem = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -523,6 +616,18 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strUpVar, "")
 		ZENITH_PROPERTY(std::string, m_strPositionVar, "")
 
+		// ★ Four OUTPUTs. m_strPositionVar here is where the camera's position is
+		// WRITTEN - it is NOT the position-REF shape the rest of this TU uses
+		// (nothing resolves it), so it is an OUTPUT and not a TARGET_POSITION. An
+		// empty name on any of the four just skips that write.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadCameraBasis)
+		ZENITH_GRAPH_PIN_OUTPUT(Forward, "m_strForwardVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Right, "m_strRightVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Up, "m_strUpVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
@@ -588,6 +693,14 @@ namespace
 		ZENITH_PROPERTY(bool, m_bAdditive, false)
 		ZENITH_PROPERTY(bool, m_bClampPitch, true)
 
+		// Two const-or-var ternaries (below), in DEGREES. The node drives the
+		// main camera and takes no entity target, so it has no TARGET pin.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetCameraPitchYaw)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Pitch, "m_strPitchVar", "m_fPitchDegrees", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Yaw, "m_strYawVar", "m_fYawDegrees", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
@@ -633,6 +746,15 @@ namespace
 		ZENITH_PROPERTY(bool, m_bYawOnly, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The direction is READ as a plain VECTOR3 (GetVector3 below) - a value,
+		// not a position reference, so it is an INPUT rather than a
+		// TARGET_POSITION. m_fDegreesPerSecond has no var partner.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RotateTowardDirection)
+		ZENITH_GRAPH_PIN_INPUT(Direction, "m_strDirectionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
@@ -696,6 +818,15 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strEulerVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Two computed OUTPUTs (either skipped when its name is empty) plus the
+		// entity whose rotation is read.
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadEntityRotation)
+		ZENITH_GRAPH_PIN_OUTPUT(Forward, "m_strForwardVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Euler, "m_strEulerVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			Zenith_Entity xTarget = xContext.ResolveTargetEntity(m_strTargetVar);
