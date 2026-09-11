@@ -878,8 +878,11 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder)
 
 // --- 16. ST_Dispenser -------------------------------------------------------
 // A dispenser, and the one graph in this game that uses the MULTI-WAY flow
-// constructs. Fifteen independent chains on one entity, because every one of
-// them needs its own source (no exec fan-in):
+// constructs. Fifteen independent chains on one entity. A (node, pin) carries
+// at most ONE outgoing edge, so chains never converge -- but they no longer
+// need a source each either: the four per-frame chains (12-15) hang off a
+// single `OnUpdate -> Sequence(4)`, one pin each, and the other eleven are
+// anchored on a key, on OnStart or on a custom event:
 //
 //   Once ............ a start-up bonus that must land EXACTLY once
 //   WaitForCondition. RUNNING under a one-shot OnStart anchor until the plate
@@ -898,9 +901,17 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder)
 //   SwitchOnInt ..... mode -> a label and a nozzle scale, 3 cases + default
 //   SwitchOnString .. that label -> an index, 3 cases + default
 //   Selector ........ an alarm branch with priority over the normal one
+//   Sequence ........ exec FAN-OUT: the four per-frame chains on ONE OnUpdate,
+//                     driven in pin order within one fire. A branch FAILURE is
+//                     SWALLOWED and never reaches a sibling, so the isolation
+//                     four separate anchors used to buy survives the merge --
+//                     which is the whole reason the HUD chain (15) can still
+//                     not abort the logic chain (12)
 //
-// ★ EVERY CHAIN BELOW IS ANCHORED ON A KEY OR ON OnUpdate, both of which carry
-// a REAL dt, so the no-timed-node-under-a-zero-dt-source rule never bites here.
+// ★ EVERY CHAIN BELOW IS ANCHORED ON A KEY OR ON OnUpdate -- directly, or
+// through the Sequence's pins, which inherit their anchor's context -- and both
+// carry a REAL dt, so the no-timed-node-under-a-zero-dt-source rule never bites
+// here.
 // OnKeyPressed is registered as an ON_UPDATE source that gates on the key edge,
 // so it fires every frame and resumes suspended chains exactly like OnUpdate.
 // The one exception is chain 3, a custom event -- and it contains no timed node.
@@ -1034,7 +1045,18 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const u_int uSentinel = xB.SetBlackboardInt(ScriptTest::Vars::szSENTINEL, 99);
 	xEmpty.Then(uClear).Then(uProbe).Then(uSentinel);
 
-	// --- Chain 12: the per-frame logic + the mode switch.
+	// --- Chains 12-15 share ONE OnUpdate, through a Sequence's four pins.
+	// PIN ORDER IS THE WITHIN-FRAME ORDER the four separate anchors used to
+	// give: Sequence walks pins 0..N-1 inside a single fire, and an ON_UPDATE
+	// dispatch leaves m_bResumeDrive clear, so every pin fires every tick
+	// exactly as its own anchor did. Branch FAILURE is swallowed, so the four
+	// remain as isolated from each other as four anchors were.
+	Zenith_GraphChain xTick = xB.OnUpdate();
+	const u_int uPerFrame = xB.Node("Sequence");
+	xB.ParamInt(uPerFrame, "m_iBranchCount", 4);
+	xTick.Then(uPerFrame);
+
+	// --- Chain 12 (Sequence pin 0): the per-frame logic + the mode switch.
 	//   notJammed   = NOT jammed              (one operand + m_bInvert)
 	//   canDispense = armed AND notJammed     (the N-ary form, at two operands)
 	//
@@ -1042,7 +1064,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	// out as "armed,notJammed". The list is parsed VERBATIM -- no trimming --
 	// so a hand-written copy that drifted from Vars:: by one character would
 	// look up a variable that does not exist and silently read `false`.
-	Zenith_GraphChain xTick = xB.OnUpdate();
 	const u_int uNotJammed = xB.LogicBool(
 		ScriptTest::Vars::szJAMMED, GRAPH_LOGIC_BOOL_OP_AND, ScriptTest::Vars::szNOT_JAMMED, /*invert*/ true);
 	const std::string strDispenseOperands =
@@ -1051,7 +1072,10 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 		strDispenseOperands.c_str(), GRAPH_LOGIC_BOOL_OP_AND, ScriptTest::Vars::szCAN_DISPENSE);
 	const u_int uBagCount = xB.GetListCount(ScriptTest::Vars::szBAG, ScriptTest::Vars::szBAG_COUNT);
 	const u_int uMode = xB.SwitchOnInt(ScriptTest::Vars::szMODE, 3);
-	xTick.Then(uNotJammed).Then(uCanDispense).Then(uBagCount).Then(uMode);
+	xB.Edge(uPerFrame, 0, uNotJammed);
+	xB.Chain(uNotJammed, uCanDispense);
+	xB.Chain(uCanDispense, uBagCount);
+	xB.Chain(uBagCount, uMode);
 
 	// Each case writes its OWN nozzle scale, so the scale identifies WHICH pin
 	// ran -- four pins scaling to the same value would prove only that some pin
@@ -1061,17 +1085,17 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	ST_BuildModeCase(xB, uMode, 2, ScriptTest::Labels::szBLUE,  1.8f);
 	ST_BuildModeCase(xB, uMode, 3, ScriptTest::Labels::szNONE,  0.6f);
 
-	// --- Chain 13: the label, back into an index. Its own OnUpdate anchor
-	// because SwitchOnInt above has no pass-through exec output to chain from.
-	// The case list is composed from the same three label constants chain 12
-	// writes, for the reason spelled out there.
-	Zenith_GraphChain xLabelTick = xB.OnUpdate();
+	// --- Chain 13 (Sequence pin 1): the label, back into an index. A chain of
+	// its own because SwitchOnInt above has no pass-through exec output to
+	// continue from -- it is the NEXT pin rather than the next node, which is
+	// exactly what the fan-out buys. The case list is composed from the same
+	// three label constants chain 12 writes, for the reason spelled out there.
 	const std::string strModeCases = std::string(ScriptTest::Labels::szRED) + ","
 		+ ScriptTest::Labels::szGREEN + "," + ScriptTest::Labels::szBLUE;
 	const u_int uLabelSwitch = xB.Node("SwitchOnString");
 	xB.ParamString(uLabelSwitch, "m_strVar", ScriptTest::Vars::szLABEL);
 	xB.ParamString(uLabelSwitch, "m_strCases", strModeCases.c_str());
-	xLabelTick.Then(uLabelSwitch);
+	xB.Edge(uPerFrame, 1, uLabelSwitch);
 
 	const u_int uIndexRed   = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, 0);
 	const u_int uIndexGreen = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, 1);
@@ -1082,15 +1106,14 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	xB.Edge(uLabelSwitch, 2, uIndexBlue);
 	xB.Edge(uLabelSwitch, 3, uIndexNone);	// pin 3 = default (3 cases)
 
-	// --- Chain 14: priority. Pin 0 is the alarm branch, gated; pin 1 is normal.
+	// --- Chain 14 (Sequence pin 2): priority. Pin 0 is the alarm branch, gated; pin 1 is normal.
 	// While 'alarm' is false the gate FAILS pin 0 and the Selector falls through
 	// to pin 1, so normalRuns climbs. The moment it is true, pin 0 SUCCEEDS and
 	// pin 1 is never reached -- and preemption is observable ONLY as normalRuns
 	// going flat, because nothing in the alarm branch touches it.
-	Zenith_GraphChain xPriority = xB.OnUpdate();
 	const u_int uSelector = xB.Node("Selector");
 	xB.ParamInt(uSelector, "m_iBranchCount", 2);
-	xPriority.Then(uSelector);
+	xB.Edge(uPerFrame, 2, uSelector);
 
 	const u_int uAlarmGate = xB.Gate(ScriptTest::Vars::szALARM);
 	const u_int uAlarmRuns = xB.Node("AddBlackboardInt");
@@ -1104,14 +1127,15 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	xB.ParamInt(uNormalRuns, "m_iDelta", 1);
 	xB.Edge(uSelector, 1, uNormalRuns);
 
-	// --- Chain 15: the HUD, on its own anchor so a missing element can never
-	// abort the logic chain above it.
-	Zenith_GraphChain xHud = xB.OnUpdate();
+	// --- Chain 15 (Sequence pin 3): the HUD, on a pin of its own so a missing
+	// element can never abort the logic chain above it -- Sequence swallows a
+	// branch FAILURE, so pin 3 dying reaches neither its siblings nor the node
+	// itself.
 	const u_int uHudText = xB.Node("SetUIText");
 	xB.ParamString(uHudText, "m_strElement", ScriptTest::UINames::szDISPENSED);
 	xB.ParamString(uHudText, "m_strText", "Dispensed: {}");
 	xB.ParamString(uHudText, "m_strValueVar", ScriptTest::Vars::szDISPENSED);
-	xHud.Then(uHudText);
+	xB.Edge(uPerFrame, 3, uHudText);
 }
 
 // --- 17. ST_FlowScore -------------------------------------------------------
@@ -1216,18 +1240,34 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uFindManager, "m_strResultVar", ScriptTest::Vars::szMANAGER_REF);
 	xStart.Then(uFindPrey).Then(uFindManager);
 
-	// --- Chain 2: wire the agent, then publish its state every frame.
+	// --- Chains 2-3 share ONE OnUpdate, through a Sequence's two pins.
+	//
+	// ★ TWO Sequences, NOT ONE, AND THE SPLIT IS THE ORDERING CONTRACT.
+	// OnKeyPressed is registered under GRAPH_EVENT_ON_UPDATE (it gates on the key
+	// edge and fires every frame), so the key chains 4-8 below sit BETWEEN these
+	// two per-frame chains and chains 9-13 in the one ON_UPDATE dispatch order.
+	// Folding all seven onto a single Sequence would move the key chains after
+	// chains 2-3 or before 9-13 -- and chain 10's comment explains exactly why
+	// "the key chain that retires the prey runs BEFORE the perception chains"
+	// is load-bearing. So: Sequence(2) here, Sequence(5) at chain 9, with the
+	// keys untouched in between.
 	Zenith_GraphChain xNavTick = xB.OnUpdate();
+	const u_int uNavSeq = xB.Node("Sequence");
+	xB.ParamInt(uNavSeq, "m_iBranchCount", 2);
+	xNavTick.Then(uNavSeq);
+
+	// --- Chain 2 (pin 0): wire the agent, then publish its state every frame.
 	const u_int uEnsure = xB.Node("EnsureNavAgent");	// m_strNavMeshVar "" = the scene's one holder
 	const u_int uReady = xB.SetBlackboardBool(ScriptTest::Vars::szNAV_READY, true);
 	const u_int uReadState = xB.Node("ReadNavState");
 	xB.ParamString(uReadState, "m_strStateVar", ScriptTest::Vars::szNAV_STATE);
 	xB.ParamString(uReadState, "m_strRemainingVar", ScriptTest::Vars::szNAV_LEFT);
 	xB.ParamString(uReadState, "m_strVelocityVar", ScriptTest::Vars::szNAV_VEL);
-	xNavTick.Then(uEnsure).Then(uReady).Then(uReadState);
+	xB.Edge(uNavSeq, 0, uEnsure);
+	xB.Chain(uEnsure, uReady);
+	xB.Chain(uReady, uReadState);
 
-	// --- Chain 3: the movement, gated.
-	Zenith_GraphChain xMoveTick = xB.OnUpdate();
+	// --- Chain 3 (pin 1): the movement, gated.
 	const u_int uGoGate = xB.Gate(ScriptTest::Vars::szGO);
 	const u_int uIssue = xB.Node("SetNavDestination");
 	xB.ParamString(uIssue, "m_strDestinationVar", ScriptTest::Vars::szDEST);
@@ -1236,7 +1276,9 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	xB.ParamFloat(uMove, "m_fAcceptanceRadius", 1.5f);
 	xB.ParamFloat(uMove, "m_fRepathInterval", 30.0f);	// see the header comment
 	xB.ParamBool(uMove, "m_bXZDistance", true);
-	xMoveTick.Then(uGoGate).Then(uIssue).Then(uMove);
+	xB.Edge(uNavSeq, 1, uGoGate);
+	xB.Chain(uGoGate, uIssue);
+	xB.Chain(uIssue, uMove);
 
 	// --- Chains 4-7: the keys the test (and a person) drive it with.
 	Zenith_GraphChain xGo = xB.OnKeyPressed(ZENITH_KEY_SPACE);
@@ -1268,19 +1310,31 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uDestroy, "m_strTargetVar", ScriptTest::Vars::szPREY_REF);
 	xRetire.Then(uDestroy);
 
-	// --- Chain 9: the perceived-target list, and its first element.
+	// --- Chains 9-13 share the SECOND OnUpdate, through a Sequence's five pins.
+	// It sits HERE, after the key chains, for the ordering reason spelled out at
+	// chain 2: these five must stay downstream of the key chains in the one
+	// ON_UPDATE dispatch, and chain 10 depends on it.
+	Zenith_GraphChain xSenseTick = xB.OnUpdate();
+	const u_int uSenseSeq = xB.Node("Sequence");
+	xB.ParamInt(uSenseSeq, "m_iBranchCount", 5);
+	xSenseTick.Then(uSenseSeq);
+
+	// --- Chain 9 (pin 0): the perceived-target list, and its first element.
 	// GetListElement FAILS on an empty list and aborts here, which is exactly
-	// what leaves 'firstTarget' unwritten while nothing is perceived.
-	Zenith_GraphChain xPerceiveTick = xB.OnUpdate();
+	// what leaves 'firstTarget' unwritten while nothing is perceived -- and the
+	// Sequence swallows that FAILURE, so pins 1-4 run regardless, exactly as
+	// four separate anchors did.
 	const u_int uQueryTargets = xB.Node("QueryPerceivedTargets");
 	xB.ParamString(uQueryTargets, "m_strListVar", ScriptTest::Vars::szPERCEIVED);
 	xB.ParamString(uQueryTargets, "m_strCountVar", ScriptTest::Vars::szPERCEIVED_N);
 	const u_int uFirst = xB.GetListElement(
 		ScriptTest::Vars::szPERCEIVED, 0, ScriptTest::Vars::szFIRST_TARGET);
-	xPerceiveTick.Then(uQueryTargets).Then(uFirst);
+	xB.Edge(uSenseSeq, 0, uQueryTargets);
+	xB.Chain(uQueryTargets, uFirst);
 
-	// --- Chain 10: the primary (HOSTILE) target, on its own anchor because it
-	// FAILS when there is none -- the has-target gate.
+	// --- Chain 10 (pin 1): the primary (HOSTILE) target, on a pin of its own
+	// because it FAILS when there is none -- the has-target gate. A FAILURE on
+	// this pin reaches neither its siblings nor the Sequence.
 	//
 	// ★ THE FLAG IS CLEARED AT THE HEAD OF THE SAME CHAIN, NOT ELSEWHERE, so it
 	// means "the query succeeded THIS FRAME" rather than "it has succeeded at
@@ -1288,37 +1342,37 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	// that retires the prey runs BEFORE this one in the same dispatch, and
 	// perception has not re-run in between -- so the query still returns the
 	// doomed prey and re-sets a flag nothing would clear again.
-	Zenith_GraphChain xPrimaryTick = xB.OnUpdate();
 	const u_int uUnseen = xB.SetBlackboardBool(ScriptTest::Vars::szPRIMARY_SEEN, false);
 	const u_int uPrimary = xB.Node("QueryPrimaryPerceivedTarget");
 	xB.ParamString(uPrimary, "m_strResultVar", ScriptTest::Vars::szPRIMARY);
 	const u_int uSeen = xB.SetBlackboardBool(ScriptTest::Vars::szPRIMARY_SEEN, true);
-	xPrimaryTick.Then(uUnseen).Then(uPrimary).Then(uSeen);
+	xB.Edge(uSenseSeq, 1, uUnseen);
+	xB.Chain(uUnseen, uPrimary);
+	xB.Chain(uPrimary, uSeen);
 
-	// --- Chain 11: awareness of the named prey (always SUCCESS, 0 when unknown).
-	Zenith_GraphChain xAwareTick = xB.OnUpdate();
+	// --- Chain 11 (pin 2): awareness of the named prey (always SUCCESS, 0 when
+	// unknown).
 	const u_int uAware = xB.Node("QueryAwarenessOf");
 	xB.ParamString(uAware, "m_strOfVar", ScriptTest::Vars::szPREY_REF);
 	xB.ParamString(uAware, "m_strResultVar", ScriptTest::Vars::szAWARENESS);
-	xAwareTick.Then(uAware);
+	xB.Edge(uSenseSeq, 2, uAware);
 
-	// --- Chain 12: the last heard sound. FAILS until something is heard, so it
-	// gets its own anchor too.
-	Zenith_GraphChain xHearTick = xB.OnUpdate();
+	// --- Chain 12 (pin 3): the last heard sound. FAILS until something is
+	// heard, which is why it gets a pin of its own rather than a place in
+	// another chain -- a swallowed branch FAILURE stops nothing else.
 	const u_int uHeard = xB.Node("QueryLastHeardSound");
 	xB.ParamString(uHeard, "m_strPositionVar", ScriptTest::Vars::szHEARD_POS);
 	xB.ParamString(uHeard, "m_strSourceVar", ScriptTest::Vars::szHEARD_SOURCE);
-	xHearTick.Then(uHeard);
+	xB.Edge(uSenseSeq, 3, uHeard);
 
-	// --- Chain 13: the HUD, cross-entity through the packed EntityID chain 1
-	// stashed -- the same shape ST_BallSpawner uses for its counters.
-	Zenith_GraphChain xHudTick = xB.OnUpdate();
+	// --- Chain 13 (pin 4): the HUD, cross-entity through the packed EntityID
+	// chain 1 stashed -- the same shape ST_BallSpawner uses for its counters.
 	const u_int uHud = xB.Node("SetUIText");
 	xB.ParamString(uHud, "m_strTargetVar", ScriptTest::Vars::szMANAGER_REF);
 	xB.ParamString(uHud, "m_strElement", ScriptTest::UINames::szNAV_STATE);
 	xB.ParamString(uHud, "m_strText", "Nav: {}");
 	xB.ParamString(uHud, "m_strValueVar", ScriptTest::Vars::szNAV_STATE);
-	xHudTick.Then(uHud);
+	xB.Edge(uSenseSeq, 4, uHud);
 }
 
 // --- 20. ST_Prey ------------------------------------------------------------
@@ -1936,10 +1990,12 @@ namespace
 
 	// ---- Scene 7: Gym_Flow -------------------------------------------------
 	// The multi-way flow constructs, themed as a dispenser. Three entities carry
-	// behaviour: the GameManager runs ST_Dispenser (fifteen chains), the Plate
-	// arms it from OUTSIDE its graph, and the Nozzle is passive -- it is scaled
-	// by whichever SwitchOnInt pin is live, which is how the switch's choice
-	// becomes observable in the world rather than only on a blackboard.
+	// behaviour: the GameManager runs ST_Dispenser (fifteen chains off twelve
+	// sources -- the four per-frame chains share ONE OnUpdate through a
+	// Sequence's four pins), the Plate arms it from OUTSIDE its graph, and the
+	// Nozzle is passive -- it is scaled by whichever SwitchOnInt pin is live,
+	// which is how the switch's choice becomes observable in the world rather
+	// than only on a blackboard.
 	void ST_AuthorGymFlowScene(Zenith_EditorAutomation& xAuto)
 	{
 		xAuto.AddStep_CreateScene("Gym_Flow");

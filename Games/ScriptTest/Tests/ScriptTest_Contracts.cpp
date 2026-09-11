@@ -3,7 +3,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 // ============================================================================
-// ScriptTest_Contracts.cpp -- the three HERMETIC contract tests (C2, C3, C4).
+// ScriptTest_Contracts.cpp -- the four HERMETIC contract tests (C2, C3, C4, C15).
 //
 // None of them loads a scene, runs physics or needs a graphics device. Each
 // builds the graph it is about IN PROCESS from the same BuildGraph_ST_*
@@ -17,6 +17,10 @@
 //                                  blackboard rather than off a rendered lamp.
 //   ST_PlayerMoveContract       -- the input -> blackboard half of the movement
 //                                  chain, driven through the real device layer.
+//   ST_SequenceFanOutContract   -- the SHAPE of the two graphs that drive
+//                                  several chains per frame off one OnUpdate
+//                                  through a `Sequence`: anchor census, branch
+//                                  count, contiguous pins, pin-0 head.
 //
 // ---------------------------------------------------------------------------
 // WHAT ST_NoGameExtensionsContract CANNOT SEE. TWO PROPERTIES, BOTH REAL, BOTH
@@ -951,5 +955,233 @@ static const Zenith_AutomatedTest g_xPlayerMoveContractTest = {
 	&Teardown_PlayerMoveContract,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xPlayerMoveContractTest);
+
+// ============================================================================
+// ST_SequenceFanOutContract (C15)
+//
+// The two graphs that drive several chains per frame do it by fanning out from
+// a `Sequence`'s pins, not by giving each chain an OnUpdate of its own:
+// ST_Dispenser has one anchor and one Sequence(4), ST_NavWalker two anchors and
+// a Sequence(2) + a Sequence(5). This pins that SHAPE, because nothing else
+// can see it:
+//
+//   * A LEFTOVER ANCHOR IS INVISIBLE AT RUNTIME. An unwired (or extra)
+//     OnUpdate source still registers as an ON_UPDATE source and keeps
+//     NeedsUpdateDispatch true, so a half-done conversion behaves EXACTLY like
+//     a finished one. Only a node-type census can tell them apart -- hence the
+//     exact "1 OnUpdate" / "2 OnUpdate" clauses, which are the real deliverable
+//     of this test.
+//   * A MISSING PIN IS INVISIBLE TOO. AddEdge validates nothing against the
+//     branch count (it does not know it), so `Edge(seq, 4, x)` on a Sequence(4)
+//     is accepted and that chain then never runs. The pins are therefore
+//     asserted as a contiguous set 0..N-1, not merely counted.
+//   * PIN 0's DESTINATION is checked, so "four edges on pins 0..3" cannot be
+//     satisfied by four edges wired to the wrong chain heads. Pin 0 is the one
+//     that carries the ordering claim (it runs first inside the fire), so it is
+//     the pin worth naming; the rest are covered structurally by the mask.
+//
+// Hermetic, like C2-C4: each definition is built in-process from the same
+// BuildGraph_ST_* the tools boot writes the .bgraph from. Nothing is loaded,
+// instantiated or ticked -- this is a statement about the AUTHORED graph.
+//
+// What it deliberately does NOT assert: that NavWalker's two Sequences are not
+// one. That is an ORDERING property (OnKeyPressed dispatches under
+// GRAPH_EVENT_ON_UPDATE, so the key chains run between the two groups), and a
+// static shape check cannot see execution order. The count of two, and each
+// one's pin-0 head, is the closest observable proxy.
+// ============================================================================
+
+namespace
+{
+	constexpr const char* k_szSequenceType = "Sequence";
+	constexpr const char* k_szOnUpdateType = "OnUpdate";
+
+	struct SequenceFanOut
+	{
+		u_int m_uNodeID = 0;
+		int m_iEdgeCount = 0;
+		u_int m_uPinMask = 0;				// bit i = an edge on pin i
+		std::string m_strSourceType = "<none>";	// what drives this Sequence
+		std::string m_strPin0Type = "<none>";	// the head of branch 0
+	};
+
+	bool g_bSequenceFanOutRan = false;
+
+	int CountNodesOfType(const Zenith_GraphDefinition& xDefinition, const char* szTypeName)
+	{
+		int iCount = 0;
+		for (u_int u = 0; u < xDefinition.GetNodeCount(); ++u)
+		{
+			if (xDefinition.GetNodeAt(u).m_strTypeName == szTypeName)
+			{
+				++iCount;
+			}
+		}
+		return iCount;
+	}
+
+	const char* NodeTypeOrPlaceholder(const Zenith_GraphDefinition& xDefinition, u_int uNodeID)
+	{
+		const Zenith_GraphNodeDef* pxDef = xDefinition.FindNodeDef(uNodeID);
+		return pxDef != nullptr ? pxDef->m_strTypeName.c_str() : "<missing>";
+	}
+
+	// Every Sequence in the definition, IN AUTHORING ORDER, with its exec
+	// predecessor and its outgoing branch edges resolved.
+	void CollectSequences(const Zenith_GraphDefinition& xDefinition, Zenith_Vector<SequenceFanOut>& xOut)
+	{
+		xOut.Clear();
+		for (u_int uNode = 0; uNode < xDefinition.GetNodeCount(); ++uNode)
+		{
+			const Zenith_GraphNodeDef& xNode = xDefinition.GetNodeAt(uNode);
+			if (xNode.m_strTypeName != k_szSequenceType)
+			{
+				continue;
+			}
+
+			SequenceFanOut xFanOut;
+			xFanOut.m_uNodeID = xNode.m_uNodeID;
+			for (u_int uEdge = 0; uEdge < xDefinition.GetEdgeCount(); ++uEdge)
+			{
+				const Zenith_GraphEdge& xEdge = xDefinition.GetEdgeAt(uEdge);
+				if (xEdge.m_uDstNodeID == xNode.m_uNodeID)
+				{
+					xFanOut.m_strSourceType = NodeTypeOrPlaceholder(xDefinition, xEdge.m_uSrcNodeID);
+				}
+				if (xEdge.m_uSrcNodeID != xNode.m_uNodeID)
+				{
+					continue;
+				}
+				++xFanOut.m_iEdgeCount;
+				if (xEdge.m_uSrcPin < 32u)
+				{
+					xFanOut.m_uPinMask |= (1u << xEdge.m_uSrcPin);
+				}
+				if (xEdge.m_uSrcPin == 0u)
+				{
+					xFanOut.m_strPin0Type = NodeTypeOrPlaceholder(xDefinition, xEdge.m_uDstNodeID);
+				}
+			}
+			xOut.PushBack(xFanOut);
+		}
+	}
+
+	// Builds one graph hermetically; returns false (having reported) if it did
+	// not build, so the shape clauses below are not read as the cause.
+	bool BuildDefinition(void (*pfnBuild)(Zenith_GraphBuilder&), Zenith_GraphDefinition& xDefinition, const char* szWhat)
+	{
+		bool bBuilt = false;
+		{
+			Zenith_GraphBuilder xBuilder(xDefinition);
+			pfnBuild(xBuilder);
+			bBuilt = xBuilder.Build();
+		}
+		char acWhat[192];
+		std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", szWhat);
+		CheckTrue(bBuilt, acWhat);
+		return bBuilt;
+	}
+
+	// The pins carry a CONTIGUOUS 0..N-1 and there are exactly N of them: a gap
+	// (a chain that never runs) and a stray high pin both land here.
+	void CheckFanOut(const SequenceFanOut& xFanOut, int iExpectedBranches, const char* szExpectedPin0, const char* szWhat)
+	{
+		char acWhat[224];
+
+		std::snprintf(acWhat, sizeof(acWhat), "%s is driven by an %s anchor (it is %s)",
+			szWhat, k_szOnUpdateType, xFanOut.m_strSourceType.c_str());
+		CheckEqStr(xFanOut.m_strSourceType.c_str(), k_szOnUpdateType, acWhat);
+
+		std::snprintf(acWhat, sizeof(acWhat), "%s fans out to exactly %d branches", szWhat, iExpectedBranches);
+		CheckEqInt(xFanOut.m_iEdgeCount, iExpectedBranches, acWhat);
+
+		const u_int uExpectedMask = iExpectedBranches >= 32
+			? 0xFFFFFFFFu
+			: ((1u << static_cast<u_int>(iExpectedBranches)) - 1u);
+		std::snprintf(acWhat, sizeof(acWhat),
+			"%s wires pins 0..%d and nothing else (no gap, no stray pin; mask 0x%X)",
+			szWhat, iExpectedBranches - 1, xFanOut.m_uPinMask);
+		CheckEqInt(static_cast<int>(xFanOut.m_uPinMask), static_cast<int>(uExpectedMask), acWhat);
+
+		std::snprintf(acWhat, sizeof(acWhat), "%s pin 0 heads the %s chain", szWhat, szExpectedPin0);
+		CheckEqStr(xFanOut.m_strPin0Type.c_str(), szExpectedPin0, acWhat);
+	}
+
+	void RunSequenceFanOutChecks()
+	{
+		// ---- ST_Dispenser: one anchor, one Sequence, four branches ----------
+		{
+			Zenith_GraphDefinition xDefinition;
+			if (BuildDefinition(&BuildGraph_ST_Dispenser, xDefinition, ScriptTest::Graphs::szDISPENSER))
+			{
+				// THE clause: a superseded anchor left behind still dispatches.
+				CheckEqInt(CountNodesOfType(xDefinition, k_szOnUpdateType), 1,
+					"ST_Dispenser has exactly ONE OnUpdate anchor (no superseded per-frame anchor left behind)");
+
+				Zenith_Vector<SequenceFanOut> xSequences;
+				CollectSequences(xDefinition, xSequences);
+				CheckEqInt(static_cast<int>(xSequences.GetSize()), 1,
+					"ST_Dispenser authors exactly one Sequence");
+				if (xSequences.GetSize() == 1)
+				{
+					CheckFanOut(xSequences.Get(0), 4, "LogicBlackboardBool", "ST_Dispenser's Sequence");
+				}
+			}
+		}
+
+		// ---- ST_NavWalker: two anchors, two Sequences, 2 + 5 branches -------
+		{
+			Zenith_GraphDefinition xDefinition;
+			if (BuildDefinition(&BuildGraph_ST_NavWalker, xDefinition, ScriptTest::Graphs::szNAV_WALKER))
+			{
+				// TWO, not one: the key chains dispatch under ON_UPDATE too and
+				// must stay between the two groups.
+				CheckEqInt(CountNodesOfType(xDefinition, k_szOnUpdateType), 2,
+					"ST_NavWalker has exactly TWO OnUpdate anchors (the nav pair and the sensing five)");
+
+				Zenith_Vector<SequenceFanOut> xSequences;
+				CollectSequences(xDefinition, xSequences);
+				CheckEqInt(static_cast<int>(xSequences.GetSize()), 2,
+					"ST_NavWalker authors exactly two Sequences");
+				if (xSequences.GetSize() == 2)
+				{
+					// Authoring order is the dispatch order of their anchors,
+					// so the nav pair is first and the sensing five second.
+					CheckFanOut(xSequences.Get(0), 2, "EnsureNavAgent", "ST_NavWalker's nav Sequence");
+					CheckFanOut(xSequences.Get(1), 5, "QueryPerceivedTargets", "ST_NavWalker's sensing Sequence");
+				}
+			}
+		}
+	}
+
+	void Setup_SequenceFanOutContract()
+	{
+		ResetChecks();
+		g_bSequenceFanOutRan = false;
+	}
+
+	bool Step_SequenceFanOutContract(int /*iFrame*/)
+	{
+		RunSequenceFanOutChecks();
+		g_bSequenceFanOutRan = true;
+		return false;	// entirely synchronous - one frame is all this needs
+	}
+
+	bool Verify_SequenceFanOutContract()
+	{
+		CheckTrue(g_bSequenceFanOutRan, "the Sequence fan-out checks ran");
+		return ReportChecks("ST_SequenceFanOutContract");
+	}
+}
+
+static const Zenith_AutomatedTest g_xSequenceFanOutContractTest = {
+	"ST_SequenceFanOutContract",
+	&Setup_SequenceFanOutContract,
+	&Step_SequenceFanOutContract,
+	&Verify_SequenceFanOutContract,
+	/*maxFrames*/ 8,
+	/*bRequiresGraphics*/ false,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xSequenceFanOutContractTest);
 
 #endif // ZENITH_INPUT_SIMULATOR
