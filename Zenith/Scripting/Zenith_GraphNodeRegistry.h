@@ -1,9 +1,12 @@
 #pragma once
 
 #include "Scripting/Zenith_GraphNode.h"
+#include "Scripting/Zenith_GraphPinTable.h"
 #include "Collections/Zenith_Vector.h"
 #include <concepts>
 #include <string>
+
+class Zenith_GraphDefinition;
 
 //------------------------------------------------------------------------------
 // Zenith_GraphNodeRegistry - the type registry for Behaviour Graph nodes.
@@ -23,10 +26,26 @@
 
 typedef Zenith_GraphNode* (*Zenith_GraphNodeCreateFn)();
 typedef const Zenith_PropertyTable* (*Zenith_GraphNodeTableFn)();
+typedef const Zenith_GraphPinTable* (*Zenith_GraphNodePinTableFn)();
 
 // Concept: does the node class expose a Phase 0 property table?
 template<typename T>
 concept HasGraphNodeProperties = requires { { T::GetPropertyTableStatic() } -> std::same_as<Zenith_PropertyTable&>; };
+
+// Concept: does the node class expose a PIN DESCRIPTOR table
+// (ZENITH_GRAPH_PINS_BEGIN/END - see Zenith_GraphPinTable.h)? Written exactly
+// like HasGraphNodeProperties, including matching the return type EXACTLY, so
+// inheritance behaves the same way: a derived class with no block of its own
+// resolves to - and shares - its base's table.
+template<typename T>
+concept HasGraphNodePins = requires { { T::GetPinTableStatic() } -> std::same_as<const Zenith_GraphPinTable&>; };
+
+// The paired tag the PINS_BEGIN macro emits. A class that carries the tag but
+// whose table is not DETECTABLE (private, or hand-rolled with the wrong return
+// type) would register as an OPAQUE node - carefully annotated and silently
+// unvalidated. RegisterNodeType turns exactly that into a compile error.
+template<typename T>
+concept HasGraphNodePinTableTag = requires { { T::bZENITH_HAS_PIN_TABLE } -> std::convertible_to<bool>; };
 
 // Concept: does the node class pin an on-disk schema version?
 // (static constexpr u_int uTYPE_VERSION = N;) Default 1 when absent. Bump it
@@ -53,6 +72,11 @@ struct Zenith_GraphNodeTypeInfo
 	bool m_bHasFailurePin = false;
 	Zenith_GraphNodeCreateFn m_pfnCreate = nullptr;
 	Zenith_GraphNodeTableFn m_pfnGetPropertyTable = nullptr;	// null = parameterless node
+	// null = the type declares NO pin table and is therefore OPAQUE to
+	// Zenith_GraphDefinitionValidator: it contributes no writer and performs no
+	// read that any check can see. Annotating the node library is a separate
+	// unit; an un-annotated node must never produce a false finding.
+	Zenith_GraphNodePinTableFn m_pfnGetPinTable = nullptr;
 #ifdef ZENITH_TOOLS
 	std::string m_strCategory;		// editor palette grouping ("Flow", "Transform", "Debug", ...)
 #endif
@@ -85,6 +109,17 @@ public:
 		{
 			xInfo.m_pfnGetPropertyTable = +[]() -> const Zenith_PropertyTable* { return &T::GetPropertyTableStatic(); };
 		}
+		if constexpr (HasGraphNodePins<T>)
+		{
+			xInfo.m_pfnGetPinTable = +[]() -> const Zenith_GraphPinTable* { return &T::GetPinTableStatic(); };
+		}
+		else
+		{
+			static_assert(!HasGraphNodePinTableTag<T>,
+				"Node type carries bZENITH_HAS_PIN_TABLE but its pin table is not detectable - "
+				"GetPinTableStatic() must be PUBLIC and return const Zenith_GraphPinTable&. "
+				"A private one would register the node as OPAQUE and silently skip every check.");
+		}
 		if constexpr (HasGraphNodeTypeVersion<T>)
 		{
 			xInfo.m_uTypeVersion = T::uTYPE_VERSION;
@@ -101,6 +136,21 @@ public:
 
 	u_int GetTypeCount() const;
 	const Zenith_GraphNodeTypeInfo& GetTypeAt(u_int uIndex) const;
+
+	// THE effective exec-output count of one node in one definition - the ONE
+	// home of that arithmetic, shared by the editor (drawing, hit rects, box
+	// height, connect validation) and by the validator's pin-range check, so
+	// what is DRAWN and what is ACCEPTED cannot disagree:
+	//   - unknown/unresolved type      -> 1 (the input-chaining pin every node has)
+	//   - dynamic-pin type             -> a param-applied temp instance's
+	//                                     GetDynamicExecOutputCount(), clamped to
+	//                                     255 (the chain-cursor key packs the pin
+	//                                     into its low byte). NO failure pin: the
+	//                                     registry refuses the flag on these.
+	//   - static-pin type              -> m_uExecOutputCount + the failure pin
+	//                                     when the type carries one.
+	// Costs one temp instance per DYNAMIC node per query; editor/authoring scale.
+	u_int GetExecOutputCount(const Zenith_GraphDefinition& xDefinition, u_int uNodeID) const;
 
 	// Registrar inversion (the Zenith_ComponentMetaRegistry pattern). The
 	// engine installs the glue-layer registrar at boot; EnsureInitialized

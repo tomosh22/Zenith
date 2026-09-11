@@ -18,6 +18,12 @@ Zenith_GraphBuilder::~Zenith_GraphBuilder()
 	m_axPending.Clear();
 }
 
+Zenith_GraphBuilder& Zenith_GraphBuilder::SetGraphName(const char* szName)
+{
+	m_strGraphName = szName ? szName : "";
+	return *this;
+}
+
 Zenith_GraphBuilder& Zenith_GraphBuilder::Variable(const char* szName, const Zenith_PropertyValue& xDefault)
 {
 	m_xDefinition.DeclareVariable(szName, xDefault);
@@ -253,5 +259,21 @@ bool Zenith_GraphBuilder::Build()
 	m_axPending.Clear();
 
 	AssignEditorPositions();
+
+	// FULL-tier validation, REPORT-ONLY. Deliberately AFTER the commit loop:
+	// before it the param blobs still hold AddNode's defaults rather than the
+	// Param* values, so every var-name binding would read the wrong string.
+	//
+	// Nothing here touches m_bErrors or the return - a would-be error is logged
+	// with wouldBeError=1 and the build still succeeds. The report over every
+	// game's boot-authored graphs is the evidence the latch is eventually
+	// flipped on; see Scripting/CLAUDE.md -> Validation.
+	{
+		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		xRegistry.EnsureInitialized();
+		Zenith_GraphDefinitionValidator::Validate(m_xDefinition, xRegistry, GetGraphName(), false, m_axValidationFindings);
+		Zenith_GraphDefinitionValidator::LogFindings(GetGraphName(), m_xDefinition.GetNodeCount(), m_axValidationFindings);
+	}
+
 	return !m_bErrors;
 }

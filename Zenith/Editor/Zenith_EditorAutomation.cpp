@@ -3440,6 +3440,10 @@ static void ExecuteGraphAuthoringAction(const Zenith_EditorAction& xAction)
 		// disk bytes + re-instantiates live slots).
 		Zenith_BehaviourGraphAsset xAsset;
 		Zenith_GraphBuilder xBuilder(xAsset.GetDefinition());
+		// Names the graph for Build()'s report-only validation log line
+		// ("[GraphValidator] graph=<asset path>"); changes nothing about what is
+		// built. A definition carries no name of its own.
+		xBuilder.SetGraphName(xAction.m_szArg1.c_str());
 		if (xAction.m_pfnGraphBuild != nullptr)
 		{
 			xAction.m_pfnGraphBuild(xBuilder);

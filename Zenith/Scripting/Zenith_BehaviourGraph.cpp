@@ -92,6 +92,23 @@ bool Zenith_GraphDefinition::SetNodeParamsFromInstance(u_int uNodeID, const Zeni
 	return false;
 }
 
+bool Zenith_GraphDefinition::ApplyNodeParams(u_int uNodeID, Zenith_GraphNode* pxNode, const Zenith_GraphNodeTypeInfo& xInfo) const
+{
+	if (pxNode == nullptr || xInfo.m_pfnGetPropertyTable == nullptr)
+	{
+		return false;
+	}
+	const Zenith_GraphNodeDef* pxDef = FindNodeDef(uNodeID);
+	if (pxDef == nullptr || pxDef->m_xParamBlob.GetCursor() == 0)
+	{
+		return false;
+	}
+	// Wrap the blob (no copy, no ownership) and apply the params.
+	Zenith_DataStream xParamRead(const_cast<void*>(pxDef->m_xParamBlob.GetData()), pxDef->m_xParamBlob.GetCursor());
+	Zenith_PropertySystem::ReadProperties(pxNode, *xInfo.m_pfnGetPropertyTable(), xParamRead);
+	return true;
+}
+
 bool Zenith_GraphDefinition::RemoveNode(u_int uNodeID)
 {
 	for (u_int u = 0; u < m_axNodes.GetSize(); ++u)
@@ -406,14 +423,7 @@ bool Zenith_BehaviourGraph::InitialiseFromDefinition(const Zenith_GraphDefinitio
 		{
 			xInstance.m_pxNode = xInstance.m_pxTypeInfo->m_pfnCreate();
 			xInstance.m_pxNode->m_uNodeID = xDef.m_uNodeID;
-			if (xInstance.m_pxTypeInfo->m_pfnGetPropertyTable && xDef.m_xParamBlob.GetCursor() > 0)
-			{
-				// Wrap the blob (no copy, no ownership) and apply the params.
-				// Name+type-matched reading tolerates schema drift; unknown
-				// params are skipped, never corrupted.
-				Zenith_DataStream xParamRead(const_cast<void*>(xDef.m_xParamBlob.GetData()), xDef.m_xParamBlob.GetCursor());
-				Zenith_PropertySystem::ReadProperties(xInstance.m_pxNode, *xInstance.m_pxTypeInfo->m_pfnGetPropertyTable(), xParamRead);
-			}
+			xDefinition.ApplyNodeParams(xDef.m_uNodeID, xInstance.m_pxNode, *xInstance.m_pxTypeInfo);
 		}
 		else
 		{

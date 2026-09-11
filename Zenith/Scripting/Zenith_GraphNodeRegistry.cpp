@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "Scripting/Zenith_BehaviourGraph.h"	// GetExecOutputCount reads a definition's node defs + param blobs
 
 Zenith_GraphNodeRegistry& Zenith_GraphNodeRegistry::Get()
 {
@@ -115,6 +116,33 @@ const Zenith_GraphNodeTypeInfo& Zenith_GraphNodeRegistry::GetTypeAt(u_int uIndex
 {
 	Zenith_Assert(uIndex < m_axTypes.GetSize(), "GraphNodeRegistry: index %u out of range", uIndex);
 	return m_axTypes.Get(uIndex);
+}
+
+u_int Zenith_GraphNodeRegistry::GetExecOutputCount(const Zenith_GraphDefinition& xDefinition, u_int uNodeID) const
+{
+	const Zenith_GraphNodeDef* pxNodeDef = xDefinition.FindNodeDef(uNodeID);
+	const Zenith_GraphNodeTypeInfo* pxInfo = pxNodeDef ? Find(pxNodeDef->m_strTypeName.c_str()) : nullptr;
+	if (!pxInfo || pxInfo->m_pfnCreate == nullptr)
+	{
+		return 1;
+	}
+
+	Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
+	if (pxTemp->GetDynamicExecOutputCount() < 0)
+	{
+		delete pxTemp;
+		// Static-pin type: + the routable failure pin when the type carries one.
+		// Deliberately NOT added inside GetDynamicExecOutputCount - that is the
+		// NODE's answer about its own branch count, and a dynamic-pin type
+		// cannot carry the flag anyway.
+		return pxInfo->m_uExecOutputCount + (pxInfo->m_bHasFailurePin ? 1u : 0u);
+	}
+
+	// Dynamic: the configured count only exists once the params are applied.
+	xDefinition.ApplyNodeParams(uNodeID, pxTemp, *pxInfo);
+	const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
+	delete pxTemp;
+	return iDynamic < 0 ? pxInfo->m_uExecOutputCount : static_cast<u_int>(iDynamic > 255 ? 255 : iDynamic);
 }
 
 void Zenith_GraphNodeRegistry::SetNodeRegistrar(void (*pfnRegistrar)())

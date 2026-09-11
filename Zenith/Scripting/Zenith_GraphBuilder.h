@@ -2,7 +2,9 @@
 
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "Scripting/Zenith_GraphDefinitionValidator.h"
 #include "Collections/Zenith_Vector.h"
+#include <string>
 
 //------------------------------------------------------------------------------
 // Zenith_GraphBuilder - fluent programmatic authoring over the public
@@ -34,6 +36,13 @@ public:
 
 	Zenith_GraphBuilder(const Zenith_GraphBuilder&) = delete;
 	Zenith_GraphBuilder& operator=(const Zenith_GraphBuilder&) = delete;
+
+	// Names the graph for REPORTING only (a Zenith_GraphDefinition carries no
+	// name of its own). The validation report Build() logs reads
+	// "graph=<unnamed>" without it; the GRAPH_BUILD automation step passes the
+	// asset path. Changes nothing about what is built.
+	Zenith_GraphBuilder& SetGraphName(const char* szName);
+	const char* GetGraphName() const { return m_strGraphName.empty() ? "<unnamed>" : m_strGraphName.c_str(); }
 
 	// Declares a blackboard variable with a typed default.
 	Zenith_GraphBuilder& Variable(const char* szName, const Zenith_PropertyValue& xDefault);
@@ -90,6 +99,14 @@ public:
 
 	bool HasErrors() const { return m_bErrors; }
 
+	// The FULL-tier validation report Build() produced, report-only: Build()'s
+	// return and HasErrors() are untouched by it. Kept on the builder because
+	// Zenith_TestFramework.h has no log-capture seam - without this a test could
+	// only assert that Build() still succeeded, which is exactly the half that
+	// proves nothing.
+	u_int GetValidationFindingCount() const { return m_axValidationFindings.GetSize(); }
+	const Zenith_GraphValidationFinding& GetValidationFindingAt(u_int uIndex) const { return m_axValidationFindings.Get(uIndex); }
+
 private:
 	struct PendingNode
 	{
@@ -103,6 +120,8 @@ private:
 
 	Zenith_GraphDefinition& m_xDefinition;
 	Zenith_Vector<PendingNode> m_axPending;
+	Zenith_Vector<Zenith_GraphValidationFinding> m_axValidationFindings;
+	std::string m_strGraphName;
 	bool m_bErrors = false;
 	bool m_bBuilt = false;
 };

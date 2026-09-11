@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Maths/Zenith_Maths.h"
+#include "Scripting/Zenith_GraphDefinitionValidator.h"
 
 //------------------------------------------------------------------------------
 // Zenith_GraphEditorPanel - the Behaviour Graph node editor.
@@ -38,6 +39,21 @@ public:
 	static void Save();
 
 	static const char* GetOpenAssetPath();
+
+	//--------------------------------------------------------------------------
+	// Refusals + validation report (both DISPLAYED near the toolbar, and both
+	// readable here so a headless unit can assert on them).
+	//--------------------------------------------------------------------------
+	// Why the last connect attempt was refused, or "" after a successful one.
+	// A rejected drag used to change nothing and say nothing - the wire simply
+	// did not appear, which is indistinguishable from a missed drop.
+	static const char* GetConnectRefusalText();
+
+	// The FULL-tier report from the last validation run (asset open, parameter
+	// edit, successful connect). REPORT-ONLY: nothing here blocks an edit or a
+	// save. Null from GetValidationFindingAt for an out-of-range index.
+	static u_int GetValidationFindingCount();
+	static const Zenith_GraphValidationFinding* GetValidationFindingAt(u_int uIndex);
 
 	//--------------------------------------------------------------------------
 	// Atomic editor actions - the EXACT operations the panel's UI handlers run

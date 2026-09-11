@@ -199,4 +199,85 @@ ZENITH_TEST(GraphEditorPanel, FailurePin_EditorLaysOutAndKeysExtraPin)
 	ZENITH_ASSERT_FALSE(Zenith_GraphEditorPanel::IsOpen());
 }
 
+// ★ A REFUSED CONNECTION NOW SAYS SO. The canvas drop handler used to call
+// AddEdge inline with no else branch at all: a rejected drag changed nothing and
+// printed nothing, which is indistinguishable from a missed drop. TryConnect is
+// the ImGui-free body that drop handler now runs, so driving it here is the only
+// way a headless unit can say anything about the human gesture.
+ZENITH_TEST(GraphEditorPanel, GraphEditor_DropRefusalIsVisible)
+{
+	EnsureGraphEditorTestNodesRegistered();
+
+	Zenith_GraphEditorPanel::OpenAsset("game:Graphs/zz_unit_refusal.bgraph");
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::IsOpen());
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddNode("Test_EditorPlain"));
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddNode("Test_EditorFailurePin"));
+	const u_int uPlainID = Zenith_GraphEditorPanel::FindNodeIDByType("Test_EditorPlain");
+	const u_int uFlaggedID = Zenith_GraphEditorPanel::FindNodeIDByType("Test_EditorFailurePin");
+	ZENITH_ASSERT_NE(uPlainID, 0u);
+	ZENITH_ASSERT_NE(uFlaggedID, 0u);
+
+	// A freshly opened asset has nothing to refuse.
+	ZENITH_ASSERT_STREQ(Zenith_GraphEditorPanel::GetConnectRefusalText(), "");
+
+	// A drop whose source pin the node does not have.
+	ZENITH_ASSERT_FALSE(TryConnect(uPlainID, 3, uFlaggedID));
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetEdgeCount(), 0u);
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::GetConnectRefusalText()[0] != '\0');
+
+	// A drop naming a node that is not in this graph - and it must be THAT
+	// refusal, not AddEdge's generic one (which would also fire).
+	ZENITH_ASSERT_FALSE(TryConnect(uPlainID, 0, 4242u));
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetEdgeCount(), 0u);
+	ZENITH_ASSERT_NOT_NULL(strstr(Zenith_GraphEditorPanel::GetConnectRefusalText(), "not in this graph"));
+
+	Zenith_GraphEditorPanel::Close();
+	// Closing the asset drops the refusal with it.
+	ZENITH_ASSERT_STREQ(Zenith_GraphEditorPanel::GetConnectRefusalText(), "");
+}
+
+// The canvas drop and the atomic Action_Connect used to be DIVERGENT COPIES -
+// only one of them checked the pin range. They are one body now, and it is the
+// same exec-output funnel the canvas draws with.
+ZENITH_TEST(GraphEditorPanel, GraphEditor_TryConnectIsTheOneFunnel)
+{
+	EnsureGraphEditorTestNodesRegistered();
+
+	const Zenith_GraphNodeTypeInfo* pxFlagged = Zenith_GraphNodeRegistry::Get().Find("Test_EditorFailurePin");
+	ZENITH_ASSERT_NOT_NULL(pxFlagged);
+	if (pxFlagged == nullptr)
+	{
+		return;
+	}
+	const u_int uFailurePin = pxFlagged->m_uExecOutputCount;
+
+	Zenith_GraphEditorPanel::OpenAsset("game:Graphs/zz_unit_funnel.bgraph");
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddNode("Test_EditorFailurePin"));
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddNode("Test_EditorPlain"));
+	const u_int uFlaggedID = Zenith_GraphEditorPanel::FindNodeIDByType("Test_EditorFailurePin");
+	const u_int uPlainID = Zenith_GraphEditorPanel::FindNodeIDByType("Test_EditorPlain");
+
+	// The same INDEX: absent on the unflagged type, present on the flagged one.
+	ZENITH_ASSERT_FALSE(TryConnect(uPlainID, uFailurePin, uFlaggedID));
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::GetConnectRefusalText()[0] != '\0');
+
+	ZENITH_ASSERT_TRUE(TryConnect(uFlaggedID, uFailurePin, uPlainID));
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetEdgeCount(), 1u);
+	// A connect that LANDS clears the refusal - the text is about the last
+	// attempt, not a latch nobody can reset.
+	ZENITH_ASSERT_STREQ(Zenith_GraphEditorPanel::GetConnectRefusalText(), "");
+
+	// The one-outgoing-edge-per-(node, pin) rule, refused through the same body.
+	ZENITH_ASSERT_FALSE(TryConnect(uFlaggedID, uFailurePin, uPlainID));
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetEdgeCount(), 1u);
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::GetConnectRefusalText()[0] != '\0');
+
+	// Action_Connect resolves (type, occurrence) and then runs the SAME body.
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_Connect("Test_EditorFailurePin", 0, 0, "Test_EditorPlain", 0));
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetEdgeCount(), 2u);
+	ZENITH_ASSERT_STREQ(Zenith_GraphEditorPanel::GetConnectRefusalText(), "");
+
+	Zenith_GraphEditorPanel::Close();
+}
+
 #endif // ZENITH_TESTING

@@ -73,6 +73,18 @@ public:
 	// blob. The instance must be of the node's registered type.
 	bool SetNodeParamsFromInstance(u_int uNodeID, const Zenith_GraphNode* pxConfigured);
 
+	// The INVERSE, and the one home of the blob -> instance idiom: wraps the
+	// node's stored param blob (no copy, no ownership) and applies it to a live
+	// instance of the node's registered type. Name+type-matched reading tolerates
+	// schema drift; unknown params are skipped, never corrupted.
+	//
+	// Returns false - changing nothing - when the node is unknown, the type is
+	// parameterless, or the blob is empty (a freshly-added node whose defaults
+	// are already on the instance). Every caller that needs a CONFIGURED instance
+	// goes through here: graph instantiation, the editor's param panel, the
+	// exec-output-count funnel, and the definition validator.
+	bool ApplyNodeParams(u_int uNodeID, Zenith_GraphNode* pxNode, const Zenith_GraphNodeTypeInfo& xInfo) const;
+
 	bool RemoveNode(u_int uNodeID);	// also removes touching edges
 
 	// Enforces the one-outgoing-edge-per-(src,pin) exec rule and rejects

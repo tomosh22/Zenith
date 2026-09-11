@@ -879,9 +879,13 @@ is `Zenith/Scripting/` — see its CLAUDE.md):
   extra pin is an ordinary output in every other respect — same rect size, same
   key (`MakePinKey`), draggable, right-click-disconnectable — and the node box
   grows for free because its height already derives from the pin count. The
-  `+1` lives in **`GetNodeExecOutputCount`** and nowhere else: that funnel feeds
+  `+1` lives in **`Zenith_GraphNodeRegistry::GetExecOutputCount(definition,
+  nodeID)`** (Scripting) and nowhere else — the panel's `GetNodeExecOutputCount`
+  is now a one-line adapter onto it, because the definition VALIDATOR needs the
+  same answer and a second copy is how "what is drawn" and "what is accepted"
+  drift apart. That funnel feeds
   `BuildPinPositions` (drawing + hit rects), `RenderCanvasNode` (box height) and
-  `Action_Connect` (connect validation), so drawing, drag-authoring and connect
+  `TryConnect` (connect validation), so drawing, drag-authoring and connect
   validation cannot disagree. It is deliberately NOT added inside a node's
   `GetDynamicExecOutputCount` — that is the node's answer about its own branch
   count, and the registry refuses the flag on dynamic-pin (and flow) types
@@ -892,6 +896,27 @@ is `Zenith/Scripting/` — see its CLAUDE.md):
 - **Live execution highlighting** — while Playing, recently-executed nodes of
   the selected entity's matching graph slot glow (fed by
   `Zenith_BehaviourGraph::GetRecentlyExecuted`).
+- **★ A REFUSED CONNECTION SAYS SO, and there is exactly ONE connect body.**
+  The canvas drop handler and `Action_Connect` used to be divergent copies — the
+  drop called `AddEdge` inline with no `else` at all, so a rejected drag changed
+  nothing and printed nothing, which is indistinguishable from a missed drop.
+  Both now route through one ImGui-free `TryConnect(srcNodeID, srcPin, dstNodeID)`
+  that applies the pin-range check (via the exec-output funnel above), sets
+  `GetConnectRefusalText()` on refusal and CLEARS it on success. The text is
+  drawn near the toolbar with `ImGui::TextWrapped` (precedent:
+  `Zenith_EditorPanel_TerrainEditor`'s status line). Units:
+  `GraphEditor_DropRefusalIsVisible` and `GraphEditor_TryConnectIsTheOneFunnel`
+  drive `TryConnect` directly — that is the only way a headless unit can say
+  anything about the human gesture.
+- **Validation on load and on edit (REPORT-ONLY).** `OpenAsset`,
+  `OpenAssetFresh`, a committed parameter edit (`OnSelectedNodeParamChanged`,
+  AFTER `SetNodeParamsFromInstance` — before it the blob still holds the old
+  value) and a landed connect each re-run
+  `Zenith_GraphDefinitionValidator::Validate` with `bLatchErrors = false`. The
+  report is kept on the panel state, displayed under the toolbar as a count plus
+  the first five findings, and readable via `GetValidationFindingCount()` /
+  `GetValidationFindingAt(i)`. **Nothing here blocks an edit or a save** — the
+  rules, the roles and the latch plan are `Scripting/CLAUDE.md` → *Validation*.
 - **Open/Save/Close:** `OpenAsset` (registry-backed), `OpenAssetFresh`
   (boot-time authoring: clears the definition for regenerate-from-scratch),
   `Save` (creates parent directories, writes through the asset registry, then

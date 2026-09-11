@@ -9,6 +9,7 @@
 #include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "Scripting/Zenith_GraphDefinitionValidator.h"
 #include "Core/Zenith_EditorWindowNames.h"
 #include "Core/Zenith_Engine.h"
 #include "Collections/Zenith_HashMap.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <string>
 #include <filesystem>
+#include <cstdio>	// snprintf - the connect-refusal text
 
 namespace
 {
@@ -62,6 +64,14 @@ namespace
 		char m_acNewVarName[64] = {};
 		int m_iNewVarType = 0;
 
+		// Why the last connect attempt was refused ("" = the last one landed).
+		// Displayed near the toolbar: a refused drag that says nothing is
+		// indistinguishable from a missed drop.
+		std::string m_strConnectRefusal;
+		// Report-only FULL-tier validation, refreshed on open / param edit /
+		// successful connect. Nothing here blocks an edit or a save.
+		Zenith_Vector<Zenith_GraphValidationFinding> m_axValidationFindings;
+
 #ifdef ZENITH_TESTING
 		// Pending ScrollPaletteEntryIntoView request, consumed by the next
 		// RenderPalette pass that reaches the named row.
@@ -92,6 +102,24 @@ namespace
 	Zenith_GraphDefinition* GetOpenDefinition()
 	{
 		return g_xGraphEditor.m_pxAsset ? &g_xGraphEditor.m_pxAsset->GetDefinition() : nullptr;
+	}
+
+	// Re-runs the FULL-tier report over the open definition. REPORT-ONLY:
+	// bLatchErrors is false, so nothing here can refuse an edit or a save - the
+	// findings are displayed and readable, and that is all. Called on asset
+	// open, after a parameter edit commits, and after a connect lands.
+	void ValidateOpenGraph()
+	{
+		g_xGraphEditor.m_axValidationFindings.Clear();
+		Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+		if (!pxDef)
+		{
+			return;
+		}
+		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		xRegistry.EnsureInitialized();
+		Zenith_GraphDefinitionValidator::Validate(*pxDef, xRegistry,
+			g_xGraphEditor.m_strAssetPath.c_str(), false, g_xGraphEditor.m_axValidationFindings);
 	}
 
 	void DestroyParamInstance()
@@ -128,11 +156,7 @@ namespace
 			return;	// unresolved or parameterless
 		}
 		g_xGraphEditor.m_pxParamInstance = pxInfo->m_pfnCreate();
-		if (pxNodeDef->m_xParamBlob.GetCursor() > 0)
-		{
-			Zenith_DataStream xRead(const_cast<void*>(pxNodeDef->m_xParamBlob.GetData()), pxNodeDef->m_xParamBlob.GetCursor());
-			Zenith_PropertySystem::ReadProperties(g_xGraphEditor.m_pxParamInstance, *pxInfo->m_pfnGetPropertyTable(), xRead);
-		}
+		pxDef->ApplyNodeParams(g_xGraphEditor.m_uSelectedNodeID, g_xGraphEditor.m_pxParamInstance, *pxInfo);
 		g_xGraphEditor.m_uParamInstanceNodeID = g_xGraphEditor.m_uSelectedNodeID;
 	}
 
@@ -143,6 +167,10 @@ namespace
 		{
 			pxDef->SetNodeParamsFromInstance(g_xGraphEditor.m_uParamInstanceNodeID, g_xGraphEditor.m_pxParamInstance);
 			g_xGraphEditor.m_bDirty = true;
+			// A var-name edit is exactly the edit that breaks a binding, so the
+			// report is refreshed HERE, after the commit - before it the blob
+			// still holds the old value.
+			ValidateOpenGraph();
 		}
 	}
 
@@ -257,6 +285,35 @@ namespace
 		{
 			ImGui::SameLine();
 			ImGui::TextDisabled("| %s", szLastReload);
+		}
+
+		// A refused connection, said out loud. Precedent: the terrain editor's
+		// status line (Zenith_EditorPanel_TerrainEditor.cpp).
+		if (!g_xGraphEditor.m_strConnectRefusal.empty())
+		{
+			ImGui::TextWrapped("%s", g_xGraphEditor.m_strConnectRefusal.c_str());
+		}
+
+		// The report-only validation summary + the first few findings. Nothing
+		// here blocks an edit or a save; it is a report, and it says so.
+		const u_int uFindings = g_xGraphEditor.m_axValidationFindings.GetSize();
+		if (uFindings > 0)
+		{
+			constexpr u_int uMAX_DISPLAYED_FINDINGS = 5;
+			ImGui::TextWrapped("Validation (report-only): %u finding(s)", uFindings);
+			for (u_int u = 0; u < uFindings && u < uMAX_DISPLAYED_FINDINGS; ++u)
+			{
+				const Zenith_GraphValidationFinding& xFinding = g_xGraphEditor.m_axValidationFindings.Get(u);
+				ImGui::TextWrapped("  [%s] node %u %s: %s",
+					Zenith_GraphDefinitionValidator::GetRuleName(xFinding.m_eRule),
+					xFinding.m_uNodeID,
+					xFinding.m_strTypeName.empty() ? "-" : xFinding.m_strTypeName.c_str(),
+					xFinding.m_strWhat.c_str());
+			}
+			if (uFindings > uMAX_DISPLAYED_FINDINGS)
+			{
+				ImGui::TextDisabled("  ... %u more", uFindings - uMAX_DISPLAYED_FINDINGS);
+			}
 		}
 	}
 
@@ -546,39 +603,72 @@ namespace
 		return (pxInfo && pxInfo->m_bHasFailurePin) ? pxInfo->m_uExecOutputCount : uNO_FAILURE_PIN;
 	}
 
-	// Effective exec-pin count for a node def. Variable-pin flow nodes
-	// (Switch/StateMachine/Selector) report their configured count through
-	// GetDynamicExecOutputCount on a param-applied temp instance; every other
-	// type uses the registered static count. Editor-scale cost (one temp
-	// instance per dynamic node per query).
+	// Effective exec-pin count for a node.
 	//
-	// This is the ONE funnel the whole panel asks - BuildPinPositions (drawing
-	// + hit rects), RenderCanvasNode (box height) and Action_Connect (connect
-	// validation) - so a flagged type's extra failure pin is added here exactly
-	// once and every consumer follows. Deliberately NOT added inside
-	// GetDynamicExecOutputCount: that is the NODE's answer about its own branch
-	// count, and a dynamic-pin type cannot carry the flag anyway.
-	u_int GetNodeExecOutputCount(const Zenith_GraphNodeDef& xNodeDef, const Zenith_GraphNodeTypeInfo* pxInfo)
+	// ★ THE ARITHMETIC MOVED. It now lives in
+	// Zenith_GraphNodeRegistry::GetExecOutputCount (Scripting), because the
+	// definition VALIDATOR needs the same answer and a second copy of it is how
+	// "what is drawn" and "what is accepted" drift apart. This is the panel's
+	// one-line adapter, and it is still the ONE thing the panel asks -
+	// BuildPinPositions (drawing + hit rects), RenderCanvasNode (box height) and
+	// TryConnect (connect validation) all come through here.
+	u_int GetNodeExecOutputCount(const Zenith_GraphDefinition& xDef, u_int uNodeID)
 	{
-		if (!pxInfo)
+		return Zenith_GraphNodeRegistry::Get().GetExecOutputCount(xDef, uNodeID);
+	}
+
+	// THE connect funnel: every gesture that creates an exec edge - the canvas
+	// drag-drop and the atomic Action_Connect - goes through this one
+	// ImGui-free body, so the pin-range check cannot be present in one and
+	// absent in the other (it was: the drop handler called AddEdge inline with
+	// no else branch at all).
+	//
+	// Sets the refusal text on failure and CLEARS it on success. That string is
+	// the whole visible affordance: a refused drag used to change nothing and
+	// say nothing.
+	bool TryConnect(u_int uSrcNodeID, u_int uSrcPin, u_int uDstNodeID)
+	{
+		Zenith_GraphDefinition* pxDef = GetOpenDefinition();
+		if (!pxDef)
 		{
-			return 1;
+			g_xGraphEditor.m_strConnectRefusal = "Connect refused: no graph is open.";
+			return false;
 		}
-		Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
-		if (pxTemp->GetDynamicExecOutputCount() < 0)
+
+		char acRefusal[256];
+		if (uSrcNodeID == 0 || uDstNodeID == 0
+			|| pxDef->FindNodeDef(uSrcNodeID) == nullptr || pxDef->FindNodeDef(uDstNodeID) == nullptr)
 		{
-			delete pxTemp;
-			// Static-pin type: + the failure pin when the type carries one.
-			return pxInfo->m_uExecOutputCount + (pxInfo->m_bHasFailurePin ? 1u : 0u);
+			snprintf(acRefusal, sizeof(acRefusal),
+				"Connect refused: node %u -> node %u names a node that is not in this graph.", uSrcNodeID, uDstNodeID);
+			g_xGraphEditor.m_strConnectRefusal = acRefusal;
+			return false;
 		}
-		if (pxInfo->m_pfnGetPropertyTable && xNodeDef.m_xParamBlob.GetCursor() > 0)
+
+		const u_int uSrcOutputs = GetNodeExecOutputCount(*pxDef, uSrcNodeID);
+		if (uSrcPin >= uSrcOutputs)
 		{
-			Zenith_DataStream xParamRead(const_cast<void*>(xNodeDef.m_xParamBlob.GetData()), xNodeDef.m_xParamBlob.GetCursor());
-			Zenith_PropertySystem::ReadProperties(pxTemp, *pxInfo->m_pfnGetPropertyTable(), xParamRead);
+			snprintf(acRefusal, sizeof(acRefusal),
+				"Connect refused: node %u has %u exec output pin(s); pin %u does not exist.",
+				uSrcNodeID, uSrcOutputs, uSrcPin);
+			g_xGraphEditor.m_strConnectRefusal = acRefusal;
+			return false;
 		}
-		const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
-		delete pxTemp;
-		return iDynamic < 0 ? pxInfo->m_uExecOutputCount : static_cast<u_int>(iDynamic > 255 ? 255 : iDynamic);
+
+		if (!pxDef->AddEdge(uSrcNodeID, uSrcPin, uDstNodeID, 0))
+		{
+			// AddEdge logs its own reason; this is the on-screen half.
+			snprintf(acRefusal, sizeof(acRefusal),
+				"Connect refused: (node %u, pin %u) already has an outgoing edge, or the edge is a self-loop - exec chains are linear.",
+				uSrcNodeID, uSrcPin);
+			g_xGraphEditor.m_strConnectRefusal = acRefusal;
+			return false;
+		}
+
+		g_xGraphEditor.m_strConnectRefusal.clear();
+		g_xGraphEditor.m_bDirty = true;
+		ValidateOpenGraph();
+		return true;
 	}
 
 	struct PinPos
@@ -591,7 +681,6 @@ namespace
 	// node pass, and pending-link pass all share.
 	void BuildPinPositions(const Zenith_GraphDefinition& xDef, const ImVec2& xOrigin, Zenith_HashMap<u_int, PinPos>& xOut)
 	{
-		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 		for (u_int u = 0; u < xDef.GetNodeCount(); ++u)
 		{
 			const Zenith_GraphNodeDef& xNodeDef = xDef.GetNodeAt(u);
@@ -599,8 +688,7 @@ namespace
 			xDef.GetNodeEditorPos(xNodeDef.m_uNodeID, xPos);
 			const ImVec2 xMin(xOrigin.x + xPos.x, xOrigin.y + xPos.y);
 
-			const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find(xNodeDef.m_strTypeName.c_str());
-			const u_int uOutputs = GetNodeExecOutputCount(xNodeDef, pxInfo);
+			const u_int uOutputs = GetNodeExecOutputCount(xDef, xNodeDef.m_uNodeID);
 
 			PinPos xPins;
 			xPins.m_xInput = ImVec2(xMin.x, xMin.y + fHEADER_HEIGHT + 10.0f);
@@ -683,10 +771,9 @@ namespace
 		ImGui::InvisibleButton("pin_in", ImVec2(16.0f, 16.0f));
 		if (g_xGraphEditor.m_bLinking && ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
 		{
-			if (xDef.AddEdge(g_xGraphEditor.m_uLinkSrcNodeID, g_xGraphEditor.m_uLinkSrcPin, uNodeID, 0))
-			{
-				g_xGraphEditor.m_bDirty = true;
-			}
+			// THE one connect funnel (see TryConnect): the drop used to call
+			// AddEdge inline with no else, so a rejected drop was silent.
+			TryConnect(g_xGraphEditor.m_uLinkSrcNodeID, g_xGraphEditor.m_uLinkSrcPin, uNodeID);
 			g_xGraphEditor.m_bLinking = false;
 		}
 
@@ -726,7 +813,7 @@ namespace
 		xDef.GetNodeEditorPos(uNodeID, xPos);
 
 		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find(xNodeDef.m_strTypeName.c_str());
-		const u_int uOutputs = GetNodeExecOutputCount(xNodeDef, pxInfo);
+		const u_int uOutputs = GetNodeExecOutputCount(xDef, uNodeID);
 		const float fNodeHeight = fHEADER_HEIGHT + 14.0f + static_cast<float>(uOutputs > 0 ? uOutputs - 1 : 0) * fPIN_SPACING + 10.0f;
 
 		const ImVec2 xMin(xOrigin.x + xPos.x, xOrigin.y + xPos.y);
@@ -953,6 +1040,11 @@ void Zenith_GraphEditorPanel::OpenAsset(const char* szAssetPath)
 	g_xGraphEditor.m_bPositionWindowNextRender = true;
 	g_xGraphEditor.m_bDirty = false;
 	g_xGraphEditor.m_uSelectedNodeID = 0;
+	g_xGraphEditor.m_strConnectRefusal.clear();
+
+	// Report-only validation on LOAD: an asset whose bindings went stale while
+	// nobody was looking says so the moment it is opened.
+	ValidateOpenGraph();
 }
 
 void Zenith_GraphEditorPanel::Close()
@@ -969,6 +1061,8 @@ void Zenith_GraphEditorPanel::Close()
 	g_xGraphEditor.m_uSelectedNodeID = 0;
 	g_xGraphEditor.m_bLinking = false;
 	g_xGraphEditor.m_bDirty = false;
+	g_xGraphEditor.m_strConnectRefusal.clear();
+	g_xGraphEditor.m_axValidationFindings.Clear();
 #ifdef ZENITH_TESTING
 	g_xGraphEditor.m_strScrollToPaletteEntry.clear();
 #endif
@@ -1063,31 +1157,11 @@ bool Zenith_GraphEditorPanel::Action_Connect(const char* szSrcTypeName, u_int uS
 {
 	// == the pin drag-drop completion handler (drop is only ever onto a node's
 	// single input pin; the source pin must be one the canvas actually renders).
-	Zenith_GraphDefinition* pxDef = GetOpenDefinition();
-	if (!pxDef)
-	{
-		return false;
-	}
+	// The two used to be divergent copies - this resolves the occurrences and
+	// then runs the SAME TryConnect body the canvas drop does.
 	const u_int uSrcNodeID = ResolveNodeByTypeOccurrence(szSrcTypeName, uSrcOccurrence);
 	const u_int uDstNodeID = ResolveNodeByTypeOccurrence(szDstTypeName, uDstOccurrence);
-	if (uSrcNodeID == 0 || uDstNodeID == 0)
-	{
-		return false;
-	}
-	const Zenith_GraphNodeDef* pxSrcDef = pxDef->FindNodeDef(uSrcNodeID);
-	const Zenith_GraphNodeTypeInfo* pxSrcInfo = pxSrcDef
-		? Zenith_GraphNodeRegistry::Get().Find(pxSrcDef->m_strTypeName.c_str()) : nullptr;
-	const u_int uSrcOutputs = pxSrcDef ? GetNodeExecOutputCount(*pxSrcDef, pxSrcInfo) : 1;
-	if (uSrcPin >= uSrcOutputs)
-	{
-		return false;
-	}
-	if (!pxDef->AddEdge(uSrcNodeID, uSrcPin, uDstNodeID, 0))
-	{
-		return false;
-	}
-	g_xGraphEditor.m_bDirty = true;
-	return true;
+	return TryConnect(uSrcNodeID, uSrcPin, uDstNodeID);
 }
 
 bool Zenith_GraphEditorPanel::Action_SelectNode(const char* szTypeName, u_int uOccurrence)
@@ -1209,7 +1283,33 @@ void Zenith_GraphEditorPanel::OpenAssetFresh(const char* szAssetPath)
 		g_xGraphEditor.m_uSelectedNodeID = 0;
 		DestroyParamInstance();
 		g_xGraphEditor.m_bDirty = true;
+		// The definition OpenAsset validated no longer exists - re-run over the
+		// empty one so the panel never displays a report for a discarded graph.
+		ValidateOpenGraph();
 	}
+}
+
+//------------------------------------------------------------------------------
+// Refusals + validation report
+//------------------------------------------------------------------------------
+
+const char* Zenith_GraphEditorPanel::GetConnectRefusalText()
+{
+	return g_xGraphEditor.m_strConnectRefusal.c_str();
+}
+
+u_int Zenith_GraphEditorPanel::GetValidationFindingCount()
+{
+	return g_xGraphEditor.m_axValidationFindings.GetSize();
+}
+
+const Zenith_GraphValidationFinding* Zenith_GraphEditorPanel::GetValidationFindingAt(u_int uIndex)
+{
+	if (uIndex >= g_xGraphEditor.m_axValidationFindings.GetSize())
+	{
+		return nullptr;
+	}
+	return &g_xGraphEditor.m_axValidationFindings.Get(uIndex);
 }
 
 //------------------------------------------------------------------------------

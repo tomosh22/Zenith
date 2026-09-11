@@ -131,6 +131,17 @@ public:
 	// key layout (pin lives in the key's low byte).
 	virtual int32_t GetDynamicExecOutputCount() const { return -1; }
 
+	// Instance-resolved PIN TYPE hook (Zenith_GraphPinTable). A node whose
+	// declared pin carries m_bInstanceResolved answers here - e.g. a maths node
+	// whose op code decides whether its Result is a FLOAT or a VECTOR3. uPinIndex
+	// is the index into the class's pin table.
+	//
+	// Deliberately takes an INDEX rather than a descriptor reference so this
+	// header never has to know Zenith_GraphPinTable.h exists. Returning false
+	// (the default) means "I cannot say": the validator then treats the pin as
+	// ANY and reports one warning naming the type. It never fabricates a type.
+	virtual bool GetPinType(u_int /*uPinIndex*/, Zenith_PropertyType& /*eOut*/) const { return false; }
+
 	// Canonical registered type name (matches Zenith_GraphNodeRegistry).
 	virtual const char* GetTypeName() const = 0;
 

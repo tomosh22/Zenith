@@ -65,6 +65,12 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   **On Failure** exec pin (see "Routable failure" below) and is VALIDATED at
   registration — a refused flag is a `Zenith_Error` plus a forced `false`, never
   an assert, so the refusal is something a test (and the editor) can read back.
+- `Zenith_GraphPinTable.h` — the per-node-class **pin descriptor table**
+  (`ZENITH_GRAPH_PINS_BEGIN(Class)` / `ZENITH_GRAPH_PIN_*` / `ZENITH_GRAPH_PINS_END`
+  → `GetPinTableStatic()`, concept-detected by `RegisterNodeType` exactly like
+  the property table, and inherited the same way). See "Validation" below.
+- `Zenith_GraphDefinitionValidator.{h,cpp}` + `.Tests.inl` — the FULL-tier
+  static check of a definition against those tables. Report-only today.
 - `Zenith_GraphBlackboard.{h,cpp}` — name → `Zenith_PropertyValue` store with
   typed getters (`GetFloat/GetBool/GetInt32/GetVector2/3/4/GetString/
   GetPackedEntityID(name, default)` — return the default on missing OR type
@@ -217,6 +223,140 @@ seeded from the declared variables.
   with no OnUpdate/Timer sources, no suspended chains, and no cursors from the
   ON_UPDATE dispatch entirely (pinned by the idle phase of the 1000-entity
   benchmark).
+
+## Validation (pin descriptor tables + `Zenith_GraphDefinitionValidator`)
+
+**The problem.** Values pass between nodes by NAMED blackboard variables: a node
+declares `ZENITH_PROPERTY(std::string, m_str…Var, "…")` and reads or writes
+`GetBlackboard()` under that name at runtime. A mistyped name silently yields
+the type's default, forever, and `SetValue` creates an undeclared variable by
+design — so nothing in the engine could ever see the mistake.
+
+**The mechanism.** A node class declares, once, what each of those name
+properties MEANS:
+
+```cpp
+ZENITH_GRAPH_PINS_BEGIN(MyNode)
+ZENITH_GRAPH_PIN_INPUT(Value,  "m_strValueVar",  PROPERTY_TYPE_FLOAT)
+ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+ZENITH_GRAPH_PINS_END
+```
+
+`Zenith_GraphPinDesc` carries `m_szName`, `m_eRole`, `m_eType` (a
+`Zenith_PropertyType`, or the sentinel `eGRAPH_PIN_TYPE_ANY` ==
+`PROPERTY_TYPE_COUNT`), `m_szVarNameProperty` / `m_szConstProperty` (either may
+be `""`), `m_szFallbackVarNameProperty` (when the bound var-name property reads
+EMPTY the pin binds to THIS property's value instead — the in-place maths-node
+form), `m_bInstanceResolved`, and `m_uAcceptedTypeMask` for TARGET_REF.
+
+**Roles.** Only INPUT and OUTPUT ever become drawn wires (Epic B); every role
+participates in validation.
+
+| Role | Means |
+|---|---|
+| `INPUT` | reads a value (var name, inline const, or both) |
+| `OUTPUT` | the node's own computed result |
+| `SELECTOR_READ` / `_WRITE` / `_READWRITE` | a named-variable REFERENCE that configures the node and stays a validated string forever — never a wire |
+| `TARGET_REF` | an entity/position reference, checked against an accepted-type MASK |
+| `LIST` | a name in the blackboard's parallel LIST store (not a `Zenith_PropertyValue` at all) |
+
+**Role rulings** (binding on the annotation sweep that follows):
+
+- `SetBlackboard*.m_strVariable` = **SELECTOR_WRITE**; its inline value =
+  **INPUT** (const-only).
+- `AddBlackboard*` / `LerpBlackboard*` / `ClampBlackboardFloat` /
+  `WaitForCondition` variable = **SELECTOR_READWRITE**.
+- A node's computed result var = **OUTPUT** — `MathBlackboard*.m_strResultVar`
+  with fallback `m_strVar`, `Raycast`'s hit vars, `FindEntity*`'s result.
+- Collision sources' `m_strStoreEntityVar` = **SELECTOR_WRITE `ENTITY_ID`**, not
+  ANY: the component always supplies a packed EntityID. Only
+  `OnCustomEvent.m_strStorePayloadVar` is **SELECTOR_WRITE ANY**.
+- `FireCustomEventWithArgs` arg names are written by the FIRER (C++), so no pin
+  can name them. They are satisfied by the READING graph **declaring** them
+  (`Variable(...)`) — there is no "open writer" escape hatch.
+- ★ **TARGET_REF accepts ENTITY_ID only for an ENTITY target.**
+  `Zenith_GraphContext::ResolveTargetEntity` accepts a packed ENTITY_ID and
+  nothing else — a STRING entity name is never legal at runtime. A polymorphic
+  POSITION reference accepts ENTITY_ID **or** VECTOR3. Hence the two macros
+  `ZENITH_GRAPH_PIN_TARGET_ENTITY` and `ZENITH_GRAPH_PIN_TARGET_POSITION`.
+
+**★ `ZENITH_GRAPH_PINS_BEGIN` emits `public:` and `..._END` restores `private:`.**
+A private `GetPinTableStatic()` makes the concept silently FALSE — the node would
+be carefully annotated and completely unvalidated, and nothing would say so. The
+paired tag `bZENITH_HAS_PIN_TABLE` makes that a **compile error**: `RegisterNodeType`
+static_asserts that a class carrying the tag also exposes a detectable table.
+Tables INHERIT like property tables (the collision-source family shares its
+base's).
+
+**Instance-resolved types.** A pin declared `_INSTANCE` asks the node via
+`Zenith_GraphNode::GetPinType(pinIndex, out)`. A node that DECLINES leaves the
+pin ANY plus one `INSTANCE_TYPE_UNRESOLVED` warning — the validator never
+fabricates a type.
+
+**What the validator checks.**
+
+- **Structural** — an edge to a node that is not in the graph; an edge from a
+  pin at or past the node's effective exec-output count. That count has ONE home,
+  `Zenith_GraphNodeRegistry::GetExecOutputCount(definition, nodeID)`: unknown
+  type → 1, dynamic-pin type → a param-applied instance's
+  `GetDynamicExecOutputCount()` clamped to 255, static type →
+  `m_uExecOutputCount + (m_bHasFailurePin ? 1 : 0)`. The editor panel draws and
+  validates connections through the same function.
+- **Declare-or-error** — every variable a graph READS must be declared or
+  written by an annotated writer in the same graph, where "writer" **never
+  means the reading node itself**: a READWRITE reference cannot satisfy its own
+  read (`SELF_READWRITE`).
+- **Type agreement** between a reader and the declaration and every writer. ANY
+  unifies with everything; a TARGET_REF checks its mask.
+- **Informational** — a declared-but-unreferenced variable, and a LIST name.
+
+**★ OPAQUE NODES.** A node type with NO pin table contributes nothing and reads
+nothing as far as the validator can tell. That is the deliberate migration
+shape: annotating the node library is a later unit, and an un-annotated node
+must never produce a false finding. **While ANY node in a graph is opaque the
+declared-but-unreferenced warning is SUPPRESSED for that graph** — otherwise
+every `Variable(...)` declaration in every shipped graph would warn.
+
+**★ REPORT-ONLY, AND WHY IT STAYS THAT WAY FOR NOW.** `Validate(..., bLatchErrors,
+out)` is called with `false` everywhere today: every would-be ERROR is reported
+at WARNING severity with `m_bWouldBeError` set. `Zenith_GraphBuilder::Build()`
+runs it after the commit loop (before it the blobs still hold `AddNode`
+defaults, not `Param*` values) and never touches `m_bErrors` or its return
+value. Every var-name property has a NON-EMPTY default (`"value"`, `"result"`,
+`"target"`, …) and `SetValue` creates undeclared variables by design, so the
+moment the node library IS annotated, declare-or-error WILL flag shipped graphs.
+The order is: annotate → declare the variables the sweep surfaces → flip the
+latch once that report is clean.
+
+**Where it runs.** `Build()` (the boot-authoring path) and the editor panel on
+asset open (`OpenAsset` and `OpenAssetFresh`), on a parameter edit, and after a
+connection lands. A LOAD_SAFETY
+tier is a later unit.
+
+**The log line** — `Zenith_Log`, `LOG_CATEGORY_CORE`, **never `Zenith_Error`**
+(a report-only pass over every shipped graph must not turn the tools-boot
+console red):
+
+```
+[GraphValidator] <WARN|ERROR> wouldBeError=<0|1> graph=<name> node=<id>:<type> pin=<pin|-> var=<var|-> rule=<RULE> | <text>
+[GraphValidator] graph=<name> nodes=N findings=<errors>/<warnings>
+```
+
+`RULE` is one of `UNDECLARED_READ`, `TYPE_MISMATCH`, `PIN_OUT_OF_RANGE`,
+`ORPHAN_EDGE`, `DECLARED_UNUSED`, `LIST_NAME`, `SELF_READWRITE`,
+`INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID` (the last one fires when a
+pin names a property the class does not declare as a string — a mis-declared
+table is a warning, never a `DebugBreak`; the tagged property getters ASSERT, so
+the tag is checked before `GetString`). The `[GraphValidator]` prefix appears on
+no other log line in the repo, so the whole report is one `Select-String` over
+`<exe dir>/Logs/zenith_*.log`.
+
+**Applying a param blob has one home too:**
+`Zenith_GraphDefinition::ApplyNodeParams(nodeID, node, typeInfo)`. Graph
+instantiation, the editor's param panel, the exec-output funnel and the
+validator all call it; it used to be three inline copies of the same
+`Zenith_DataStream` + `ReadProperties` pair, and the validator would have been
+the fourth.
 
 ## Contracts worth knowing
 
