@@ -12,6 +12,8 @@
 
 #ifdef ZENITH_TESTING
 
+#include "EntityComponent/Zenith_GraphNodeFailurePin.TestHarness.inl"
+
 // Runs MathBlackboardFloat "r = v <op> operand" and returns r; asserts SUCCESS.
 static float RunMathFloat(float fVal, int32_t iOp, float fOperand)
 {
@@ -478,6 +480,42 @@ ZENITH_TEST(GraphNodeOps, ListClearEmptiesAndNeverFails)
 	AppendInt(xBB, 99);
 	ZENITH_ASSERT_EQ(xBB.TryGetList("bag")->GetSize(), 1u);
 	ZENITH_ASSERT_EQ(ListElement(xBB, "bag", 0), 99);
+}
+
+//==============================================================================
+// Routable FAILURE - the "On Failure" exec pin opt-ins of THIS TU.
+//
+// What each row proves, why the wired fail-probe is the positive control, and
+// why the anchor/probes are engine nodes addressed by name all live ONCE, in
+// the shared harness: Zenith_GraphNodeFailurePin.TestHarness.inl (included at
+// the top of this file). Only the rows and the non-opted node are local.
+//
+// The runtime SEMANTICS of the pin (same chain key, suspending handlers,
+// aborts, the cycle cap, refusal on flow/dynamic-pin/source types) are the
+// FailurePin_* tests in Zenith_Scripting.Tests.inl - not duplicated here.
+//==============================================================================
+
+ZENITH_TEST(GraphNodeFailurePin, BlackboardMathOptIns)
+{
+	const Zenith_FailurePinCase axCases[] =
+	{
+		// GetListElement: FAILURE at Registration_Math.cpp:70 (list absent /
+		// index out of range). "__nolist__" is never created by anything, so
+		// TryGetList returns null and the one FAILURE branch is taken.
+		{
+			"GetListElement",
+			[](Zenith_GraphBuilder& xBuilder, u_int uNode)
+			{
+				xBuilder.ParamString(uNode, "m_strListVar", "__nolist__");
+			}
+		},
+	};
+
+	// No scene: this row is pure blackboard, so self is deliberately invalid.
+	Zenith_CheckFailurePinTable(axCases, static_cast<u_int>(sizeof(axCases) / sizeof(axCases[0])), Zenith_Entity());
+
+	// GetListCount cannot fail at all, which is exactly why it is not an opt-in.
+	Zenith_CheckNodeIsNotOptedIn("GetListCount");
 }
 
 #endif // ZENITH_TESTING

@@ -659,7 +659,9 @@ void Zenith_RegisterEngineGraphNodes_Math()
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
 	xRegistry.RegisterNodeType<Zenith_GraphNode_GetListCount>("GetListCount", GRAPH_EVENT_NONE, 1, false, "Blackboard");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_GetListElement>("GetListElement", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	// On Failure = INDEX OUT OF RANGE / LIST ABSENT (:70) - the one branch, no
+	// separate misconfiguration guard.
+	xRegistry.RegisterNodeType<Zenith_GraphNode_GetListElement>("GetListElement", GRAPH_EVENT_NONE, 1, false, "Blackboard", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ListAdd>("ListAdd", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ListRemoveAt>("ListRemoveAt", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ListClear>("ListClear", GRAPH_EVENT_NONE, 1, false, "Blackboard");

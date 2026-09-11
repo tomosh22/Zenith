@@ -381,9 +381,20 @@ void Zenith_RegisterEngineGraphNodes_UI()
 {
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
-	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIText>("SetUIText", GRAPH_EVENT_NONE, 1, false, "UI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIColor>("SetUIColor", GRAPH_EVENT_NONE, 1, false, "UI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIVisible>("SetUIVisible", GRAPH_EVENT_NONE, 1, false, "UI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIFillAmount>("SetUIFillAmount", GRAPH_EVENT_NONE, 1, false, "UI");
+	// On Failure = ELEMENT NOT FOUND (:117) + misconfiguration guards (no
+	// Zenith_UIComponent on the target :112, element bears no text :146).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIText>("SetUIText", GRAPH_EVENT_NONE, 1, false, "UI", true);
+	// On Failure = ELEMENT NOT FOUND (:175) + a misconfiguration guard (no
+	// Zenith_UIComponent on the target :170).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIColor>("SetUIColor", GRAPH_EVENT_NONE, 1, false, "UI", true);
+	// On Failure = ELEMENT NOT FOUND (:218) + a misconfiguration guard (no
+	// Zenith_UIComponent on the target :208). An EMPTY m_strElement addresses
+	// the whole canvas and always succeeds - it never reaches the pin.
+	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIVisible>("SetUIVisible", GRAPH_EVENT_NONE, 1, false, "UI", true);
+	// On Failure = ELEMENT NOT FOUND, or found but not a Rect (:248) + a
+	// misconfiguration guard (no Zenith_UIComponent on the target :243).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIFillAmount>("SetUIFillAmount", GRAPH_EVENT_NONE, 1, false, "UI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_OnUIButtonClicked>("OnUIButtonClicked", GRAPH_EVENT_ON_UPDATE, 1, false, "UI");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_UI.Tests.inl"

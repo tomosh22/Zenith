@@ -739,8 +739,12 @@ void Zenith_RegisterEngineGraphNodes_Entity()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_FindEntitiesInRadius>("FindEntitiesInRadius", GRAPH_EVENT_NONE, 1, false, "Entity");
 
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SpawnPrefab>("SpawnPrefab", GRAPH_EVENT_NONE, 1, false, "Entity");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_FindEntityByName>("FindEntityByName", GRAPH_EVENT_NONE, 1, false, "Entity");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_FindNearestEntity>("FindNearestEntity", GRAPH_EVENT_NONE, 1, false, "Entity");
+	// On Failure = NO ENTITY OF THAT NAME (:361) + a misconfiguration guard
+	// (empty name :343).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_FindEntityByName>("FindEntityByName", GRAPH_EVENT_NONE, 1, false, "Entity", true);
+	// On Failure = NOTHING MATCHED THE FILTER WITHIN THE RADIUS (:436) +
+	// misconfiguration guards (unresolvable centre :390, unknown filter type :396).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_FindNearestEntity>("FindNearestEntity", GRAPH_EVENT_NONE, 1, false, "Entity", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_AttachToBone>("AttachToBone", GRAPH_EVENT_NONE, 1, false, "Entity");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_DetachFromBone>("DetachFromBone", GRAPH_EVENT_NONE, 1, false, "Entity");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadCameraBasis>("ReadCameraBasis", GRAPH_EVENT_NONE, 1, false, "Camera");
@@ -748,3 +752,5 @@ void Zenith_RegisterEngineGraphNodes_Entity()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_RotateTowardDirection>("RotateTowardDirection", GRAPH_EVENT_NONE, 1, false, "Transform");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadEntityRotation>("ReadEntityRotation", GRAPH_EVENT_NONE, 1, false, "Transform");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Entity.Tests.inl"

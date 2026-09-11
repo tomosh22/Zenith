@@ -396,6 +396,10 @@ void Zenith_RegisterEngineGraphNodes_Physics()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_LockRotation>("LockRotation", GRAPH_EVENT_NONE, 1, false, "Physics");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetGravityEnabled>("SetGravityEnabled", GRAPH_EVENT_NONE, 1, false, "Physics");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetSensor>("SetSensor", GRAPH_EVENT_NONE, 1, false, "Physics");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_Raycast>("Raycast", GRAPH_EVENT_NONE, 1, false, "Physics");
+	// On Failure = NO HIT (:302) + misconfiguration guards (unresolvable origin
+	// :286, zero-length direction :293).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_Raycast>("Raycast", GRAPH_EVENT_NONE, 1, false, "Physics", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetEntityPosition>("SetEntityPosition", GRAPH_EVENT_NONE, 1, false, "Physics");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_Physics.Tests.inl"

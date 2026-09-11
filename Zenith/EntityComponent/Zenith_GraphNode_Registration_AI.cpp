@@ -694,19 +694,35 @@ void Zenith_RegisterEngineGraphNodes_AI()
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
 	// Navigation
-	xRegistry.RegisterNodeType<Zenith_GraphNode_EnsureNavAgent>("EnsureNavAgent", GRAPH_EVENT_NONE, 1, false, "AI");
+	// On Failure = THE MESH WILL NEVER COME (load FAILED :116, unconfigured ref
+	// :119) or THE AGENT COULD NOT BE ALLOCATED (:132) + misconfiguration guards
+	// (no target :90, no AIAgentComponent :95, no NavMeshComponent :101, no mesh
+	// behind a LOADED component :126). RUNNING (:120) while a CONFIGURED mesh is
+	// still loading is not FAILURE and is unaffected by this pin.
+	xRegistry.RegisterNodeType<Zenith_GraphNode_EnsureNavAgent>("EnsureNavAgent", GRAPH_EVENT_NONE, 1, false, "AI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_NavMoveTo>("NavMoveTo", GRAPH_EVENT_NONE, 1, false, "AI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavDestination>("SetNavDestination", GRAPH_EVENT_NONE, 1, false, "AI");
+	// On Failure = NO BOUND AGENT (:306) or NO PATH to the destination (:314) +
+	// a misconfiguration guard (unresolvable destination ref :311).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavDestination>("SetNavDestination", GRAPH_EVENT_NONE, 1, false, "AI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_StopNav>("StopNav", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadNavState>("ReadNavState", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavSpeed>("SetNavSpeed", GRAPH_EVENT_NONE, 1, false, "AI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_FindRandomReachablePoint>("FindRandomReachablePoint", GRAPH_EVENT_NONE, 1, false, "AI");
+	// On Failure = NO REACHABLE POINT IN THE RADIUS (:459 - the wander fallback)
+	// + misconfiguration guards (no bound agent / no mesh :447, unresolvable
+	// centre ref :452).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_FindRandomReachablePoint>("FindRandomReachablePoint", GRAPH_EVENT_NONE, 1, false, "AI", true);
 
 	// Perception
 	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryPerceivedTargets>("QueryPerceivedTargets", GRAPH_EVENT_NONE, 1, false, "AI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryPrimaryPerceivedTarget>("QueryPrimaryPerceivedTarget", GRAPH_EVENT_NONE, 1, false, "AI");
-	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryLastHeardSound>("QueryLastHeardSound", GRAPH_EVENT_NONE, 1, false, "AI");
+	// On Failure = NOTHING PERCEIVED (:544, incl. an unregistered agent) + a
+	// misconfiguration guard (invalid target :539).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryPrimaryPerceivedTarget>("QueryPrimaryPerceivedTarget", GRAPH_EVENT_NONE, 1, false, "AI", true);
+	// On Failure = NOTHING HEARD (:578, incl. an unregistered agent) + a
+	// misconfiguration guard (invalid target :572).
+	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryLastHeardSound>("QueryLastHeardSound", GRAPH_EVENT_NONE, 1, false, "AI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryAwarenessOf>("QueryAwarenessOf", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_EmitSoundStimulus>("EmitSoundStimulus", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_RegisterPerceptionTarget>("RegisterPerceptionTarget", GRAPH_EVENT_NONE, 1, false, "AI");
 }
+
+#include "EntityComponent/Zenith_GraphNode_Registration_AI.Tests.inl"
