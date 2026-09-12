@@ -260,6 +260,472 @@ namespace
 		const char* GetTypeName() const override { return "Test_ChainStatus"; }
 	};
 
+	//--------------------------------------------------------------------------
+	// B-2 PIN RUNTIME scratch types.
+	//
+	// ★ Three mutually distinct values run through every pin-runtime fixture, so
+	// an assertion can only pass for one reason: the pin's CONST property is
+	// 9.0f, the blackboard variable is 7.0f, and a producer's latched SLOT is
+	// 5.0f. A test that expects the wire asserts 5.0f; one that expects today's
+	// var-name fallback asserts 7.0f; one that expects the pin default asserts
+	// 9.0f.
+	//--------------------------------------------------------------------------
+
+	constexpr float fPIN_TEST_CONST = 9.0f;
+	constexpr float fPIN_TEST_BLACKBOARD = 7.0f;
+	constexpr float fPIN_TEST_SLOT = 5.0f;
+	constexpr u_int64 ulPIN_TEST_ENTITY = 0x1234567800000042ull;
+
+	// Exec producer: latches a FLOAT (pin 0) and an INT32 (pin 1). The INT pin is
+	// what the checked-extraction fixtures wire into a FLOAT consumer.
+	class GraphTestPinProducer : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinProducer)
+	public:
+		ZENITH_PROPERTY(std::string, m_strResultVar, "")
+		ZENITH_PROPERTY(std::string, m_strCountVar, "")
+		ZENITH_PROPERTY(float, m_fResult, 5.0f)
+		ZENITH_PROPERTY(int32_t, m_iCount, 3)
+		ZENITH_PROPERTY(bool, m_bWriteWrongType, false)
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinProducer)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			++m_uExecuteCount;
+			if (m_bWriteWrongType)
+			{
+				SetOutput<int32_t>(xContext, 0u, 42);	// an INT into a FLOAT slot
+			}
+			else
+			{
+				SetOutput<float>(xContext, 0u, m_fResult);
+			}
+			SetOutput<int32_t>(xContext, 1u, m_iCount);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PinProducer"; }
+
+		u_int m_uExecuteCount = 0;
+	};
+
+	// Exec consumer. Reads EVERY declared input on EVERY Execute into separate
+	// members, so no assertion can pass because a pin was never read.
+	//   pin 0 Value  - INPUT_VAR_OR_CONST FLOAT (const 9.0f)
+	//   pin 1 Any    - INPUT ANY (the wildcard, read through TryGetInput)
+	//   pin 2 Echo   - OUTPUT FLOAT (the OUTPUT a role-mismatch edge aims at)
+	//   pin 3 Second - INPUT FLOAT, the POSITIVE CONTROL of every skip fixture
+	class GraphTestPinConsumer : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinConsumer)
+	public:
+		ZENITH_PROPERTY(std::string, m_strValueVar, "")
+		ZENITH_PROPERTY(float, m_fValue, 9.0f)
+		ZENITH_PROPERTY(std::string, m_strAnyVar, "")
+		ZENITH_PROPERTY(std::string, m_strEchoVar, "")
+		ZENITH_PROPERTY(std::string, m_strSecondVar, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinConsumer)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_fValue", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(Any, "m_strAnyVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_OUTPUT(Echo, "m_strEchoVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(Second, "m_strSecondVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			++m_uReadCount;
+			m_fLastValue = GetInput<float>(xContext, 0u);
+			++m_uFloatReadCount;
+			const Zenith_PropertyValue* pxAny = nullptr;
+			m_bLastAnyPresent = TryGetInput(xContext, 1u, pxAny);
+			if (m_bLastAnyPresent && pxAny != nullptr)
+			{
+				m_xLastAny = *pxAny;
+			}
+			m_fLastSecond = GetInput<float>(xContext, 3u);
+			++m_uFloatReadCount;
+			SetOutput<float>(xContext, 2u, m_fLastValue);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PinConsumer"; }
+
+		float m_fLastValue = 0.0f;
+		float m_fLastSecond = 0.0f;
+		Zenith_PropertyValue m_xLastAny;
+		u_int m_uReadCount = 0;
+		u_int m_uFloatReadCount = 0;	// the DIAMOND observable: two pins, one gather
+		bool m_bLastAnyPresent = false;
+	};
+
+	// MathBlackboard*'s shape: write to m_strResultVar, or - when that reads
+	// empty - back into m_strVar.
+	class GraphTestPinFallbackWriter : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinFallbackWriter)
+	public:
+		ZENITH_PROPERTY(std::string, m_strResultVar, "")
+		ZENITH_PROPERTY(std::string, m_strVar, "inplace")
+		ZENITH_PROPERTY(float, m_fResult, 5.0f)
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinFallbackWriter)
+		ZENITH_GRAPH_PIN_OUTPUT_FALLBACK(Result, "m_strResultVar", "m_strVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			SetOutput<float>(xContext, 0u, m_fResult);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PinFallbackWriter"; }
+	};
+
+	// An INSTANCE-RESOLVED OUTPUT: the slot's type is whatever GetPinType answers
+	// for the CONFIGURED instance, and the slot is stamped with it.
+	class GraphTestPinInstanceOut : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinInstanceOut)
+	public:
+		ZENITH_PROPERTY(std::string, m_strResultVar, "")
+		ZENITH_PROPERTY(int32_t, m_iOp, 0)	// 0 = answer FLOAT, anything else = INT32
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinInstanceOut)
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Result, "m_strResultVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		bool GetPinType(u_int uPinIndex, Zenith_PropertyType& eOut) const override
+		{
+			if (uPinIndex != 0u)
+			{
+				return false;
+			}
+			eOut = (m_iOp == 0) ? PROPERTY_TYPE_FLOAT : PROPERTY_TYPE_INT32;
+			return true;
+		}
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_PinInstanceOut"; }
+	};
+
+	// The same descriptor on a node that DECLINES to answer: the slot stays ANY,
+	// and therefore starts UNSET rather than stamped with a fabricated type.
+	class GraphTestPinInstanceDeclined : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinInstanceDeclined)
+	public:
+		ZENITH_PROPERTY(std::string, m_strResultVar, "")
+		ZENITH_PROPERTY(float, m_fValue, 5.0f)
+		ZENITH_PROPERTY(bool, m_bWrite, false)
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinInstanceDeclined)
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Result, "m_strResultVar")
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		// GetPinType is deliberately NOT overridden: the base returns false.
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			if (m_bWrite)
+			{
+				SetOutput<float>(xContext, 0u, m_fValue);
+			}
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PinInstanceDeclined"; }
+	};
+
+	// The packed-ENTITY_ID accessor's fixture: reads pin 0, optionally latches
+	// pin 1.
+	class GraphTestPinEntity : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinEntity)
+	public:
+		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
+		ZENITH_PROPERTY(std::string, m_strOutVar, "")
+		ZENITH_PROPERTY(bool, m_bWrite, false)
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinEntity)
+		ZENITH_GRAPH_PIN_INPUT(Target, "m_strTargetVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Out, "m_strOutVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			m_ulLast = GetInputPackedEntityID(xContext, 0u);
+			if (m_bWrite)
+			{
+				Zenith_PropertyValue xValue;
+				xValue.SetPackedEntityID(ulPIN_TEST_ENTITY);
+				SetOutput(xContext, 1u, xValue);
+			}
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PinEntity"; }
+
+		u_int64 m_ulLast = 0;
+	};
+
+	// PURE: two FLOAT inputs (consts 2 + 3 = the 5.0f slot value), one FLOAT
+	// output, a per-instance execute counter, and a status knob.
+	class GraphTestPureAdd : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPureAdd)
+	public:
+		ZENITH_PROPERTY(std::string, m_strAVar, "")
+		ZENITH_PROPERTY(float, m_fA, 2.0f)
+		ZENITH_PROPERTY(std::string, m_strBVar, "")
+		ZENITH_PROPERTY(float, m_fB, 3.0f)
+		ZENITH_PROPERTY(std::string, m_strSumVar, "")
+		ZENITH_PROPERTY(int32_t, m_iReturnStatus, 0)	// 0=SUCCESS 1=FAILURE 2=RUNNING
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPureAdd)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(A, "m_strAVar", "m_fA", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(B, "m_strBVar", "m_fB", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Sum, "m_strSumVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			++m_uExecuteCount;
+			SetOutput<float>(xContext, 2u, GetInput<float>(xContext, 0u) + GetInput<float>(xContext, 1u));
+			return static_cast<GraphNodeStatus>(m_iReturnStatus);
+		}
+		const char* GetTypeName() const override { return "Test_PureAdd"; }
+
+		u_int m_uExecuteCount = 0;
+	};
+
+	// PURE with an ANY output it may leave UNSET - the "the producer has not
+	// written yet" shape a typed slot cannot express.
+	class GraphTestPureAny : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPureAny)
+	public:
+		ZENITH_PROPERTY(std::string, m_strValueVar, "")
+		ZENITH_PROPERTY(float, m_fValue, 5.0f)
+		ZENITH_PROPERTY(bool, m_bWrite, false)
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPureAny)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strValueVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			++m_uExecuteCount;
+			if (m_bWrite)
+			{
+				SetOutput<float>(xContext, 0u, m_fValue);
+			}
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PureAny"; }
+
+		u_int m_uExecuteCount = 0;
+	};
+
+	// Two PURE nodes wired into each other: the runtime data cycle.
+	class GraphTestPureCycleA : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPureCycleA)
+	public:
+		ZENITH_PROPERTY(std::string, m_strInVar, "")
+		ZENITH_PROPERTY(std::string, m_strOutVar, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPureCycleA)
+		ZENITH_GRAPH_PIN_INPUT(In, "m_strInVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Out, "m_strOutVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			SetOutput<float>(xContext, 1u, GetInput<float>(xContext, 0u) + 1.0f);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PureCycleA"; }
+	};
+
+	class GraphTestPureCycleB : public GraphTestPureCycleA
+	{
+	public:
+		const char* GetTypeName() const override { return "Test_PureCycleB"; }
+	};
+
+	// A FLOW node that pulls a pure source, runs its sub-chain, then pulls again
+	// - the gather-token nesting probe.
+	class GraphTestPinFlow : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinFlow)
+	public:
+		ZENITH_PROPERTY(std::string, m_strInVar, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinFlow)
+		ZENITH_GRAPH_PIN_INPUT(In, "m_strInVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			m_fBefore = GetInput<float>(xContext, 0u);
+			xContext.m_pxGraph->RunChainFromPin(GetNodeID(), 0u, xContext);
+			m_fAfter = GetInput<float>(xContext, 0u);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_PinFlow"; }
+
+		float m_fBefore = 0.0f;
+		float m_fAfter = 0.0f;
+	};
+
+	// A variadic INPUT family: "in0", "in1", ... with the member count read off
+	// the PARAM-APPLIED instance.
+	class GraphTestVariadic : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestVariadic)
+	public:
+		ZENITH_PROPERTY(int32_t, m_iInputCount, 3)
+		ZENITH_PROPERTY(std::string, m_strTotalVar, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestVariadic)
+		ZENITH_GRAPH_PIN_INPUT_VARIADIC(in, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Total, "m_strTotalVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		int32_t GetDynamicDataInputCount() const override { return m_iInputCount; }
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			m_fTotal = 0.0f;
+			for (int32_t i = 0; i < m_iInputCount; ++i)
+			{
+				m_fTotal += GetInput<float>(xContext, 0u, static_cast<u_int>(i));
+			}
+			// One ordinal past the declared family: bounds-checked, defaulted,
+			// never an assert.
+			m_fBeyond = GetInput<float>(xContext, 0u, static_cast<u_int>(m_iInputCount));
+			SetOutput<float>(xContext, 1u, m_fTotal);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_Variadic"; }
+
+		float m_fTotal = 0.0f;
+		float m_fBeyond = -1.0f;
+	};
+
+	// A family name plus a LITERAL pin that is that name + digits: "in0" would be
+	// ambiguous, so registration reports it and the family is not expanded.
+	class GraphTestVariadicCollision : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestVariadicCollision)
+	public:
+		ZENITH_PROPERTY(std::string, m_strIn0Var, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestVariadicCollision)
+		ZENITH_GRAPH_PIN_INPUT_VARIADIC(in, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(in0, "m_strIn0Var", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		int32_t GetDynamicDataInputCount() const override { return 2; }
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_VariadicCollision"; }
+	};
+
+	//--------------------------------------------------------------------------
+	// PURE-flag REFUSAL fixtures. Each is a DISTINCT registered name (re-using an
+	// existing one would be dropped by the dup guard and pass vacuously), and
+	// each differs from the honoured shape in exactly ONE way - the base below
+	// supplies the pin table with an OUTPUT so nothing else can be the reason.
+	//--------------------------------------------------------------------------
+	class GraphTestPureFixtureBase : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPureFixtureBase)
+	public:
+		ZENITH_PROPERTY(std::string, m_strOutVar, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPureFixtureBase)
+		ZENITH_GRAPH_PIN_OUTPUT(Out, "m_strOutVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_PureFixtureBase"; }
+	};
+
+	class GraphTestPureFlow : public GraphTestPureFixtureBase
+	{
+	public:
+		const char* GetTypeName() const override { return "Test_PureFlow"; }
+	};
+
+	class GraphTestPureSource : public GraphTestPureFixtureBase
+	{
+	public:
+		const char* GetTypeName() const override { return "Test_PureSource"; }
+		bool MatchesCustomEvent(const char* szName) const override { return std::strcmp(szName, "pure_evt") == 0; }
+	};
+
+	class GraphTestPureFailPin : public GraphTestPureFixtureBase
+	{
+	public:
+		const char* GetTypeName() const override { return "Test_PureFailPin"; }
+	};
+
+	class GraphTestPureDynamic : public GraphTestPureFixtureBase
+	{
+	public:
+		int32_t GetDynamicExecOutputCount() const override { return 2; }
+		const char* GetTypeName() const override { return "Test_PureDynamic"; }
+	};
+
+	// No pin table at all: it could never be pulled.
+	class GraphTestPureOpaque : public Zenith_GraphNode
+	{
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_PureOpaque"; }
+	};
+
+	// A pin table with no OUTPUT: nothing could ever pull it either.
+	class GraphTestPureNoOutput : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPureNoOutput)
+	public:
+		ZENITH_PROPERTY(std::string, m_strInVar, "")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPureNoOutput)
+		ZENITH_GRAPH_PIN_INPUT(In, "m_strInVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_PureNoOutput"; }
+	};
+
 	// Registers the scratch types once (idempotent via the registry dup guard,
 	// which logs - so gate on a static instead).
 	void EnsureTestNodesRegistered()
@@ -289,6 +755,32 @@ namespace
 		xRegistry.RegisterNodeType<GraphTestWidePinNode>("Test_WidePins", GRAPH_EVENT_NONE, 255, false, "Test", true);
 		xRegistry.RegisterNodeType<GraphTestFlaggedSource>("Test_FlaggedSource", GRAPH_EVENT_CUSTOM, 1, false, "Test", true);
 		xRegistry.RegisterNodeType<GraphTestChainStatusNode>("Test_ChainStatus", GRAPH_EVENT_NONE, 1, true, "Test");
+
+		// B-2 pin runtime. Test_PureAdd is the POSITIVE control for the pure
+		// flag: it is registered with ONE exec output on purpose, so
+		// Registry_PureForcesZeroExecOutputs cannot pass vacuously.
+		xRegistry.RegisterNodeType<GraphTestPinProducer>("Test_PinProducer", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPinConsumer>("Test_PinConsumer", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPinFallbackWriter>("Test_PinFallbackWriter", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPinEntity>("Test_PinEntity", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPinInstanceOut>("Test_PinInstanceOut", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPinInstanceDeclined>("Test_PinInstanceDeclined", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPinFlow>("Test_PinFlow", GRAPH_EVENT_NONE, 1, true, "Test");
+		xRegistry.RegisterNodeType<GraphTestVariadic>("Test_Variadic", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestVariadicCollision>("Test_VariadicCollision", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphTestPureAdd>("Test_PureAdd", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureAny>("Test_PureAny", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureCycleA>("Test_PureCycleA", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureCycleB>("Test_PureCycleB", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+		// The six PURE refusal shapes, each differing from the honoured shape in
+		// exactly one way. Each registration logs a Zenith_Error naming its
+		// reason; the tests read the STORED flag back.
+		xRegistry.RegisterNodeType<GraphTestPureFlow>("Test_PureFlow", GRAPH_EVENT_NONE, 3, true, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureSource>("Test_PureSource", GRAPH_EVENT_CUSTOM, 1, false, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureFailPin>("Test_PureFailPin", GRAPH_EVENT_NONE, 1, false, "Test", true, true);
+		xRegistry.RegisterNodeType<GraphTestPureOpaque>("Test_PureOpaque", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureDynamic>("Test_PureDynamic", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+		xRegistry.RegisterNodeType<GraphTestPureNoOutput>("Test_PureNoOutput", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
 	}
 
 	Zenith_GraphContext MakeTestContext(Zenith_BehaviourGraph& xGraph, float fDt = 0.016f)
@@ -2917,6 +3409,1632 @@ ZENITH_TEST(GraphBuilder, GraphBuilder_DataEdgeRefusalLatchesErrors)
 	ZENITH_ASSERT_TRUE(xBuilder.HasErrors());
 	ZENITH_ASSERT_FALSE(xBuilder.Build());
 	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+}
+
+//==============================================================================
+// B-2 PIN RUNTIME
+//
+// ★ Every fixture below is authored with AddNode/AddEdge/AddDataEdge directly,
+// NOT through Zenith_GraphBuilder: every scratch var-name property has a
+// non-empty default, so Build() would latch UNDECLARED_READ on reads these
+// fixtures deliberately leave undeclared.
+//==============================================================================
+
+namespace
+{
+	u_int PinAddConsumer(Zenith_GraphDefinition& xDef, const char* szValueVar, const char* szAnyVar, const char* szSecondVar)
+	{
+		const u_int uNode = xDef.AddNode("Test_PinConsumer");
+		GraphTestPinConsumer xTemp;
+		xTemp.m_strValueVar = szValueVar;
+		xTemp.m_strAnyVar = szAnyVar;
+		xTemp.m_strSecondVar = szSecondVar;
+		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
+		return uNode;
+	}
+
+	u_int PinAddProducer(Zenith_GraphDefinition& xDef, const char* szResultVar, float fResult)
+	{
+		const u_int uNode = xDef.AddNode("Test_PinProducer");
+		GraphTestPinProducer xTemp;
+		xTemp.m_strResultVar = szResultVar;
+		xTemp.m_fResult = fResult;
+		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
+		return uNode;
+	}
+
+	u_int PinAddPureAdd(Zenith_GraphDefinition& xDef, int32_t iReturnStatus)
+	{
+		const u_int uNode = xDef.AddNode("Test_PureAdd");
+		GraphTestPureAdd xTemp;
+		xTemp.m_iReturnStatus = iReturnStatus;	// consts 2 + 3 = the 5.0f slot value
+		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
+		return uNode;
+	}
+
+	GraphTestPinConsumer* PinFindConsumer(Zenith_BehaviourGraph& xGraph, u_int uNodeID)
+	{
+		return static_cast<GraphTestPinConsumer*>(xGraph.FindNode(uNodeID));
+	}
+
+	GraphTestPureAdd* PinFindPureAdd(Zenith_BehaviourGraph& xGraph, u_int uNodeID)
+	{
+		return static_cast<GraphTestPureAdd*>(xGraph.FindNode(uNodeID));
+	}
+
+	void PinSetFloat(Zenith_BehaviourGraph& xGraph, const char* szName, float fValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetFloat(fValue);
+		xGraph.GetBlackboard().SetValue(szName, xValue);
+	}
+}
+
+// The ONE contract that must be byte-for-byte today's behaviour: an unconnected
+// pin reads "bb->GetFloat(var, const)" - the blackboard variable when one is
+// bound and present, the CONST value (never zero) when it is absent, and the
+// const when no name is bound at all.
+ZENITH_TEST(BehaviourGraph, PinRuntime_UnconnectedReadsVarNameFallbackExactly)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uBound = PinAddConsumer(xDef, "bbvalue", "", "");
+	const u_int uUnbound = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uBound);
+	xDef.AddEdge(uBound, 0, uUnbound);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	GraphTestPinConsumer* pxBound = PinFindConsumer(xGraph, uBound);
+	GraphTestPinConsumer* pxUnbound = PinFindConsumer(xGraph, uUnbound);
+	ZENITH_ASSERT_NOT_NULL(pxBound);
+	ZENITH_ASSERT_NOT_NULL(pxUnbound);
+	if (pxBound == nullptr || pxUnbound == nullptr)
+	{
+		return;
+	}
+
+	// var ABSENT -> the CONST value, not zero.
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxBound->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+	// var name EMPTY -> the const too (the lookup is skipped entirely).
+	ZENITH_ASSERT_EQ_FLOAT(pxUnbound->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+
+	// var PRESENT -> the blackboard value.
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxBound->m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxUnbound->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+
+	// var present but WRONGLY TYPED -> the const, and NO warning: a typed
+	// blackboard getter defaults on a missing name and on a tag mismatch alike,
+	// and warns about neither. Only a WIRE mismatch is worth a line.
+	Zenith_PropertyValue xWrongType;
+	xWrongType.SetInt32(42);
+	xGraph.GetBlackboard().SetValue("bbvalue", xWrongType);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxBound->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+	ZENITH_ASSERT_EQ(pxBound->GetMismatchWarningCountForTest(0u), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_ConnectedPullsProducerSlot)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	// The blackboard deliberately holds a DIFFERENT value: a wire wins over the
+	// transitional fallback, always.
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TypedSlotDefaultsToZeroBeforeProducerRuns)
+{
+	EnsureTestNodesRegistered();
+
+	// The producer is in the graph and WIRED, but never reached by the chain.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	Zenith_GraphNode* pxProducer = xGraph.FindNode(uProducer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxProducer);
+	if (pxConsumer == nullptr || pxProducer == nullptr)
+	{
+		return;
+	}
+	// ZERO, not the const 9.0f: a typed slot IS set, it just holds its default.
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ(pxConsumer->GetMismatchWarningCountForTest(0u), 0u);
+	const Zenith_PropertyValue* pxSlot = pxProducer->GetOutputForTest(0u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		// STAMPED with the declared type - an untyped zero would assert in the
+		// consumer's tagged Load.
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_FLOAT);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_AnyOutputUnsetGivesTypedConsumerDefault)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uAny = xDef.AddNode("Test_PureAny");
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uAny, "Value", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	GraphTestPureAny* pxAny = static_cast<GraphTestPureAny*>(xGraph.FindNode(uAny));
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxAny);
+	if (pxConsumer == nullptr || pxAny == nullptr)
+	{
+		return;
+	}
+
+	// UNSET: an ANY slot has no zero to hold, so the typed consumer defaults.
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+	ZENITH_ASSERT_NULL(pxAny->GetOutputForTest(0u));
+
+	// Once it writes, the same wire carries the value.
+	pxAny->m_bWrite = true;
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+	ZENITH_ASSERT_NOT_NULL(pxAny->GetOutputForTest(0u));
+}
+
+// An INSTANCE-RESOLVED OUTPUT is asked ONCE, at instantiation, on the
+// PARAM-APPLIED instance - and the slot is stamped with the answer, so the
+// output-type check has something to check against.
+ZENITH_TEST(BehaviourGraph, PinRuntime_InstanceResolvedSlotStampedFromGetPinType)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uNode = xDef.AddNode("Test_PinInstanceOut");
+	{
+		GraphTestPinInstanceOut xTemp;
+		xTemp.m_iOp = 1;	// answer INT32
+		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
+	}
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxNode = xGraph.FindNode(uNode);
+	ZENITH_ASSERT_NOT_NULL(pxNode);
+	if (pxNode == nullptr)
+	{
+		return;
+	}
+
+	// SET at its stamped zero, and the stamp is the INSTANCE's answer.
+	const Zenith_PropertyValue* pxSlot = pxNode->GetOutputForTest(0u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_INT32);
+		ZENITH_ASSERT_EQ(pxSlot->GetInt32(), 0);
+	}
+
+	// A FLOAT write is REFUSED against the resolved INT32 type.
+	Zenith_PropertyValue xWrong;
+	xWrong.SetFloat(fPIN_TEST_SLOT);
+	pxNode->SetOutput(xContext, 0u, xWrong);
+	pxNode->SetOutput(xContext, 0u, xWrong);
+	pxSlot = pxNode->GetOutputForTest(0u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_INT32);
+		ZENITH_ASSERT_EQ(pxSlot->GetInt32(), 0);	// unchanged
+	}
+	ZENITH_ASSERT_EQ(pxNode->GetOutputMismatchWarningCountForTest(0u), 1u);	// two writes, one line
+
+	// An INT32 write lands.
+	Zenith_PropertyValue xRight;
+	xRight.SetInt32(7);
+	pxNode->SetOutput(xContext, 0u, xRight);
+	pxSlot = pxNode->GetOutputForTest(0u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_INT32);
+		ZENITH_ASSERT_EQ(pxSlot->GetInt32(), 7);
+	}
+}
+
+// A node that DECLINES to answer leaves the slot ANY - so it starts UNSET (there
+// is no zero to stamp) and then accepts whatever tag the node writes.
+ZENITH_TEST(BehaviourGraph, PinRuntime_InstanceResolvedDeclinedStartsUnset)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uDeclined = xDef.AddNode("Test_PinInstanceDeclined");
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uDeclined);
+	xDef.AddEdge(uDeclined, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uDeclined, "Result", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	GraphTestPinInstanceDeclined* pxDeclined =
+		static_cast<GraphTestPinInstanceDeclined*>(xGraph.FindNode(uDeclined));
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxDeclined);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxDeclined == nullptr || pxConsumer == nullptr)
+	{
+		return;
+	}
+
+	// UNSET, never a fabricated FLOAT zero.
+	ZENITH_ASSERT_NULL(pxDeclined->GetOutputForTest(0u));
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_NULL(pxDeclined->GetOutputForTest(0u));
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+
+	// An ANY slot accepts any tag once the node writes one.
+	pxDeclined->m_bWrite = true;
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_NOT_NULL(pxDeclined->GetOutputForTest(0u));
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+	ZENITH_ASSERT_EQ(pxDeclined->GetOutputMismatchWarningCountForTest(0u), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_CheckedExtractionMismatchReturnsDefaultAndWarnsOnce)
+{
+	EnsureTestNodesRegistered();
+
+	// The producer's INT32 pin wired into the consumer's FLOAT pin.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Count", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxConsumer->GetMismatchWarningCountForTest(0u), 0u);
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+	// TWO reads, ONE warning - and never an assert on the tagged getter.
+	ZENITH_ASSERT_EQ(pxConsumer->GetMismatchWarningCountForTest(0u), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SetOutputLatchesAndDualWritesWhileVarBound)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "result", fPIN_TEST_SLOT);
+	xDef.AddEdge(uSource, 0, uProducer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	Zenith_GraphNode* pxProducer = xGraph.FindNode(uProducer);
+	ZENITH_ASSERT_NOT_NULL(pxProducer);
+	if (pxProducer != nullptr)
+	{
+		const Zenith_PropertyValue* pxSlot = pxProducer->GetOutputForTest(0u);
+		ZENITH_ASSERT_NOT_NULL(pxSlot);
+		if (pxSlot != nullptr)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), fPIN_TEST_SLOT, 0.0001f);
+		}
+	}
+	// The TRANSITIONAL dual-write (deleted in C-1): an unmigrated reader still
+	// finds the result under its variable name.
+	ZENITH_ASSERT_TRUE(xGraph.GetBlackboard().HasValue("result"));
+	ZENITH_ASSERT_EQ_FLOAT(xGraph.GetBlackboard().GetFloat("result"), fPIN_TEST_SLOT, 0.0001f);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SetOutputDoesNotWriteBlackboardWhenVarEmpty)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	xDef.AddEdge(uSource, 0, uProducer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	ZENITH_ASSERT_FALSE(xGraph.GetBlackboard().HasValue("result"));
+	Zenith_GraphNode* pxProducer = xGraph.FindNode(uProducer);
+	ZENITH_ASSERT_NOT_NULL(pxProducer);
+	if (pxProducer != nullptr)
+	{
+		const Zenith_PropertyValue* pxSlot = pxProducer->GetOutputForTest(0u);
+		ZENITH_ASSERT_NOT_NULL(pxSlot);
+		if (pxSlot != nullptr)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), fPIN_TEST_SLOT, 0.0001f);
+		}
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SetOutputTypeMismatchRefusedAndWarnsOnce)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = xDef.AddNode("Test_PinProducer");
+	{
+		GraphTestPinProducer xTemp;
+		xTemp.m_strResultVar = "result";
+		xTemp.m_bWriteWrongType = true;	// an INT32 into a FLOAT slot
+		xDef.SetNodeParamsFromInstance(uProducer, &xTemp);
+	}
+	xDef.AddEdge(uSource, 0, uProducer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	Zenith_GraphNode* pxProducer = xGraph.FindNode(uProducer);
+	ZENITH_ASSERT_NOT_NULL(pxProducer);
+	if (pxProducer == nullptr)
+	{
+		return;
+	}
+	const Zenith_PropertyValue* pxSlot = pxProducer->GetOutputForTest(0u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		// UNCHANGED: still the stamped FLOAT zero, never re-tagged.
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_FLOAT);
+		ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), 0.0f, 0.0001f);
+	}
+	ZENITH_ASSERT_EQ(pxProducer->GetOutputMismatchWarningCountForTest(0u), 1u);
+	ZENITH_ASSERT_FALSE(xGraph.GetBlackboard().HasValue("result"));	// no dual-write either
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_OutputFallbackVarNameBinds)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uInPlace = xDef.AddNode("Test_PinFallbackWriter");	// result var empty -> m_strVar
+	const u_int uExplicit = xDef.AddNode("Test_PinFallbackWriter");
+	{
+		GraphTestPinFallbackWriter xTemp;
+		xTemp.m_strResultVar = "explicit";
+		xDef.SetNodeParamsFromInstance(uExplicit, &xTemp);
+	}
+	xDef.AddEdge(uSource, 0, uInPlace);
+	xDef.AddEdge(uInPlace, 0, uExplicit);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	// The in-place form: the slot's var name came from the FALLBACK property.
+	ZENITH_ASSERT_EQ_FLOAT(xGraph.GetBlackboard().GetFloat("inplace"), fPIN_TEST_SLOT, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(xGraph.GetBlackboard().GetFloat("explicit"), fPIN_TEST_SLOT, 0.0001f);
+}
+
+//------------------------------------------------------------------------------
+// TryGetInput - one test per row of the truth table in Scripting/CLAUDE.md.
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputFalseForUnconnectedNoVar)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxConsumer->m_bLastAnyPresent);
+		ZENITH_ASSERT_EQ(pxConsumer->m_uReadCount, 1u);	// it really did run
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputFalseForUnset)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uAny = xDef.AddNode("Test_PureAny");	// m_bWrite false: never sets its slot
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uAny, "Value", uConsumer, "Any"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxConsumer->m_bLastAnyPresent);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputTrueForConnected)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Any"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxConsumer->m_bLastAnyPresent);
+		ZENITH_ASSERT_TRUE(pxConsumer->m_xLastAny.GetType() == PROPERTY_TYPE_FLOAT);
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_xLastAny.GetFloat(), fPIN_TEST_SLOT, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputTrueForVarPresent)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uConsumer = PinAddConsumer(xDef, "", "anyvar", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "anyvar", fPIN_TEST_BLACKBOARD);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxConsumer->m_bLastAnyPresent);
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_xLastAny.GetFloat(), fPIN_TEST_BLACKBOARD, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputFalseForVarAbsent)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uConsumer = PinAddConsumer(xDef, "", "anyvar", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);	// "anyvar" never written
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxConsumer->m_bLastAnyPresent);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputTrueForTestOverride)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxConsumer = xGraph.FindNode(uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer == nullptr)
+	{
+		return;
+	}
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_FALSE(pxConsumer->TryGetInput(xContext, 1u, pxOut));
+
+	Zenith_PropertyValue xOverride;
+	xOverride.SetFloat(fPIN_TEST_SLOT);
+	pxConsumer->SetInputForTest(1u, xOverride);
+	ZENITH_ASSERT_TRUE(pxConsumer->TryGetInput(xContext, 1u, pxOut));
+	ZENITH_ASSERT_NOT_NULL(pxOut);
+	if (pxOut != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxOut->GetFloat(), fPIN_TEST_SLOT, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputTrueForConstOnlyPin)
+{
+	EnsureTestNodesRegistered();
+
+	// A const IS a value: pin 0 has no var name but does have m_fValue.
+	Zenith_GraphDefinition xDef;
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxConsumer = xGraph.FindNode(uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer == nullptr)
+	{
+		return;
+	}
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_TRUE(pxConsumer->TryGetInput(xContext, 0u, pxOut));
+	ZENITH_ASSERT_NOT_NULL(pxOut);
+	if (pxOut != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxOut->GetFloat(), fPIN_TEST_CONST, 0.0001f);
+	}
+	// Pin 3 has neither a var name nor a const: nothing is there.
+	ZENITH_ASSERT_FALSE(pxConsumer->TryGetInput(xContext, 3u, pxOut));
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputTrueWithRawValueOnTypeMismatch)
+{
+	EnsureTestNodesRegistered();
+
+	// PRESENCE, not agreement: the INT32 producer pin reaches the ANY consumer
+	// pin as a raw INT32 - the wildcard consumer owns the tag check.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Count", uConsumer, "Any"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxConsumer->m_bLastAnyPresent);
+		ZENITH_ASSERT_TRUE(pxConsumer->m_xLastAny.GetType() == PROPERTY_TYPE_INT32);
+		ZENITH_ASSERT_EQ(pxConsumer->m_xLastAny.GetInt32(), 3);
+		ZENITH_ASSERT_EQ(pxConsumer->GetMismatchWarningCountForTest(1u), 0u);	// no finding: this is legal
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_TryGetInputFalseForBadAccess)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxConsumer = xGraph.FindNode(uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer == nullptr)
+	{
+		return;
+	}
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_EQ(pxConsumer->GetBadAccessWarningCountForTest(), 0u);
+	ZENITH_ASSERT_FALSE(pxConsumer->TryGetInput(xContext, 99u, pxOut));	// past the table
+	ZENITH_ASSERT_FALSE(pxConsumer->TryGetInput(xContext, 2u, pxOut));	// pin 2 is an OUTPUT
+	ZENITH_ASSERT_NULL(pxOut);
+	ZENITH_ASSERT_EQ(pxConsumer->GetBadAccessWarningCountForTest(), 1u);	// once per instance
+}
+
+//------------------------------------------------------------------------------
+// Pure evaluation
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_PureNodeEvaluatesOnDemand)
+{
+	EnsureTestNodesRegistered();
+
+	// The pure node is NEVER exec-wired; it runs because it is pulled.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uPure = PinAddPureAdd(xDef, 0);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxPure);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxPure == nullptr || pxConsumer == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 0u);
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 1u);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);	// 2 + 3
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_PureDiamondMemoisedWithinOneGather)
+{
+	EnsureTestNodesRegistered();
+
+	// ONE pure source feeding TWO pins of ONE consumer: one evaluation.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uPure = PinAddPureAdd(xDef, 0);
+		const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+		xDef.AddEdge(uSource, 0, uConsumer);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uConsumer, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uConsumer, "Second"));
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+		GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+		GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+		ZENITH_ASSERT_NOT_NULL(pxPure);
+		ZENITH_ASSERT_NOT_NULL(pxConsumer);
+		if (pxPure != nullptr && pxConsumer != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxConsumer->m_uFloatReadCount, 2u);	// two pins really were read
+			ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 1u);		// one evaluation
+			ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+			ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastSecond, fPIN_TEST_SLOT, 0.0001f);
+		}
+	}
+
+	// TWO consumers: the memo never crosses a gather.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uPure = PinAddPureAdd(xDef, 0);
+		const u_int uFirst = PinAddConsumer(xDef, "", "", "");
+		const u_int uSecond = PinAddConsumer(xDef, "", "", "");
+		xDef.AddEdge(uSource, 0, uFirst);
+		xDef.AddEdge(uFirst, 0, uSecond);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uFirst, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uSecond, "Value"));
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+		GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+		ZENITH_ASSERT_NOT_NULL(pxPure);
+		if (pxPure != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 2u);
+		}
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_PureNotMemoisedAcrossFires)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uPure = PinAddPureAdd(xDef, 0);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+	ZENITH_ASSERT_NOT_NULL(pxPure);
+	if (pxPure != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 2u);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_GatherGenerationAdvancesPerExecute)
+{
+	EnsureTestNodesRegistered();
+
+	// N executes of ONE consumer = N evaluations of its pure source. The token
+	// is minted per Execute, not per frame and not per graph.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uPure = PinAddPureAdd(xDef, 0);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	}
+
+	GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxPure);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxPure != nullptr && pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxConsumer->m_uReadCount, 3u);
+		ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 3u);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_FlowNodeConsumerGathersOnce)
+{
+	EnsureTestNodesRegistered();
+
+	// A flow node pulls, runs a sub-chain whose node pulls the SAME source, then
+	// pulls again. TWO evaluations - the flow node's own and its child's - never
+	// three: a gather token only ever increases, so the flow node's second pull
+	// still sees a value computed inside its own gather.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uFlow = xDef.AddNode("Test_PinFlow");
+	const u_int uPure = PinAddPureAdd(xDef, 0);
+	const u_int uChild = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uFlow);
+	xDef.AddEdge(uFlow, 0, uChild);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uFlow, "In"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uChild, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+	GraphTestPinFlow* pxFlow = static_cast<GraphTestPinFlow*>(xGraph.FindNode(uFlow));
+	GraphTestPinConsumer* pxChild = PinFindConsumer(xGraph, uChild);
+	ZENITH_ASSERT_NOT_NULL(pxPure);
+	ZENITH_ASSERT_NOT_NULL(pxFlow);
+	ZENITH_ASSERT_NOT_NULL(pxChild);
+	if (pxPure == nullptr || pxFlow == nullptr || pxChild == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxChild->m_uReadCount, 1u);	// the sub-chain really ran
+	ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 2u);
+	ZENITH_ASSERT_EQ_FLOAT(pxFlow->m_fBefore, fPIN_TEST_SLOT, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxFlow->m_fAfter, fPIN_TEST_SLOT, 0.0001f);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_PureCycleYieldsDefaultAndWarnsOnce)
+{
+	EnsureTestNodesRegistered();
+
+	// A -> B -> A. The re-entered node reports ONCE and yields the consumer's
+	// pin default, so B's input is 0 (B.Out = 1), A's input is 1 (A.Out = 2).
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uA = xDef.AddNode("Test_PureCycleA");
+	const u_int uB = xDef.AddNode("Test_PureCycleB");
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uB, "Out", uA, "In"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uA, "Out", uB, "In"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uA, "Out", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxA = xGraph.FindNode(uA);
+	Zenith_GraphNode* pxB = xGraph.FindNode(uB);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxA);
+	ZENITH_ASSERT_NOT_NULL(pxB);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxA == nullptr || pxB == nullptr || pxConsumer == nullptr)
+	{
+		return;
+	}
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, 2.0f, 0.0001f);
+	// The warning lands on the RE-ENTERED node, and on that node only: B was
+	// pulled once, from outside its own evaluation.
+	ZENITH_ASSERT_EQ(pxA->GetCycleWarningCountForTest(), 1u);
+	ZENITH_ASSERT_EQ(pxB->GetCycleWarningCountForTest(), 0u);
+
+	// Still ONE after a second fire - a hot chain must not spam the log.
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ(pxA->GetCycleWarningCountForTest(), 1u);
+	ZENITH_ASSERT_EQ(pxB->GetCycleWarningCountForTest(), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_PureNonSuccessStatusYieldsDefault)
+{
+	EnsureTestNodesRegistered();
+
+	// The pure node DOES set its slot before returning FAILURE; the slot must
+	// still not be read.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uPure = PinAddPureAdd(xDef, 1);	// FAILURE
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	Zenith_GraphNode* pxPure = xGraph.FindNode(uPure);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxPure);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxPure != nullptr && pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+		ZENITH_ASSERT_EQ(pxPure->GetPureStatusWarningCountForTest(), 1u);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_ExecEdgeIntoPureNodeDropped)
+{
+	EnsureTestNodesRegistered();
+
+	// source -> pure -> counter. The exec edge INTO the pure node is dropped at
+	// instantiation, so the chain simply ends at the source.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uPure = PinAddPureAdd(xDef, 0);
+	const u_int uAfter = xDef.AddNode("Test_Counter");
+	{
+		GraphTestCounterNode xTemp;
+		xTemp.m_strCounterName = "after_pure";
+		xDef.SetNodeParamsFromInstance(uAfter, &xTemp);
+	}
+	ZENITH_ASSERT_TRUE(xDef.AddEdge(uSource, 0, uPure));
+	ZENITH_ASSERT_TRUE(xDef.AddEdge(uPure, 0, uAfter));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+	ZENITH_ASSERT_NOT_NULL(pxPure);
+	if (pxPure != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 0u);	// never exec-driven
+	}
+	ZENITH_ASSERT_EQ(xGraph.GetBlackboard().GetInt32("after_pure", -1), -1);
+}
+
+//------------------------------------------------------------------------------
+// Data-edge resolution refusals. Each carries a POSITIVE CONTROL in the same
+// graph: pin Second is legitimately wired (5.0f) while pin Value is either the
+// malformed edge's target or untouched (7.0f, the var-name fallback).
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_UnknownPinNameSkippedWithWarning)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "NoSuchPin"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Second"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	// The definition keeps the edge - only the BINDING is skipped.
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 2u);
+	ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 1u);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastSecond, fPIN_TEST_SLOT, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_UnresolvedNodeEdgeSkipped)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	const u_int uMissing = xDef.AddNode("Test_DoesNotExistInThisBuild");
+	ZENITH_ASSERT_NE(uMissing, 0u);
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uMissing, "Result", uConsumer, "Value"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Second"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetUnresolvedCount(), 1u);
+	ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 1u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastSecond, fPIN_TEST_SLOT, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_OpaqueEndpointSkipped)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uOpaque = xDef.AddNode("Test_Counter");	// registered, but declares no pin table
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uOpaque, "Result", uConsumer, "Value"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Second"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 1u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastSecond, fPIN_TEST_SLOT, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_RoleMismatchEdgeSkipped)
+{
+	EnsureTestNodesRegistered();
+
+	// An edge INTO the consumer's OUTPUT pin: a name that resolves, to the wrong
+	// ROLE.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Echo"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Second"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 1u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastSecond, fPIN_TEST_SLOT, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+		// The OUTPUT slot still holds what the node itself wrote.
+		const Zenith_PropertyValue* pxEcho = pxConsumer->GetOutputForTest(2u);
+		ZENITH_ASSERT_NOT_NULL(pxEcho);
+		if (pxEcho != nullptr)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(pxEcho->GetFloat(), fPIN_TEST_BLACKBOARD, 0.0001f);
+		}
+	}
+}
+
+// The asymmetry IS the contract: a blackboard variable SURVIVES a reload
+// (CopyMatchingFrom carries it), an output SLOT does not - instances are rebuilt
+// from the definition, so every slot is back at its stamped default.
+ZENITH_TEST(BehaviourGraph, PinRuntime_FreshGraphSlotsAreZeroWhileBlackboardMigrates)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	Zenith_PropertyValue xZero;
+	xZero.SetFloat(0.0f);
+	xDef.DeclareVariable("result", xZero);
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "result", fPIN_TEST_SLOT);
+	xDef.AddEdge(uSource, 0, uProducer);
+
+	Zenith_BehaviourGraph xGraphA;
+	ZENITH_ASSERT_TRUE(xGraphA.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContextA = MakeTestContext(xGraphA);
+	xGraphA.FireEvent(GRAPH_EVENT_ON_UPDATE, xContextA);
+	ZENITH_ASSERT_EQ_FLOAT(xGraphA.GetBlackboard().GetFloat("result"), fPIN_TEST_SLOT, 0.0001f);
+
+	Zenith_BehaviourGraph xGraphB;
+	ZENITH_ASSERT_TRUE(xGraphB.InitialiseFromDefinition(xDef));
+	xGraphB.GetBlackboard().CopyMatchingFrom(xGraphA.GetBlackboard());
+
+	ZENITH_ASSERT_EQ_FLOAT(xGraphB.GetBlackboard().GetFloat("result"), fPIN_TEST_SLOT, 0.0001f);
+	Zenith_GraphNode* pxProducerB = xGraphB.FindNode(uProducer);
+	ZENITH_ASSERT_NOT_NULL(pxProducerB);
+	if (pxProducerB != nullptr)
+	{
+		const Zenith_PropertyValue* pxSlot = pxProducerB->GetOutputForTest(0u);
+		ZENITH_ASSERT_NOT_NULL(pxSlot);
+		if (pxSlot != nullptr)
+		{
+			ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), 0.0f, 0.0001f);
+		}
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SetInputForTestActsAsWire)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	xDef.AddEdge(uSource, 0, uConsumer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer == nullptr)
+	{
+		return;
+	}
+
+	// An override outranks the var-name fallback, exactly like a wire.
+	Zenith_PropertyValue xOverride;
+	xOverride.SetFloat(fPIN_TEST_SLOT);
+	pxConsumer->SetInputForTest(0u, xOverride);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+
+	// ...including the MISMATCH path.
+	xOverride.SetInt32(42);
+	pxConsumer->SetInputForTest(0u, xOverride);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+	ZENITH_ASSERT_EQ(pxConsumer->GetMismatchWarningCountForTest(0u), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_GetOutputForTestReadsSlot)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uAny = xDef.AddNode("Test_PureAny");
+	xDef.AddEdge(uSource, 0, uProducer);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxProducer = xGraph.FindNode(uProducer);
+	Zenith_GraphNode* pxAny = xGraph.FindNode(uAny);
+	ZENITH_ASSERT_NOT_NULL(pxProducer);
+	ZENITH_ASSERT_NOT_NULL(pxAny);
+	if (pxProducer == nullptr || pxAny == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_NOT_NULL(pxProducer->GetOutputForTest(0u));	// typed: SET at its default
+	ZENITH_ASSERT_NULL(pxAny->GetOutputForTest(0u));			// ANY: UNSET
+	ZENITH_ASSERT_NULL(pxProducer->GetOutputForTest(99u));		// out of range: null, not an assert
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	const Zenith_PropertyValue* pxSlot = pxProducer->GetOutputForTest(0u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), fPIN_TEST_SLOT, 0.0001f);
+	}
+}
+
+//------------------------------------------------------------------------------
+// Variadic input families
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_VariadicFamilyResolvesOrdinals)
+{
+	EnsureTestNodesRegistered();
+
+	// 1 + 2 + 4: the sum identifies the ordinal mapping uniquely.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uP0 = PinAddProducer(xDef, "", 1.0f);
+	const u_int uP1 = PinAddProducer(xDef, "", 2.0f);
+	const u_int uP2 = PinAddProducer(xDef, "", 4.0f);
+	const u_int uVariadic = xDef.AddNode("Test_Variadic");
+	xDef.AddEdge(uSource, 0, uP0);
+	xDef.AddEdge(uP0, 0, uP1);
+	xDef.AddEdge(uP1, 0, uP2);
+	xDef.AddEdge(uP2, 0, uVariadic);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP0, "Result", uVariadic, "in0"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP1, "Result", uVariadic, "in1"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP2, "Result", uVariadic, "in2"));
+	// The BARE family name is not a member: a family has no non-ordinal pin, so
+	// this wire is refused rather than stored where nothing can address it.
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP0, "Result", uVariadic, "in"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 1u);
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestVariadic* pxVariadic = static_cast<GraphTestVariadic*>(xGraph.FindNode(uVariadic));
+	ZENITH_ASSERT_NOT_NULL(pxVariadic);
+	if (pxVariadic != nullptr)
+	{
+		// The control ordinals still read: the bare-family refusal touched nothing.
+		ZENITH_ASSERT_EQ_FLOAT(pxVariadic->m_fTotal, 7.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxVariadic->m_fBeyond, 0.0f, 0.0001f);	// past the family: the type zero
+		ZENITH_ASSERT_EQ(pxVariadic->GetBadAccessWarningCountForTest(), 1u);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_VariadicCountSurvivesParamBlob)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uP0 = PinAddProducer(xDef, "", 1.0f);
+	const u_int uP1 = PinAddProducer(xDef, "", 2.0f);
+	const u_int uP2 = PinAddProducer(xDef, "", 4.0f);
+	const u_int uVariadic = xDef.AddNode("Test_Variadic");
+	{
+		GraphTestVariadic xTemp;
+		xTemp.m_iInputCount = 3;
+		xDef.SetNodeParamsFromInstance(uVariadic, &xTemp);
+	}
+	xDef.AddEdge(uSource, 0, uP0);
+	xDef.AddEdge(uP0, 0, uP1);
+	xDef.AddEdge(uP1, 0, uP2);
+	xDef.AddEdge(uP2, 0, uVariadic);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP0, "Result", uVariadic, "in0"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP1, "Result", uVariadic, "in1"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP2, "Result", uVariadic, "in2"));
+	// Past the declared family: authorable and round-trippable, skipped at
+	// instantiation.
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uP2, "Result", uVariadic, "in3"));
+
+	Zenith_DataStream xStream;
+	xDef.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+	Zenith_GraphDefinition xLoaded;
+	ZENITH_ASSERT_TRUE(xLoaded.ReadFromDataStream(xStream));
+	ZENITH_ASSERT_EQ(xLoaded.GetDataEdgeCount(), 4u);
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xLoaded));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestVariadic* pxVariadic = static_cast<GraphTestVariadic*>(xGraph.FindNode(uVariadic));
+	ZENITH_ASSERT_NOT_NULL(pxVariadic);
+	if (pxVariadic != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxVariadic->m_iInputCount, 3);
+		ZENITH_ASSERT_EQ_FLOAT(pxVariadic->m_fTotal, 7.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxVariadic->m_fBeyond, 0.0f, 0.0001f);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_VariadicNameCollisionRefused)
+{
+	EnsureTestNodesRegistered();
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+
+	const Zenith_GraphNodeTypeInfo* pxClean = xRegistry.Find("Test_Variadic");
+	const Zenith_GraphNodeTypeInfo* pxColliding = xRegistry.Find("Test_VariadicCollision");
+	ZENITH_ASSERT_NOT_NULL(pxClean);
+	ZENITH_ASSERT_NOT_NULL(pxColliding);
+	if (pxClean == nullptr || pxColliding == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_FALSE(pxClean->m_bVariadicNameCollision);
+	// "in" + "in0" in one table: the type is still REGISTERED (an asset naming it
+	// must still load), but its family is never expanded.
+	ZENITH_ASSERT_TRUE(pxColliding->m_bVariadicNameCollision);
+}
+
+//------------------------------------------------------------------------------
+// Accessors that must never reach Zenith_Assert
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_AccessorOnOpaqueNodeReturnsDefaultNeverAsserts)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uOpaque = xDef.AddNode("Test_Counter");	// no pin table: empty arrays
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxOpaque = xGraph.FindNode(uOpaque);
+	ZENITH_ASSERT_NOT_NULL(pxOpaque);
+	if (pxOpaque == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ_FLOAT(pxOpaque->GetInput<float>(xContext, 0u), 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ(pxOpaque->GetInputPackedEntityID(xContext, 0u), 0ull);
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_FALSE(pxOpaque->TryGetInput(xContext, 0u, pxOut));
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(1.0f);
+	pxOpaque->SetOutput(xContext, 0u, xValue);			// a no-op
+	ZENITH_ASSERT_NULL(pxOpaque->GetOutputForTest(0u));
+	ZENITH_ASSERT_EQ(pxOpaque->GetBadAccessWarningCountForTest(), 1u);	// ONE line per instance
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_AccessorWithNullGraphReturnsDefault)
+{
+	EnsureTestNodesRegistered();
+
+	// RenderTest's tennis contract builds exactly this context and calls Execute
+	// directly.
+	Zenith_GraphDefinition xDef;
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "", "", "");
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+
+	Zenith_GraphContext xNullGraphContext;
+	xNullGraphContext.m_pxBlackboard = &xGraph.GetBlackboard();
+	xNullGraphContext.m_pxGraph = nullptr;
+
+	Zenith_GraphNode* pxConsumer = xGraph.FindNode(uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->GetInput<float>(xNullGraphContext, 0u), fPIN_TEST_CONST, 0.0001f);
+		ZENITH_ASSERT_EQ(pxConsumer->GetBadAccessWarningCountForTest(), 1u);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_PackedEntityIdAccessor)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uWriter = xDef.AddNode("Test_PinEntity");
+	{
+		GraphTestPinEntity xTemp;
+		xTemp.m_bWrite = true;
+		xDef.SetNodeParamsFromInstance(uWriter, &xTemp);
+	}
+	const u_int uReader = xDef.AddNode("Test_PinEntity");
+	const u_int uUnwired = xDef.AddNode("Test_PinEntity");
+	xDef.AddEdge(uSource, 0, uWriter);
+	xDef.AddEdge(uWriter, 0, uReader);
+	xDef.AddEdge(uReader, 0, uUnwired);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uWriter, "Out", uReader, "Target"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+	GraphTestPinEntity* pxReader = static_cast<GraphTestPinEntity*>(xGraph.FindNode(uReader));
+	GraphTestPinEntity* pxUnwired = static_cast<GraphTestPinEntity*>(xGraph.FindNode(uUnwired));
+	ZENITH_ASSERT_NOT_NULL(pxReader);
+	ZENITH_ASSERT_NOT_NULL(pxUnwired);
+	if (pxReader != nullptr && pxUnwired != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxReader->m_ulLast, ulPIN_TEST_ENTITY);
+		ZENITH_ASSERT_EQ(pxUnwired->m_ulLast, 0ull);	// no const property -> the type zero
+	}
+}
+
+// The CENSUS line C-1 waits on: only a node MIGRATED to GetInput can reach the
+// transitional var-name fallback, so "zero [GraphPin] FALLBACK lines in a boot
+// log" is the precondition for deleting it.
+ZENITH_TEST(BehaviourGraph, PinRuntime_FallbackUseLoggedOncePerPin)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uFallback = PinAddConsumer(xDef, "bbvalue", "", "");
+	const u_int uConstOnly = PinAddConsumer(xDef, "", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uFallback);
+	xDef.AddEdge(uFallback, 0, uConstOnly);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uFallback, "Second"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+
+	GraphTestPinConsumer* pxFallback = PinFindConsumer(xGraph, uFallback);
+	GraphTestPinConsumer* pxConstOnly = PinFindConsumer(xGraph, uConstOnly);
+	ZENITH_ASSERT_NOT_NULL(pxFallback);
+	ZENITH_ASSERT_NOT_NULL(pxConstOnly);
+	if (pxFallback == nullptr || pxConstOnly == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(pxFallback->GetFallbackUseCountForTest(0u), 0u);
+
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	}
+	ZENITH_ASSERT_EQ(pxFallback->m_uReadCount, 3u);
+	// Three reads of an unconnected var-bound pin, ONE line.
+	ZENITH_ASSERT_EQ(pxFallback->GetFallbackUseCountForTest(0u), 1u);
+	// A CONNECTED pin never reaches the fallback...
+	ZENITH_ASSERT_EQ(pxFallback->GetFallbackUseCountForTest(3u), 0u);
+	// ...and neither does a const-only pin with no var name.
+	ZENITH_ASSERT_EQ(pxConstOnly->GetFallbackUseCountForTest(0u), 0u);
+
+	// ★ TryGetInput takes the SAME transitional path and must carry the SAME
+	// census line: a node migrated onto the presence-aware accessor would
+	// otherwise be invisible to C-1's "zero FALLBACK lines" precondition. Pin 1
+	// is var-bound and unconnected on this instance.
+	Zenith_GraphDefinition xTryDef;
+	const u_int uTryConsumer = PinAddConsumer(xTryDef, "", "anyvar", "");
+
+	Zenith_BehaviourGraph xTryGraph;
+	ZENITH_ASSERT_TRUE(xTryGraph.InitialiseFromDefinition(xTryDef));
+	Zenith_GraphContext xTryContext = MakeTestContext(xTryGraph);
+	PinSetFloat(xTryGraph, "anyvar", fPIN_TEST_BLACKBOARD);
+
+	Zenith_GraphNode* pxTryConsumer = xTryGraph.FindNode(uTryConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxTryConsumer);
+	if (pxTryConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxTryConsumer->GetFallbackUseCountForTest(1u), 0u);
+		const Zenith_PropertyValue* pxOut = nullptr;
+		for (u_int u = 0; u < 3u; ++u)
+		{
+			ZENITH_ASSERT_TRUE(pxTryConsumer->TryGetInput(xTryContext, 1u, pxOut));
+		}
+		ZENITH_ASSERT_EQ(pxTryConsumer->GetFallbackUseCountForTest(1u), 1u);
+		ZENITH_ASSERT_EQ(pxTryConsumer->GetFallbackUseCountForTest(0u), 0u);	// const-only: no fallback
+	}
+}
+
+//------------------------------------------------------------------------------
+// Registration of the PURE flag
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, Registry_PureFlagRefusedOnFlowSourceFailurePinAndOpaque)
+{
+	EnsureTestNodesRegistered();
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+
+	// POSITIVE CONTROL first: the one shape the registry honours.
+	const Zenith_GraphNodeTypeInfo* pxHonoured = xRegistry.Find("Test_PureAdd");
+	ZENITH_ASSERT_NOT_NULL(pxHonoured);
+	if (pxHonoured != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxHonoured->m_bPureNode);
+	}
+
+	// A flow node: its exec outputs must be UNTOUCHED by the refusal.
+	const Zenith_GraphNodeTypeInfo* pxFlow = xRegistry.Find("Test_PureFlow");
+	ZENITH_ASSERT_NOT_NULL(pxFlow);
+	if (pxFlow != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxFlow->m_bPureNode);
+		ZENITH_ASSERT_EQ(pxFlow->m_uExecOutputCount, 3u);
+	}
+
+	// An event source.
+	const Zenith_GraphNodeTypeInfo* pxSource = xRegistry.Find("Test_PureSource");
+	ZENITH_ASSERT_NOT_NULL(pxSource);
+	if (pxSource != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxSource->m_bPureNode);
+		ZENITH_ASSERT_EQ(pxSource->m_uExecOutputCount, 1u);
+	}
+
+	// A type that also asked for a routable failure pin (which IS an exec pin):
+	// the pure flag loses, the failure pin survives.
+	const Zenith_GraphNodeTypeInfo* pxFailPin = xRegistry.Find("Test_PureFailPin");
+	ZENITH_ASSERT_NOT_NULL(pxFailPin);
+	if (pxFailPin != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxFailPin->m_bPureNode);
+		ZENITH_ASSERT_TRUE(pxFailPin->m_bHasFailurePin);
+		ZENITH_ASSERT_EQ(pxFailPin->m_uExecOutputCount, 1u);
+	}
+
+	// An OPAQUE type could never be pulled.
+	const Zenith_GraphNodeTypeInfo* pxOpaque = xRegistry.Find("Test_PureOpaque");
+	ZENITH_ASSERT_NOT_NULL(pxOpaque);
+	if (pxOpaque != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxOpaque->m_bPureNode);
+		ZENITH_ASSERT_NULL(pxOpaque->m_pfnGetPinTable);
+		ZENITH_ASSERT_EQ(pxOpaque->m_uExecOutputCount, 1u);
+	}
+
+	// Dynamic exec pins.
+	const Zenith_GraphNodeTypeInfo* pxDynamic = xRegistry.Find("Test_PureDynamic");
+	ZENITH_ASSERT_NOT_NULL(pxDynamic);
+	if (pxDynamic != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxDynamic->m_bPureNode);
+		ZENITH_ASSERT_EQ(pxDynamic->m_uExecOutputCount, 1u);
+	}
+
+	// A pin table with no OUTPUT: nothing could ever pull it.
+	const Zenith_GraphNodeTypeInfo* pxNoOutput = xRegistry.Find("Test_PureNoOutput");
+	ZENITH_ASSERT_NOT_NULL(pxNoOutput);
+	if (pxNoOutput != nullptr)
+	{
+		ZENITH_ASSERT_FALSE(pxNoOutput->m_bPureNode);
+		ZENITH_ASSERT_EQ(pxNoOutput->m_uExecOutputCount, 1u);
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, Registry_PureForcesZeroExecOutputs)
+{
+	EnsureTestNodesRegistered();
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+
+	// Test_PureAdd is registered with ONE exec output on purpose: a surviving
+	// pure flag forces it to zero, so an exec edge out of a pure node is
+	// PIN_OUT_OF_RANGE by construction.
+	const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find("Test_PureAdd");
+	ZENITH_ASSERT_NOT_NULL(pxInfo);
+	if (pxInfo != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxInfo->m_bPureNode);
+		ZENITH_ASSERT_EQ(pxInfo->m_uExecOutputCount, 0u);
+		ZENITH_ASSERT_FALSE(pxInfo->m_bHasFailurePin);
+	}
+
+	Zenith_GraphDefinition xDef;
+	const u_int uPure = PinAddPureAdd(xDef, 0);
+	ZENITH_ASSERT_EQ(xRegistry.GetExecOutputCount(xDef, uPure), 0u);
 }
 
 #endif // ZENITH_TESTING

@@ -643,10 +643,37 @@ bool Zenith_BehaviourGraph::InitialiseFromDefinition(const Zenith_GraphDefinitio
 		}
 	}
 
+	// Every instance exists now, so the pin state can be built (a data edge may
+	// name a node that appears later in the definition).
+	for (u_int u = 0; u < m_axNodes.GetSize(); ++u)
+	{
+		BuildPinState(m_axNodes.Get(u));
+	}
+
 	for (u_int u = 0; u < xDefinition.GetEdgeCount(); ++u)
 	{
-		m_axEdges.PushBack(xDefinition.GetEdgeAt(u));
+		const Zenith_GraphEdge& xEdge = xDefinition.GetEdgeAt(u);
+
+		// An exec edge INTO a pure node is DROPPED rather than copied: a pure
+		// node has no exec input and no chain lifecycle, so walking into one
+		// would run it outside any gather and fire OnEnter/OnExit on a node whose
+		// whole contract says it has neither. The chain simply ends here
+		// (FindSuccessor finds nothing -> SUCCESS). B-3 makes it an author-time
+		// error; today it is one line and a dropped wire.
+		const NodeInstance* pxDst = FindInstance(xEdge.m_uDstNodeID);
+		if (pxDst != nullptr && pxDst->m_pxTypeInfo != nullptr && pxDst->m_pxTypeInfo->m_bPureNode)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] exec edge (node %u, pin %u) -> node %u dropped: '%s' is a PURE node and has no exec input",
+				xEdge.m_uSrcNodeID, xEdge.m_uSrcPin, xEdge.m_uDstNodeID,
+				pxDst->m_pxTypeInfo->m_strTypeName.c_str());
+			continue;
+		}
+
+		m_axEdges.PushBack(xEdge);
 	}
+
+	ResolveDataEdges(xDefinition);
 
 	for (u_int u = 0; u < xDefinition.GetVariableCount(); ++u)
 	{
@@ -655,6 +682,284 @@ bool Zenith_BehaviourGraph::InitialiseFromDefinition(const Zenith_GraphDefinitio
 	}
 
 	return true;
+}
+
+//------------------------------------------------------------------------------
+// Pin resolution (B-2)
+//------------------------------------------------------------------------------
+
+void Zenith_BehaviourGraph::BuildPinState(NodeInstance& xInstance)
+{
+	if (xInstance.m_pxNode == nullptr || xInstance.m_pxTypeInfo == nullptr)
+	{
+		return;	// unresolved node: no instance to carry state
+	}
+	const Zenith_GraphPinTable* pxPins = xInstance.m_pxTypeInfo->m_pfnGetPinTable
+		? xInstance.m_pxTypeInfo->m_pfnGetPinTable() : nullptr;
+	if (pxPins == nullptr || pxPins->GetPinCount() == 0)
+	{
+		return;	// OPAQUE node: the arrays stay empty and cost nothing
+	}
+	const Zenith_PropertyTable* pxProperties = xInstance.m_pxTypeInfo->m_pfnGetPropertyTable
+		? xInstance.m_pxTypeInfo->m_pfnGetPropertyTable() : nullptr;
+
+	Zenith_GraphNode& xNode = *xInstance.m_pxNode;
+	const u_int uPinCount = pxPins->GetPinCount();
+	xNode.m_axInputs.Reserve(uPinCount);
+	xNode.m_axOutputs.Reserve(uPinCount);
+
+	for (u_int uPin = 0; uPin < uPinCount; ++uPin)
+	{
+		const Zenith_GraphPinDesc& xDesc = pxPins->GetPinAt(uPin);
+
+		// The bound variable name, read EXACTLY the way the validator reads it
+		// (one lifted helper), including the empty-primary fallback.
+		std::string strVar;
+		if (Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szVarNameProperty, strVar)
+			== GRAPH_PIN_READ_PROPERTY_INVALID)
+		{
+			strVar.clear();
+		}
+		if (strVar.empty())
+		{
+			std::string strFallback;
+			if (Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szFallbackVarNameProperty, strFallback)
+				== GRAPH_PIN_READ_PROPERTY_OK)
+			{
+				strVar = strFallback;
+			}
+		}
+
+		Zenith_GraphNode::InputBinding xBinding;
+		Zenith_GraphNode::OutputSlot xSlot;
+
+		if (xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT)
+		{
+			xBinding.m_bIsInput = true;
+			xBinding.m_strVarName = strVar;
+			if (pxProperties != nullptr && xDesc.m_szConstProperty != nullptr && xDesc.m_szConstProperty[0] != '\0')
+			{
+				const Zenith_ReflectedProperty* pxConst = pxProperties->FindProperty(xDesc.m_szConstProperty);
+				if (pxConst != nullptr && pxConst->m_pfnGet != nullptr)
+				{
+					xBinding.m_pxConstProperty = pxConst;
+				}
+			}
+		}
+		else if (xDesc.m_eRole == GRAPH_PIN_ROLE_OUTPUT)
+		{
+			xSlot.m_bIsOutput = true;
+			xSlot.m_strVarName = strVar;
+			xSlot.m_eDeclaredType = xDesc.m_eType;
+			if (xDesc.m_bInstanceResolved)
+			{
+				// Asked ONCE, here, exactly as the validator asks it. A node that
+				// DECLINES leaves the slot ANY - never a fabricated type.
+				Zenith_PropertyType eResolved = eGRAPH_PIN_TYPE_ANY;
+				xSlot.m_eDeclaredType = (xNode.GetPinType(uPin, eResolved) && eResolved < PROPERTY_TYPE_COUNT)
+					? eResolved : eGRAPH_PIN_TYPE_ANY;
+			}
+			if (xSlot.m_eDeclaredType != eGRAPH_PIN_TYPE_ANY)
+			{
+				// A TYPED slot starts at its declared default, STAMPED with its
+				// own type (an untyped zero would DebugBreak a typed consumer).
+				// ANY / declined-instance-resolved slots have no zero and start
+				// UNSET, which is what makes "the producer has not run yet"
+				// observable.
+				xSlot.m_xValue = Zenith_GraphPin_MakeZeroValue(xSlot.m_eDeclaredType);
+				xSlot.m_bSet = true;
+			}
+		}
+
+		xNode.m_axInputs.PushBack(xBinding);
+		xNode.m_axOutputs.PushBack(xSlot);
+
+		// A variadic family expands into <count> ordinal members, addressed
+		// through the ordinal overload of GetInput. The count is read off the
+		// PARAM-APPLIED instance, so it is whatever the node was configured with.
+		if (xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT && xDesc.m_bVariadic
+			&& !xInstance.m_pxTypeInfo->m_bVariadicNameCollision)
+		{
+			// Clamped exactly like the exec-pin count
+			// (Zenith_GraphNodeRegistry::GetExecOutputCount): a node that answers
+			// a nonsense count must cost a bounded amount of memory, not an
+			// unbounded one.
+			int32_t iCount = xNode.GetDynamicDataInputCount();
+			if (iCount > 255)
+			{
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"[GraphPin] node %u:%s reports %d variadic members on pin '%s'; clamped to 255",
+					xInstance.m_uNodeID, xNode.GetTypeName(), iCount,
+					xDesc.m_szName ? xDesc.m_szName : "(null)");
+				iCount = 255;
+			}
+			for (int32_t i = 0; i < iCount; ++i)
+			{
+				Zenith_GraphNode::VariadicInput xMember;
+				xMember.m_xBinding = xBinding;
+				xMember.m_uPinIndex = uPin;
+				xMember.m_uOrdinal = static_cast<u_int>(i);
+				xNode.m_axVariadicInputs.PushBack(xMember);
+			}
+		}
+	}
+}
+
+void Zenith_BehaviourGraph::ResolveDataEdges(const Zenith_GraphDefinition& xDefinition)
+{
+	for (u_int u = 0; u < xDefinition.GetDataEdgeCount(); ++u)
+	{
+		const Zenith_GraphDataEdge& xEdge = xDefinition.GetDataEdgeAt(u);
+
+		// Every refusal below leaves the edge in the DEFINITION untouched (a
+		// build that merely lacks a node version must still round-trip the asset)
+		// and reports exactly once, naming both endpoints.
+		NodeInstance* pxDst = FindInstance(xEdge.m_uDstNodeID);
+		NodeInstance* pxSrc = FindInstance(xEdge.m_uSrcNodeID);
+		if (pxDst == nullptr || pxDst->m_pxNode == nullptr || pxSrc == nullptr || pxSrc->m_pxNode == nullptr)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: an endpoint is unresolved in this build",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+
+		const Zenith_GraphPinTable* pxDstPins = pxDst->m_pxTypeInfo->m_pfnGetPinTable
+			? pxDst->m_pxTypeInfo->m_pfnGetPinTable() : nullptr;
+		const Zenith_GraphPinTable* pxSrcPins = pxSrc->m_pxTypeInfo->m_pfnGetPinTable
+			? pxSrc->m_pxTypeInfo->m_pfnGetPinTable() : nullptr;
+		if (pxDstPins == nullptr || pxDstPins->GetPinCount() == 0
+			|| pxSrcPins == nullptr || pxSrcPins->GetPinCount() == 0)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: an endpoint type is OPAQUE (declares no pin table)",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+
+		// --- the SOURCE pin: an exact OUTPUT name, never an ordinal -----------
+		const u_int uSrcPin = pxSrcPins->FindPinIndex(xEdge.m_strSrcPin.c_str());
+		if (uSrcPin >= pxSrcPins->GetPinCount())
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: '%s' declares no pin '%s'",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+				pxSrc->m_pxTypeInfo->m_strTypeName.c_str(), xEdge.m_strSrcPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+		if (pxSrcPins->GetPinAt(uSrcPin).m_eRole != GRAPH_PIN_ROLE_OUTPUT)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: source pin '%s' is not an OUTPUT",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+				xEdge.m_strSrcPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+
+		// --- the DESTINATION pin: exact name first, then a variadic ordinal ---
+		u_int uDstPin = pxDstPins->FindPinIndex(xEdge.m_strDstPin.c_str());
+		u_int uDstOrdinal = Zenith_GraphNode::uGRAPH_PIN_NO_ORDINAL;
+		if (uDstPin < pxDstPins->GetPinCount() && pxDstPins->GetPinAt(uDstPin).m_bVariadic)
+		{
+			// The BARE family name ("in" rather than "in0"). A family has no
+			// non-ordinal member, so binding it would store a wire on a binding
+			// no accessor can ever address: refused, not silently accepted.
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: '%s' is a variadic FAMILY name; a wire must name a member ('%s0', '%s1', ...)",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+				xEdge.m_strDstPin.c_str(), xEdge.m_strDstPin.c_str(), xEdge.m_strDstPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+		if (uDstPin >= pxDstPins->GetPinCount())
+		{
+			// Split a trailing decimal ordinal; the remaining prefix must EXACTLY
+			// name a variadic family, and the ordinal must be inside the
+			// param-applied instance's member count.
+			const std::string& strName = xEdge.m_strDstPin;
+			size_t uDigitStart = strName.size();
+			while (uDigitStart > 0 && strName[uDigitStart - 1] >= '0' && strName[uDigitStart - 1] <= '9')
+			{
+				--uDigitStart;
+			}
+			if (uDigitStart == 0 || uDigitStart == strName.size())
+			{
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"[GraphPin] data edge %u:%s -> %u:%s skipped: '%s' declares no pin '%s'",
+					xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+					pxDst->m_pxTypeInfo->m_strTypeName.c_str(), xEdge.m_strDstPin.c_str());
+				++m_uResolutionSkipCount;
+				continue;
+			}
+			const std::string strFamily = strName.substr(0, uDigitStart);
+			const u_int uFamilyPin = pxDstPins->FindPinIndex(strFamily.c_str());
+			if (uFamilyPin >= pxDstPins->GetPinCount() || !pxDstPins->GetPinAt(uFamilyPin).m_bVariadic
+				|| pxDst->m_pxTypeInfo->m_bVariadicNameCollision)
+			{
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"[GraphPin] data edge %u:%s -> %u:%s skipped: '%s' declares no pin '%s' and no variadic family '%s'",
+					xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+					pxDst->m_pxTypeInfo->m_strTypeName.c_str(), xEdge.m_strDstPin.c_str(), strFamily.c_str());
+				++m_uResolutionSkipCount;
+				continue;
+			}
+			// Clamped exactly as BuildPinState clamps the expansion, so the
+			// ordinal check and the bindings that exist cannot disagree.
+			int32_t iCount = pxDst->m_pxNode->GetDynamicDataInputCount();
+			if (iCount > 255)
+			{
+				iCount = 255;
+			}
+			u_int uOrdinal = 0;
+			bool bOrdinalOverflowed = false;
+			for (size_t uAt = uDigitStart; uAt < strName.size(); ++uAt)
+			{
+				if (uOrdinal > 0xFFFFFFu)
+				{
+					bOrdinalOverflowed = true;	// far past any member count; treated as past the end
+					break;
+				}
+				uOrdinal = uOrdinal * 10u + static_cast<u_int>(strName[uAt] - '0');
+			}
+			if (bOrdinalOverflowed || iCount < 0 || uOrdinal >= static_cast<u_int>(iCount))
+			{
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"[GraphPin] data edge %u:%s -> %u:%s skipped: variadic family '%s' has %d members, ordinal %u is past the end",
+					xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+					strFamily.c_str(), iCount, uOrdinal);
+				++m_uResolutionSkipCount;
+				continue;
+			}
+			uDstPin = uFamilyPin;
+			uDstOrdinal = uOrdinal;
+		}
+		if (pxDstPins->GetPinAt(uDstPin).m_eRole != GRAPH_PIN_ROLE_INPUT)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: destination pin '%s' is not an INPUT",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(),
+				xEdge.m_strDstPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+
+		Zenith_GraphNode::InputBinding* pxBinding = pxDst->m_pxNode->FindInputBinding(uDstPin, uDstOrdinal);
+		if (pxBinding == nullptr)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] data edge %u:%s -> %u:%s skipped: the destination pin has no resolved binding",
+				xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str());
+			++m_uResolutionSkipCount;
+			continue;
+		}
+		pxBinding->m_bConnected = true;
+		pxBinding->m_uSrcNodeID = xEdge.m_uSrcNodeID;
+		pxBinding->m_uSrcSlot = uSrcPin;
+	}
 }
 
 void Zenith_BehaviourGraph::Shutdown()
@@ -674,6 +979,9 @@ void Zenith_BehaviourGraph::Shutdown()
 	m_xBlackboard.Clear();
 	m_uUnresolvedCount = 0;
 	m_uExecutingNodeID = 0;
+	m_ulCurrentGather = 0;
+	m_ulNextGather = 0;
+	m_uResolutionSkipCount = 0;
 	m_bChainStepCapHit = false;
 }
 
@@ -719,7 +1027,12 @@ void Zenith_BehaviourGraph::RunSourceNode(NodeInstance& xSource, Zenith_GraphCon
 	// Sources gate themselves: default sources return SUCCESS every fire,
 	// Timer accumulates dt and succeeds on interval, etc.
 	m_uExecutingNodeID = xSource.m_uNodeID;
+	// A fresh GATHER token for this Execute (B-2): any pure node this source
+	// pulls is evaluated once for it, and the outer token is restored after.
+	const u_int64 ulOuterGather = m_ulCurrentGather;
+	m_ulCurrentGather = ++m_ulNextGather;
 	const GraphNodeStatus eGate = xSource.m_pxNode->Execute(xContext);
+	m_ulCurrentGather = ulOuterGather;
 	m_uExecutingNodeID = 0;
 	if (eGate != GRAPH_NODE_STATUS_SUCCESS)
 	{
@@ -896,7 +1209,12 @@ GraphNodeStatus Zenith_BehaviourGraph::RunChainFromPin(u_int uNodeID, u_int uPin
 			pxInstance->m_pxNode->OnEnter(xContext);
 		}
 		bResuming = false;	// only the resume-target node skips OnEnter
+		// A fresh GATHER token per Execute (B-2). OnEnter/OnExit are OUTSIDE it
+		// on purpose: a pull is legal only from Execute.
+		const u_int64 ulOuterGather = m_ulCurrentGather;
+		m_ulCurrentGather = ++m_ulNextGather;
 		const GraphNodeStatus eStatus = pxInstance->m_pxNode->Execute(xContext);
+		m_ulCurrentGather = ulOuterGather;
 		if (eStatus != GRAPH_NODE_STATUS_RUNNING)
 		{
 			pxInstance->m_pxNode->OnExit(xContext);
@@ -1031,7 +1349,10 @@ GraphNodeStatus Zenith_BehaviourGraph::RunGraphCall(Zenith_GraphContext& xContex
 		else
 		{
 			m_uExecutingNodeID = pxSource->m_uNodeID;
+			const u_int64 ulOuterGather = m_ulCurrentGather;	// a fresh GATHER token per Execute (B-2)
+			m_ulCurrentGather = ++m_ulNextGather;
 			const GraphNodeStatus eGate = pxSource->m_pxNode->Execute(xContext);
+			m_ulCurrentGather = ulOuterGather;
 			m_uExecutingNodeID = 0;
 			if (eGate != GRAPH_NODE_STATUS_SUCCESS)
 			{
@@ -1110,6 +1431,424 @@ u_int Zenith_BehaviourGraph::FindSuccessor(u_int uNodeID, u_int uPin) const
 		}
 	}
 	return 0;
+}
+
+//==============================================================================
+// The pull evaluator (B-2)
+//==============================================================================
+
+const Zenith_PropertyValue* Zenith_BehaviourGraph::PullSlot(u_int uSrcNodeID, u_int uSrcSlot, Zenith_GraphContext& xContext)
+{
+	NodeInstance* pxSrc = FindInstance(uSrcNodeID);
+	if (pxSrc == nullptr || pxSrc->m_pxNode == nullptr || pxSrc->m_pxTypeInfo == nullptr)
+	{
+		return nullptr;	// unresolved source: the consumer takes its default
+	}
+	Zenith_GraphNode& xNode = *pxSrc->m_pxNode;
+
+	if (pxSrc->m_pxTypeInfo->m_bPureNode)
+	{
+		if (xNode.m_bEvaluating)
+		{
+			// A runtime data CYCLE. One warning per instance (a node with two
+			// cyclic inputs names one of them), then the consumer takes its pin
+			// default - never a hang and never an assert.
+			if (xNode.m_uCycleWarningCount == 0)
+			{
+				Zenith_Log(LOG_CATEGORY_CORE,
+					"[GraphPin] CYCLE node=%u:%s is already evaluating; the pull yields the consumer's pin default",
+					uSrcNodeID, pxSrc->m_pxTypeInfo->m_strTypeName.c_str());
+				++xNode.m_uCycleWarningCount;
+			}
+			return nullptr;
+		}
+
+		// MEMO. A token only ever increases, so ">=" means "already computed for
+		// this gather, or for one nested inside it": a flow node that pulls, runs
+		// a sub-chain that pulls the same source, and pulls again gets TWO
+		// evaluations (its own and the child's), not three.
+		const bool bMemoHit = xNode.m_bMemoValid && m_ulCurrentGather != 0 && xNode.m_ulMemoGather >= m_ulCurrentGather;
+		if (!bMemoHit)
+		{
+			// No OnEnter/OnExit/OnAbort: a pure node has no chain lifecycle.
+			xNode.m_bEvaluating = true;
+			const GraphNodeStatus eStatus = xNode.Execute(xContext);
+			xNode.m_bEvaluating = false;
+			if (eStatus != GRAPH_NODE_STATUS_SUCCESS)
+			{
+				// RUNNING is refused the same way as FAILURE: a pure node has no
+				// cursor to suspend on, so "not SUCCESS" means "this slot must
+				// not be read".
+				if (xNode.m_uPureStatusWarningCount == 0)
+				{
+					Zenith_Log(LOG_CATEGORY_CORE,
+						"[GraphPin] STATUS node=%u:%s pure evaluation returned %u (not SUCCESS); the pull yields the consumer's pin default",
+						uSrcNodeID, pxSrc->m_pxTypeInfo->m_strTypeName.c_str(), static_cast<u_int>(eStatus));
+					++xNode.m_uPureStatusWarningCount;
+				}
+				return nullptr;
+			}
+			xNode.m_ulMemoGather = m_ulCurrentGather;
+			xNode.m_bMemoValid = true;
+		}
+	}
+
+	if (uSrcSlot >= xNode.m_axOutputs.GetSize())
+	{
+		return nullptr;
+	}
+	const Zenith_GraphNode::OutputSlot& xSlot = xNode.m_axOutputs.Get(uSrcSlot);
+	if (!xSlot.m_bIsOutput || !xSlot.m_bSet)
+	{
+		return nullptr;	// UNSET: an ANY producer that has not written yet
+	}
+	return &xSlot.m_xValue;
+}
+
+//==============================================================================
+// Zenith_GraphNode - the pin accessors (B-2)
+//
+// Bodies live HERE rather than in a Zenith_GraphNode.cpp: they need
+// Zenith_BehaviourGraph::PullSlot and the blackboard, and the node header only
+// forward-declares both. Node TUs therefore include nothing new.
+//==============================================================================
+
+Zenith_GraphNode::InputBinding* Zenith_GraphNode::FindInputBinding(u_int uPinIndex, u_int uOrdinal)
+{
+	if (uOrdinal != uGRAPH_PIN_NO_ORDINAL)
+	{
+		for (u_int u = 0; u < m_axVariadicInputs.GetSize(); ++u)
+		{
+			VariadicInput& xMember = m_axVariadicInputs.Get(u);
+			if (xMember.m_uPinIndex == uPinIndex && xMember.m_uOrdinal == uOrdinal)
+			{
+				return &xMember.m_xBinding;
+			}
+		}
+		return nullptr;
+	}
+	// Bounds-checked BEFORE the index: Zenith_Vector::Get asserts, and an assert
+	// must be unreachable from every accessor path (an opaque node and every temp
+	// instance carry an EMPTY array).
+	if (uPinIndex >= m_axInputs.GetSize())
+	{
+		return nullptr;
+	}
+	InputBinding& xBinding = m_axInputs.Get(uPinIndex);
+	return xBinding.m_bIsInput ? &xBinding : nullptr;
+}
+
+const Zenith_GraphNode::InputBinding* Zenith_GraphNode::FindInputBinding(u_int uPinIndex, u_int uOrdinal) const
+{
+	return const_cast<Zenith_GraphNode*>(this)->FindInputBinding(uPinIndex, uOrdinal);
+}
+
+const Zenith_PropertyValue* Zenith_GraphNode::FindTestOverride(u_int uPinIndex, u_int uOrdinal) const
+{
+	for (u_int u = 0; u < m_axTestOverrides.GetSize(); ++u)
+	{
+		const TestOverride& xOverride = m_axTestOverrides.Get(u);
+		if (xOverride.m_uPinIndex == uPinIndex && xOverride.m_uOrdinal == uOrdinal)
+		{
+			return &xOverride.m_xValue;
+		}
+	}
+	return nullptr;
+}
+
+void Zenith_GraphNode::WarnBadAccess(u_int uPinIndex)
+{
+	if (m_uBadAccessWarningCount != 0)
+	{
+		return;	// one line per instance: a hot chain must not spam the log
+	}
+	Zenith_Log(LOG_CATEGORY_CORE,
+		"[GraphPin] BADACCESS node=%u:%s pin=%u is not a resolved pin of the right role (or the context carries no graph/blackboard); the default is used",
+		m_uNodeID, GetTypeName(), uPinIndex);
+	++m_uBadAccessWarningCount;
+}
+
+const Zenith_PropertyValue* Zenith_GraphNode::CheckedExtract(InputBinding& xBinding, const Zenith_PropertyValue& xValue,
+	Zenith_PropertyType eExpected, u_int uPinIndex)
+{
+	if (xValue.GetType() == eExpected)
+	{
+		return &xValue;
+	}
+	// A DATA problem, not an engine defect: the validator reports it at author
+	// time (B-3), so this is a Zenith_Log and never a Zenith_Error - and never
+	// the tagged getter, which would DebugBreak.
+	if (xBinding.m_uMismatchWarningCount == 0)
+	{
+		Zenith_Log(LOG_CATEGORY_CORE,
+			"[GraphPin] MISMATCH node=%u:%s pin=%u expected type %u but the wire carries %u; the pin default is used",
+			m_uNodeID, GetTypeName(), uPinIndex, static_cast<u_int>(eExpected), static_cast<u_int>(xValue.GetType()));
+		++xBinding.m_uMismatchWarningCount;
+	}
+	return nullptr;
+}
+
+const Zenith_PropertyValue* Zenith_GraphNode::ResolveInput(Zenith_GraphContext& xContext, u_int uPinIndex,
+	u_int uOrdinal, Zenith_PropertyType eExpected)
+{
+	InputBinding* pxBinding = FindInputBinding(uPinIndex, uOrdinal);
+	if (pxBinding == nullptr)
+	{
+		WarnBadAccess(uPinIndex);
+		return nullptr;
+	}
+
+	// (a) A test override behaves exactly like a connected wire carrying that
+	//     value, mismatch path included.
+	const Zenith_PropertyValue* pxOverride = FindTestOverride(uPinIndex, uOrdinal);
+	if (pxOverride != nullptr)
+	{
+		return CheckedExtract(*pxBinding, *pxOverride, eExpected, uPinIndex);
+	}
+
+	// (b) Connected: pull the producer's slot.
+	if (pxBinding->m_bConnected)
+	{
+		if (xContext.m_pxGraph == nullptr)
+		{
+			WarnBadAccess(uPinIndex);
+			return nullptr;
+		}
+		const Zenith_PropertyValue* pxValue =
+			xContext.m_pxGraph->PullSlot(pxBinding->m_uSrcNodeID, pxBinding->m_uSrcSlot, xContext);
+		if (pxValue == nullptr)
+		{
+			return nullptr;	// UNSET / cycle / failed pure source -> the pin default
+		}
+		return CheckedExtract(*pxBinding, *pxValue, eExpected, uPinIndex);
+	}
+
+	// (c) TRANSITIONAL var-name fallback - DELETED IN C-1, together with the
+	//     dual-write in SetOutput. This IS today's read, exactly: a typed
+	//     blackboard getter defaults on a MISSING name and on a type mismatch
+	//     alike, with the pin default as its default, and warns about neither.
+	if (!pxBinding->m_strVarName.empty())
+	{
+		if (xContext.m_pxBlackboard == nullptr)
+		{
+			WarnBadAccess(uPinIndex);
+			return nullptr;
+		}
+		// The census line C-1 waits on: only a MIGRATED node reaches this path,
+		// so "no [GraphPin] FALLBACK line in a boot log" is the precondition for
+		// deleting it. Once per (instance, pin) - a hot chain must not spam.
+		if (pxBinding->m_uFallbackUseCount == 0)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE, "[GraphPin] FALLBACK node=%u:%s pin=%u var=%s",
+				m_uNodeID, GetTypeName(), uPinIndex, pxBinding->m_strVarName.c_str());
+			++pxBinding->m_uFallbackUseCount;
+		}
+		const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(pxBinding->m_strVarName);
+		if (pxValue == nullptr || pxValue->GetType() != eExpected)
+		{
+			return nullptr;
+		}
+		return pxValue;
+	}
+
+	return nullptr;	// unconnected, unbound: the pin default
+}
+
+Zenith_PropertyValue Zenith_GraphNode::MakePinDefault(u_int uPinIndex, u_int uOrdinal, Zenith_PropertyType eExpected) const
+{
+	// ONE definition of "the pin default": the const property's CURRENT value
+	// when the descriptor declares one, else the type's zero. Output slots are
+	// initialised through the same rule.
+	const InputBinding* pxBinding = FindInputBinding(uPinIndex, uOrdinal);
+	if (pxBinding != nullptr && pxBinding->m_pxConstProperty != nullptr && pxBinding->m_pxConstProperty->m_pfnGet != nullptr)
+	{
+		Zenith_PropertyValue xValue;
+		pxBinding->m_pxConstProperty->m_pfnGet(this, xValue);
+		if (xValue.GetType() == eExpected)
+		{
+			return xValue;
+		}
+	}
+	return Zenith_GraphPin_MakeZeroValue(eExpected);
+}
+
+u_int64 Zenith_GraphNode::GetInputPackedEntityID(Zenith_GraphContext& xContext, u_int uPinIndex)
+{
+	// Zenith_PropertyTraits has no u_int64 specialisation (Core stays
+	// ECS-agnostic), so this is the non-template form of the same contract.
+	const Zenith_PropertyValue* pxValue = ResolveInput(xContext, uPinIndex, uGRAPH_PIN_NO_ORDINAL, PROPERTY_TYPE_ENTITY_ID);
+	if (pxValue != nullptr)
+	{
+		return pxValue->GetPackedEntityID();
+	}
+	return MakePinDefault(uPinIndex, uGRAPH_PIN_NO_ORDINAL, PROPERTY_TYPE_ENTITY_ID).GetPackedEntityID();
+}
+
+bool Zenith_GraphNode::TryGetInput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue*& pxOut)
+{
+	return TryGetInput(xContext, uPinIndex, uGRAPH_PIN_NO_ORDINAL, pxOut);
+}
+
+bool Zenith_GraphNode::TryGetInput(Zenith_GraphContext& xContext, u_int uPinIndex, u_int uOrdinal,
+	const Zenith_PropertyValue*& pxOut)
+{
+	// PRESENCE, not agreement: false means "there is no value here". A connected
+	// slot whose tag disagrees comes back TRUE with the raw value - the wildcard
+	// consumer owns that check (see the truth table in Scripting/CLAUDE.md).
+	pxOut = nullptr;
+
+	InputBinding* pxBinding = FindInputBinding(uPinIndex, uOrdinal);
+	if (pxBinding == nullptr)
+	{
+		WarnBadAccess(uPinIndex);
+		return false;
+	}
+
+	const Zenith_PropertyValue* pxOverride = FindTestOverride(uPinIndex, uOrdinal);
+	if (pxOverride != nullptr)
+	{
+		pxOut = pxOverride;
+		return true;
+	}
+
+	if (pxBinding->m_bConnected)
+	{
+		if (xContext.m_pxGraph == nullptr)
+		{
+			WarnBadAccess(uPinIndex);
+			return false;
+		}
+		pxOut = xContext.m_pxGraph->PullSlot(pxBinding->m_uSrcNodeID, pxBinding->m_uSrcSlot, xContext);
+		return pxOut != nullptr;
+	}
+
+	if (!pxBinding->m_strVarName.empty())
+	{
+		if (xContext.m_pxBlackboard == nullptr)
+		{
+			WarnBadAccess(uPinIndex);
+			return false;
+		}
+		// The SAME transitional path ResolveInput takes, so it carries the SAME
+		// census line - a node migrated onto TryGetInput rather than GetInput must
+		// not be invisible to C-1's "zero FALLBACK lines" precondition.
+		if (pxBinding->m_uFallbackUseCount == 0)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE, "[GraphPin] FALLBACK node=%u:%s pin=%u var=%s",
+				m_uNodeID, GetTypeName(), uPinIndex, pxBinding->m_strVarName.c_str());
+			++pxBinding->m_uFallbackUseCount;
+		}
+		pxOut = xContext.m_pxBlackboard->TryGetValue(pxBinding->m_strVarName);
+		return pxOut != nullptr;
+	}
+
+	if (pxBinding->m_pxConstProperty != nullptr && pxBinding->m_pxConstProperty->m_pfnGet != nullptr)
+	{
+		// A const IS a value. The scratch is per-binding and refreshed on every
+		// call, so the pointer is valid until the next call on this pin.
+		pxBinding->m_pxConstProperty->m_pfnGet(this, pxBinding->m_xConstScratch);
+		pxOut = &pxBinding->m_xConstScratch;
+		return true;
+	}
+
+	return false;
+}
+
+void Zenith_GraphNode::SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue& xValue)
+{
+	if (uPinIndex >= m_axOutputs.GetSize())
+	{
+		WarnBadAccess(uPinIndex);
+		return;
+	}
+	OutputSlot& xSlot = m_axOutputs.Get(uPinIndex);
+	if (!xSlot.m_bIsOutput)
+	{
+		WarnBadAccess(uPinIndex);
+		return;
+	}
+
+	// A node writing a type its own declared pin does not carry is an ENGINE
+	// defect, not a data problem - so the slot is left UNCHANGED rather than
+	// re-tagged under a consumer's feet. ANY slots accept any tag by definition.
+	if (xSlot.m_eDeclaredType != eGRAPH_PIN_TYPE_ANY && xValue.GetType() != xSlot.m_eDeclaredType)
+	{
+		if (xSlot.m_uMismatchWarningCount == 0)
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphPin] OUTMISMATCH node=%u:%s pin=%u declares type %u but the node wrote %u; the slot is unchanged",
+				m_uNodeID, GetTypeName(), uPinIndex,
+				static_cast<u_int>(xSlot.m_eDeclaredType), static_cast<u_int>(xValue.GetType()));
+			++xSlot.m_uMismatchWarningCount;
+		}
+		return;
+	}
+
+	xSlot.m_xValue = xValue;
+	xSlot.m_bSet = true;
+
+	// TRANSITIONAL dual-write - DELETED IN C-1, together with the var-name
+	// fallback in ResolveInput. While the descriptor still binds a var name, a
+	// downstream node that has NOT been migrated to GetInput still reads this
+	// result off the blackboard exactly as it does today.
+	if (!xSlot.m_strVarName.empty() && xContext.m_pxBlackboard != nullptr)
+	{
+		xContext.m_pxBlackboard->SetValue(xSlot.m_strVarName, xValue);
+	}
+}
+
+void Zenith_GraphNode::SetInputForTest(u_int uPinIndex, const Zenith_PropertyValue& xValue)
+{
+	SetInputForTest(uPinIndex, uGRAPH_PIN_NO_ORDINAL, xValue);
+}
+
+void Zenith_GraphNode::SetInputForTest(u_int uPinIndex, u_int uOrdinal, const Zenith_PropertyValue& xValue)
+{
+	for (u_int u = 0; u < m_axTestOverrides.GetSize(); ++u)
+	{
+		TestOverride& xExisting = m_axTestOverrides.Get(u);
+		if (xExisting.m_uPinIndex == uPinIndex && xExisting.m_uOrdinal == uOrdinal)
+		{
+			xExisting.m_xValue = xValue;
+			return;
+		}
+	}
+	TestOverride xOverride;
+	xOverride.m_xValue = xValue;
+	xOverride.m_uPinIndex = uPinIndex;
+	xOverride.m_uOrdinal = uOrdinal;
+	m_axTestOverrides.PushBack(xOverride);
+}
+
+const Zenith_PropertyValue* Zenith_GraphNode::GetOutputForTest(u_int uPinIndex) const
+{
+	if (uPinIndex >= m_axOutputs.GetSize())
+	{
+		return nullptr;
+	}
+	const OutputSlot& xSlot = m_axOutputs.Get(uPinIndex);
+	return (xSlot.m_bIsOutput && xSlot.m_bSet) ? &xSlot.m_xValue : nullptr;
+}
+
+u_int Zenith_GraphNode::GetMismatchWarningCountForTest(u_int uPinIndex) const
+{
+	const InputBinding* pxBinding = FindInputBinding(uPinIndex, uGRAPH_PIN_NO_ORDINAL);
+	return pxBinding ? pxBinding->m_uMismatchWarningCount : 0u;
+}
+
+u_int Zenith_GraphNode::GetOutputMismatchWarningCountForTest(u_int uPinIndex) const
+{
+	if (uPinIndex >= m_axOutputs.GetSize())
+	{
+		return 0u;
+	}
+	return m_axOutputs.Get(uPinIndex).m_uMismatchWarningCount;
+}
+
+u_int Zenith_GraphNode::GetFallbackUseCountForTest(u_int uPinIndex) const
+{
+	const InputBinding* pxBinding = FindInputBinding(uPinIndex, uGRAPH_PIN_NO_ORDINAL);
+	return pxBinding ? pxBinding->m_uFallbackUseCount : 0u;
 }
 
 #include "Scripting/Zenith_Scripting.Tests.inl"

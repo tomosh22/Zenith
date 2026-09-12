@@ -27,6 +27,131 @@ void Zenith_GraphNodeRegistry::Register(const Zenith_GraphNodeTypeInfo& xInfo)
 	// is reported and FORCED false, and the stored type info is what every
 	// caller (runtime + editor) reads back.
 	Zenith_GraphNodeTypeInfo xValidated = xInfo;
+
+	// A variadic FAMILY plus a literal pin whose name is that family + digits
+	// ("in" and "in0") makes a wire naming "in0" ambiguous: the resolver tries an
+	// exact name first, so the literal would silently win and the family member
+	// would be unreachable forever. Reported here, once per type, at boot.
+	const Zenith_GraphPinTable* pxPins = xValidated.m_pfnGetPinTable ? xValidated.m_pfnGetPinTable() : nullptr;
+	if (pxPins != nullptr)
+	{
+		for (u_int uFamily = 0; uFamily < pxPins->GetPinCount(); ++uFamily)
+		{
+			const Zenith_GraphPinDesc& xFamily = pxPins->GetPinAt(uFamily);
+			if (!xFamily.m_bVariadic || xFamily.m_szName == nullptr)
+			{
+				continue;
+			}
+			const size_t uFamilyLength = std::strlen(xFamily.m_szName);
+			for (u_int uOther = 0; uOther < pxPins->GetPinCount(); ++uOther)
+			{
+				if (uOther == uFamily)
+				{
+					continue;
+				}
+				const Zenith_GraphPinDesc& xOther = pxPins->GetPinAt(uOther);
+				if (xOther.m_szName == nullptr || std::strncmp(xOther.m_szName, xFamily.m_szName, uFamilyLength) != 0)
+				{
+					continue;
+				}
+				const char* szSuffix = xOther.m_szName + uFamilyLength;
+				if (szSuffix[0] == '\0')
+				{
+					continue;
+				}
+				bool bAllDigits = true;
+				for (const char* szAt = szSuffix; *szAt != '\0'; ++szAt)
+				{
+					if (*szAt < '0' || *szAt > '9')
+					{
+						bAllDigits = false;
+						break;
+					}
+				}
+				if (bAllDigits)
+				{
+					Zenith_Error(LOG_CATEGORY_CORE,
+						"GraphNodeRegistry: '%s' declares variadic pin family '%s' AND a literal pin '%s'; a wire naming '%s' would be ambiguous, so the family is not expanded",
+						xValidated.m_strTypeName.c_str(), xFamily.m_szName, xOther.m_szName, xOther.m_szName);
+					xValidated.m_bVariadicNameCollision = true;
+				}
+			}
+		}
+	}
+
+	// The PURE flag is validated FIRST and its refusals leave m_uExecOutputCount
+	// ALONE: forcing the count to 0 on a refused flag would silently delete a
+	// flow node's branches.
+	if (xValidated.m_bPureNode)
+	{
+		const char* szRefusal = nullptr;
+		if (xValidated.m_bFlowNode)
+		{
+			// A flow node RUNS sub-chains from inside Execute; a pure node has no
+			// exec pins to run.
+			szRefusal = "is a flow node";
+		}
+		else if (xValidated.m_eEventType != GRAPH_EVENT_NONE)
+		{
+			// An event source is driven by a dispatch, not by a consumer's gather.
+			szRefusal = "is an event source";
+		}
+		else if (xValidated.m_bHasFailurePin)
+		{
+			// The failure pin IS an exec pin.
+			szRefusal = "also requested a routable failure pin";
+		}
+		else if (xValidated.m_pfnCreate == nullptr)
+		{
+			szRefusal = "has no create fn to validate against";
+		}
+		else if (pxPins == nullptr || pxPins->GetPinCount() == 0)
+		{
+			// An OPAQUE type could never be PULLED: a data edge resolves its pins
+			// by name through the table.
+			szRefusal = "declares no pin table";
+		}
+		else
+		{
+			bool bHasOutput = false;
+			for (u_int u = 0; u < pxPins->GetPinCount() && !bHasOutput; ++u)
+			{
+				bHasOutput = pxPins->GetPinAt(u).m_eRole == GRAPH_PIN_ROLE_OUTPUT;
+			}
+			if (!bHasOutput)
+			{
+				szRefusal = "declares no OUTPUT pin, so nothing could ever pull it";
+			}
+			else
+			{
+				Zenith_GraphNode* pxTemp = xValidated.m_pfnCreate();
+				const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
+				delete pxTemp;
+				if (iDynamic >= 0)
+				{
+					szRefusal = "reports dynamic exec pins";
+				}
+			}
+		}
+
+		if (szRefusal != nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"GraphNodeRegistry: '%s' requested the PURE flag but %s; flag refused",
+				xValidated.m_strTypeName.c_str(), szRefusal);
+			xValidated.m_bPureNode = false;
+		}
+		else if (xValidated.m_uExecOutputCount != 0)
+		{
+			// Only a SURVIVING flag reaches here. A pure node has no exec pins at
+			// all, so an exec edge OUT of one is PIN_OUT_OF_RANGE by construction.
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"GraphNodeRegistry: '%s' is PURE; its %u declared exec outputs are forced to 0",
+				xValidated.m_strTypeName.c_str(), xValidated.m_uExecOutputCount);
+			xValidated.m_uExecOutputCount = 0;
+		}
+	}
+
 	if (xValidated.m_bHasFailurePin)
 	{
 		if (xValidated.m_bFlowNode)

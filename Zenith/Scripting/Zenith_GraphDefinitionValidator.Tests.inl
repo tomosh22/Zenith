@@ -343,6 +343,7 @@ namespace
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(TargetEntity, "m_strTargetEntityVar")
 		ZENITH_GRAPH_PIN_TARGET_POSITION(TargetPosition, "m_strTargetPosVar")
 		ZENITH_GRAPH_PIN_LIST(Items, "m_strListVar")
+		ZENITH_GRAPH_PIN_INPUT_VARIADIC(VariadicIn, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -481,7 +482,7 @@ ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 	EnsureValidatorTestNodesRegistered();
 
 	const Zenith_GraphPinTable& xTable = ValTestDescriptorNode::GetPinTableStatic();
-	ZENITH_ASSERT_EQ(xTable.GetPinCount(), 12u);
+	ZENITH_ASSERT_EQ(xTable.GetPinCount(), 13u);
 
 	const Zenith_GraphPinDesc* pxValueIn = xTable.FindPin("ValueIn");
 	ZENITH_ASSERT_NOT_NULL(pxValueIn);
@@ -495,6 +496,21 @@ ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 	ZENITH_ASSERT_STREQ(pxValueIn->m_szConstProperty, "");
 	ZENITH_ASSERT_STREQ(pxValueIn->m_szFallbackVarNameProperty, "");
 	ZENITH_ASSERT_FALSE(pxValueIn->m_bInstanceResolved);
+	ZENITH_ASSERT_FALSE(pxValueIn->m_bVariadic);
+
+	// The variadic INPUT family (B-2): an ordinal family, so it binds NEITHER a
+	// var-name property NOR a const - a member is a wire or it is the type's
+	// zero. Its members are named "<family><ordinal>" by a data edge.
+	const Zenith_GraphPinDesc* pxVariadicIn = xTable.FindPin("VariadicIn");
+	ZENITH_ASSERT_NOT_NULL(pxVariadicIn);
+	if (pxVariadicIn)
+	{
+		ZENITH_ASSERT_TRUE(pxVariadicIn->m_bVariadic);
+		ZENITH_ASSERT_TRUE(pxVariadicIn->m_eRole == GRAPH_PIN_ROLE_INPUT);
+		ZENITH_ASSERT_TRUE(pxVariadicIn->m_eType == PROPERTY_TYPE_FLOAT);
+		ZENITH_ASSERT_STREQ(pxVariadicIn->m_szVarNameProperty, "");
+		ZENITH_ASSERT_STREQ(pxVariadicIn->m_szConstProperty, "");
+	}
 
 	// A const-only INPUT is a VALID descriptor whose var-name binding is "" -
 	// the variable checks skip it entirely.

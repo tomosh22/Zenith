@@ -57,18 +57,30 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   RUNNING — plus `OnAbort` (preemption: reset per-run state; flow nodes forward
   into their active pins via `AbortChain`) and `GetDynamicExecOutputCount`
   (variable-pin flow nodes; pin ≤ 255 by the cursor-key layout)).
+  It also owns the **per-instance pin state and the pin accessors** —
+  `GetInput<T>` / `GetInputPackedEntityID` / `TryGetInput` / `SetOutput`, the
+  test seam, and `GetDynamicDataInputCount` (the DATA sibling of
+  `GetDynamicExecOutputCount`). See "Pin runtime" below.
 - `Zenith_GraphNodeRegistry.{h,cpp}` — `RegisterNodeType<T>(name, eventType,
-  outputCount, bFlowNode, category, bHasFailurePin = false)` derives the
+  outputCount, bFlowNode, category, bHasFailurePin = false, bPureNode = false)` derives the
   create-fn, property table (via `ZENITH_PROPERTY`), and type version from the
   node class; name-keyed; duplicate-guarded; registrar inversion keeps this
   module leaf-safe. `bHasFailurePin` opts the type into the routable
   **On Failure** exec pin (see "Routable failure" below) and is VALIDATED at
   registration — a refused flag is a `Zenith_Error` plus a forced `false`, never
   an assert, so the refusal is something a test (and the editor) can read back.
+  `bPureNode` is validated the same observable way — see "Pin runtime" below.
 - `Zenith_GraphPinTable.h` — the per-node-class **pin descriptor table**
   (`ZENITH_GRAPH_PINS_BEGIN(Class)` / `ZENITH_GRAPH_PIN_*` / `ZENITH_GRAPH_PINS_END`
   → `GetPinTableStatic()`, concept-detected by `RegisterNodeType` exactly like
-  the property table, and inherited the same way). See "Validation" below.
+  the property table, and inherited the same way). See "Validation" below. It
+  also carries the two helpers BOTH the validator and the runtime resolve
+  through, so what was checked and what was bound cannot drift:
+  `Zenith_GraphPin_ReadStringProperty(table, node, property, out)` (the
+  tag-checked var-name read; `NOT_BOUND` / `OK` / `INVALID`) and
+  `Zenith_GraphPin_MakeZeroValue(type)` (a TYPE-STAMPED zero — a
+  `Zenith_PropertyValue` default-constructs FLOAT-tagged, and `eGRAPH_PIN_TYPE_ANY`
+  has no zero at all).
 - `Zenith_GraphDefinitionValidator.{h,cpp}` + `.Tests.inl` — the FULL-tier
   static check of a definition against those tables. An ERROR finding FAILS
   `Zenith_GraphBuilder::Build()`.
@@ -118,6 +130,21 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   `Zenith_GraphBuilder::FailPin`). The editor half — the extra pin laid out and
   keyed, and `Action_Connect` accepting it only on a flagged type — is
   `Editor/Panels/Zenith_EditorPanel_GraphEditor.Tests.inl`.
+  The `PinRuntime_*` block covers the whole pin runtime: the exact var-name
+  fallback, the wire winning over it, typed-zero vs UNSET slots, checked
+  extraction, the dual-write and its absence, the `TryGetInput` truth table row
+  by row, pure evaluation / memoisation / cycles / non-SUCCESS, the gather token
+  (including a flow node's nested sub-chain), the four resolution refusals with
+  their positive controls, variadic ordinals, and the two registration blocks
+  (`Registry_PureFlagRefused…`, `Registry_PureForcesZeroExecOutputs`). ★ Three
+  mutually distinct values run through every one of them — const `9.0f`,
+  blackboard `7.0f`, producer slot `5.0f` — so an assertion can only pass for one
+  reason. Fixtures are authored with `AddNode`/`AddEdge`/`AddDataEdge` directly,
+  NOT `Zenith_GraphBuilder`: the EXISTING scratch types default their var-name
+  properties to non-empty names (`"value"`, `"count"`, …), so a builder graph
+  that merely places one reads something and `Build()` latches `UNDECLARED_READ`.
+  (The B-2 scratch types deliberately default theirs to `""` — but a fixture
+  mixes both.)
 
 ## Execution model
 
@@ -240,6 +267,174 @@ seeded from the declared variables.
   with no OnUpdate/Timer sources, no suspended chains, and no cursors from the
   ON_UPDATE dispatch entirely (pinned by the idle phase of the 1000-entity
   benchmark).
+
+### Pin runtime (what makes a data wire carry a value)
+
+A `Zenith_GraphDataEdge` stores pin NAMES; `InitialiseFromDefinition` resolves
+them to per-instance SLOTS, and a node reads and writes them through accessors
+on `Zenith_GraphNode` rather than through the blackboard.
+
+**The accessors.** `GetInput<T>(ctx, pin)` (plus `(ctx, pin, ordinal)` for a
+variadic family), `GetInputPackedEntityID(ctx, pin)` — the non-template form,
+because `Zenith_PropertyTraits` has no `u_int64` specialisation — `TryGetInput`,
+and `SetOutput(ctx, pin, value)` / `SetOutput<T>`. `pin` is the pin's INDEX in
+the class's pin table.
+
+**★ NOTHING ON AN ACCESSOR PATH CAN REACH `Zenith_Assert`.** Every one of them
+bounds-checks itself before indexing (`Zenith_Vector::Get` and
+`Zenith_GraphPinTable::GetPinAt` both assert): a pin index past the table, a role
+that is not INPUT (resp. OUTPUT), an OPAQUE node or an unresolved temp instance
+(empty arrays), or a context with a null graph/blackboard yields the pin DEFAULT
+from `GetInput`, `false` from `TryGetInput` and a no-op from `SetOutput`, plus at
+most ONE `[GraphPin] BADACCESS` line per instance. `RenderTest`'s tennis contract
+already builds a context with a null graph and calls `Execute` directly.
+
+**★ The templates name no `Zenith_BehaviourGraph` member.** `Zenith_GraphNode.h`
+only forward-declares the graph and the include cannot be reversed, so
+`GetInput<T>` / `SetOutput<T>` are thin inline wrappers over NON-template
+out-of-line members (`ResolveInput`, `MakePinDefault`, `SetOutput`) defined in
+`Zenith_BehaviourGraph.cpp`. Node TUs include nothing new.
+
+**The pin DEFAULT has one definition and one helper** (`MakePinDefault`): the
+const property's CURRENT value when the descriptor declares one, else the type's
+zero. Output slots initialise through the same rule.
+
+**Reading an input.**
+
+| shape | `GetInput<T>` |
+|---|---|
+| test override set | checked-extract it (mismatch path included) |
+| connected, producer's slot tag == T | the value |
+| connected, tag != T | the pin default + ONE `[GraphPin] MISMATCH` per (instance, pin) — never an assert, never a `Zenith_Error`: it is a DATA problem the validator reports at author time (B-3) |
+| connected, slot UNSET | the pin default |
+| unconnected, var name bound | the blackboard variable, defaulting to the pin default on a missing name OR a tag mismatch — **this IS today's `bb->GetFloat(var, const)`, exactly** |
+| unconnected, no var name | the pin default |
+
+**`TryGetInput` is PRESENCE-aware**, for a wildcard (ANY) consumer that owns its
+own tag check. `false` means "there is no value here", never "the wrong type":
+
+| shape | result |
+|---|---|
+| connected, slot set, tag matches | true, a pointer INTO the producer's slot (valid until that producer's next `SetOutput`) |
+| connected, slot set, tag MISMATCH | **true, with the raw value** — the consumer owns the check |
+| connected, slot UNSET | false |
+| test override | true, a pointer to the override |
+| unconnected, var bound, present | true, a pointer into the blackboard (valid until the next `SetValue`) |
+| unconnected, var bound, absent | false |
+| unconnected, no var, const property | true — a const IS a value; the pointer is to a per-binding scratch refreshed on each call |
+| unconnected, no var, no const | false |
+| bad access (above) | false |
+
+**Writing an output.** `SetOutput` latches the per-instance slot (`m_bSet`).
+A tag that is not the slot's declared/resolved type leaves the slot UNCHANGED
+plus ONE `[GraphPin] OUTMISMATCH` per (instance, pin) — a node writing the wrong
+type is an ENGINE defect, and re-tagging a slot under a consumer's feet would be
+worse than refusing. An ANY slot accepts any tag by definition.
+
+**Slot initialisation.** A TYPED output slot starts at its stamped zero and is
+already SET — a consumer that reads before the producer runs gets `0`, not an
+assert. An ANY slot, and an instance-resolved slot whose node DECLINED to answer
+`GetPinType`, start **UNSET**: there is no zero to stamp, and "the producer has
+not written yet" is exactly what a wildcard needs to be able to say.
+
+**★ TWO TRANSITIONAL PATHS, BOTH DELETED IN C-1**, and nothing else in this unit
+is one: the var-name fallback in `ResolveInput` (row 5 above) and the
+**dual-write** in `SetOutput` — while a descriptor still binds a var name and it
+reads non-empty, a latched value ALSO goes to the blackboard, so an unmigrated
+downstream reader still finds it exactly where it does today. The fallback logs
+one `[GraphPin] FALLBACK node=… pin=… var=…` line per (instance, pin) on first
+use — **from `TryGetInput` as well as `GetInput`**, or a node migrated onto the
+presence-aware accessor would be invisible to the census — and only a MIGRATED
+node can reach it: **a boot log with zero `FALLBACK` lines is C-1's
+precondition**, which is why the line exists at all
+(`GetFallbackUseCountForTest` is the unit-visible half).
+
+**Pure nodes (`m_bPureNode`).** A pure node has NO exec pins: it evaluates on
+demand when a consumer gathers an input wired to one of its OUTPUT pins.
+
+- **Memoised within ONE gather.** A gather TOKEN is minted and captured around
+  every non-pure `Execute` the graph performs (`RunChainFromPin`'s loop,
+  `RunSourceNode`'s gate, `RunGraphCall`'s gate) and restored afterwards, so
+  "once per consumer `Execute`" is literal rather than a global counter read at
+  pull time. Tokens only ever increase and a memo hits on `stamp >= current`,
+  which is what lets a FLOW node re-use a source its own sub-chain already
+  evaluated: pull, run the sub-chain (whose consumer pulls the same source), pull
+  again = TWO evaluations, not three. One pure node feeding two pins of one
+  consumer = one; two consumers = two; a new fire = a new token. ★ That is a
+  STALENESS rule as well as a saving: a pure source is NOT re-read after a
+  sub-chain that mutated its inputs, so a flow node whose branch changes a
+  blackboard variable its pure source reads still sees the pre-branch value on
+  its second pull. Both counters are 64-bit, so the `>=` comparison cannot wrap
+  a node into a permanently stale memo.
+- **No lifecycle.** `OnEnter`/`OnExit`/`OnAbort` are never called on a pure node,
+  and **an exec edge whose DESTINATION is a pure type is DROPPED at
+  instantiation** with one `[GraphPin]` line (the chain simply ends there). B-3
+  makes that an author-time error. A pure evaluation is also **not pushed to
+  `GetRecentlyExecuted()`** and does not move `GetExecutingNodeID()`, so the
+  editor's live highlighting does not light up a pulled node today — B-4 changes
+  that.
+- **A non-SUCCESS pure `Execute` means the slot is NOT read** — the consumer
+  takes its default plus one `[GraphPin] STATUS` per instance. RUNNING is refused
+  the same way: there is no cursor to suspend on.
+- **A runtime data CYCLE** (a pure node pulled while it is already evaluating)
+  yields the consumer's pin default plus ONE `[GraphPin] CYCLE` per INSTANCE — a
+  node with two cyclic inputs names one of them. Never a hang, never an assert.
+- **Registration REFUSES the flag observably** (`Zenith_Error` + forced `false`,
+  the `m_bHasFailurePin` pattern) on a flow node, an event source, a type that
+  also asked for a failure pin (which IS an exec pin), a type with no create fn,
+  a type with NO pin table or no OUTPUT pin in it (nothing could ever pull it),
+  and a dynamic-exec-pin type. Only a SURVIVING flag forces `m_uExecOutputCount`
+  to 0 — a refusal leaves the count alone, because zeroing a flow node's branches
+  would be a silent deletion. A pure type's effective exec-output count is
+  therefore 0, so **an exec edge OUT of a pure node is `PIN_OUT_OF_RANGE` by
+  construction.**
+
+**Variadic INPUT families.** `ZENITH_GRAPH_PIN_INPUT_VARIADIC(Family, Type)`
+declares an ordinal family; the member count comes from the PARAM-APPLIED
+instance's `GetDynamicDataInputCount()`, and a wire names a member
+`"<family><ordinal>"` (`in0`, `in1`, …). Resolution tries an EXACT pin name
+first, then splits a trailing decimal ordinal whose prefix must exactly name a
+variadic descriptor and whose ordinal must be inside the count (itself clamped to
+255, like the exec-pin count). A table that
+declares both a family and a literal pin named family+digits is reported at
+registration (`m_bVariadicNameCollision`) and its family is never expanded — the
+literal would silently win and the member would be unreachable forever.
+
+**Resolution refusals.** A data edge naming an unresolved node (either end), an
+OPAQUE endpoint, an unknown pin name, a BARE variadic family name (`"in"` rather
+than `"in0"` — a family has no non-ordinal member, so the wire would sit on a
+binding no accessor can address), an ordinal past the family, or a name that
+resolves to the wrong ROLE is **skipped with one `[GraphPin]` line and left in
+the DEFINITION** — a build that merely lacks a node version must still round-trip
+the asset. `Zenith_BehaviourGraph::GetResolutionSkipCountForTest()` is the
+observable, so a unit can prove the malformed wire was refused rather than merely
+prove some other pin still worked.
+
+**★ THE ASYMMETRY ACROSS A HOT RELOAD.** A blackboard variable SURVIVES
+(`CopyMatchingFrom` carries it name+type-matched); an output SLOT does not. The
+reload builds a NEW `Zenith_BehaviourGraph` and every instance is re-created from
+the definition, so every slot is back at its stamped default. Nothing about a
+slot is persistent state.
+
+**The log line** — `Zenith_Log(LOG_CATEGORY_CORE, "[GraphPin] …")`, a prefix that
+appears on no other line in the repo, so the whole census is one `Select-String`
+over `<exe dir>/Logs/zenith_*.log`. Tokens: `MISMATCH`, `OUTMISMATCH`, `CYCLE`,
+`STATUS`, `BADACCESS`, `FALLBACK`, plus the resolution-skip lines. Every one of
+them is once-per-instance (or once per instance+pin) — a hot chain must never
+spam a log.
+
+**Pulls are legal ONLY from `Execute`.** `OnEnter`/`OnExit`/`OnAbort` run outside
+any gather token, so a pull from one would evaluate a pure source with no memo
+and stamp nothing.
+
+**The test seam is a SEAM, not a transitional path** (nothing here is deleted by
+C-1): `SetInputForTest(pin[, ordinal], value)` behaves exactly like a connected
+wire carrying that value, mismatch path included; `GetOutputForTest(pin)` reads
+the slot (null = UNSET); and `GetMismatchWarningCountForTest` /
+`GetOutputMismatchWarningCountForTest` / `GetCycleWarningCountForTest` /
+`GetPureStatusWarningCountForTest` / `GetBadAccessWarningCountForTest` /
+`GetFallbackUseCountForTest` are COUNTERS incremented at the `Zenith_Log` call
+site — so "warned exactly once" is a unit assertion rather than a log scrape.
 
 ## Validation (pin descriptor tables + `Zenith_GraphDefinitionValidator`)
 
@@ -401,8 +596,10 @@ group is unbindable by construction and is satisfied by declaration alone.
   carrying one still loads. `Validate` runs the load-safety checks first and
   appends their findings, so one report covers both tiers.
   - Two more checks belong here and are not written yet, each blocked on
-    machinery a later unit adds: **pure-data cycles** among resolved nodes (B-2)
-    and **static-vs-static type mismatch across a wire** (B-3).
+    machinery a later unit adds: **pure-data cycles** among resolved nodes and
+    **static-vs-static type mismatch across a wire** (B-3). B-2 makes a runtime
+    data cycle SAFE (one warning, the consumer's pin default) rather than
+    detected at author time; the static check still belongs in this tier.
 
 **The log line** — `LOG_CATEGORY_CORE`; an ERROR goes to `Zenith_Error` and a
 WARNING to `Zenith_Log`, and the summary line follows the errors count. The

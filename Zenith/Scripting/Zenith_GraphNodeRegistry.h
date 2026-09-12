@@ -70,6 +70,20 @@ struct Zenith_GraphNodeTypeInfo
 	// count), and at m_uExecOutputCount >= 255 (the chain-cursor key packs the
 	// pin into its low byte).
 	bool m_bHasFailurePin = false;
+	// PURE node (B-2): no exec pins at all - it evaluates ON DEMAND when a
+	// consumer gathers an input wired to one of its OUTPUT pins, and is memoised
+	// within that one gather. Registration REFUSES the flag - Zenith_Error +
+	// forced false, the m_bHasFailurePin pattern - on a flow node, an event
+	// source, a type that also requested a failure pin, a type with no create fn,
+	// a type with no pin table or no OUTPUT pin in it (it could never be pulled),
+	// and a dynamic-exec-pin type. Only a SURVIVING flag forces
+	// m_uExecOutputCount to 0.
+	bool m_bPureNode = false;
+	// The type's pin table declares a variadic FAMILY whose name collides with a
+	// literal pin name in the same table ("in" + "in0"), so a wire naming "in0"
+	// would be ambiguous. Reported at registration; the family is then NOT
+	// expanded at instantiation and only exact pin names resolve.
+	bool m_bVariadicNameCollision = false;
 	Zenith_GraphNodeCreateFn m_pfnCreate = nullptr;
 	Zenith_GraphNodeTableFn m_pfnGetPropertyTable = nullptr;	// null = parameterless node
 	// null = the type declares NO pin table and is therefore OPAQUE to
@@ -93,10 +107,12 @@ public:
 	// type version from the class. szCategory is editor metadata (ignored in
 	// non-tools builds). bHasFailurePin opts the type into the routable
 	// "On Failure" exec pin (see Zenith_GraphNodeTypeInfo::m_bHasFailurePin);
-	// Register() validates it and refuses it observably.
+	// Register() validates it and refuses it observably. bPureNode opts the type
+	// into on-demand PULL evaluation (see Zenith_GraphNodeTypeInfo::m_bPureNode);
+	// it is validated and refused the same observable way.
 	template<typename T>
 	void RegisterNodeType(const char* szTypeName, GraphEventType eEventType, u_int uExecOutputCount,
-		bool bFlowNode, const char* szCategory, bool bHasFailurePin = false)
+		bool bFlowNode, const char* szCategory, bool bHasFailurePin = false, bool bPureNode = false)
 	{
 		Zenith_GraphNodeTypeInfo xInfo;
 		xInfo.m_strTypeName = szTypeName;
@@ -104,6 +120,7 @@ public:
 		xInfo.m_uExecOutputCount = uExecOutputCount;
 		xInfo.m_bFlowNode = bFlowNode;
 		xInfo.m_bHasFailurePin = bHasFailurePin;
+		xInfo.m_bPureNode = bPureNode;
 		xInfo.m_pfnCreate = +[]() -> Zenith_GraphNode* { return new T(); };
 		if constexpr (HasGraphNodeProperties<T>)
 		{

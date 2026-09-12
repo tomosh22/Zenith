@@ -1,7 +1,10 @@
 #pragma once
 
 #include "Core/Zenith_PropertySystem.h"
+#include "Scripting/Zenith_GraphPinTable.h"
+#include "Collections/Zenith_Vector.h"
 #include "ZenithECS/Zenith_Entity.h"
+#include <string>
 
 //------------------------------------------------------------------------------
 // Zenith_GraphNode - base class for Behaviour Graph nodes.
@@ -151,7 +154,193 @@ public:
 
 	u_int GetNodeID() const { return m_uNodeID; }
 
+	// Variadic data INPUTS: a node whose pin table declares a
+	// ZENITH_GRAPH_PIN_INPUT_VARIADIC family reports how many members it has
+	// AFTER params are applied; -1 = no family (the default). Wires name a member
+	// "<family><ordinal>"; Execute reads one with the ordinal overload of
+	// GetInput. This is the DATA-pin sibling of GetDynamicExecOutputCount.
+	virtual int32_t GetDynamicDataInputCount() const { return -1; }
+
+	//--------------------------------------------------------------------------
+	// PIN RUNTIME (B-2). A node reads its declared INPUT pins and latches its
+	// declared OUTPUT pins through these, never through the blackboard directly.
+	//
+	// ★ NOTHING HERE CAN REACH Zenith_Assert. Every accessor bounds-checks
+	// itself: an out-of-range pin, a role that is not INPUT (resp. OUTPUT), an
+	// OPAQUE node (no pin table, so the arrays are empty), a temp instance that
+	// was never resolved, or a context with a null graph/blackboard all yield the
+	// pin DEFAULT (GetInput) / false (TryGetInput) / a no-op (SetOutput) plus at
+	// most ONE [GraphPin] log line per instance. RenderTest's tennis contract
+	// already builds a context with a null graph and calls Execute directly.
+	//
+	// The templates are thin wrappers over NON-template out-of-line members: this
+	// header only forward-declares Zenith_BehaviourGraph and must never name one
+	// of its members.
+	//--------------------------------------------------------------------------
+
+	// The pin's value as T. Connected -> the producer's slot (pure producers
+	// evaluate on demand); a tag that is not T's yields the default plus ONE
+	// warning per (instance, pin). Unconnected -> the bound blackboard variable
+	// if the descriptor has one and it is non-empty, else the pin default.
+	// The pin DEFAULT is the const property's current value when the descriptor
+	// declares one, else the type's zero.
+	template<typename T>
+	T GetInput(Zenith_GraphContext& xContext, u_int uPinIndex)
+	{
+		return GetInput<T>(xContext, uPinIndex, uGRAPH_PIN_NO_ORDINAL);
+	}
+
+	// One member of a variadic input family.
+	template<typename T>
+	T GetInput(Zenith_GraphContext& xContext, u_int uPinIndex, u_int uOrdinal)
+	{
+		constexpr Zenith_PropertyType eEXPECTED = Zenith_PropertyTraits<T>::eTYPE;
+		T xResult = T();
+		const Zenith_PropertyValue* pxValue = ResolveInput(xContext, uPinIndex, uOrdinal, eEXPECTED);
+		if (pxValue != nullptr)
+		{
+			Zenith_PropertyTraits<T>::Load(*pxValue, xResult);
+			return xResult;
+		}
+		const Zenith_PropertyValue xDefault = MakePinDefault(uPinIndex, uOrdinal, eEXPECTED);
+		Zenith_PropertyTraits<T>::Load(xDefault, xResult);
+		return xResult;
+	}
+
+	// The packed-EntityID accessor. Zenith_PropertyTraits has no u_int64
+	// specialisation (Core stays ECS-agnostic), so this is the non-template form
+	// of exactly the same contract.
+	u_int64 GetInputPackedEntityID(Zenith_GraphContext& xContext, u_int uPinIndex);
+
+	// The PRESENCE-aware form, for a wildcard (ANY) consumer that owns its own
+	// tag check. See the truth table in Scripting/CLAUDE.md: false means "there is
+	// no value here", never "the value was the wrong type" - a connected slot
+	// whose tag disagrees comes back TRUE with the raw value.
+	bool TryGetInput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue*& pxOut);
+	bool TryGetInput(Zenith_GraphContext& xContext, u_int uPinIndex, u_int uOrdinal, const Zenith_PropertyValue*& pxOut);
+
+	// Latches the OUTPUT slot. While the descriptor still carries a var-name
+	// binding and it reads non-empty the value ALSO goes to the blackboard - the
+	// transitional dual-write (deleted in C-1).
+	void SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue& xValue);
+
+	template<typename T>
+	void SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex, const T& xValue)
+	{
+		Zenith_PropertyValue xStamped;
+		Zenith_PropertyTraits<T>::Store(xStamped, xValue);
+		SetOutput(xContext, uPinIndex, xStamped);
+	}
+
+	//--------------------------------------------------------------------------
+	// TEST SEAM. Always compiled (they are tiny) but engine code never calls
+	// them: they exist so a unit can drive one node without authoring a producer,
+	// and so the once-per-instance warnings have an observable that needs no log
+	// scraping. They are NOT a transitional path - nothing here is deleted by C-1.
+	//--------------------------------------------------------------------------
+	void SetInputForTest(u_int uPinIndex, const Zenith_PropertyValue& xValue);
+	void SetInputForTest(u_int uPinIndex, u_int uOrdinal, const Zenith_PropertyValue& xValue);
+	const Zenith_PropertyValue* GetOutputForTest(u_int uPinIndex) const;	// null = UNSET
+	u_int GetMismatchWarningCountForTest(u_int uPinIndex) const;
+	u_int GetOutputMismatchWarningCountForTest(u_int uPinIndex) const;
+	u_int GetFallbackUseCountForTest(u_int uPinIndex) const;
+	u_int GetCycleWarningCountForTest() const { return m_uCycleWarningCount; }
+	u_int GetPureStatusWarningCountForTest() const { return m_uPureStatusWarningCount; }
+	u_int GetBadAccessWarningCountForTest() const { return m_uBadAccessWarningCount; }
+
+	// "This call addresses the pin itself, not a member of a variadic family."
+	static constexpr u_int uGRAPH_PIN_NO_ORDINAL = 0xFFFFFFFFu;
+
+	// Nothing copies or moves a node - instances are always m_pfnCreate() + a raw
+	// pointer the graph owns. Deleted so the per-instance pin state below cannot
+	// be silently duplicated into a second instance that the graph does not know
+	// about.
+	Zenith_GraphNode(const Zenith_GraphNode&) = delete;
+	Zenith_GraphNode& operator=(const Zenith_GraphNode&) = delete;
+	Zenith_GraphNode(Zenith_GraphNode&&) = delete;
+	Zenith_GraphNode& operator=(Zenith_GraphNode&&) = delete;
+	Zenith_GraphNode() = default;
+
 private:
 	friend class Zenith_BehaviourGraph;
+
+	// One per pin in the class's table, indexed by the pin's TABLE INDEX (chosen
+	// over a pinIndex -> bindingIndex map: the accessors already have to bounds-
+	// check, and one array sized to the table makes "is this pin an INPUT" a
+	// field read rather than a second lookup). Entries for non-INPUT pins are
+	// inert. Members of a variadic family live in m_axVariadicInputs instead.
+	struct InputBinding
+	{
+		std::string m_strVarName;								// "" = no var-name binding
+		Zenith_PropertyValue m_xConstScratch;					// refreshed by TryGetInput's const path
+		const Zenith_ReflectedProperty* m_pxConstProperty = nullptr;
+		u_int m_uSrcNodeID = 0;
+		u_int m_uSrcSlot = 0;
+		u_int m_uMismatchWarningCount = 0;
+		u_int m_uFallbackUseCount = 0;
+		bool m_bConnected = false;
+		bool m_bIsInput = false;
+	};
+
+	struct VariadicInput
+	{
+		InputBinding m_xBinding;
+		u_int m_uPinIndex = 0;
+		u_int m_uOrdinal = 0;
+	};
+
+	struct OutputSlot
+	{
+		Zenith_PropertyValue m_xValue;
+		std::string m_strVarName;								// "" = no dual-write
+		// The slot's RESOLVED type (static, or the instance's GetPinType answer).
+		// eGRAPH_PIN_TYPE_ANY = the slot accepts any tag and starts UNSET.
+		Zenith_PropertyType m_eDeclaredType = eGRAPH_PIN_TYPE_ANY;
+		u_int m_uMismatchWarningCount = 0;
+		bool m_bSet = false;									// false = UNSET
+		bool m_bIsOutput = false;
+	};
+
+	struct TestOverride
+	{
+		Zenith_PropertyValue m_xValue;
+		u_int m_uPinIndex = 0;
+		u_int m_uOrdinal = 0;
+	};
+
+	// Out-of-line, non-template, defined in Zenith_BehaviourGraph.cpp (the only
+	// TU that may name Zenith_BehaviourGraph's members).
+	// null = "there is no extracted value; use MakePinDefault".
+	const Zenith_PropertyValue* ResolveInput(Zenith_GraphContext& xContext, u_int uPinIndex, u_int uOrdinal,
+		Zenith_PropertyType eExpected);
+	Zenith_PropertyValue MakePinDefault(u_int uPinIndex, u_int uOrdinal, Zenith_PropertyType eExpected) const;
+	InputBinding* FindInputBinding(u_int uPinIndex, u_int uOrdinal);
+	const InputBinding* FindInputBinding(u_int uPinIndex, u_int uOrdinal) const;
+	const Zenith_PropertyValue* FindTestOverride(u_int uPinIndex, u_int uOrdinal) const;
+	const Zenith_PropertyValue* CheckedExtract(InputBinding& xBinding, const Zenith_PropertyValue& xValue,
+		Zenith_PropertyType eExpected, u_int uPinIndex);
+	void WarnBadAccess(u_int uPinIndex);
+
 	u_int m_uNodeID = 0;	// assigned by the owning graph at instantiation
+
+	// ★ Every one of these is constructed at capacity ZERO on purpose: the
+	// default Zenith_Vector constructor HEAP-ALLOCATES eight elements, and temp
+	// instances are built constantly (the registry's dynamic-pin probe,
+	// GetExecOutputCount, the validator, the builder, AddNode, the editor's param
+	// panel). An unresolved node must cost nothing.
+	Zenith_Vector<InputBinding> m_axInputs{ 0u };			// sized to the pin table at resolution
+	Zenith_Vector<OutputSlot> m_axOutputs{ 0u };			// sized to the pin table at resolution
+	Zenith_Vector<VariadicInput> m_axVariadicInputs{ 0u };	// empty unless a family is declared
+	Zenith_Vector<TestOverride> m_axTestOverrides{ 0u };		// empty unless SetInputForTest is called
+
+	// Pure nodes: the gather token this slot was computed for (0 = never).
+	// 64-BIT DELIBERATELY: the memo hits on "stamp >= current", so a 32-bit
+	// counter wrapping after 2^32 Executes would leave a pure node pinned to a
+	// stale memo FOREVER rather than merely re-evaluating once.
+	u_int64 m_ulMemoGather = 0;
+	u_int m_uCycleWarningCount = 0;
+	u_int m_uPureStatusWarningCount = 0;
+	u_int m_uBadAccessWarningCount = 0;
+	bool m_bEvaluating = false;			// pure nodes: re-entry flag (a runtime data cycle)
+	bool m_bMemoValid = false;
 };

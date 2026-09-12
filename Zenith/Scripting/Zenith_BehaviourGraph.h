@@ -273,6 +273,24 @@ public:
 	// otherwise (including a graph with no anchors - a no-op call).
 	GraphNodeStatus RunGraphCall(Zenith_GraphContext& xContext);
 
+	// THE PULL EVALUATOR (B-2). Returns the value latched in (uSrcNodeID,
+	// uSrcSlot), or null for "there is no value" - an UNSET slot, an unresolved
+	// or opaque source, a pure source that failed, or a pure source already on
+	// the evaluation stack (a runtime data cycle: one warning per instance, then
+	// the consumer takes its pin default).
+	//
+	// A PURE source is EXECUTED here, on demand, with no OnEnter/OnExit/OnAbort -
+	// a pure node has no chain lifecycle - and memoised for the current gather.
+	// Called only by Zenith_GraphNode::ResolveInput / TryGetInput.
+	const Zenith_PropertyValue* PullSlot(u_int uSrcNodeID, u_int uSrcSlot, Zenith_GraphContext& xContext);
+
+	// How many DATA edges InitialiseFromDefinition refused to bind (unresolved or
+	// opaque endpoint, unknown pin name, wrong role, a bare variadic family name,
+	// an ordinal past the family). Each one emitted a [GraphPin] line; this is the
+	// observable half, so a test can prove a malformed wire was skipped rather
+	// than merely prove some OTHER pin still worked.
+	u_int GetResolutionSkipCountForTest() const { return m_uResolutionSkipCount; }
+
 	Zenith_GraphNode* FindNode(u_int uNodeID);
 	u_int GetNodeCount() const { return m_axNodes.GetSize(); }
 	u_int GetUnresolvedCount() const { return m_uUnresolvedCount; }
@@ -302,6 +320,13 @@ private:
 	static u_int64 MakeChainKey(u_int uNodeID, u_int uPin) { return (static_cast<u_int64>(uNodeID) << 8) | static_cast<u_int64>(uPin & 0xFFu); }
 	void RunSourceNode(NodeInstance& xSource, Zenith_GraphContext& xContext);
 
+	// B-2 instantiation-time pin resolution, in two passes: every instance's
+	// binding/slot arrays are built from its descriptors FIRST (a data edge may
+	// name a node that appears later in the definition), then every data edge is
+	// resolved to (instance, slot) by NAME.
+	void BuildPinState(NodeInstance& xInstance);
+	void ResolveDataEdges(const Zenith_GraphDefinition& xDefinition);
+
 	Zenith_Vector<NodeInstance> m_axNodes;
 	Zenith_Vector<Zenith_GraphEdge> m_axEdges;
 	Zenith_HashMap<u_int64, u_int> m_xChainCursors;			// (anchor,pin) -> resume node
@@ -311,5 +336,16 @@ private:
 	Zenith_Vector<u_int> m_auRecentlyExecuted;
 	u_int m_uUnresolvedCount = 0;
 	u_int m_uExecutingNodeID = 0;
+	// The GATHER token. A token is MINTED and captured around every non-pure
+	// Execute this graph performs (RunChainFromPin's loop, RunSourceNode's gate,
+	// RunGraphCall's gate) and restored afterwards, so "memoised once per
+	// consumer Execute" is literal rather than a global counter read at pull
+	// time. Tokens only ever increase, which is what lets a flow node re-use a
+	// pure source its own sub-chain already evaluated (see PullSlot).
+	// 0 means "no Execute is in progress"; both reset in Shutdown.
+	// 64-BIT DELIBERATELY - see Zenith_GraphNode::m_ulMemoGather.
+	u_int64 m_ulCurrentGather = 0;
+	u_int64 m_ulNextGather = 0;
+	u_int m_uResolutionSkipCount = 0;	// data edges skipped at instantiation (see GetResolutionSkipCountForTest)
 	bool m_bChainStepCapHit = false;	// latched report: one log line per instance, not per walk
 };

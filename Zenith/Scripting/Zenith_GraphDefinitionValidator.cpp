@@ -35,42 +35,18 @@ namespace
 		Zenith_PropertyType m_eType = eGRAPH_PIN_TYPE_ANY;
 	};
 
-	enum ReadPropertyResult : u_int8
-	{
-		READ_PROPERTY_NOT_BOUND = 0,	// the descriptor names no property - legal, skipped
-		READ_PROPERTY_OK,
-		READ_PROPERTY_INVALID			// the named property is missing or is not a string
-	};
+	// The var-name read has ONE home, Zenith_GraphPin_ReadStringProperty in
+	// Zenith_GraphPinTable.h - the RUNTIME binds its pins through the same
+	// function (B-2), so "the var name the validator checked" and "the var name
+	// the runtime bound" cannot drift. These aliases keep the call sites below
+	// reading as they did.
+	typedef Zenith_GraphPinReadPropertyResult ReadPropertyResult;
+	constexpr ReadPropertyResult READ_PROPERTY_INVALID = GRAPH_PIN_READ_PROPERTY_INVALID;
 
-	// Reads a declared std::string property off a live instance THROUGH the
-	// property table. The tagged getters ASSERT on a type mismatch
-	// (Zenith_PropertySystem.h) and an assert DebugBreaks a developer, so the tag
-	// is checked BEFORE GetString: a mis-declared pin table yields a finding,
-	// never a break.
-	ReadPropertyResult ReadStringProperty(const Zenith_PropertyTable* pxTable, const Zenith_GraphNode* pxNode,
+	inline ReadPropertyResult ReadStringProperty(const Zenith_PropertyTable* pxTable, const Zenith_GraphNode* pxNode,
 		const char* szProperty, std::string& strOut)
 	{
-		if (szProperty == nullptr || szProperty[0] == '\0')
-		{
-			return READ_PROPERTY_NOT_BOUND;
-		}
-		if (pxTable == nullptr || pxNode == nullptr)
-		{
-			return READ_PROPERTY_INVALID;
-		}
-		const Zenith_ReflectedProperty* pxProperty = pxTable->FindProperty(szProperty);
-		if (pxProperty == nullptr || pxProperty->m_pfnGet == nullptr || pxProperty->m_eType != PROPERTY_TYPE_STRING)
-		{
-			return READ_PROPERTY_INVALID;
-		}
-		Zenith_PropertyValue xValue;
-		pxProperty->m_pfnGet(pxNode, xValue);
-		if (xValue.GetType() != PROPERTY_TYPE_STRING)
-		{
-			return READ_PROPERTY_INVALID;
-		}
-		strOut = xValue.GetString();
-		return READ_PROPERTY_OK;
+		return Zenith_GraphPin_ReadStringProperty(pxTable, pxNode, szProperty, strOut);
 	}
 
 	bool PinRoleReads(Zenith_GraphPinRole eRole)
