@@ -3,6 +3,7 @@
 #include "Scripting/Zenith_GraphNode.h"
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "Scripting/Zenith_GraphDefinitionValidator.h"
 #include "Collections/Zenith_Vector.h"
 #include "Collections/Zenith_HashMap.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -12,8 +13,9 @@
 //------------------------------------------------------------------------------
 // Zenith_GraphDefinition - the serializable description of a behaviour graph
 // (what a .bgraph asset stores): variable declarations, node descriptions
-// (type name + schema version + length-framed param blob), exec edges, and
-// editor layout (always serialized so non-tools round-trips preserve it).
+// (type name + schema version + length-framed param blob), exec edges, DATA
+// edges, and editor layout (always serialized so non-tools round-trips preserve
+// it).
 //
 // Unresolved-node preservation falls out of the storage model: the definition
 // keeps every node's type name, version, and param bytes verbatim whether or
@@ -25,6 +27,12 @@
 // Exec-graph rule (enforced by AddEdge): a (node, pin) has at most ONE
 // outgoing edge - chains are linear; branching is flow nodes with multiple
 // output pins.
+//
+// Data-graph rule (enforced by AddDataEdge): a data wire is keyed by its
+// DESTINATION - one incoming wire per input pin, unbounded fan-out from an
+// output pin. Data pins are named, not indexed: a wire stores the pin NAMES and
+// they are resolved to slots at instantiation, so an edge naming a pin no table
+// declares is PRESERVED here rather than refused.
 //------------------------------------------------------------------------------
 
 struct Zenith_GraphVariableDecl
@@ -47,12 +55,25 @@ struct Zenith_GraphNodeDef
 	Zenith_GraphNodeDef& operator=(const Zenith_GraphNodeDef&) = delete;
 };
 
+// An EXEC edge. There is no destination pin: a node has exactly one exec input,
+// so the destination is the node itself.
 struct Zenith_GraphEdge
 {
 	u_int m_uSrcNodeID = 0;
 	u_int m_uSrcPin = 0;
 	u_int m_uDstNodeID = 0;
-	u_int m_uDstPin = 0;
+};
+static_assert(sizeof(Zenith_GraphEdge) == 3 * sizeof(u_int), "Zenith_GraphEdge carries no destination pin");
+
+// A DATA edge (a typed wire). Endpoints name their pins by NAME, never by slot
+// index: names survive a node type gaining, losing or reordering pins, and an
+// unresolved node's wires survive a build that cannot instantiate it.
+struct Zenith_GraphDataEdge
+{
+	u_int m_uSrcNodeID = 0;
+	std::string m_strSrcPin;
+	u_int m_uDstNodeID = 0;
+	std::string m_strDstPin;
 };
 
 class Zenith_GraphDefinition
@@ -85,12 +106,29 @@ public:
 	// exec-output-count funnel, and the definition validator.
 	bool ApplyNodeParams(u_int uNodeID, Zenith_GraphNode* pxNode, const Zenith_GraphNodeTypeInfo& xInfo) const;
 
-	bool RemoveNode(u_int uNodeID);	// also removes touching edges
+	bool RemoveNode(u_int uNodeID);	// also removes touching exec AND data edges
 
 	// Enforces the one-outgoing-edge-per-(src,pin) exec rule and rejects
 	// self-loops/unknown endpoints. Returns false (logged) when rejected.
-	bool AddEdge(u_int uSrcNodeID, u_int uSrcPin, u_int uDstNodeID, u_int uDstPin);
+	bool AddEdge(u_int uSrcNodeID, u_int uSrcPin, u_int uDstNodeID);
 	bool RemoveEdge(u_int uSrcNodeID, u_int uSrcPin);
+
+	// Connects an OUTPUT pin to an INPUT pin by NAME. Refuses (Zenith_Error +
+	// false) a self-loop (same node, whatever the pin names), an unknown
+	// endpoint, a null/empty pin name, and a SECOND wire into the same
+	// (uDstNodeID, szDstPin) - one incoming wire per input, unbounded fan-out
+	// from an output.
+	//
+	// ★ It makes NO judgement about whether either type DECLARES such a pin.
+	// Names are resolved to slots at instantiation, and the type-agreement check
+	// over a wire belongs to the validator - so an edge naming a pin no table
+	// declares is authorable, storable and round-trippable.
+	bool AddDataEdge(u_int uSrcNodeID, const char* szSrcPin, u_int uDstNodeID, const char* szDstPin);
+
+	// Keyed by DESTINATION, because that is what the invariant makes unique.
+	// Returns false - silently, like RemoveEdge - when the name is null/empty or
+	// nothing matches.
+	bool RemoveDataEdge(u_int uDstNodeID, const char* szDstPin);
 
 	void Clear();
 
@@ -108,6 +146,14 @@ public:
 	u_int GetEdgeCount() const { return m_axEdges.GetSize(); }
 	const Zenith_GraphEdge& GetEdgeAt(u_int uIndex) const { return m_axEdges.Get(uIndex); }
 
+	u_int GetDataEdgeCount() const { return m_axDataEdges.GetSize(); }
+	const Zenith_GraphDataEdge& GetDataEdgeAt(u_int uIndex) const { return m_axDataEdges.Get(uIndex); }
+
+	// The wire feeding (uDstNodeID, szDstPin), or null when the input is
+	// unconnected (or the name is null/empty). The one-incoming-wire invariant is
+	// what lets this return a single edge.
+	const Zenith_GraphDataEdge* FindDataEdgeInto(u_int uDstNodeID, const char* szDstPin) const;
+
 	// Mutable variable access (graph editor): null when absent.
 	Zenith_GraphVariableDecl* FindVariableMutable(const char* szName);
 	bool RemoveVariable(const char* szName);
@@ -122,17 +168,26 @@ public:
 	//--------------------------------------------------------------------------
 
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
+
 	// Returns false (and leaves the definition cleared) on bad magic /
-	// unsupported version / malformed payload.
-	bool ReadFromDataStream(Zenith_DataStream& xStream);
+	// unsupported version / a stream that reported a read failure / any
+	// LOAD_SAFETY finding (see Zenith_GraphDefinitionValidator).
+	//
+	// pxOutLoadSafetyFindings, when non-null, receives the LOAD_SAFETY findings
+	// that caused a refusal: EMPTY on success, and empty on a refusal that did
+	// not come from the tier (bad magic, wrong version, a read failure). Without
+	// it the only observable is the bool, which cannot tell those apart.
+	bool ReadFromDataStream(Zenith_DataStream& xStream,
+		Zenith_Vector<Zenith_GraphValidationFinding>* pxOutLoadSafetyFindings = nullptr);
 
 	static constexpr u_int uGRAPH_MAGIC = 0x52474258u;	// "XBGR" ('Z' would collide with .zdata families; X = exec-graph)
-	static constexpr u_int uGRAPH_VERSION = 1;
+	static constexpr u_int uGRAPH_VERSION = 2;			// 2: exec edges lost their dead dst pin; data edges added
 
 private:
 	Zenith_Vector<Zenith_GraphVariableDecl> m_axVariables;
 	Zenith_Vector<Zenith_GraphNodeDef> m_axNodes;
 	Zenith_Vector<Zenith_GraphEdge> m_axEdges;
+	Zenith_Vector<Zenith_GraphDataEdge> m_axDataEdges;
 	Zenith_HashMap<u_int, Zenith_Maths::Vector2> m_xEditorPositions;
 	u_int m_uNextNodeID = 1;
 };

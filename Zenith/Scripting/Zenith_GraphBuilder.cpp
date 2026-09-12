@@ -147,9 +147,23 @@ Zenith_GraphBuilder& Zenith_GraphBuilder::Edge(u_int uSrcNodeID, u_int uSrcPin, 
 		m_bErrors = true;	// upstream Node() already reported
 		return *this;
 	}
-	if (!m_xDefinition.AddEdge(uSrcNodeID, uSrcPin, uDstNodeID, 0))
+	if (!m_xDefinition.AddEdge(uSrcNodeID, uSrcPin, uDstNodeID))
 	{
 		m_bErrors = true;	// AddEdge logs the rejection reason
+	}
+	return *this;
+}
+
+Zenith_GraphBuilder& Zenith_GraphBuilder::DataEdge(u_int uFrom, const char* szOutPin, u_int uTo, const char* szInPin)
+{
+	if (uFrom == 0 || uTo == 0)
+	{
+		m_bErrors = true;	// upstream Node() already reported
+		return *this;
+	}
+	if (!m_xDefinition.AddDataEdge(uFrom, szOutPin, uTo, szInPin))
+	{
+		m_bErrors = true;	// AddDataEdge logs the rejection reason
 	}
 	return *this;
 }

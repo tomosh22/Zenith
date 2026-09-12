@@ -1252,6 +1252,10 @@ ZENITH_TEST(GraphValidator, Validator_EmptyBindingIsSkipped)
 // the only way in is a loaded asset - ReadFromDataStream takes edges verbatim,
 // by design, so an unresolved/hand-edited graph round-trips. This builds that
 // payload directly.
+//
+// ★ AN ORPHAN IS DELIBERATELY NOT LOAD_SAFETY. It is inert at runtime
+// (FindSuccessor returns 0), so the READ must SUCCEED and the FULL tier reports
+// it - which is exactly what this test asserts, in the v2 byte layout.
 ZENITH_TEST(GraphValidator, Validator_OrphanEdgeIsError)
 {
 	EnsureValidatorTestNodesRegistered();
@@ -1265,11 +1269,11 @@ ZENITH_TEST(GraphValidator, Validator_OrphanEdgeIsError)
 	xStream << std::string("Test_ValOpaque");		//   type (opaque: no pin findings to mix in)
 	xStream << 1u;									//   type version
 	xStream << 0u;									//   param blob bytes
-	xStream << 1u;									// edges
+	xStream << 1u;									// exec edges
 	xStream << 1u;									//   src node 1
 	xStream << 0u;									//   src pin 0
 	xStream << 99u;									//   dst node 99 - NOT IN THE GRAPH
-	xStream << 0u;									//   dst pin
+	xStream << 0u;									// data edges
 	xStream << 4u;									// layout section bytes (just the count)
 	xStream << 0u;									// layout entry count
 	xStream.SetCursor(0);
@@ -1456,6 +1460,214 @@ ZENITH_TEST(GraphValidator, GraphBuilder_GraphNameReachesReport)
 		xBuilder.SetGraphName(nullptr);
 		ZENITH_ASSERT_STREQ(xBuilder.GetGraphName(), "<unnamed>");
 	}
+}
+
+//==============================================================================
+// The LOAD_SAFETY tier (B-1)
+//
+// ★ EVERY DEFECT HERE IS UNREACHABLE THROUGH THE AUTHORING API - AddEdge and
+// AddDataEdge refuse all three - so the fixtures are hand-built v2 STREAMS read
+// through ReadFromDataStream's findings out-param, and each asserts the RULE
+// rather than the bool. Every one is paired with a defect-free control from the
+// same emitter, so a refusal cannot be a malformed fixture.
+//==============================================================================
+
+namespace
+{
+	struct VSNode
+	{
+		u_int m_uNodeID = 0;
+		const char* m_szTypeName = "Test_ValOpaque";
+	};
+
+	struct VSEdge
+	{
+		u_int m_uSrc = 0;
+		u_int m_uSrcPin = 0;
+		u_int m_uDst = 0;
+	};
+
+	struct VSDataEdge
+	{
+		u_int m_uSrc = 0;
+		const char* m_szSrcPin = "";
+		u_int m_uDst = 0;
+		const char* m_szDstPin = "";
+	};
+
+	void EmitValidatorGraphStream(Zenith_DataStream& xStream,
+		const VSNode* pxNodes, u_int uNodeCount,
+		const VSEdge* pxEdges, u_int uEdgeCount,
+		const VSDataEdge* pxDataEdges, u_int uDataEdgeCount)
+	{
+		xStream << Zenith_GraphDefinition::uGRAPH_MAGIC;
+		xStream << Zenith_GraphDefinition::uGRAPH_VERSION;
+		xStream << 0u;								// variables
+		xStream << uNodeCount;
+		for (u_int u = 0; u < uNodeCount; ++u)
+		{
+			xStream << pxNodes[u].m_uNodeID;
+			xStream << std::string(pxNodes[u].m_szTypeName);
+			xStream << 1u;							//   type version
+			xStream << 0u;							//   param blob bytes
+		}
+		xStream << uEdgeCount;
+		for (u_int u = 0; u < uEdgeCount; ++u)
+		{
+			xStream << pxEdges[u].m_uSrc;
+			xStream << pxEdges[u].m_uSrcPin;
+			xStream << pxEdges[u].m_uDst;
+		}
+		xStream << uDataEdgeCount;
+		for (u_int u = 0; u < uDataEdgeCount; ++u)
+		{
+			xStream << pxDataEdges[u].m_uSrc;
+			xStream << std::string(pxDataEdges[u].m_szSrcPin);
+			xStream << pxDataEdges[u].m_uDst;
+			xStream << std::string(pxDataEdges[u].m_szDstPin);
+		}
+		xStream << 4u;								// layout block bytes (the count field alone)
+		xStream << 0u;								// layout entry count
+		xStream.SetCursor(0);
+	}
+}
+
+ZENITH_TEST(GraphValidator, Validator_LoadSafetyDuplicateExecSourceIsError)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	const VSNode axNodes[] = { { 1u }, { 2u }, { 3u } };
+
+	{	// control: two edges off two DIFFERENT pins
+		const VSEdge axEdges[] = { { 1u, 0u, 2u }, { 1u, 1u, 3u } };
+		Zenith_DataStream xStream;
+		EmitValidatorGraphStream(xStream, axNodes, 3u, axEdges, 2u, nullptr, 0u);
+		Zenith_GraphDefinition xDef;
+		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream, &axFindings));
+		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
+	}
+
+	const VSEdge axEdges[] = { { 1u, 0u, 2u }, { 1u, 0u, 3u } };
+	Zenith_DataStream xStream;
+	EmitValidatorGraphStream(xStream, axNodes, 3u, axEdges, 2u, nullptr, 0u);
+	Zenith_GraphDefinition xDef;
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_EXEC_SOURCE), 1u);
+	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_EXEC_SOURCE);
+	if (pxFinding)
+	{
+		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
+		ZENITH_ASSERT_EQ(pxFinding->m_uNodeID, 1u);
+	}
+}
+
+ZENITH_TEST(GraphValidator, Validator_LoadSafetyDuplicateDataInputIsError)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	const VSNode axNodes[] = { { 1u }, { 2u }, { 3u } };
+
+	{	// control: two wires into two DIFFERENT inputs
+		const VSDataEdge axData[] = { { 1u, "out", 3u, "in" }, { 2u, "out", 3u, "other" } };
+		Zenith_DataStream xStream;
+		EmitValidatorGraphStream(xStream, axNodes, 3u, nullptr, 0u, axData, 2u);
+		Zenith_GraphDefinition xDef;
+		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream, &axFindings));
+		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
+	}
+
+	const VSDataEdge axData[] = { { 1u, "out", 3u, "in" }, { 2u, "out", 3u, "in" } };
+	Zenith_DataStream xStream;
+	EmitValidatorGraphStream(xStream, axNodes, 3u, nullptr, 0u, axData, 2u);
+	Zenith_GraphDefinition xDef;
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT), 1u);
+	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT);
+	if (pxFinding)
+	{
+		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
+		ZENITH_ASSERT_STREQ(pxFinding->m_strPin.c_str(), "in");
+	}
+}
+
+// Node id 0 is never a node, so a wire naming it can never resolve.
+ZENITH_TEST(GraphValidator, Validator_LoadSafetyMalformedDataEdgeIsError)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	const VSNode axNodes[] = { { 1u }, { 2u } };
+
+	{	// control: the same wire with a real source node
+		const VSDataEdge axData[] = { { 1u, "out", 2u, "in" } };
+		Zenith_DataStream xStream;
+		EmitValidatorGraphStream(xStream, axNodes, 2u, nullptr, 0u, axData, 1u);
+		Zenith_GraphDefinition xDef;
+		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream, &axFindings));
+		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
+	}
+
+	const VSDataEdge axData[] = { { 0u, "out", 2u, "in" } };
+	Zenith_DataStream xStream;
+	EmitValidatorGraphStream(xStream, axNodes, 2u, nullptr, 0u, axData, 1u);
+	Zenith_GraphDefinition xDef;
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED), 1u);
+	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED);
+	if (pxFinding)
+	{
+		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
+	}
+}
+
+// The tier CLEARS its output, like the FULL entry point - a pre-seeded finding
+// must not survive a clean run.
+ZENITH_TEST(GraphValidator, Validator_LoadSafetyCleanDefinitionIsEmpty)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	{
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uSrc = xBuilder.Node("Test_ValPlain");
+		const u_int uDst = xBuilder.Node("Test_ValPlain");
+		xBuilder.Edge(uSrc, 0, uDst);
+		xBuilder.DataEdge(uSrc, "out", uDst, "in");
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	axFindings.PushBack(Zenith_GraphValidationFinding());	// pins the clear
+	Zenith_GraphDefinitionValidator::ValidateLoadSafety(xDef, axFindings);
+	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
+}
+
+// The two tiers agree because they share ONE body: a clean definition's FULL
+// report carries none of the three load-safety rules.
+ZENITH_TEST(GraphValidator, Validator_LoadSafetyRulesAbsentFromCleanFullReport)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	{
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uSrc = xBuilder.Node("Test_ValPlain");
+		const u_int uDst = xBuilder.Node("Test_ValPlain");
+		xBuilder.Edge(uSrc, 0, uDst);
+		xBuilder.DataEdge(uSrc, "out", uDst, "in");
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	RunValidate(xDef, axFindings);
+	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_EXEC_SOURCE), 0u);
+	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT), 0u);
+	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED), 0u);
 }
 
 #endif // ZENITH_TESTING

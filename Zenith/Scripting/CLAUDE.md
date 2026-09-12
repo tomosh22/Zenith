@@ -85,10 +85,26 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   reload: strict name+type match only); lists carry verbatim in both (always
   ad-hoc).
 - `Zenith_BehaviourGraph.{h,cpp}` — `Zenith_GraphDefinition` (variables, nodes
-  with length-framed param blobs, edges, editor positions; magic `XBGR`,
-  version 1; UNKNOWN node types preserved verbatim as unresolved nodes — a
-  future/missing node never silently drops from the asset) and the runtime
-  `Zenith_BehaviourGraph` instance (see "Execution model").
+  with length-framed param blobs, exec edges, DATA edges, editor positions; magic
+  `XBGR`, **version 2**; UNKNOWN node types preserved verbatim as unresolved
+  nodes — a future/missing node never silently drops from the asset) and the
+  runtime `Zenith_BehaviourGraph` instance (see "Execution model").
+  - **Block order on the wire:** magic, version, variables, nodes, exec edges
+    (`src`, `srcPin`, `dst` — three u_ints; a node has ONE exec input, so there
+    is no destination pin and `Zenith_GraphEdge` static_asserts its own size),
+    data edges (a plain count, then `src`, `srcPin` name, `dst`, `dstPin` name),
+    then the length-framed editor-layout block.
+  - **Data edges name their pins, never index them** (`Zenith_GraphDataEdge`
+    carries two `std::string`s). Names resolve to slots at instantiation, so a
+    wire naming a pin no table declares is PRESERVED by the definition rather
+    than refused. Authoring: `AddDataEdge(src, outPin, dst, inPin)` /
+    `RemoveDataEdge(dst, inPin)` / `FindDataEdgeInto(dst, inPin)` —
+    **one incoming wire per INPUT pin, unbounded fan-out from an OUTPUT**, which
+    is why every one of them is keyed by the DESTINATION.
+  - **Version equality is strict and there is NO version-1 reader.** A v1 payload
+    is refused whole. Any previously staged `dist/` package or installed APK
+    holds v1 bytes and must be re-packaged / re-installed, as for any schema bump
+    (nothing commits `.bgraph` files; every tools boot regenerates them).
 - `Zenith_Scripting.Tests.inl` — chain execution order/params, RUNNING
   suspension/resume, branch flow semantics, serialization round-trip,
   unresolved-node preservation, custom-event name matching, blackboard
@@ -366,10 +382,27 @@ tuning KEYS, asset paths / entity names, and any variable a node reaches through
 a hard-coded literal or a compile-time constant rather than a property — the last
 group is unbindable by construction and is satisfied by declaration alone.
 
-**Where it runs.** `Build()` (the boot-authoring path) and the editor panel on
-asset open (`OpenAsset` and `OpenAssetFresh`), on a parameter edit, and after a
-connection lands. A LOAD_SAFETY
-tier is a later unit.
+**Where it runs.** Two tiers, one validator.
+
+- **FULL** (`Validate`) — `Build()` (the boot-authoring path) and the editor
+  panel on asset open (`OpenAsset` and `OpenAssetFresh`), on a parameter edit,
+  and after a connection lands. Needs the node registry.
+- **LOAD_SAFETY** (`ValidateLoadSafety`) — run by
+  `Zenith_GraphDefinition::ReadFromDataStream` BEFORE anything instantiates the
+  definition, and **a finding makes the read return `false` with the definition
+  cleared** (the optional out-param hands the findings back, empty on success and
+  on a non-tier refusal such as the stream's read-failure flag). It takes NO
+  registry: every check is a pure fact about the definition. Scope is
+  **crash-class or silently-ambiguous** structure only — two exec edges leaving
+  one (node, pin) (the ambiguous one: the walk would silently take the first),
+  two data edges entering one (node, pin name), and a malformed data edge (zero
+  node id, self-loop, empty pin name). An `ORPHAN_EDGE` is deliberately NOT in
+  this tier: it is inert at runtime, so it stays a FULL-tier ERROR and a graph
+  carrying one still loads. `Validate` runs the load-safety checks first and
+  appends their findings, so one report covers both tiers.
+  - Two more checks belong here and are not written yet, each blocked on
+    machinery a later unit adds: **pure-data cycles** among resolved nodes (B-2)
+    and **static-vs-static type mismatch across a wire** (B-3).
 
 **The log line** — `LOG_CATEGORY_CORE`; an ERROR goes to `Zenith_Error` and a
 WARNING to `Zenith_Log`, and the summary line follows the errors count. The
@@ -382,10 +415,12 @@ WARNING to `Zenith_Log`, and the summary line follows the errors count. The
 
 `RULE` is one of `UNDECLARED_READ`, `TYPE_MISMATCH`, `PIN_OUT_OF_RANGE`,
 `ORPHAN_EDGE`, `DECLARED_UNUSED`, `LIST_NAME`, `SELF_READWRITE`,
-`INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID` (the last one fires when a
+`INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID`, and the three LOAD_SAFETY
+rules `DUPLICATE_EXEC_SOURCE`, `DUPLICATE_DATA_INPUT`, `DATA_EDGE_MALFORMED`
+(all ERROR). `PIN_BINDING_INVALID` fires when a
 pin names a property the class does not declare as a string — a mis-declared
 table is a warning, never a `DebugBreak`; the tagged property getters ASSERT, so
-the tag is checked before `GetString`). The `[GraphValidator]` prefix appears on
+the tag is checked before `GetString`. The `[GraphValidator]` prefix appears on
 no other log line in the repo, so the whole report is one `Select-String` over
 `<exe dir>/Logs/zenith_*.log`.
 
@@ -404,6 +439,11 @@ the fourth.
   `m_bWarnedUnresolved` latch so a hot chain doesn't spam the log), round-trips
   on save, and renders error-red in the editor. Pinned by unit test and by the windowed DP tests
   `Test_GraphEditorLiveAuthoring` / `Test_GraphEditorScreenshotTour`.
+- **A data wire is keyed by its DESTINATION.** One incoming wire per input pin,
+  unbounded fan-out from an output pin — enforced by `AddDataEdge` at authoring
+  and by the LOAD_SAFETY tier at read, so no code downstream has to cope with two
+  values arriving at one input. `RemoveNode` drops every touching wire, exec and
+  data alike.
 - **Hot reload happens only at the main loop's safe point** (never
   mid-dispatch — asserted via `Zenith_GraphComponent::IsDispatchInProgress`),
   is atomic (a failed parse keeps the old graph live), and migrates blackboard

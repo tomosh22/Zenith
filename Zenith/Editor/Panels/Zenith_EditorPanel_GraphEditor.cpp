@@ -687,7 +687,7 @@ namespace
 			return false;
 		}
 
-		if (!pxDef->AddEdge(uSrcNodeID, uSrcPin, uDstNodeID, 0))
+		if (!pxDef->AddEdge(uSrcNodeID, uSrcPin, uDstNodeID))
 		{
 			// AddEdge logs its own reason; this is the on-screen half.
 			snprintf(acRefusal, sizeof(acRefusal),
@@ -1138,7 +1138,16 @@ void Zenith_GraphEditorPanel::Save()
 			Zenith_DataStream xCopy;
 			g_xGraphEditor.m_pxAsset->GetDefinition().WriteToDataStream(xCopy);
 			xCopy.SetCursor(0);
-			pxCached->GetDefinition().ReadFromDataStream(xCopy);
+			// These bytes came out of the writer one line up, so this cannot fail
+			// today - which is exactly why the return is checked: a future format
+			// defect should be loud here rather than leave the cached definition
+			// silently EMPTY (ReadFromDataStream clears on refusal).
+			if (!pxCached->GetDefinition().ReadFromDataStream(xCopy))
+			{
+				Zenith_Error(LOG_CATEGORY_EDITOR,
+					"GraphEditor: the definition just written for '%s' could not be read back - the cached asset is now empty",
+					g_xGraphEditor.m_strAssetPath.c_str());
+			}
 			delete g_xGraphEditor.m_pxAsset;
 			g_xGraphEditor.m_pxAsset = pxCached;
 			g_xGraphEditor.m_bOwnsAsset = false;

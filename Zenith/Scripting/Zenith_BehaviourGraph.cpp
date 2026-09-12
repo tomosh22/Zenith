@@ -124,6 +124,14 @@ bool Zenith_GraphDefinition::RemoveNode(u_int uNodeID)
 					m_axEdges.Remove(uEdge - 1);
 				}
 			}
+			for (u_int uEdge = m_axDataEdges.GetSize(); uEdge > 0; --uEdge)
+			{
+				const Zenith_GraphDataEdge& xEdge = m_axDataEdges.Get(uEdge - 1);
+				if (xEdge.m_uSrcNodeID == uNodeID || xEdge.m_uDstNodeID == uNodeID)
+				{
+					m_axDataEdges.Remove(uEdge - 1);
+				}
+			}
 			m_xEditorPositions.Remove(uNodeID);
 			return true;
 		}
@@ -131,7 +139,7 @@ bool Zenith_GraphDefinition::RemoveNode(u_int uNodeID)
 	return false;
 }
 
-bool Zenith_GraphDefinition::AddEdge(u_int uSrcNodeID, u_int uSrcPin, u_int uDstNodeID, u_int uDstPin)
+bool Zenith_GraphDefinition::AddEdge(u_int uSrcNodeID, u_int uSrcPin, u_int uDstNodeID)
 {
 	if (uSrcNodeID == uDstNodeID)
 	{
@@ -157,9 +165,80 @@ bool Zenith_GraphDefinition::AddEdge(u_int uSrcNodeID, u_int uSrcPin, u_int uDst
 	xEdge.m_uSrcNodeID = uSrcNodeID;
 	xEdge.m_uSrcPin = uSrcPin;
 	xEdge.m_uDstNodeID = uDstNodeID;
-	xEdge.m_uDstPin = uDstPin;
 	m_axEdges.PushBack(xEdge);
 	return true;
+}
+
+bool Zenith_GraphDefinition::AddDataEdge(u_int uSrcNodeID, const char* szSrcPin, u_int uDstNodeID, const char* szDstPin)
+{
+	if (szSrcPin == nullptr || szSrcPin[0] == '\0' || szDstPin == nullptr || szDstPin[0] == '\0')
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "GraphDefinition: data edge with an empty pin name rejected (%u -> %u)",
+			uSrcNodeID, uDstNodeID);
+		return false;
+	}
+	// A data self-loop is the NODE pair, whatever the pin names say: a node
+	// feeding its own input is a one-node cycle either way.
+	if (uSrcNodeID == uDstNodeID)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "GraphDefinition: self-loop data edge rejected (node %u)", uSrcNodeID);
+		return false;
+	}
+	if (!FindNodeDef(uSrcNodeID) || !FindNodeDef(uDstNodeID))
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "GraphDefinition: data edge endpoints unknown (%u -> %u)", uSrcNodeID, uDstNodeID);
+		return false;
+	}
+	if (FindDataEdgeInto(uDstNodeID, szDstPin) != nullptr)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE,
+			"GraphDefinition: (node %u, pin '%s') already has an incoming data edge - one wire per input",
+			uDstNodeID, szDstPin);
+		return false;
+	}
+
+	Zenith_GraphDataEdge xEdge;
+	xEdge.m_uSrcNodeID = uSrcNodeID;
+	xEdge.m_strSrcPin = szSrcPin;
+	xEdge.m_uDstNodeID = uDstNodeID;
+	xEdge.m_strDstPin = szDstPin;
+	m_axDataEdges.PushBack(xEdge);
+	return true;
+}
+
+bool Zenith_GraphDefinition::RemoveDataEdge(u_int uDstNodeID, const char* szDstPin)
+{
+	if (szDstPin == nullptr || szDstPin[0] == '\0')
+	{
+		return false;
+	}
+	for (u_int u = 0; u < m_axDataEdges.GetSize(); ++u)
+	{
+		const Zenith_GraphDataEdge& xEdge = m_axDataEdges.Get(u);
+		if (xEdge.m_uDstNodeID == uDstNodeID && xEdge.m_strDstPin == szDstPin)
+		{
+			m_axDataEdges.Remove(u);
+			return true;
+		}
+	}
+	return false;
+}
+
+const Zenith_GraphDataEdge* Zenith_GraphDefinition::FindDataEdgeInto(u_int uDstNodeID, const char* szDstPin) const
+{
+	if (szDstPin == nullptr || szDstPin[0] == '\0')
+	{
+		return nullptr;
+	}
+	for (u_int u = 0; u < m_axDataEdges.GetSize(); ++u)
+	{
+		const Zenith_GraphDataEdge& xEdge = m_axDataEdges.Get(u);
+		if (xEdge.m_uDstNodeID == uDstNodeID && xEdge.m_strDstPin == szDstPin)
+		{
+			return &m_axDataEdges.Get(u);
+		}
+	}
+	return nullptr;
 }
 
 bool Zenith_GraphDefinition::RemoveEdge(u_int uSrcNodeID, u_int uSrcPin)
@@ -181,6 +260,7 @@ void Zenith_GraphDefinition::Clear()
 	m_axVariables.Clear();
 	m_axNodes.Clear();
 	m_axEdges.Clear();
+	m_axDataEdges.Clear();
 	m_xEditorPositions.Clear();
 	m_uNextNodeID = 1;
 }
@@ -273,7 +353,8 @@ void Zenith_GraphDefinition::WriteToDataStream(Zenith_DataStream& xStream) const
 		}
 	}
 
-	// Edges
+	// Exec edges - three u_ints each (a node has one exec input, so there is no
+	// destination pin to store).
 	const u_int uEdgeCount = m_axEdges.GetSize();
 	xStream << uEdgeCount;
 	for (u_int u = 0; u < uEdgeCount; ++u)
@@ -282,7 +363,21 @@ void Zenith_GraphDefinition::WriteToDataStream(Zenith_DataStream& xStream) const
 		xStream << xEdge.m_uSrcNodeID;
 		xStream << xEdge.m_uSrcPin;
 		xStream << xEdge.m_uDstNodeID;
-		xStream << xEdge.m_uDstPin;
+	}
+
+	// Data edges - a plain count, exactly like the exec block. Deliberately NOT
+	// length-framed: a frame exists to let a reader SKIP a block it cannot parse,
+	// and there is no such reader (the version check is strict equality and no
+	// v1 reader exists).
+	const u_int uDataEdgeCount = m_axDataEdges.GetSize();
+	xStream << uDataEdgeCount;
+	for (u_int u = 0; u < uDataEdgeCount; ++u)
+	{
+		const Zenith_GraphDataEdge& xEdge = m_axDataEdges.Get(u);
+		xStream << xEdge.m_uSrcNodeID;
+		xStream << xEdge.m_strSrcPin;
+		xStream << xEdge.m_uDstNodeID;
+		xStream << xEdge.m_strDstPin;
 	}
 
 	// Editor layout - length-framed (runtime loaders may skip; we always read
@@ -308,9 +403,21 @@ void Zenith_GraphDefinition::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream.SetCursor(ulLayoutEndCursor);
 }
 
-bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream)
+bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream,
+	Zenith_Vector<Zenith_GraphValidationFinding>* pxOutLoadSafetyFindings)
 {
 	Clear();
+	if (pxOutLoadSafetyFindings != nullptr)
+	{
+		pxOutLoadSafetyFindings->Clear();
+	}
+
+	// ★ THE CALLER'S STREAM MUST BE POSITIONED AT THE DEFINITION WITH A CLEAN
+	// READ-FAILURE FLAG. Every caller reaches here through SetCursor(0) or
+	// ReadFromFile, both of which clear it (Zenith_DataStream.h) - verified for
+	// Zenith_AssetRegistry.cpp, Zenith_GraphReload.cpp and the graph editor's
+	// serialize-copy. A stream handed over with the flag already set would be
+	// refused below as if THIS payload were corrupt.
 
 	u_int uMagic = 0;
 	xStream >> uMagic;
@@ -327,8 +434,18 @@ bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream)
 		return false;
 	}
 
+	// Every count below is BUDGETED against the bytes that remain before it is
+	// used as a loop bound: an overrun read asserts (which DebugBreaks a headless
+	// batch) long before it reports, so a corrupt count must never reach the loop.
+	// The minimums are the smallest legal encoding of one record.
 	u_int uVariableCount = 0;
 	xStream >> uVariableCount;
+	if (uVariableCount > xStream.GetRemainingBytes() / sizeof(u_int))
+	{
+		xStream.MarkCorrupt("GraphDefinition: variable count exceeds the bytes that remain");
+		Clear();
+		return false;
+	}
 	for (u_int u = 0; u < uVariableCount; ++u)
 	{
 		Zenith_GraphVariableDecl xDecl;
@@ -339,6 +456,12 @@ bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	u_int uNodeCount = 0;
 	xStream >> uNodeCount;
+	if (uNodeCount > xStream.GetRemainingBytes() / (4u * sizeof(u_int)))	// id + name length + version + blob length
+	{
+		xStream.MarkCorrupt("GraphDefinition: node count exceeds the bytes that remain");
+		Clear();
+		return false;
+	}
 	u_int uMaxNodeID = 0;
 	for (u_int u = 0; u < uNodeCount; ++u)
 	{
@@ -350,6 +473,16 @@ bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> uBlobBytes;
 		if (uBlobBytes > 0)
 		{
+			// ★ BUDGET BEFORE THE COPY. This memcpy reads straight out of the
+			// source buffer, and the SkipBytes below CLAMPS without reporting, so
+			// an over-long blob length would be an unbounded overread that nothing
+			// ever flagged.
+			if (uBlobBytes > xStream.GetRemainingBytes())
+			{
+				xStream.MarkCorrupt("GraphDefinition: node param blob is longer than the bytes that remain");
+				Clear();
+				return false;
+			}
 			// Copy the param bytes verbatim into the def's own stream (cursor
 			// marks the populated extent - the unresolved-preservation idiom).
 			xDef.m_xParamBlob.WriteData(static_cast<const uint8_t*>(xStream.GetData()) + xStream.GetCursor(), uBlobBytes);
@@ -362,21 +495,56 @@ bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	u_int uEdgeCount = 0;
 	xStream >> uEdgeCount;
+	if (uEdgeCount > xStream.GetRemainingBytes() / (3u * sizeof(u_int)))
+	{
+		xStream.MarkCorrupt("GraphDefinition: exec edge count exceeds the bytes that remain");
+		Clear();
+		return false;
+	}
 	for (u_int u = 0; u < uEdgeCount; ++u)
 	{
 		Zenith_GraphEdge xEdge;
 		xStream >> xEdge.m_uSrcNodeID;
 		xStream >> xEdge.m_uSrcPin;
 		xStream >> xEdge.m_uDstNodeID;
-		xStream >> xEdge.m_uDstPin;
 		m_axEdges.PushBack(xEdge);
+	}
+
+	u_int uDataEdgeCount = 0;
+	xStream >> uDataEdgeCount;
+	if (uDataEdgeCount > xStream.GetRemainingBytes() / (4u * sizeof(u_int)))	// src + name length + dst + name length
+	{
+		xStream.MarkCorrupt("GraphDefinition: data edge count exceeds the bytes that remain");
+		Clear();
+		return false;
+	}
+	for (u_int u = 0; u < uDataEdgeCount; ++u)
+	{
+		Zenith_GraphDataEdge xEdge;
+		xStream >> xEdge.m_uSrcNodeID;
+		xStream >> xEdge.m_strSrcPin;
+		xStream >> xEdge.m_uDstNodeID;
+		xStream >> xEdge.m_strDstPin;
+		m_axDataEdges.PushBack(xEdge);
 	}
 
 	u_int uLayoutBytes = 0;
 	xStream >> uLayoutBytes;
+	if (uLayoutBytes > xStream.GetRemainingBytes())
+	{
+		xStream.MarkCorrupt("GraphDefinition: editor layout block is longer than the bytes that remain");
+		Clear();
+		return false;
+	}
 	const uint64_t ulLayoutEnd = xStream.GetCursor() + uLayoutBytes;
 	u_int uLayoutCount = 0;
 	xStream >> uLayoutCount;
+	if (uLayoutCount > xStream.GetRemainingBytes() / (3u * sizeof(u_int)))
+	{
+		xStream.MarkCorrupt("GraphDefinition: editor layout entry count exceeds the bytes that remain");
+		Clear();
+		return false;
+	}
 	for (u_int u = 0; u < uLayoutCount; ++u)
 	{
 		u_int uNodeID = 0;
@@ -387,9 +555,43 @@ bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> fY;
 		m_xEditorPositions[uNodeID] = Zenith_Maths::Vector2(fX, fY);
 	}
+
+	// ★ LATCH THE FLAG BEFORE THE SEEK. SetCursor is one of the stream's two
+	// read-failure RESET points, so asking after the seek would always answer
+	// "clean" however badly the payload above parsed.
+	const bool bFailedBeforeSeek = xStream.HasReadFailure();
 	if (xStream.GetCursor() != ulLayoutEnd)
 	{
 		xStream.SetCursor(ulLayoutEnd);
+	}
+	if (bFailedBeforeSeek || xStream.HasReadFailure())
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "GraphDefinition: the stream reported a read failure - refusing a half-built definition");
+		Clear();
+		return false;
+	}
+
+	// LOAD_SAFETY tier: crash-class or silently-ambiguous structure only. An
+	// ORPHAN edge is deliberately NOT here - it is inert at runtime
+	// (FindSuccessor returns 0) and the FULL tier reports it.
+	Zenith_Vector<Zenith_GraphValidationFinding> axLoadSafety;
+	Zenith_GraphDefinitionValidator::ValidateLoadSafety(*this, axLoadSafety);
+	if (axLoadSafety.GetSize() > 0)
+	{
+		for (u_int u = 0; u < axLoadSafety.GetSize(); ++u)
+		{
+			const Zenith_GraphValidationFinding& xFinding = axLoadSafety.Get(u);
+			Zenith_Error(LOG_CATEGORY_CORE, "GraphDefinition: load-safety refusal node=%u rule=%s | %s",
+				xFinding.m_uNodeID,
+				Zenith_GraphDefinitionValidator::GetRuleName(xFinding.m_eRule),
+				xFinding.m_strWhat.c_str());
+			if (pxOutLoadSafetyFindings != nullptr)
+			{
+				pxOutLoadSafetyFindings->PushBack(xFinding);
+			}
+		}
+		Clear();
+		return false;
 	}
 
 	return true;

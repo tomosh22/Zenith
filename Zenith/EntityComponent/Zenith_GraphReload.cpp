@@ -102,7 +102,15 @@ namespace
 		Zenith_DataStream xCopy;
 		pxFresh->GetDefinition().WriteToDataStream(xCopy);
 		xCopy.SetCursor(0);
-		pxCached->GetDefinition().ReadFromDataStream(xCopy);
+		// The bytes came out of the writer one line up, so this cannot fail
+		// today; checked anyway so a future format defect is loud rather than
+		// leaving the live definition EMPTY (a refusal clears it).
+		if (!pxCached->GetDefinition().ReadFromDataStream(xCopy))
+		{
+			Zenith_Error(LOG_CATEGORY_EDITOR,
+				"GraphReload: the definition just written for '%s' could not be read back - the live graph is now empty",
+				strNormalizedPath.c_str());
+		}
 		delete pxFresh;
 		return true;
 	}

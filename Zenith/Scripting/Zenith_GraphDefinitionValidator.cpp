@@ -159,12 +159,104 @@ namespace
 // Zenith_GraphDefinitionValidator
 //==============================================================================
 
+void Zenith_GraphDefinitionValidator::AppendLoadSafetyFindings(const Zenith_GraphDefinition& xDefinition,
+	Zenith_Vector<Zenith_GraphValidationFinding>& axOut)
+{
+	//--------------------------------------------------------------------------
+	// Two exec edges leaving one (node, pin). AddEdge refuses to create one, so
+	// the only way in is a loaded asset - and the walk would silently take the
+	// first, which is a wiring the author cannot see and cannot predict.
+	//--------------------------------------------------------------------------
+	for (u_int u = 0; u < xDefinition.GetEdgeCount(); ++u)
+	{
+		const Zenith_GraphEdge& xEdge = xDefinition.GetEdgeAt(u);
+		for (u_int uEarlier = 0; uEarlier < u; ++uEarlier)
+		{
+			const Zenith_GraphEdge& xOther = xDefinition.GetEdgeAt(uEarlier);
+			if (xOther.m_uSrcNodeID != xEdge.m_uSrcNodeID || xOther.m_uSrcPin != xEdge.m_uSrcPin)
+			{
+				continue;
+			}
+			const Zenith_GraphNodeDef* pxSrc = xDefinition.FindNodeDef(xEdge.m_uSrcNodeID);
+			AddFinding(axOut, true, GRAPH_VALIDATION_RULE_DUPLICATE_EXEC_SOURCE,
+				xEdge.m_uSrcNodeID, pxSrc ? pxSrc->m_strTypeName.c_str() : "", "", "",
+				"a second exec edge leaves (node %u, pin %u) - which successor runs would be arbitrary",
+				xEdge.m_uSrcNodeID, xEdge.m_uSrcPin);
+			break;	// one finding per EXTRA edge, not one per pair
+		}
+	}
+
+	//--------------------------------------------------------------------------
+	// Two data edges entering one (node, pin name): one incoming wire per input.
+	//--------------------------------------------------------------------------
+	for (u_int u = 0; u < xDefinition.GetDataEdgeCount(); ++u)
+	{
+		const Zenith_GraphDataEdge& xEdge = xDefinition.GetDataEdgeAt(u);
+		for (u_int uEarlier = 0; uEarlier < u; ++uEarlier)
+		{
+			const Zenith_GraphDataEdge& xOther = xDefinition.GetDataEdgeAt(uEarlier);
+			if (xOther.m_uDstNodeID != xEdge.m_uDstNodeID || xOther.m_strDstPin != xEdge.m_strDstPin)
+			{
+				continue;
+			}
+			const Zenith_GraphNodeDef* pxDst = xDefinition.FindNodeDef(xEdge.m_uDstNodeID);
+			AddFinding(axOut, true, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT,
+				xEdge.m_uDstNodeID, pxDst ? pxDst->m_strTypeName.c_str() : "", xEdge.m_strDstPin.c_str(), "",
+				"a second data edge enters (node %u, pin '%s') - an input takes ONE wire",
+				xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str());
+			break;
+		}
+	}
+
+	//--------------------------------------------------------------------------
+	// Malformed data edges. A self-loop is the NODE pair, whatever the pin names
+	// say - the same reading AddDataEdge uses.
+	//--------------------------------------------------------------------------
+	for (u_int u = 0; u < xDefinition.GetDataEdgeCount(); ++u)
+	{
+		const Zenith_GraphDataEdge& xEdge = xDefinition.GetDataEdgeAt(u);
+		const char* szWhy = nullptr;
+		if (xEdge.m_uSrcNodeID == 0 || xEdge.m_uDstNodeID == 0)
+		{
+			szWhy = "names node id 0, which is never a node";
+		}
+		else if (xEdge.m_uSrcNodeID == xEdge.m_uDstNodeID)
+		{
+			szWhy = "is a self-loop - a node cannot feed its own input";
+		}
+		else if (xEdge.m_strSrcPin.empty() || xEdge.m_strDstPin.empty())
+		{
+			szWhy = "carries an empty pin name, which can never resolve to a pin";
+		}
+		if (szWhy == nullptr)
+		{
+			continue;
+		}
+		const Zenith_GraphNodeDef* pxDst = xDefinition.FindNodeDef(xEdge.m_uDstNodeID);
+		AddFinding(axOut, true, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED,
+			xEdge.m_uDstNodeID, pxDst ? pxDst->m_strTypeName.c_str() : "", xEdge.m_strDstPin.c_str(), "",
+			"data edge %u:'%s' -> %u:'%s' %s",
+			xEdge.m_uSrcNodeID, xEdge.m_strSrcPin.c_str(), xEdge.m_uDstNodeID, xEdge.m_strDstPin.c_str(), szWhy);
+	}
+}
+
+void Zenith_GraphDefinitionValidator::ValidateLoadSafety(const Zenith_GraphDefinition& xDefinition,
+	Zenith_Vector<Zenith_GraphValidationFinding>& axOut)
+{
+	axOut.Clear();
+	AppendLoadSafetyFindings(xDefinition, axOut);
+}
+
 void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDefinition,
 	const Zenith_GraphNodeRegistry& xRegistry, const char* szGraphName,
 	Zenith_Vector<Zenith_GraphValidationFinding>& axOut)
 {
 	(void)szGraphName;	// the graph name travels on the LOG line, not on a per-node finding
 	axOut.Clear();
+
+	// The LOAD_SAFETY subset first, through the APPENDING helper - one report
+	// covers both tiers, and the clearing entry point is never called from here.
+	AppendLoadSafetyFindings(xDefinition, axOut);
 
 	//--------------------------------------------------------------------------
 	// Pass 0 - resolve every node's pin bindings against its param blob.
@@ -555,6 +647,9 @@ const char* Zenith_GraphDefinitionValidator::GetRuleName(Zenith_GraphValidationR
 	case GRAPH_VALIDATION_RULE_SELF_READWRITE:           return "SELF_READWRITE";
 	case GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED: return "INSTANCE_TYPE_UNRESOLVED";
 	case GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID:      return "PIN_BINDING_INVALID";
+	case GRAPH_VALIDATION_RULE_DUPLICATE_EXEC_SOURCE:    return "DUPLICATE_EXEC_SOURCE";
+	case GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT:     return "DUPLICATE_DATA_INPUT";
+	case GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED:      return "DATA_EDGE_MALFORMED";
 	default:                                             return "UNKNOWN";
 	}
 }

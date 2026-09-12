@@ -321,10 +321,10 @@ ZENITH_TEST(BehaviourGraph, ChainExecutionOrderAndParams)
 		xDef.SetNodeParamsFromInstance(uCounterB, &xTemp);
 	}
 
-	ZENITH_ASSERT_TRUE(xDef.AddEdge(uSource, 0, uCounterA, 0));
-	ZENITH_ASSERT_TRUE(xDef.AddEdge(uCounterA, 0, uCounterB, 0));
+	ZENITH_ASSERT_TRUE(xDef.AddEdge(uSource, 0, uCounterA));
+	ZENITH_ASSERT_TRUE(xDef.AddEdge(uCounterA, 0, uCounterB));
 	// One-edge-per-pin rule.
-	ZENITH_ASSERT_FALSE(xDef.AddEdge(uCounterA, 0, uSource, 0));
+	ZENITH_ASSERT_FALSE(xDef.AddEdge(uCounterA, 0, uSource));
 
 	Zenith_BehaviourGraph xGraph;
 	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
@@ -361,9 +361,9 @@ ZENITH_TEST(BehaviourGraph, RunningSuspendsAndResumesWithoutReexecuting)
 		xWait.m_iTicks = 3;
 		xDef.SetNodeParamsFromInstance(uWait, &xWait);
 	}
-	xDef.AddEdge(uSource, 0, uPre, 0);
-	xDef.AddEdge(uPre, 0, uWait, 0);
-	xDef.AddEdge(uWait, 0, uPost, 0);
+	xDef.AddEdge(uSource, 0, uPre);
+	xDef.AddEdge(uPre, 0, uWait);
+	xDef.AddEdge(uWait, 0, uPost);
 
 	Zenith_BehaviourGraph xGraph;
 	xGraph.InitialiseFromDefinition(xDef);
@@ -408,9 +408,9 @@ ZENITH_TEST(BehaviourGraph, BranchFlowNodeRunsCorrectPinAndStopsChain)
 		xTemp.m_strCounterName = "false";
 		xDef.SetNodeParamsFromInstance(uFalse, &xTemp);
 	}
-	xDef.AddEdge(uSource, 0, uBranch, 0);
-	xDef.AddEdge(uBranch, 0, uTrue, 0);
-	xDef.AddEdge(uBranch, 1, uFalse, 0);
+	xDef.AddEdge(uSource, 0, uBranch);
+	xDef.AddEdge(uBranch, 0, uTrue);
+	xDef.AddEdge(uBranch, 1, uFalse);
 	xDef.DeclareVariable("condition", Zenith_PropertyValue());
 
 	Zenith_BehaviourGraph xGraph;
@@ -443,13 +443,20 @@ ZENITH_TEST(BehaviourGraph, DefinitionSerializationRoundTrip)
 
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uCounter = xDef.AddNode("Test_Counter");
+	const u_int uSecond = xDef.AddNode("Test_Counter");
 	{
 		GraphTestCounterNode xTemp;
 		xTemp.m_strCounterName = "roundtrip";
 		xDef.SetNodeParamsFromInstance(uCounter, &xTemp);
 	}
-	xDef.AddEdge(uSource, 0, uCounter, 0);
+	xDef.AddEdge(uSource, 0, uCounter);
 	xDef.SetNodeEditorPos(uCounter, Zenith_Maths::Vector2(120.0f, 40.0f));
+
+	// Two DATA edges fanning out of ONE output into two different inputs - and
+	// one of them names a pin no table declares, which is legal by design (names
+	// resolve at instantiation, so an unknown one is preserved, not dropped).
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSource, "value", uCounter, "in"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSource, "value", uSecond, "no_such_pin"));
 
 	Zenith_DataStream xStream;
 	xDef.WriteToDataStream(xStream);
@@ -464,8 +471,27 @@ ZENITH_TEST(BehaviourGraph, DefinitionSerializationRoundTrip)
 	ZENITH_ASSERT_EQ(uReadSentinel, 0xCAFEF00Du);
 
 	ZENITH_ASSERT_EQ(xLoaded.GetVariableCount(), 1u);
-	ZENITH_ASSERT_EQ(xLoaded.GetNodeCount(), 2u);
+	ZENITH_ASSERT_EQ(xLoaded.GetNodeCount(), 3u);
 	ZENITH_ASSERT_EQ(xLoaded.GetEdgeCount(), 1u);
+
+	// The data-edge block round-trips whole, pin names intact, found by
+	// DESTINATION - which is the key the one-wire-per-input invariant makes unique.
+	ZENITH_ASSERT_EQ(xLoaded.GetDataEdgeCount(), 2u);
+	const Zenith_GraphDataEdge* pxIntoCounter = xLoaded.FindDataEdgeInto(uCounter, "in");
+	ZENITH_ASSERT_NOT_NULL(pxIntoCounter);
+	if (pxIntoCounter != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxIntoCounter->m_uSrcNodeID, uSource);
+		ZENITH_ASSERT_STREQ(pxIntoCounter->m_strSrcPin.c_str(), "value");
+	}
+	const Zenith_GraphDataEdge* pxIntoSecond = xLoaded.FindDataEdgeInto(uSecond, "no_such_pin");
+	ZENITH_ASSERT_NOT_NULL(pxIntoSecond);
+	if (pxIntoSecond != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxIntoSecond->m_uSrcNodeID, uSource);
+		ZENITH_ASSERT_STREQ(pxIntoSecond->m_strSrcPin.c_str(), "value");
+	}
+
 	Zenith_Maths::Vector2 xPos;
 	ZENITH_ASSERT_TRUE(xLoaded.GetNodeEditorPos(uCounter, xPos));
 	ZENITH_ASSERT_EQ_FLOAT(xPos.x, 120.0f, 0.0001f);
@@ -582,8 +608,8 @@ ZENITH_TEST(BehaviourGraph, UnresolvedNodePreservedAndFailsChainGracefully)
 	const u_int uMissing = xDef.AddNode("Test_DoesNotExistInThisBuild");
 	const u_int uAfter = xDef.AddNode("Test_Counter");
 	ZENITH_ASSERT_NE(uMissing, 0u);	// added as unresolved, not dropped
-	xDef.AddEdge(uSource, 0, uMissing, 0);
-	xDef.AddEdge(uMissing, 0, uAfter, 0);
+	xDef.AddEdge(uSource, 0, uMissing);
+	xDef.AddEdge(uMissing, 0, uAfter);
 
 	// Serialization round-trips the unresolved node verbatim.
 	Zenith_DataStream xStream;
@@ -626,8 +652,8 @@ ZENITH_TEST(BehaviourGraph, CustomEventsMatchByName)
 		xCounter.m_strCounterName = "closed";
 		xDef.SetNodeParamsFromInstance(uCounterB, &xCounter);
 	}
-	xDef.AddEdge(uSourceA, 0, uCounterA, 0);
-	xDef.AddEdge(uSourceB, 0, uCounterB, 0);
+	xDef.AddEdge(uSourceA, 0, uCounterA);
+	xDef.AddEdge(uSourceB, 0, uCounterB);
 
 	Zenith_BehaviourGraph xGraph;
 	xGraph.InitialiseFromDefinition(xDef);
@@ -742,7 +768,7 @@ namespace
 		xTemp.m_strTag = szTag;
 		xTemp.m_iRunningTicks = iRunningTicks;
 		xDef.SetNodeParamsFromInstance(uProbe, &xTemp);
-		xDef.AddEdge(uAnchorID, uPin, uProbe, 0);
+		xDef.AddEdge(uAnchorID, uPin, uProbe);
 		return uProbe;
 	}
 }
@@ -808,9 +834,9 @@ ZENITH_TEST(BehaviourGraph, SelectorPriorityAndReactivePreemption)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSelector = xDef.AddNode("Selector");
-	xDef.AddEdge(uSource, 0, uSelector, 0);
+	xDef.AddEdge(uSource, 0, uSelector);
 	const u_int uGate = xDef.AddNode("Gate");	// engine node: FAILURE while "open" false
-	xDef.AddEdge(uSelector, 0, uGate, 0);
+	xDef.AddEdge(uSelector, 0, uGate);
 	BuildProbe(xDef, uGate, 0, "h", 0);
 	BuildProbe(xDef, uSelector, 1, "l", -1);	// RUNNING forever
 
@@ -867,7 +893,7 @@ ZENITH_TEST(BehaviourGraph, SwitchOnIntRoutesCasesAndDefault)
 		ZENITH_ASSERT_EQ(pxTemp->GetDynamicExecOutputCount(), 4);
 		delete pxTemp;
 	}
-	xDef.AddEdge(uSource, 0, uSwitch, 0);
+	xDef.AddEdge(uSource, 0, uSwitch);
 	BuildProbe(xDef, uSwitch, 0, "0", 0);
 	BuildProbe(xDef, uSwitch, 1, "1", 0);
 	BuildProbe(xDef, uSwitch, 2, "2", 0);
@@ -909,7 +935,7 @@ ZENITH_TEST(BehaviourGraph, StateMachineTransitionAbortsOldState)
 		xDef.SetNodeParamsFromInstance(uMachine, pxTemp);
 		delete pxTemp;
 	}
-	xDef.AddEdge(uSource, 0, uMachine, 0);
+	xDef.AddEdge(uSource, 0, uMachine);
 	BuildProbe(xDef, uMachine, 0, "s0", -1);	// RUNNING forever
 	BuildProbe(xDef, uMachine, 1, "s1", 0);
 
@@ -956,7 +982,7 @@ ZENITH_TEST(BehaviourGraph, RepeatTickedIterationsAndUntilFailure)
 			xDef.SetNodeParamsFromInstance(uRepeat, pxTemp);
 			delete pxTemp;
 		}
-		xDef.AddEdge(uSource, 0, uRepeat, 0);
+		xDef.AddEdge(uSource, 0, uRepeat);
 		BuildProbe(xDef, uRepeat, 0, "b", 0);
 		BuildProbe(xDef, uRepeat, 1, "d", 0);
 
@@ -984,9 +1010,9 @@ ZENITH_TEST(BehaviourGraph, RepeatTickedIterationsAndUntilFailure)
 			xDef.SetNodeParamsFromInstance(uRepeat, pxTemp);
 			delete pxTemp;
 		}
-		xDef.AddEdge(uSource, 0, uRepeat, 0);
+		xDef.AddEdge(uSource, 0, uRepeat);
 		const u_int uGate = xDef.AddNode("Gate");
-		xDef.AddEdge(uRepeat, 0, uGate, 0);
+		xDef.AddEdge(uRepeat, 0, uGate);
 		BuildProbe(xDef, uGate, 0, "b", 0);
 		BuildProbe(xDef, uRepeat, 1, "d", 0);
 
@@ -1017,7 +1043,7 @@ ZENITH_TEST(BehaviourGraph, CooldownGatesOnContextTime)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uCooldown = xDef.AddNode("Cooldown");	// 1.0 s default
-	xDef.AddEdge(uSource, 0, uCooldown, 0);
+	xDef.AddEdge(uSource, 0, uCooldown);
 	BuildProbe(xDef, uCooldown, 0, "c", 0);
 
 	Zenith_BehaviourGraph xGraph;
@@ -1043,7 +1069,7 @@ ZENITH_TEST(BehaviourGraph, WaitForConditionSuspendsUntilTrue)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uWait = xDef.AddNode("WaitForCondition");	// var "ready", no reset
-	xDef.AddEdge(uSource, 0, uWait, 0);
+	xDef.AddEdge(uSource, 0, uWait);
 	BuildProbe(xDef, uWait, 0, "g", 0);
 
 	Zenith_BehaviourGraph xGraph;
@@ -1161,7 +1187,7 @@ ZENITH_TEST(BehaviourGraph, ForEachIteratesSuspendsAndFails)
 		xDef.SetNodeParamsFromInstance(uForEach, pxTemp);
 		delete pxTemp;
 	}
-	xDef.AddEdge(uSource, 0, uForEach, 0);
+	xDef.AddEdge(uSource, 0, uForEach);
 	BuildProbe(xDef, uForEach, 0, "b", 2);
 	BuildProbe(xDef, uForEach, 1, "d", 0);
 
@@ -1373,7 +1399,7 @@ namespace
 			xDef.SetNodeParamsFromInstance(uGate, pxTemp);
 			delete pxTemp;
 		}
-		xDef.AddEdge(uAnchorID, uPin, uGate, 0);
+		xDef.AddEdge(uAnchorID, uPin, uGate);
 		return uGate;
 	}
 
@@ -1406,7 +1432,7 @@ namespace
 			xTemp.m_iRunningTicks = -1;	// RUNNING forever: every later drive is a cursor drive
 			xDef.SetNodeParamsFromInstance(uProbe, &xTemp);
 		}
-		xDef.AddEdge(uAnchor, 0, uProbe, 0);
+		xDef.AddEdge(uAnchor, 0, uProbe);
 
 		Zenith_BehaviourGraph xGraph;
 		xGraph.InitialiseFromDefinition(xDef);
@@ -1445,7 +1471,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_BranchesAreIndependent)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSequence = AddSequence(xDef, 3);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "a", 0);
 	const u_int uGate = AddGate(xDef, uSequence, 1, "indepOpen");
 	BuildProbe(xDef, uGate, 0, "b", 0);
@@ -1476,7 +1502,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_TwoBranchesRunningAtOnce)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "x", 2);
 	BuildProbe(xDef, uSequence, 1, "y", 3);
 
@@ -1502,7 +1528,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_AbortCascadesToEveryPin)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSequence = AddSequence(xDef, 3);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "a", -1);	// RUNNING forever
 	BuildProbe(xDef, uSequence, 1, "b", -1);	// RUNNING forever
 	BuildProbe(xDef, uSequence, 2, "c", 0);		// completed - nothing to abort
@@ -1543,9 +1569,9 @@ ZENITH_TEST(BehaviourGraph, Sequence_ReturnStatusContract)
 		Zenith_GraphDefinition xDef;
 		const u_int uSource = xDef.AddNode("Test_OnUpdate");
 		const u_int uSelector = xDef.AddNode("Selector");
-		xDef.AddEdge(uSource, 0, uSelector, 0);
+		xDef.AddEdge(uSource, 0, uSelector);
 		const u_int uSequence = AddSequence(xDef, 2);
-		xDef.AddEdge(uSelector, 0, uSequence, 0);
+		xDef.AddEdge(uSelector, 0, uSequence);
 		const u_int uGate = AddGate(xDef, uSequence, 0, "statusOpen");	// never opened
 		BuildProbe(xDef, uGate, 0, "g", 0);
 		BuildProbe(xDef, uSequence, 1, "s", 0);
@@ -1564,9 +1590,9 @@ ZENITH_TEST(BehaviourGraph, Sequence_ReturnStatusContract)
 		Zenith_GraphDefinition xDef;
 		const u_int uSource = xDef.AddNode("Test_OnUpdate");
 		const u_int uSelector = xDef.AddNode("Selector");
-		xDef.AddEdge(uSource, 0, uSelector, 0);
+		xDef.AddEdge(uSource, 0, uSelector);
 		const u_int uSequence = AddSequence(xDef, 2);
-		xDef.AddEdge(uSelector, 0, uSequence, 0);
+		xDef.AddEdge(uSelector, 0, uSequence);
 		const u_int uGateA = AddGate(xDef, uSequence, 0, "statusOpen");
 		BuildProbe(xDef, uGateA, 0, "ga", 0);
 		const u_int uGateB = AddGate(xDef, uSequence, 1, "statusOpen");
@@ -1586,9 +1612,9 @@ ZENITH_TEST(BehaviourGraph, Sequence_ReturnStatusContract)
 		Zenith_GraphDefinition xDef;
 		const u_int uSource = xDef.AddNode("Test_OnUpdate");
 		const u_int uSelector = xDef.AddNode("Selector");
-		xDef.AddEdge(uSource, 0, uSelector, 0);
+		xDef.AddEdge(uSource, 0, uSelector);
 		const u_int uSequence = AddSequence(xDef, 2);
-		xDef.AddEdge(uSelector, 0, uSequence, 0);
+		xDef.AddEdge(uSelector, 0, uSequence);
 		BuildProbe(xDef, uSequence, 0, "r", -1);
 		BuildProbe(xDef, uSequence, 1, "s", 0);
 		BuildProbe(xDef, uSelector, 1, "fb", 0);
@@ -1611,7 +1637,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_OnUpdateRefiresEveryPinEveryTick)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "a", 0);
 	BuildProbe(xDef, uSequence, 1, "w", -1);
 
@@ -1637,7 +1663,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_OneShotRedriveSkipsCompletedPins)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("OnStart");
 	const u_int uSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "a", 0);
 	BuildProbe(xDef, uSequence, 1, "w", 3);
 
@@ -1669,7 +1695,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_RepeatedCustomEventSkipsCompletedPins)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_CustomSource");	// matches "evt"
 	const u_int uSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "a", 0);
 	BuildProbe(xDef, uSequence, 1, "w", -1);
 
@@ -1698,7 +1724,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_FailedBranchIsNotRefiredOnRedrive)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_CustomSource");
 	const u_int uSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	const u_int uGate = AddGate(xDef, uSequence, 0, "retryOpen");
 	BuildProbe(xDef, uGate, 0, "g", 0);
 	BuildProbe(xDef, uSequence, 1, "w", -1);
@@ -1733,7 +1759,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_TimerIsOneOccurrenceAtATime)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Timer");	// 1 s default interval
 	const u_int uSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 0, "a", 0);
 	BuildProbe(xDef, uSequence, 1, "w", -1);
 
@@ -1769,13 +1795,13 @@ ZENITH_TEST(BehaviourGraph, Sequence_FlagDoesNotLeakAcrossSourcesInOneDispatch)
 	Zenith_GraphDefinition xDef;
 	const u_int uTickSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uTickSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uTickSource, 0, uTickSequence, 0);
+	xDef.AddEdge(uTickSource, 0, uTickSequence);
 	BuildProbe(xDef, uTickSequence, 0, "a", 0);
 	BuildProbe(xDef, uTickSequence, 1, "u", -1);
 
 	const u_int uCustomSource = xDef.AddNode("Test_CustomSource");	// "evt"
 	const u_int uCustomSequence = AddSequence(xDef, 2);
-	xDef.AddEdge(uCustomSource, 0, uCustomSequence, 0);
+	xDef.AddEdge(uCustomSource, 0, uCustomSequence);
 	BuildProbe(xDef, uCustomSequence, 0, "b", 0);
 	BuildProbe(xDef, uCustomSequence, 1, "v", -1);
 
@@ -1810,7 +1836,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_ParamRoundTrip)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSequence = AddSequence(xDef, 5);
-	xDef.AddEdge(uSource, 0, uSequence, 0);
+	xDef.AddEdge(uSource, 0, uSequence);
 	BuildProbe(xDef, uSequence, 4, "e", 0);	// only reachable if 5 pins survived
 
 	Zenith_DataStream xStream;
@@ -1843,7 +1869,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_BranchCountBoundary_1And64)
 		Zenith_GraphDefinition xDef;
 		const u_int uSource = xDef.AddNode("Test_OnUpdate");
 		const u_int uSequence = AddSequence(xDef, 1);
-		xDef.AddEdge(uSource, 0, uSequence, 0);
+		xDef.AddEdge(uSource, 0, uSequence);
 		BuildProbe(xDef, uSequence, 0, "o", 0);
 
 		Zenith_BehaviourGraph xGraph;
@@ -1866,7 +1892,7 @@ ZENITH_TEST(BehaviourGraph, Sequence_BranchCountBoundary_1And64)
 		Zenith_GraphDefinition xDef;
 		const u_int uSource = xDef.AddNode("Test_CustomSource");
 		const u_int uSequence = AddSequence(xDef, 64);
-		xDef.AddEdge(uSource, 0, uSequence, 0);
+		xDef.AddEdge(uSource, 0, uSequence);
 		BuildProbe(xDef, uSequence, 0, "r", -1);	// never completes
 		BuildProbe(xDef, uSequence, 63, "d", 0);	// completes on the first drive
 
@@ -1929,7 +1955,7 @@ ZENITH_TEST(BehaviourGraph, ResumeDrive_FlagNeverSetOutsideTheTwoPaths)
 			xTemp.m_iRunningTicks = -1;
 			xDef.SetNodeParamsFromInstance(uProbe, &xTemp);
 		}
-		xDef.AddEdge(uAnchor, 0, uProbe, 0);
+		xDef.AddEdge(uAnchor, 0, uProbe);
 
 		Zenith_BehaviourGraph xGraph;
 		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
@@ -1970,7 +1996,7 @@ namespace
 		xTemp.m_strTag = szTag;
 		xTemp.m_iReturnStatus = iReturnStatus;
 		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
-		xDef.AddEdge(uAnchorID, uPin, uNode, 0);
+		xDef.AddEdge(uAnchorID, uPin, uNode);
 		return uNode;
 	}
 
@@ -1990,7 +2016,7 @@ namespace
 		xTemp.m_strCounterName = szName;
 		xTemp.m_iReturnStatus = iStatus;
 		xDef.SetNodeParamsFromInstance(uNode, &xTemp);
-		xDef.AddEdge(uAnchorID, uPin, uNode, 0);
+		xDef.AddEdge(uAnchorID, uPin, uNode);
 		return uNode;
 	}
 
@@ -2003,7 +2029,7 @@ namespace
 		Zenith_GraphDefinition xDef;
 		const u_int uSource = xDef.AddNode("Test_CustomSource");	// matches "evt"
 		const u_int uStatus = xDef.AddNode("Test_ChainStatus");
-		xDef.AddEdge(uSource, 0, uStatus, 0);
+		xDef.AddEdge(uSource, 0, uStatus);
 		const u_int uFail = AddFailurePinNode(xDef, uStatus, 0, "f");
 		AddStatusCounter(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "handler", iHandlerStatus);
 
@@ -2139,7 +2165,7 @@ ZENITH_TEST(BehaviourGraph, FailurePin_HandlerSuccessSuppressesSelectorFallthrou
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uSelector = xDef.AddNode("Selector");
-	xDef.AddEdge(uSource, 0, uSelector, 0);
+	xDef.AddEdge(uSource, 0, uSelector);
 	const u_int uFail = AddFailurePinNode(xDef, uSelector, 0, "f");
 	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", 0);
 	BuildProbe(xDef, uSelector, 1, "fb", 0);	// the fallback that must NOT run
@@ -2173,7 +2199,7 @@ ZENITH_TEST(BehaviourGraph, FailurePin_HandlerSuccessKeepsRepeatUntilFailureRunn
 		xDef.SetNodeParamsFromInstance(uRepeat, pxTemp);
 		delete pxTemp;
 	}
-	xDef.AddEdge(uSource, 0, uRepeat, 0);
+	xDef.AddEdge(uSource, 0, uRepeat);
 	const u_int uFail = AddFailurePinNode(xDef, uRepeat, 0, "f");
 	BuildProbe(xDef, uFail, FailurePinIndexOfType("Test_FailurePin"), "h", 0);
 	BuildProbe(xDef, uRepeat, 1, "d", 0);	// the done chain, never reached
@@ -2243,7 +2269,7 @@ ZENITH_TEST(BehaviourGraph, FailurePin_UnresolvedAbortNotRouted)
 	const u_int uSource = xDef.AddNode("Test_OnUpdate");
 	const u_int uMissing = xDef.AddNode("Test_DoesNotExistInThisBuild");
 	ZENITH_ASSERT_NE(uMissing, 0u);
-	xDef.AddEdge(uSource, 0, uMissing, 0);
+	xDef.AddEdge(uSource, 0, uMissing);
 	BuildProbe(xDef, uMissing, 0, "a", 0);
 	BuildProbe(xDef, uMissing, 1, "b", 0);
 
@@ -2325,11 +2351,11 @@ ZENITH_TEST(BehaviourGraph, FailurePin_CycleIsCappedNotHung)
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("Test_CustomSource");
 	const u_int uStatus = xDef.AddNode("Test_ChainStatus");
-	xDef.AddEdge(uSource, 0, uStatus, 0);
+	xDef.AddEdge(uSource, 0, uStatus);
 	const u_int uFailPin = FailurePinIndexOfType("Test_FailurePin");
 	const u_int uA = AddFailurePinNode(xDef, uStatus, 0, "a");
 	const u_int uB = AddFailurePinNode(xDef, uA, uFailPin, "b");
-	ZENITH_ASSERT_TRUE(xDef.AddEdge(uB, uFailPin, uA, 0));	// ...and back: the cycle
+	ZENITH_ASSERT_TRUE(xDef.AddEdge(uB, uFailPin, uA));	// ...and back: the cycle
 
 	Zenith_BehaviourGraph xGraph;
 	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
@@ -2391,6 +2417,506 @@ ZENITH_TEST(BehaviourGraph, FailurePin_BuilderFailPinResolvesAndLatches)
 		ZENITH_ASSERT_EQ(xBuilder.FailPin(4242u), 0u);
 		ZENITH_ASSERT_TRUE(xBuilder.HasErrors());
 	}
+}
+
+//==============================================================================
+// B-1: format version 2, data edges, and the LOAD_SAFETY tier at read
+//==============================================================================
+
+namespace
+{
+	struct V2Node
+	{
+		u_int m_uNodeID = 0;
+		const char* m_szTypeName = "Test_Counter";
+	};
+
+	struct V2Edge
+	{
+		u_int m_uSrc = 0;
+		u_int m_uSrcPin = 0;
+		u_int m_uDst = 0;
+	};
+
+	struct V2DataEdge
+	{
+		u_int m_uSrc = 0;
+		const char* m_szSrcPin = "";
+		u_int m_uDst = 0;
+		const char* m_szDstPin = "";
+	};
+
+	// ★ THE ONE BYTE EMITTER behind every hand-built-stream fixture below. Each
+	// refusal test calls it TWICE - once defect-free (the positive control, which
+	// must READ) and once with the defect - so "the tier refused it" can never be
+	// confused with "the fixture was malformed". Leaves the stream rewound.
+	void EmitGraphStream(Zenith_DataStream& xStream, u_int uVersion,
+		const V2Node* pxNodes, u_int uNodeCount,
+		const V2Edge* pxEdges, u_int uEdgeCount,
+		const V2DataEdge* pxDataEdges, u_int uDataEdgeCount)
+	{
+		xStream << Zenith_GraphDefinition::uGRAPH_MAGIC;
+		xStream << uVersion;
+		xStream << 0u;								// variables
+		xStream << uNodeCount;
+		for (u_int u = 0; u < uNodeCount; ++u)
+		{
+			xStream << pxNodes[u].m_uNodeID;
+			xStream << std::string(pxNodes[u].m_szTypeName);
+			xStream << 1u;							//   type version
+			xStream << 0u;							//   param blob bytes
+		}
+		xStream << uEdgeCount;
+		for (u_int u = 0; u < uEdgeCount; ++u)
+		{
+			xStream << pxEdges[u].m_uSrc;
+			xStream << pxEdges[u].m_uSrcPin;
+			xStream << pxEdges[u].m_uDst;
+		}
+		xStream << uDataEdgeCount;
+		for (u_int u = 0; u < uDataEdgeCount; ++u)
+		{
+			xStream << pxDataEdges[u].m_uSrc;
+			xStream << std::string(pxDataEdges[u].m_szSrcPin);
+			xStream << pxDataEdges[u].m_uDst;
+			xStream << std::string(pxDataEdges[u].m_szDstPin);
+		}
+		xStream << 4u;								// layout block bytes (the count field alone)
+		xStream << 0u;								// layout entry count
+		xStream.SetCursor(0);
+	}
+
+	u_int CountRuleFindings(const Zenith_Vector<Zenith_GraphValidationFinding>& axFindings,
+		Zenith_GraphValidationRule eRule)
+	{
+		u_int uCount = 0;
+		for (u_int u = 0; u < axFindings.GetSize(); ++u)
+		{
+			if (axFindings.Get(u).m_eRule == eRule)
+			{
+				++uCount;
+			}
+		}
+		return uCount;
+	}
+}
+
+// The deletion itself, pinned: an exec edge is three u_ints and there is nowhere
+// for a destination pin to hide.
+ZENITH_TEST(BehaviourGraph, Definition_ExecEdgeHasNoDestinationPin)
+{
+	ZENITH_ASSERT_EQ(sizeof(Zenith_GraphEdge), 3u * sizeof(u_int));
+}
+
+// Strict version equality, and NO v1 reader: a version-1 payload is refused
+// whole rather than partially adopted. The 1 is a LITERAL - writing the constant
+// would silently write 2 the moment the constant moves again.
+ZENITH_TEST(BehaviourGraph, Definition_Version1StreamRefused)
+{
+	EnsureTestNodesRegistered();
+
+	const V2Node axNodes[] = { { 1u, "Test_Counter" } };
+
+	{	// positive control: the same bytes at the CURRENT version read fine
+		Zenith_DataStream xStream;
+		EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 1u, nullptr, 0u, nullptr, 0u);
+		Zenith_GraphDefinition xDef;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream));
+		ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 1u);
+	}
+
+	Zenith_DataStream xStream;
+	EmitGraphStream(xStream, 1u, axNodes, 1u, nullptr, 0u, nullptr, 0u);
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);	// refused by the version check, not by the tier
+}
+
+// A stream whose reads did not land must not yield a half-built definition.
+// ★ The defect is a type-name LENGTH PREFIX past the string cap - the one
+// overrun path that reports WITHOUT asserting. Physically truncating a buffer
+// would Zenith_Assert (a DebugBreak that kills the headless batch) before the
+// flag was ever set.
+ZENITH_TEST(BehaviourGraph, Definition_ReadFailureFlagRefusesStream)
+{
+	EnsureTestNodesRegistered();
+
+	// ZERO edges and ZERO data edges, so the LOAD_SAFETY tier is provably clean:
+	// an empty findings list therefore proves the refusal came from the stream's
+	// read-failure report (the cap here, a corrupt length downstream of it), not
+	// from the tier.
+	const V2Node axNodes[] = { { 1u, "Test_Counter" } };
+	Zenith_DataStream xStream;
+	EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 1u, nullptr, 0u, nullptr, 0u);
+
+	// magic(4) version(4) varCount(4) nodeCount(4) nodeID(4) => the type name's
+	// length prefix starts at byte 20.
+	constexpr uint64_t ulTYPE_NAME_LENGTH_OFFSET = 20;
+	u_int* puLength = reinterpret_cast<u_int*>(static_cast<u_int8*>(xStream.GetData()) + ulTYPE_NAME_LENGTH_OFFSET);
+	*puLength = 2u * 1024u * 1024u;	// > the reader's 1 MB string cap
+
+	// ★ ZERO-FILL EVERYTHING AFTER THE PATCH. The string reader leaves the cursor
+	// on the prefix's successor, so the reader would otherwise parse the type
+	// name's own bytes as typeVersion + blobBytes ("_Cou" = ~1.9 GB) and refuse
+	// at the blob BUDGET - a different guard, never reaching the flag latch
+	// before the layout seek. With zeros every later field reads 0 (no budget
+	// fires, the parse completes) and the ONLY thing that can refuse is the
+	// latched read-failure flag. Delete that latch and this test reads true.
+	const uint64_t ulZeroFrom = ulTYPE_NAME_LENGTH_OFFSET + sizeof(u_int);
+	memset(static_cast<u_int8*>(xStream.GetData()) + ulZeroFrom, 0, static_cast<size_t>(xStream.GetCapacity() - ulZeroFrom));
+	xStream.SetCursor(0);
+
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
+}
+
+// A param-blob byte count larger than the bytes that remain is refused BEFORE
+// the copy: that memcpy reads straight out of the source buffer and the
+// SkipBytes after it clamps without reporting.
+ZENITH_TEST(BehaviourGraph, Definition_OversizedParamBlobRefused)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_DataStream xStream;
+	xStream << Zenith_GraphDefinition::uGRAPH_MAGIC;
+	xStream << Zenith_GraphDefinition::uGRAPH_VERSION;
+	xStream << 0u;								// variables
+	xStream << 1u;								// nodes
+	xStream << 1u;								//   node id
+	xStream << std::string("Test_Counter");		//   type
+	xStream << 1u;								//   type version
+	xStream << 0x7FFFFFFFu;						//   param blob bytes - far past the buffer
+	xStream.SetCursor(0);
+
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_DuplicateExecSourcePinRefusedAtRead)
+{
+	EnsureTestNodesRegistered();
+
+	const V2Node axNodes[] = { { 1u, "Test_Counter" }, { 2u, "Test_Counter" }, { 3u, "Test_Counter" } };
+
+	{	// positive control: the same shape on two DIFFERENT pins is legal
+		const V2Edge axEdges[] = { { 1u, 0u, 2u }, { 1u, 1u, 3u } };
+		Zenith_DataStream xStream;
+		EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 3u, axEdges, 2u, nullptr, 0u);
+		Zenith_GraphDefinition xDef;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream));
+		ZENITH_ASSERT_EQ(xDef.GetEdgeCount(), 2u);
+	}
+
+	const V2Edge axEdges[] = { { 1u, 0u, 2u }, { 1u, 0u, 3u } };
+	Zenith_DataStream xStream;
+	EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 3u, axEdges, 2u, nullptr, 0u);
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_EXEC_SOURCE), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_DuplicateDataInputRefusedAtRead)
+{
+	EnsureTestNodesRegistered();
+
+	const V2Node axNodes[] = { { 1u, "Test_Counter" }, { 2u, "Test_Counter" }, { 3u, "Test_Counter" } };
+
+	{	// positive control: two wires into two DIFFERENT inputs of one node
+		const V2DataEdge axData[] = { { 1u, "out", 3u, "in" }, { 2u, "out", 3u, "other" } };
+		Zenith_DataStream xStream;
+		EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 3u, nullptr, 0u, axData, 2u);
+		Zenith_GraphDefinition xDef;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream));
+		ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 2u);
+	}
+
+	const V2DataEdge axData[] = { { 1u, "out", 3u, "in" }, { 2u, "out", 3u, "in" } };
+	Zenith_DataStream xStream;
+	EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 3u, nullptr, 0u, axData, 2u);
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_DataSelfLoopRefusedAtRead)
+{
+	EnsureTestNodesRegistered();
+
+	const V2Node axNodes[] = { { 1u, "Test_Counter" }, { 2u, "Test_Counter" } };
+
+	{	// positive control: the same two pin names between two DIFFERENT nodes
+		const V2DataEdge axData[] = { { 1u, "a", 2u, "b" } };
+		Zenith_DataStream xStream;
+		EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 2u, nullptr, 0u, axData, 1u);
+		Zenith_GraphDefinition xDef;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream));
+		ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+	}
+
+	// DIFFERENT pin names on the same node: a self-loop is the NODE pair, and
+	// this fixture falsifies the "same pin" reading of that rule.
+	const V2DataEdge axData[] = { { 2u, "a", 2u, "b" } };
+	Zenith_DataStream xStream;
+	EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 2u, nullptr, 0u, axData, 1u);
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_EmptyPinNameRefusedAtRead)
+{
+	EnsureTestNodesRegistered();
+
+	const V2Node axNodes[] = { { 1u, "Test_Counter" }, { 2u, "Test_Counter" } };
+
+	{	// positive control: the same edge with a named source pin
+		const V2DataEdge axData[] = { { 1u, "out", 2u, "in" } };
+		Zenith_DataStream xStream;
+		EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 2u, nullptr, 0u, axData, 1u);
+		Zenith_GraphDefinition xDef;
+		ZENITH_ASSERT_TRUE(xDef.ReadFromDataStream(xStream));
+		ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+	}
+
+	const V2DataEdge axData[] = { { 1u, "", 2u, "in" } };
+	Zenith_DataStream xStream;
+	EmitGraphStream(xStream, Zenith_GraphDefinition::uGRAPH_VERSION, axNodes, 2u, nullptr, 0u, axData, 1u);
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphDefinition xDef;
+	ZENITH_ASSERT_FALSE(xDef.ReadFromDataStream(xStream, &axFindings));
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_AddDataEdgeRefusesSecondWireIntoInput)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uA = xDef.AddNode("Test_Counter");
+	const u_int uB = xDef.AddNode("Test_Counter");
+	const u_int uDst = xDef.AddNode("Test_Counter");
+
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uA, "out", uDst, "in"));
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uB, "out", uDst, "in"));	// the input is taken
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uB, "out", uDst, "other"));	// a different input is not
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 2u);
+	const Zenith_GraphDataEdge* pxEdge = xDef.FindDataEdgeInto(uDst, "in");
+	ZENITH_ASSERT_NOT_NULL(pxEdge);
+	if (pxEdge != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxEdge->m_uSrcNodeID, uA);	// the FIRST wire survives
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_AddDataEdgeRefusesUnknownEndpoint)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uA = xDef.AddNode("Test_Counter");
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uA, "out", 4242u, "in"));
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(4242u, "out", uA, "in"));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_AddDataEdgeRefusesSelfLoop)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uA = xDef.AddNode("Test_Counter");
+	// DIFFERENT pin names: a self-loop is the NODE pair, so this refusal cannot
+	// be explained by "the same pin twice".
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uA, "out", uA, "in"));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 0u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_AddDataEdgeRefusesEmptyPinName)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uA = xDef.AddNode("Test_Counter");
+	const u_int uB = xDef.AddNode("Test_Counter");
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uA, "", uB, "in"));
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uA, "out", uB, ""));
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uA, nullptr, uB, "in"));
+	ZENITH_ASSERT_FALSE(xDef.AddDataEdge(uA, "out", uB, nullptr));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 0u);
+	ZENITH_ASSERT_NULL(xDef.FindDataEdgeInto(uB, nullptr));
+	ZENITH_ASSERT_NULL(xDef.FindDataEdgeInto(uB, ""));
+}
+
+// The asymmetry IS the rule: an input takes one wire, an output feeds as many
+// as an author wants.
+ZENITH_TEST(BehaviourGraph, Definition_DataEdgeFanOutFromOneOutputIsUnbounded)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSrc = xDef.AddNode("Test_Counter");
+	const u_int uA = xDef.AddNode("Test_Counter");
+	const u_int uB = xDef.AddNode("Test_Counter");
+	const u_int uC = xDef.AddNode("Test_Counter");
+
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uA, "in"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uB, "in"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uC, "in"));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 3u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_RemoveNodeDropsTouchingDataEdges)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSrc = xDef.AddNode("Test_Counter");
+	const u_int uMid = xDef.AddNode("Test_Counter");
+	const u_int uDst = xDef.AddNode("Test_Counter");
+	const u_int uOtherA = xDef.AddNode("Test_Counter");
+	const u_int uOtherB = xDef.AddNode("Test_Counter");
+
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uMid, "in"));		// into mid
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uMid, "out", uDst, "in"));		// out of mid
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uOtherA, "out", uOtherB, "in"));	// unrelated
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 3u);
+
+	ZENITH_ASSERT_TRUE(xDef.RemoveNode(uMid));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+	ZENITH_ASSERT_NULL(xDef.FindDataEdgeInto(uMid, "in"));
+	ZENITH_ASSERT_NULL(xDef.FindDataEdgeInto(uDst, "in"));
+	ZENITH_ASSERT_NOT_NULL(xDef.FindDataEdgeInto(uOtherB, "in"));
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_RemoveDataEdgeIsKeyedByDestination)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSrc = xDef.AddNode("Test_Counter");
+	const u_int uDst = xDef.AddNode("Test_Counter");
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uDst, "in"));
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uDst, "other"));
+
+	ZENITH_ASSERT_TRUE(xDef.RemoveDataEdge(uDst, "in"));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+	ZENITH_ASSERT_NULL(xDef.FindDataEdgeInto(uDst, "in"));			// removed
+	ZENITH_ASSERT_NOT_NULL(xDef.FindDataEdgeInto(uDst, "other"));	// the sibling survives
+
+	ZENITH_ASSERT_FALSE(xDef.RemoveDataEdge(uDst, "in"));			// absent - false, silently
+	ZENITH_ASSERT_FALSE(xDef.RemoveDataEdge(uDst, nullptr));
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+}
+
+ZENITH_TEST(BehaviourGraph, Definition_ClearDropsDataEdges)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSrc = xDef.AddNode("Test_Counter");
+	const u_int uDst = xDef.AddNode("Test_Counter");
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "out", uDst, "in"));
+
+	xDef.Clear();
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 0u);
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 0u);
+}
+
+// A pin name no table declares is authorable, storable and round-trippable -
+// names resolve at INSTANTIATION, so refusing one here would make an asset
+// un-loadable on a build that merely lacks a node version.
+//
+// ★ B-3 CHANGES THIS ON PURPOSE. When the validator learns to resolve a wire's
+// pin names through the pin tables, an unknown name becomes a finding and this
+// test must be updated by that unit rather than deleted.
+ZENITH_TEST(BehaviourGraph, Definition_UnknownPinNameRoundTrips)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	const u_int uSrc = xDef.AddNode("Test_Counter");
+	const u_int uDst = xDef.AddNode("Test_Counter");
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "no_such_out", uDst, "no_such_in"));
+
+	Zenith_DataStream xStream;
+	xDef.WriteToDataStream(xStream);
+	xStream.SetCursor(0);
+
+	Zenith_GraphDefinition xLoaded;
+	ZENITH_ASSERT_TRUE(xLoaded.ReadFromDataStream(xStream));
+	ZENITH_ASSERT_EQ(xLoaded.GetDataEdgeCount(), 1u);
+	const Zenith_GraphDataEdge* pxEdge = xLoaded.FindDataEdgeInto(uDst, "no_such_in");
+	ZENITH_ASSERT_NOT_NULL(pxEdge);
+	if (pxEdge != nullptr)
+	{
+		ZENITH_ASSERT_STREQ(pxEdge->m_strSrcPin.c_str(), "no_such_out");
+	}
+
+	// And the FULL tier says nothing about it today.
+	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	Zenith_GraphDefinitionValidator::Validate(xLoaded, xRegistry, "Test_Graph", axFindings);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT), 0u);
+}
+
+ZENITH_TEST(GraphBuilder, GraphBuilder_DataEdgeReachesDefinition)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	u_int uSrc = 0;
+	u_int uDst = 0;
+	{
+		Zenith_GraphBuilder xBuilder(xDef);
+		uSrc = xBuilder.Node("Test_Counter");
+		uDst = xBuilder.Node("Test_Counter");
+		xBuilder.DataEdge(uSrc, "out", uDst, "in");
+		ZENITH_ASSERT_FALSE(xBuilder.HasErrors());
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+	}
+
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+	const Zenith_GraphDataEdge* pxEdge = xDef.FindDataEdgeInto(uDst, "in");
+	ZENITH_ASSERT_NOT_NULL(pxEdge);
+	if (pxEdge != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxEdge->m_uSrcNodeID, uSrc);
+		ZENITH_ASSERT_STREQ(pxEdge->m_strSrcPin.c_str(), "out");
+	}
+}
+
+ZENITH_TEST(GraphBuilder, GraphBuilder_DataEdgeRefusalLatchesErrors)
+{
+	EnsureTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	Zenith_GraphBuilder xBuilder(xDef);
+	const u_int uA = xBuilder.Node("Test_Counter");
+	const u_int uB = xBuilder.Node("Test_Counter");
+	const u_int uDst = xBuilder.Node("Test_Counter");
+	xBuilder.DataEdge(uA, "out", uDst, "in");
+	ZENITH_ASSERT_FALSE(xBuilder.HasErrors());
+	xBuilder.DataEdge(uB, "out", uDst, "in");	// a second wire into one input
+	ZENITH_ASSERT_TRUE(xBuilder.HasErrors());
+	ZENITH_ASSERT_FALSE(xBuilder.Build());
+	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
 }
 
 #endif // ZENITH_TESTING

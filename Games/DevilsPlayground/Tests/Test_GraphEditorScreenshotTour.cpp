@@ -75,8 +75,8 @@ namespace
 			delete pxAsset;
 			return false;
 		}
-		xDef.AddEdge(uSource, 0, uMissing, 0);
-		xDef.AddEdge(uMissing, 0, uLog, 0);
+		xDef.AddEdge(uSource, 0, uMissing);
+		xDef.AddEdge(uMissing, 0, uLog);
 		xDef.SetNodeEditorPos(uSource, Zenith_Maths::Vector2(40.0f, 80.0f));
 		xDef.SetNodeEditorPos(uMissing, Zenith_Maths::Vector2(260.0f, 80.0f));
 		xDef.SetNodeEditorPos(uLog, Zenith_Maths::Vector2(480.0f, 80.0f));

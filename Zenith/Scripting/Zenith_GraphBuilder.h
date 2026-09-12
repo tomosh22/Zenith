@@ -83,6 +83,12 @@ public:
 	// Pin-0 linear sugar: Chain(a, b) == Edge(a, 0, b).
 	Zenith_GraphBuilder& Chain(u_int uFrom, u_int uTo);
 
+	// Wires a DATA output to a DATA input, both named. One incoming wire per
+	// input pin, unbounded fan-out from an output; a refusal latches the error
+	// flag exactly like Edge. The pin names are NOT checked against any pin
+	// table here - they resolve at instantiation.
+	Zenith_GraphBuilder& DataEdge(u_int uFrom, const char* szOutPin, u_int uTo, const char* szInPin);
+
 	// The node's routable "On Failure" exec pin index, so a builder never
 	// hard-codes it: Edge(uNode, xBuilder.FailPin(uNode), uHandler). Returns
 	// m_uExecOutputCount for a type registered with a failure pin; for an

@@ -78,7 +78,7 @@ namespace
 			xDef.SetNodeParamsFromInstance(uRotate, pxTemp);
 			delete pxTemp;
 		}
-		xDef.AddEdge(uSource, 0, uRotate, 0);
+		xDef.AddEdge(uSource, 0, uRotate);
 
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 		return strAssetPath;
@@ -265,7 +265,7 @@ ZENITH_TEST(GraphComponent, CollisionDispatchViaMetaRegistry)
 			xDef.SetNodeParamsFromInstance(uFlag, pxTemp);
 			delete pxTemp;
 		}
-		xDef.AddEdge(uSource, 0, uFlag, 0);
+		xDef.AddEdge(uSource, 0, uFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -339,12 +339,12 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 			xParams.SetString("m_strVariable", "me");
 		}
 
-		xDef.AddEdge(uSource, 0, uSetInt, 0);
-		xDef.AddEdge(uSetInt, 0, uCompareConst, 0);
-		xDef.AddEdge(uCompareConst, 0, uCompareVar, 0);
-		xDef.AddEdge(uCompareVar, 0, uSetVec, 0);
-		xDef.AddEdge(uSetVec, 0, uSetStr, 0);
-		xDef.AddEdge(uSetStr, 0, uStoreSelf, 0);
+		xDef.AddEdge(uSource, 0, uSetInt);
+		xDef.AddEdge(uSetInt, 0, uCompareConst);
+		xDef.AddEdge(uCompareConst, 0, uCompareVar);
+		xDef.AddEdge(uCompareVar, 0, uSetVec);
+		xDef.AddEdge(uSetVec, 0, uSetStr);
+		xDef.AddEdge(uSetStr, 0, uStoreSelf);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -391,7 +391,7 @@ namespace
 			NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", szCounter);
 		}
-		xDef.AddEdge(uSource, 0, uCounter, 0);
+		xDef.AddEdge(uSource, 0, uCounter);
 		if (szFireName != nullptr)
 		{
 			const u_int uFire = xDef.AddNode("FireCustomEvent");
@@ -400,7 +400,7 @@ namespace
 				xParams.SetString("m_strEventName", szFireName);
 				xParams.SetString("m_strTargetVar", "peer");
 			}
-			xDef.AddEdge(uCounter, 0, uFire, 0);
+			xDef.AddEdge(uCounter, 0, uFire);
 		}
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 		return strAssetPath;
@@ -535,10 +535,10 @@ ZENITH_TEST(GraphComponent, EntityTargetingActsOnOtherEntity)
 			xParams.SetString("m_strEntityVar", "other");
 			xParams.SetString("m_strResultVar", "otherAlive");
 		}
-		xDef.AddEdge(uSource, 0, uTranslate, 0);
-		xDef.AddEdge(uTranslate, 0, uReadPos, 0);
-		xDef.AddEdge(uReadPos, 0, uDistance, 0);
-		xDef.AddEdge(uDistance, 0, uValid, 0);
+		xDef.AddEdge(uSource, 0, uTranslate);
+		xDef.AddEdge(uTranslate, 0, uReadPos);
+		xDef.AddEdge(uReadPos, 0, uDistance);
+		xDef.AddEdge(uDistance, 0, uValid);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -616,7 +616,7 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 				NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
 				xParams.SetString("m_strVariable", xSource.szCounter);
 			}
-			xDef.AddEdge(uSource, 0, uCounter, 0);
+			xDef.AddEdge(uSource, 0, uCounter);
 		}
 
 		// Query chain off a plain OnUpdate anchor.
@@ -636,11 +636,11 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 			xParams.SetString("m_strResultVar", "lmb");
 		}
 		const u_int uMousePos = xDef.AddNode("ReadMousePosition");
-		xDef.AddEdge(uUpdate, 0, uShift, 0);
-		xDef.AddEdge(uShift, 0, uMove, 0);
-		xDef.AddEdge(uMove, 0, uAxis, 0);
-		xDef.AddEdge(uAxis, 0, uLmb, 0);
-		xDef.AddEdge(uLmb, 0, uMousePos, 0);
+		xDef.AddEdge(uUpdate, 0, uShift);
+		xDef.AddEdge(uShift, 0, uMove);
+		xDef.AddEdge(uMove, 0, uAxis);
+		xDef.AddEdge(uAxis, 0, uLmb);
+		xDef.AddEdge(uLmb, 0, uMousePos);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -799,7 +799,7 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 				NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
 				xParams.SetString("m_strVariable", xSource.szCounter);
 			}
-			xDef.AddEdge(uSource, 0, uCounter, 0);
+			xDef.AddEdge(uSource, 0, uCounter);
 		}
 
 		// Axis readers off a plain OnUpdate anchor.
@@ -816,8 +816,8 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 			xParams.SetString("m_strAction", szACTION_TEST_AXIS2D);
 			xParams.SetString("m_strResultVar", "move");
 		}
-		xDef.AddEdge(uUpdate, 0, uAxis1D, 0);
-		xDef.AddEdge(uAxis1D, 0, uAxis2D, 0);
+		xDef.AddEdge(uUpdate, 0, uAxis1D);
+		xDef.AddEdge(uAxis1D, 0, uAxis2D);
 
 		// An axis reader naming an action nothing registers: it must FAIL, write
 		// NOTHING, and abort its chain (a zero here is indistinguishable from a
@@ -837,8 +837,8 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 			xValue.SetFloat(1.0f);
 			xParams.Set("m_fValue", xValue);
 		}
-		xDef.AddEdge(uMissUpdate, 0, uMissAxis, 0);
-		xDef.AddEdge(uMissAxis, 0, uAfterMiss, 0);
+		xDef.AddEdge(uMissUpdate, 0, uMissAxis);
+		xDef.AddEdge(uMissAxis, 0, uAfterMiss);
 
 		// The cache-invalidation subject: starts naming nothing, gets renamed to
 		// UI_CONFIRM on a live instance halfway through.
@@ -852,7 +852,7 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uLateCounter, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", "lateCount");
 		}
-		xDef.AddEdge(uLateSourceNodeID, 0, uLateCounter, 0);
+		xDef.AddEdge(uLateSourceNodeID, 0, uLateCounter);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -988,7 +988,7 @@ namespace
 			NodeParamWriter xParams(xDef, uCall, "CallGraph");
 			xParams.SetString("m_strGraphAssetPath", strChildPath.c_str());
 		}
-		xDef.AddEdge(uSource, 0, uCall, 0);
+		xDef.AddEdge(uSource, 0, uCall);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 		return strAssetPath;
 	}
@@ -1019,8 +1019,8 @@ ZENITH_TEST(GraphComponent, CallGraphSharedBlackboardDefaultsAndRunning)
 			NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", "sharedCounter");
 		}
-		xDef.AddEdge(uEntry, 0, uWait, 0);
-		xDef.AddEdge(uWait, 0, uCounter, 0);
+		xDef.AddEdge(uEntry, 0, uWait);
+		xDef.AddEdge(uWait, 0, uCounter);
 		Zenith_AssetRegistry::Save(&xAsset, strChildPath);
 	}
 	const std::string strParentPath = SaveCallGraphParentAsset("UnitTest_CallParent.bgraph", strChildPath);
@@ -1081,7 +1081,7 @@ ZENITH_TEST(GraphComponent, CallGraphRecursionCapAndMissingAsset)
 				NodeParamWriter xParams(xDef, uCall, "CallGraph");
 				xParams.SetString("m_strGraphAssetPath", strRecursivePath.c_str());
 			}
-			xDef.AddEdge(uEntry, 0, uCall, 0);
+			xDef.AddEdge(uEntry, 0, uCall);
 			Zenith_AssetRegistry::Save(&xAsset, strRecursivePath);
 		}
 		const std::string strParentPath = SaveCallGraphParentAsset("UnitTest_CallRecursiveParent.bgraph", strRecursivePath);
@@ -1109,14 +1109,14 @@ namespace
 		Zenith_GraphDefinition& xDef = xAsset.GetDefinition();
 		const u_int uEntry = xDef.AddNode("OnGraphCall");
 		const u_int uSequence = xDef.AddNode("Sequence");	// 2 branches (the default)
-		xDef.AddEdge(uEntry, 0, uSequence, 0);
+		xDef.AddEdge(uEntry, 0, uSequence);
 
 		const u_int uCounter = xDef.AddNode("AddBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", szCounterVar);
 		}
-		xDef.AddEdge(uSequence, 0, uCounter, 0);
+		xDef.AddEdge(uSequence, 0, uCounter);
 
 		const u_int uWait = xDef.AddNode("Wait");
 		{
@@ -1125,7 +1125,7 @@ namespace
 			xSeconds.SetFloat(600.0f);
 			xParams.Set("m_fSeconds", xSeconds);
 		}
-		xDef.AddEdge(uSequence, 1, uWait, 0);
+		xDef.AddEdge(uSequence, 1, uWait);
 
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 		return strAssetPath;
@@ -1152,7 +1152,7 @@ namespace
 			NodeParamWriter xParams(xDef, uCall, "CallGraph");
 			xParams.SetString("m_strGraphAssetPath", strChildPath.c_str());
 		}
-		xDef.AddEdge(uSource, 0, uCall, 0);
+		xDef.AddEdge(uSource, 0, uCall);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 		return strAssetPath;
 	}
@@ -1231,7 +1231,7 @@ ZENITH_TEST(GraphComponent, OnSceneLoadedFilterAndStash)
 			NodeParamWriter xParams(xDef, uCounter, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", "loads");
 		}
-		xDef.AddEdge(uSource, 0, uCounter, 0);
+		xDef.AddEdge(uSource, 0, uCounter);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -1275,8 +1275,8 @@ ZENITH_TEST(GraphComponent, UnloadSceneMidUpdateIsSafe)
 		// the host's own scene mid-dispatch (the unsupported self-unload).
 		const u_int uOnce = xDef.AddNode("Once");
 		const u_int uUnload = xDef.AddNode("UnloadScene");	// "" = the active scene
-		xDef.AddEdge(uSource, 0, uOnce, 0);
-		xDef.AddEdge(uOnce, 0, uUnload, 0);
+		xDef.AddEdge(uSource, 0, uOnce);
+		xDef.AddEdge(uOnce, 0, uUnload);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -1337,7 +1337,7 @@ ZENITH_TEST(GraphComponent, GraphSurvivesDontDestroyOnLoadRelocation)
 			NodeParamWriter xParams(xDef, uCount, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", "ticks");
 		}
-		xDef.AddEdge(uTickSource, 0, uCount, 0);
+		xDef.AddEdge(uTickSource, 0, uCount);
 		// Chain B: the first tick arms a 1s Wait whose chain cursor is the
 		// in-flight RUNNING state that must survive the cross-scene move.
 		const u_int uWaitSource = xDef.AddNode("OnUpdate");
@@ -1351,9 +1351,9 @@ ZENITH_TEST(GraphComponent, GraphSurvivesDontDestroyOnLoadRelocation)
 			xValue.SetFloat(1.0f);
 			xParams.Set("m_fValue", xValue);
 		}
-		xDef.AddEdge(uWaitSource, 0, uOnce, 0);
-		xDef.AddEdge(uOnce, 0, uWait, 0);
-		xDef.AddEdge(uWait, 0, uDone, 0);
+		xDef.AddEdge(uWaitSource, 0, uOnce);
+		xDef.AddEdge(uOnce, 0, uWait);
+		xDef.AddEdge(uWait, 0, uDone);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -1454,11 +1454,11 @@ ZENITH_TEST(GraphComponent, SelectorAbortPreemptedFlagSemantics)
 			xValue.SetFloat(1.0f);
 			xParams.Set("m_fValue", xValue);
 		}
-		xDef.AddEdge(uSource, 0, uSelector, 0);
-		xDef.AddEdge(uSelector, 0, uGate, 0);
-		xDef.AddEdge(uGate, 0, uHi, 0);
-		xDef.AddEdge(uSelector, 1, uWait, 0);
-		xDef.AddEdge(uWait, 0, uDone, 0);
+		xDef.AddEdge(uSource, 0, uSelector);
+		xDef.AddEdge(uSelector, 0, uGate);
+		xDef.AddEdge(uGate, 0, uHi);
+		xDef.AddEdge(uSelector, 1, uWait);
+		xDef.AddEdge(uWait, 0, uDone);
 		Zenith_AssetRegistry::Save(&xAsset, szPath);
 	};
 
@@ -1658,7 +1658,7 @@ ZENITH_TEST(GraphComponent, ThousandEntityUpdateBenchmark)
 		Zenith_GraphDefinition& xDef = xAsset.GetDefinition();
 		const u_int uSource = xDef.AddNode("OnCustomEvent");
 		const u_int uFlag = xDef.AddNode("SetBlackboardBool");
-		xDef.AddEdge(uSource, 0, uFlag, 0);
+		xDef.AddEdge(uSource, 0, uFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strIdlePath);
 	}
 	Zenith_Vector<Zenith_Entity> axIdleEntities;
@@ -1941,7 +1941,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			uClamp, uAddI, uAddI2, uAddV, uSelf1, uSelf2, uCmpE, uCmpNE, uRandF, uRandI };
 		for (u_int u = 0; u < sizeof(auChain) / sizeof(auChain[0]); ++u)
 		{
-			xDef.AddEdge(uPrev, 0, auChain[u], 0);
+			xDef.AddEdge(uPrev, 0, auChain[u]);
 			uPrev = auChain[u];
 		}
 
@@ -1964,8 +1964,8 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uBadFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "divRan");
 		}
-		xDef.AddEdge(uBadSource, 0, uDivZero, 0);
-		xDef.AddEdge(uDivZero, 0, uBadFlag, 0);
+		xDef.AddEdge(uBadSource, 0, uDivZero);
+		xDef.AddEdge(uDivZero, 0, uBadFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -2051,8 +2051,8 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			xParams.SetString("m_strDeltaVar", "spd");
 			SetBoolParam(xParams, "m_bScaleByDt", true);
 		}
-		xDef.AddEdge(uUpdate, 0, uCmp, 0);
-		xDef.AddEdge(uCmp, 0, uAdd, 0);
+		xDef.AddEdge(uUpdate, 0, uCmp);
+		xDef.AddEdge(uCmp, 0, uAdd);
 
 		// Chain B (custom "WaitGo"): Wait with secondsVar, then a flag.
 		const u_int uWaitSource = xDef.AddNode("OnCustomEvent");
@@ -2070,8 +2070,8 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			NodeParamWriter xParams(xDef, uWaitFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "waitDone");
 		}
-		xDef.AddEdge(uWaitSource, 0, uWait, 0);
-		xDef.AddEdge(uWait, 0, uWaitFlag, 0);
+		xDef.AddEdge(uWaitSource, 0, uWait);
+		xDef.AddEdge(uWait, 0, uWaitFlag);
 
 		// Chain C (custom "LoopGo"): Loop with countVar.
 		const u_int uLoopSource = xDef.AddNode("OnCustomEvent");
@@ -2095,9 +2095,9 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			NodeParamWriter xParams(xDef, uLoopDone, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "loopDone");
 		}
-		xDef.AddEdge(uLoopSource, 0, uLoop, 0);
-		xDef.AddEdge(uLoop, 0, uBody, 0);
-		xDef.AddEdge(uLoop, 1, uLoopDone, 0);
+		xDef.AddEdge(uLoopSource, 0, uLoop);
+		xDef.AddEdge(uLoop, 0, uBody);
+		xDef.AddEdge(uLoop, 1, uLoopDone);
 
 		// Chain D (custom "LoopWaitGo"): Loop whose DONE chain suspends - the
 		// body must not re-run while the done Wait resumes.
@@ -2127,10 +2127,10 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			NodeParamWriter xParams(xDef, uLoopWaitFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "lwDone");
 		}
-		xDef.AddEdge(uLoopWaitSource, 0, uLoopWait, 0);
-		xDef.AddEdge(uLoopWait, 0, uLoopWaitBody, 0);
-		xDef.AddEdge(uLoopWait, 1, uDoneWait, 0);
-		xDef.AddEdge(uDoneWait, 0, uLoopWaitFlag, 0);
+		xDef.AddEdge(uLoopWaitSource, 0, uLoopWait);
+		xDef.AddEdge(uLoopWait, 0, uLoopWaitBody);
+		xDef.AddEdge(uLoopWait, 1, uDoneWait);
+		xDef.AddEdge(uDoneWait, 0, uLoopWaitFlag);
 
 		// Chain E (custom "TouchGo"): the deferred input queries - pointer
 		// state, mouse delta/wheel (simulator-neutral defaults headless).
@@ -2155,9 +2155,9 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			NodeParamWriter xParams(xDef, uWheel, "ReadMouseWheel");
 			xParams.SetString("m_strResultVar", "mWheel");
 		}
-		xDef.AddEdge(uTouchSource, 0, uTouch, 0);
-		xDef.AddEdge(uTouch, 0, uDelta, 0);
-		xDef.AddEdge(uDelta, 0, uWheel, 0);
+		xDef.AddEdge(uTouchSource, 0, uTouch);
+		xDef.AddEdge(uTouch, 0, uDelta);
+		xDef.AddEdge(uDelta, 0, uWheel);
 
 		// Chain F (custom "PickRayGo"): no main camera in this scene - the
 		// pick-ray node must gate the chain.
@@ -2172,8 +2172,8 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			NodeParamWriter xParams(xDef, uRayFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "rayOk");
 		}
-		xDef.AddEdge(uRaySource, 0, uRay, 0);
-		xDef.AddEdge(uRay, 0, uRayFlag, 0);
+		xDef.AddEdge(uRaySource, 0, uRay);
+		xDef.AddEdge(uRay, 0, uRayFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -2263,8 +2263,8 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uReadVel, "ReadVelocity");
 			xParams.SetString("m_strResultVar", "vel");
 		}
-		xDef.AddEdge(uImpulseSource, 0, uImpulse, 0);
-		xDef.AddEdge(uImpulse, 0, uReadVel, 0);
+		xDef.AddEdge(uImpulseSource, 0, uImpulse);
+		xDef.AddEdge(uImpulse, 0, uReadVel);
 
 		// "SetVel": per-axis preserve (Y kept).
 		const u_int uSetVelSource = xDef.AddNode("OnCustomEvent");
@@ -2283,8 +2283,8 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uReadVel2, "ReadVelocity");
 			xParams.SetString("m_strResultVar", "vel2");
 		}
-		xDef.AddEdge(uSetVelSource, 0, uSetVel, 0);
-		xDef.AddEdge(uSetVel, 0, uReadVel2, 0);
+		xDef.AddEdge(uSetVelSource, 0, uSetVel);
+		xDef.AddEdge(uSetVel, 0, uReadVel2);
 
 		// "Angular" + body-state toggles.
 		const u_int uAngularSource = xDef.AddNode("OnCustomEvent");
@@ -2318,12 +2318,12 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uToggleFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "toggled");
 		}
-		xDef.AddEdge(uAngularSource, 0, uAngular, 0);
-		xDef.AddEdge(uAngular, 0, uGravity, 0);
-		xDef.AddEdge(uGravity, 0, uForce, 0);
-		xDef.AddEdge(uForce, 0, uLock, 0);
-		xDef.AddEdge(uLock, 0, uSensor, 0);
-		xDef.AddEdge(uSensor, 0, uToggleFlag, 0);
+		xDef.AddEdge(uAngularSource, 0, uAngular);
+		xDef.AddEdge(uAngular, 0, uGravity);
+		xDef.AddEdge(uGravity, 0, uForce);
+		xDef.AddEdge(uForce, 0, uLock);
+		xDef.AddEdge(uLock, 0, uSensor);
+		xDef.AddEdge(uSensor, 0, uToggleFlag);
 
 		// "Cast": downward raycast (ignore self) hits the floor.
 		const u_int uCastSource = xDef.AddNode("OnCustomEvent");
@@ -2343,8 +2343,8 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uCastFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "castHit");
 		}
-		xDef.AddEdge(uCastSource, 0, uCast, 0);
-		xDef.AddEdge(uCast, 0, uCastFlag, 0);
+		xDef.AddEdge(uCastSource, 0, uCast);
+		xDef.AddEdge(uCast, 0, uCastFlag);
 
 		// "CastMiss": upward ray, FAILURE gates the chain.
 		const u_int uMissSource = xDef.AddNode("OnCustomEvent");
@@ -2362,8 +2362,8 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uMissFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "missFlag");
 		}
-		xDef.AddEdge(uMissSource, 0, uMiss, 0);
-		xDef.AddEdge(uMiss, 0, uMissFlag, 0);
+		xDef.AddEdge(uMissSource, 0, uMiss);
+		xDef.AddEdge(uMiss, 0, uMissFlag);
 
 		// "Teleport": zero velocities + TeleportBody, transform synced.
 		const u_int uTeleportSource = xDef.AddNode("OnCustomEvent");
@@ -2377,7 +2377,7 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			xParams.SetString("m_strPositionVar", "tpPos");
 			SetBoolParam(xParams, "m_bTeleport", true);
 		}
-		xDef.AddEdge(uTeleportSource, 0, uTeleport, 0);
+		xDef.AddEdge(uTeleportSource, 0, uTeleport);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -2485,11 +2485,11 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			xParams.SetString("m_strState", "Run");
 			SetFloatParam(xParams, "m_fDuration", 0.1f);
 		}
-		xDef.AddEdge(uAnimSource, 0, uFloat, 0);
-		xDef.AddEdge(uFloat, 0, uInt, 0);
-		xDef.AddEdge(uInt, 0, uBool, 0);
-		xDef.AddEdge(uBool, 0, uTrigger, 0);
-		xDef.AddEdge(uTrigger, 0, uFade, 0);
+		xDef.AddEdge(uAnimSource, 0, uFloat);
+		xDef.AddEdge(uFloat, 0, uInt);
+		xDef.AddEdge(uInt, 0, uBool);
+		xDef.AddEdge(uBool, 0, uTrigger);
+		xDef.AddEdge(uTrigger, 0, uFade);
 
 		// "ReadAnim": state info -> blackboard.
 		const u_int uReadSource = xDef.AddNode("OnCustomEvent");
@@ -2502,7 +2502,7 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			NodeParamWriter xParams(xDef, uRead, "ReadAnimatorState");
 			xParams.SetString("m_strTransitioningVar", "animTrans");
 		}
-		xDef.AddEdge(uReadSource, 0, uRead, 0);
+		xDef.AddEdge(uReadSource, 0, uRead);
 
 		// "TweenGo": scale tween (adds the component on demand).
 		const u_int uTweenSource = xDef.AddNode("OnCustomEvent");
@@ -2517,7 +2517,7 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			SetFloatParam(xParams, "m_fDuration", 1.0f);
 			xParams.SetInt("m_iEasing", EASING_LINEAR);
 		}
-		xDef.AddEdge(uTweenSource, 0, uTween, 0);
+		xDef.AddEdge(uTweenSource, 0, uTween);
 
 		// "RotGo": rotation tween, zero duration = completes on first tick.
 		const u_int uRotSource = xDef.AddNode("OnCustomEvent");
@@ -2531,7 +2531,7 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			SetVec3Param(xParams, "m_xToEulerDegrees", Zenith_Maths::Vector3(0.0f, 90.0f, 0.0f));
 			SetFloatParam(xParams, "m_fDuration", 0.0f);
 		}
-		xDef.AddEdge(uRotSource, 0, uRot, 0);
+		xDef.AddEdge(uRotSource, 0, uRot);
 
 		// "WaitTween" -> flag; "StopGo" -> cancel; "MoveGo" -> position tween.
 		const u_int uWaitSource = xDef.AddNode("OnCustomEvent");
@@ -2545,8 +2545,8 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			NodeParamWriter xParams(xDef, uWaitFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "twDone");
 		}
-		xDef.AddEdge(uWaitSource, 0, uWaitTween, 0);
-		xDef.AddEdge(uWaitTween, 0, uWaitFlag, 0);
+		xDef.AddEdge(uWaitSource, 0, uWaitTween);
+		xDef.AddEdge(uWaitTween, 0, uWaitFlag);
 
 		const u_int uMoveSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2559,7 +2559,7 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			SetVec3Param(xParams, "m_xTo", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
 			SetFloatParam(xParams, "m_fDuration", 0.2f);
 		}
-		xDef.AddEdge(uMoveSource, 0, uMove, 0);
+		xDef.AddEdge(uMoveSource, 0, uMove);
 
 		const u_int uStopSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2567,7 +2567,7 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			xParams.SetString("m_strEventName", "StopGo");
 		}
 		const u_int uStop = xDef.AddNode("StopTweens");
-		xDef.AddEdge(uStopSource, 0, uStop, 0);
+		xDef.AddEdge(uStopSource, 0, uStop);
 
 		// Particle trio.
 		const u_int uEmitSource = xDef.AddNode("OnCustomEvent");
@@ -2597,10 +2597,10 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 			NodeParamWriter xParams(xDef, uEmitFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "emitChainDone");
 		}
-		xDef.AddEdge(uEmitSource, 0, uEmit, 0);
-		xDef.AddEdge(uEmit, 0, uEmitToggle, 0);
-		xDef.AddEdge(uEmitToggle, 0, uEmitPos, 0);
-		xDef.AddEdge(uEmitPos, 0, uEmitFlag, 0);
+		xDef.AddEdge(uEmitSource, 0, uEmit);
+		xDef.AddEdge(uEmit, 0, uEmitToggle);
+		xDef.AddEdge(uEmitToggle, 0, uEmitPos);
+		xDef.AddEdge(uEmitPos, 0, uEmitFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -2741,10 +2741,10 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 			xParams.SetString("m_strElement", "Bar");
 			SetFloatParam(xParams, "m_fAmount", 0.25f);
 		}
-		xDef.AddEdge(uSource, 0, uText, 0);
-		xDef.AddEdge(uText, 0, uColor, 0);
-		xDef.AddEdge(uColor, 0, uVisible, 0);
-		xDef.AddEdge(uVisible, 0, uFill, 0);
+		xDef.AddEdge(uSource, 0, uText);
+		xDef.AddEdge(uText, 0, uColor);
+		xDef.AddEdge(uColor, 0, uVisible);
+		xDef.AddEdge(uVisible, 0, uFill);
 
 		// Fill on a TEXT element must gate the chain (typed-element guard).
 		const u_int uBadSource = xDef.AddNode("OnCustomEvent");
@@ -2762,8 +2762,8 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uBadFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "badFill");
 		}
-		xDef.AddEdge(uBadSource, 0, uBadFill, 0);
-		xDef.AddEdge(uBadFill, 0, uBadFlag, 0);
+		xDef.AddEdge(uBadSource, 0, uBadFill);
+		xDef.AddEdge(uBadFill, 0, uBadFlag);
 
 		// Button trampoline: ON_UPDATE-anchored self-wiring source.
 		const u_int uClickSource = xDef.AddNode("OnUIButtonClicked");
@@ -2776,7 +2776,7 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uClickFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "clicked");
 		}
-		xDef.AddEdge(uClickSource, 0, uClickFlag, 0);
+		xDef.AddEdge(uClickSource, 0, uClickFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -2868,8 +2868,8 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uArrived, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "arrived");
 		}
-		xDef.AddEdge(uGoSource, 0, uMove, 0);
-		xDef.AddEdge(uMove, 0, uArrived, 0);
+		xDef.AddEdge(uGoSource, 0, uMove);
+		xDef.AddEdge(uMove, 0, uArrived);
 
 		// "Speed" / "ReadNav" / "Stop" / "Wander" utility chains.
 		const u_int uSpeedSource = xDef.AddNode("OnCustomEvent");
@@ -2882,7 +2882,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uSpeed, "SetNavSpeed");
 			SetFloatParam(xParams, "m_fSpeed", 10.0f);
 		}
-		xDef.AddEdge(uSpeedSource, 0, uSpeed, 0);
+		xDef.AddEdge(uSpeedSource, 0, uSpeed);
 
 		const u_int uReadSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2894,7 +2894,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uRead, "ReadNavState");
 			xParams.SetString("m_strRemainingVar", "navLeft");
 		}
-		xDef.AddEdge(uReadSource, 0, uRead, 0);
+		xDef.AddEdge(uReadSource, 0, uRead);
 
 		const u_int uStopSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2902,7 +2902,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			xParams.SetString("m_strEventName", "Stop");
 		}
 		const u_int uStop = xDef.AddNode("StopNav");
-		xDef.AddEdge(uStopSource, 0, uStop, 0);
+		xDef.AddEdge(uStopSource, 0, uStop);
 
 		const u_int uDestSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2914,7 +2914,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uDest, "SetNavDestination");
 			xParams.SetString("m_strDestinationVar", "dest");
 		}
-		xDef.AddEdge(uDestSource, 0, uDest, 0);
+		xDef.AddEdge(uDestSource, 0, uDest);
 
 		const u_int uWanderSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2926,7 +2926,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uWander, "FindRandomReachablePoint");
 			SetFloatParam(xParams, "m_fRadius", 8.0f);
 		}
-		xDef.AddEdge(uWanderSource, 0, uWander, 0);
+		xDef.AddEdge(uWanderSource, 0, uWander);
 
 		// Perception chains.
 		const u_int uRegSource = xDef.AddNode("OnCustomEvent");
@@ -2939,7 +2939,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uReg, "RegisterPerceptionTarget");
 			xParams.SetString("m_strTargetVar", "tgt");
 		}
-		xDef.AddEdge(uRegSource, 0, uReg, 0);
+		xDef.AddEdge(uRegSource, 0, uReg);
 
 		const u_int uQuerySource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2957,9 +2957,9 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uAware, "QueryAwarenessOf");
 			xParams.SetString("m_strOfVar", "tgt");
 		}
-		xDef.AddEdge(uQuerySource, 0, uList, 0);
-		xDef.AddEdge(uList, 0, uPrimary, 0);
-		xDef.AddEdge(uPrimary, 0, uAware, 0);
+		xDef.AddEdge(uQuerySource, 0, uList);
+		xDef.AddEdge(uList, 0, uPrimary);
+		xDef.AddEdge(uPrimary, 0, uAware);
 
 		const u_int uNoiseSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2973,7 +2973,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			SetFloatParam(xParams, "m_fLoudness", 0.5f);
 			SetFloatParam(xParams, "m_fRadius", 10.0f);
 		}
-		xDef.AddEdge(uNoiseSource, 0, uNoise, 0);
+		xDef.AddEdge(uNoiseSource, 0, uNoise);
 
 		const u_int uHeardSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -2990,8 +2990,8 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uHeardFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "heardOk");
 		}
-		xDef.AddEdge(uHeardSource, 0, uHeard, 0);
-		xDef.AddEdge(uHeard, 0, uHeardFlag, 0);
+		xDef.AddEdge(uHeardSource, 0, uHeard);
+		xDef.AddEdge(uHeard, 0, uHeardFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -3017,9 +3017,9 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uIdleFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "inIdle");
 		}
-		xDef.AddEdge(uUpdate, 0, uMachine, 0);
-		xDef.AddEdge(uMachine, 0, uMove, 0);
-		xDef.AddEdge(uMachine, 1, uIdleFlag, 0);
+		xDef.AddEdge(uUpdate, 0, uMachine);
+		xDef.AddEdge(uMachine, 0, uMove);
+		xDef.AddEdge(uMachine, 1, uIdleFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAbortPath);
 	}
 
@@ -3173,7 +3173,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strEntityName", "SpawnedByGraph");
 			xParams.SetString("m_strPositionVar", "spawnAt");
 		}
-		xDef.AddEdge(uSpawnSource, 0, uSpawn, 0);
+		xDef.AddEdge(uSpawnSource, 0, uSpawn);
 
 		const u_int uFindSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3191,8 +3191,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			SetFloatParam(xParams, "m_fRadius", 50.0f);
 			xParams.SetString("m_strDistanceVar", "nearDist");
 		}
-		xDef.AddEdge(uFindSource, 0, uFindName, 0);
-		xDef.AddEdge(uFindName, 0, uNearest, 0);
+		xDef.AddEdge(uFindSource, 0, uFindName);
+		xDef.AddEdge(uFindName, 0, uNearest);
 
 		const u_int uMissSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3209,8 +3209,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uMissFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "foundMissing");
 		}
-		xDef.AddEdge(uMissSource, 0, uFindMiss, 0);
-		xDef.AddEdge(uFindMiss, 0, uMissFlag, 0);
+		xDef.AddEdge(uMissSource, 0, uFindMiss);
+		xDef.AddEdge(uFindMiss, 0, uMissFlag);
 
 		const u_int uAttachSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3223,7 +3223,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strSkeletonVar", "skel");
 			xParams.SetString("m_strBone", "RightHand");
 		}
-		xDef.AddEdge(uAttachSource, 0, uAttach, 0);
+		xDef.AddEdge(uAttachSource, 0, uAttach);
 
 		const u_int uDetachSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3231,7 +3231,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strEventName", "Detach");
 		}
 		const u_int uDetach = xDef.AddNode("DetachFromBone");
-		xDef.AddEdge(uDetachSource, 0, uDetach, 0);
+		xDef.AddEdge(uDetachSource, 0, uDetach);
 
 		const u_int uRotSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3249,8 +3249,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uReadRot, "ReadEntityRotation");
 			xParams.SetString("m_strEulerVar", "euler");
 		}
-		xDef.AddEdge(uRotSource, 0, uRotate, 0);
-		xDef.AddEdge(uRotate, 0, uReadRot, 0);
+		xDef.AddEdge(uRotSource, 0, uRotate);
+		xDef.AddEdge(uRotate, 0, uReadRot);
 
 		// Rate-limited turn needs real dt: OnUpdate-anchored, gated so it
 		// only runs when the test opens the gate.
@@ -3266,8 +3266,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strDirectionVar", "faceDir");
 			SetFloatParam(xParams, "m_fDegreesPerSecond", 90.0f);	// rate-limited
 		}
-		xDef.AddEdge(uTurnSource, 0, uTurnGate, 0);
-		xDef.AddEdge(uTurnGate, 0, uTurn, 0);
+		xDef.AddEdge(uTurnSource, 0, uTurnGate);
+		xDef.AddEdge(uTurnGate, 0, uTurn);
 
 		// P1-node coverage riders: direction, scale, radius query.
 		const u_int uDirSource = xDef.AddNode("OnCustomEvent");
@@ -3293,9 +3293,9 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strListVar", "inRange");
 			xParams.SetString("m_strCountVar", "inRangeCount");
 		}
-		xDef.AddEdge(uDirSource, 0, uDir, 0);
-		xDef.AddEdge(uDir, 0, uScale, 0);
-		xDef.AddEdge(uScale, 0, uRadius, 0);
+		xDef.AddEdge(uDirSource, 0, uDir);
+		xDef.AddEdge(uDir, 0, uScale);
+		xDef.AddEdge(uScale, 0, uRadius);
 
 		// Pick ray success path (fired after the test seam sets a camera).
 		const u_int uRaySource = xDef.AddNode("OnCustomEvent");
@@ -3309,8 +3309,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uRayFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "rayOk");
 		}
-		xDef.AddEdge(uRaySource, 0, uRay, 0);
-		xDef.AddEdge(uRay, 0, uRayFlag, 0);
+		xDef.AddEdge(uRaySource, 0, uRay);
+		xDef.AddEdge(uRay, 0, uRayFlag);
 
 		const u_int uCamSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3323,8 +3323,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uCamFlag, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "camOk");
 		}
-		xDef.AddEdge(uCamSource, 0, uBasis, 0);
-		xDef.AddEdge(uBasis, 0, uCamFlag, 0);
+		xDef.AddEdge(uCamSource, 0, uBasis);
+		xDef.AddEdge(uBasis, 0, uCamFlag);
 
 		const u_int uPitchSource = xDef.AddNode("OnCustomEvent");
 		{
@@ -3337,7 +3337,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			SetFloatParam(xParams, "m_fPitchDegrees", -120.0f);	// clamps to -89
 			SetFloatParam(xParams, "m_fYawDegrees", 90.0f);
 		}
-		xDef.AddEdge(uPitchSource, 0, uPitch, 0);
+		xDef.AddEdge(uPitchSource, 0, uPitch);
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -3827,8 +3827,8 @@ namespace
 			NodeParamWriter xParams(xDef, uWired, "SetBlackboardBool");
 			xParams.SetString("m_strVariable", "wired");
 		}
-		xDef.AddEdge(uSource, 0, uEnsure, 0);
-		xDef.AddEdge(uEnsure, 0, uWired, 0);
+		xDef.AddEdge(uSource, 0, uEnsure);
+		xDef.AddEdge(uEnsure, 0, uWired);
 
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 		return strAssetPath;
