@@ -127,22 +127,26 @@ u_int Zenith_GraphNodeRegistry::GetExecOutputCount(const Zenith_GraphDefinition&
 		return 1;
 	}
 
+	// Apply the params BEFORE the first GetDynamicExecOutputCount call and ask
+	// exactly once. A node may CACHE what it derives from its params on that
+	// first call (SwitchOnString parses m_strCases lazily and latches
+	// m_bCasesParsed), so probing the default instance first and applying the
+	// params afterwards reports the DEFAULT count forever - measured as three
+	// PIN_OUT_OF_RANGE findings on every ST_Dispenser build, and one drawn pin
+	// where the editor should draw four.
 	Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
-	if (pxTemp->GetDynamicExecOutputCount() < 0)
+	xDefinition.ApplyNodeParams(uNodeID, pxTemp, *pxInfo);
+	const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
+	delete pxTemp;
+	if (iDynamic < 0)
 	{
-		delete pxTemp;
 		// Static-pin type: + the routable failure pin when the type carries one.
 		// Deliberately NOT added inside GetDynamicExecOutputCount - that is the
 		// NODE's answer about its own branch count, and a dynamic-pin type
 		// cannot carry the flag anyway.
 		return pxInfo->m_uExecOutputCount + (pxInfo->m_bHasFailurePin ? 1u : 0u);
 	}
-
-	// Dynamic: the configured count only exists once the params are applied.
-	xDefinition.ApplyNodeParams(uNodeID, pxTemp, *pxInfo);
-	const int32_t iDynamic = pxTemp->GetDynamicExecOutputCount();
-	delete pxTemp;
-	return iDynamic < 0 ? pxInfo->m_uExecOutputCount : static_cast<u_int>(iDynamic > 255 ? 255 : iDynamic);
+	return static_cast<u_int>(iDynamic > 255 ? 255 : iDynamic);
 }
 
 void Zenith_GraphNodeRegistry::SetNodeRegistrar(void (*pfnRegistrar)())

@@ -1170,6 +1170,29 @@ ZENITH_TEST(GraphValidator, Validator_PinBindingToNonStringPropertyIsReportedNot
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
 }
 
+ZENITH_TEST(GraphPinTable, Registry_ExecOutputCountAppliesParamsBeforeCounting)
+{
+	// SwitchOnString derives its pin count from m_strCases and CACHES the parse
+	// on the first GetDynamicExecOutputCount call. The funnel must apply the
+	// definition's params before that first call, or a configured three-case
+	// switch counts as its one-pin default (three PIN_OUT_OF_RANGE findings on
+	// every ST_Dispenser build, and one drawn pin instead of four).
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	if (xRegistry.Find("SwitchOnString") == nullptr)
+	{
+		return;	// an exe without the engine flow library has nothing to measure
+	}
+	Zenith_GraphDefinition xDef;
+	{
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uSwitch = xBuilder.Node("SwitchOnString");
+		xBuilder.ParamString(uSwitch, "m_strCases", "a,b,c");
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_EQ(xRegistry.GetExecOutputCount(xDef, uSwitch), 4u);	// 3 cases + default
+	}
+}
+
 ZENITH_TEST(GraphValidator, Validator_EveryRuleAndSeverityHasAName)
 {
 	// The [GraphValidator] log grammar is the whole capture story: a rule added
