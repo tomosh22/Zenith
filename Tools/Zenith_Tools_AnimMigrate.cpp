@@ -73,6 +73,12 @@ namespace
 	// index order also preserves the array order exactly, so no re-sort can
 	// perturb the bytes of two keys sharing a time (D5).
 	//--------------------------------------------------------------------------
+	// Both conversion functions run under /fp:precise (Zenith.h: ZENITH_AUTHORING_
+	// DETERMINISM). Every project compiles /fp:fast, and an optimised Release
+	// build turned `x / fTicksPerSecond` into a reciprocal multiply - a last-bit
+	// drift that broke D5's byte identity against the seconds-authored twin
+	// (Schema1CorpusMigratesAndMatchesItsCurrentSchemaTwin, Release only).
+	ZENITH_AUTHORING_DETERMINISM_BEGIN
 	Flux_BoneChannel AnimMigrateDivideChannelTimes(const Flux_BoneChannel& xSource, float fDivisor)
 	{
 		Flux_BoneChannel xOut;
@@ -178,6 +184,7 @@ namespace
 
 		return true;
 	}
+	ZENITH_AUTHORING_DETERMINISM_END
 
 	//--------------------------------------------------------------------------
 	// STEP 2 -> 3: the per-key tangent MODES reached the wire (B2).

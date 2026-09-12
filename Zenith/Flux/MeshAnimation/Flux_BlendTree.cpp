@@ -2,6 +2,23 @@
 #include "Flux_BlendTree.h"
 #include "Flux_AnimationStateMachineDef.h"   // D48: Flux_AnimationParameters
 #include <algorithm>
+#include <cstring>   // memcpy - the bit-level finiteness test below
+
+namespace
+{
+	// A blend-point position must be FINITE, and the test must survive /fp:fast:
+	// every project compiles with it, and an optimised Release build is allowed to
+	// fold `!(f >= lo && f <= hi)` to false for a NaN it assumes cannot exist -
+	// measured: SetBlendPointPosition(0, NaN) was ACCEPTED in Release and refused
+	// in Debug. Reading the exponent bits asks the question the compiler cannot
+	// optimise away: all-ones exponent = Inf or NaN.
+	inline bool BlendPositionIsFinite(float fValue)
+	{
+		uint32_t uBits = 0u;
+		std::memcpy(&uBits, &fValue, sizeof(uBits));
+		return (uBits & 0x7F800000u) != 0x7F800000u;
+	}
+}
 
 //=============================================================================
 // Flux_BlendTreeNode - Factory
@@ -399,9 +416,9 @@ bool Flux_BlendTreeNode_BlendSpace1D::SetBlendPointPosition(u_int uIndex, float 
 {
 	if (uIndex >= m_xBlendPoints.GetSize())
 		return false;
-	// Written as a POSITIVE range test: NaN fails every comparison, so this
-	// rejects it without a separate check, and a refusal changes nothing.
-	if (!(fPosition >= -3.0e38f && fPosition <= 3.0e38f))
+	// A refusal changes nothing. (Not a range comparison: /fp:fast lets Release
+	// assume NaN away - see BlendPositionIsFinite.)
+	if (!BlendPositionIsFinite(fPosition))
 		return false;
 
 	// The node pointer is the point's only identity across the sort — the
@@ -660,8 +677,7 @@ bool Flux_BlendTreeNode_BlendSpace2D::SetBlendPointPosition(u_int uIndex, const 
 {
 	if (uIndex >= m_xBlendPoints.GetSize())
 		return false;
-	if (!(xPosition.x >= -3.0e38f && xPosition.x <= 3.0e38f
-	   && xPosition.y >= -3.0e38f && xPosition.y <= 3.0e38f))
+	if (!BlendPositionIsFinite(xPosition.x) || !BlendPositionIsFinite(xPosition.y))
 		return false;
 
 	m_xBlendPoints.Get(uIndex).m_xPosition = xPosition;
