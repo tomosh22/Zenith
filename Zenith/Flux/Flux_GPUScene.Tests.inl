@@ -1,5 +1,9 @@
 #include "UnitTests/Zenith_UnitTests.h"
 #include "Flux/Flux_GPUScene.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Flux_RendererImpl.h"   // Flux_ExternalSceneItem + the pure external-item classifier/router + the pull seam
 
 // ============================================================================
@@ -119,6 +123,97 @@ ZENITH_TEST(GPUScene, BuildEmitsObjectPerItemAndDrawItemPerSubmesh)
 }
 
 // ---- bucket registry: de-dup / distinctness --------------------------------
+
+ZENITH_TEST(GPUScene, ImportedMaterialSectionsKeepTheirOwnIndexRanges)
+{
+	Zenith_MeshAsset xMesh;
+	xMesh.AddSubmesh(0u, 6u, 0u);
+	xMesh.AddSubmesh(6u, 3u, 1u);
+	xMesh.AddSubmesh(9u, 6u, 0u); // disjoint ranges sharing a material must not merge
+	Zenith_Vector<Flux_GPUSceneSourceItem> xItems;
+	auto& xItem = GPUScene_AddItem(xItems, Zenith_Maths::Matrix4(1.0f));
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		Flux_MeshDrawSection xSection;
+		ZENITH_ASSERT_TRUE(Flux_ResolveMeshDrawSection(&xMesh, 15u, u, xSection), "valid imported section");
+		auto xSub = GPUScene_MakeSub(7u, 0u, 100u + xSection.m_uMaterialSlot, 0u);
+		xSub.m_uFirstIndex = xSection.m_uFirstIndex;
+		xSub.m_uIndexCount = xSection.m_uIndexCount;
+		xItem.m_xSubmeshes.PushBack(xSub);
+	}
+	Flux_GPUSceneBucketRegistry xRegistry;
+	Flux_GPUSceneBuildResult xOut;
+	Flux_BuildGPUScene(xItems, xRegistry, xOut);
+	ZENITH_ASSERT_EQ(xRegistry.GetLiveBucketCount(), 3u, "separate ranges survive even when geometry and material match");
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		const auto* pxKey = xRegistry.TryGetBucketKey(xOut.m_xDrawItems.Get(u).m_uBucketIndex);
+		ZENITH_ASSERT_TRUE(pxKey != nullptr, "draw has a live bucket");
+		if (!pxKey) continue;
+		const auto& xExpected = xMesh.m_xSubmeshes.Get(u);
+		ZENITH_ASSERT_EQ(pxKey->m_uFirstIndex, xExpected.m_uStartIndex, "first index retained");
+		ZENITH_ASSERT_EQ(pxKey->m_uIndexCount, xExpected.m_uIndexCount, "section count retained");
+		ZENITH_ASSERT_EQ(pxKey->m_ulMaterialAssetId, 100ull + xExpected.m_uMaterialIndex, "material slot retained");
+		u_int auCommand[5];
+		Flux_PackResetIndirectCommand(auCommand, pxKey->m_uIndexCount, 0u, pxKey->m_uFirstIndex);
+		ZENITH_ASSERT_EQ(auCommand[0], xExpected.m_uIndexCount, "camera/cascade draws only this section");
+		ZENITH_ASSERT_EQ(auCommand[2], xExpected.m_uStartIndex, "camera/cascade starts at this section");
+	}
+}
+
+ZENITH_TEST(GPUScene, MeshDrawSectionsRejectInvalidRangesAndKeepLegacyMeshes)
+{
+	Flux_MeshDrawSection xSection;
+	ZENITH_ASSERT_TRUE(Flux_ResolveMeshDrawSection(nullptr, 12u, 0u, xSection), "legacy whole mesh");
+	ZENITH_ASSERT_EQ(xSection.m_uIndexCount, 12u, "legacy count unchanged");
+	ZENITH_ASSERT_FALSE(Flux_ResolveMeshDrawSection(nullptr, 12u, 1u, xSection), "legacy has one section");
+	Zenith_MeshAsset xMesh;
+	xMesh.AddSubmesh(9u, 6u, 1u);
+	xMesh.AddSubmesh(~0u - 2u, 9u, 0u);
+	xMesh.AddSubmesh(0u, 0u, 0u);
+	ZENITH_ASSERT_FALSE(Flux_ResolveMeshDrawSection(&xMesh, 12u, 0u, xSection), "past index buffer");
+	ZENITH_ASSERT_FALSE(Flux_ResolveMeshDrawSection(&xMesh, 12u, 1u, xSection), "overflow cannot wrap to valid");
+	ZENITH_ASSERT_FALSE(Flux_ResolveMeshDrawSection(&xMesh, 12u, 2u, xSection), "empty section skipped");
+}
+
+ZENITH_TEST(GPUScene, ModelMaterialSlotsAreLocalToEachMeshBinding)
+{
+	// Named, cached assets exercise the path-based model construction path. The
+	// Null memory manager supports this tiny mesh without a graphics device.
+	auto xMesh = Zenith_AssetRegistry::Create<Zenith_MeshAsset>("game:__material_section_test_mesh.zmesh");
+	auto* pxMesh = xMesh.GetDirect();
+	pxMesh->AddVertex({0.f, 0.f, 0.f}, {0.f, 0.f, 1.f}, {0.f, 0.f});
+	pxMesh->AddVertex({1.f, 0.f, 0.f}, {0.f, 0.f, 1.f}, {1.f, 0.f});
+	pxMesh->AddVertex({0.f, 1.f, 0.f}, {0.f, 0.f, 1.f}, {0.f, 1.f});
+	pxMesh->AddTriangle(0u, 1u, 2u);
+	pxMesh->AddTriangle(2u, 1u, 0u);
+	pxMesh->AddSubmesh(0u, 3u, 0u);
+	pxMesh->AddSubmesh(3u, 3u, 1u);
+	pxMesh->ComputeBounds();
+	auto xModel = Zenith_AssetRegistry::Create<Zenith_ModelAsset>();
+	Zenith_Vector<MaterialHandle> xFirst, xSecond, xEmpty;
+	xFirst.PushBack(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>("game:__material_section_test_0.zmtrl"));
+	xFirst.PushBack(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>("game:__material_section_test_1.zmtrl"));
+	xSecond.PushBack(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>("game:__material_section_test_2.zmtrl"));
+	xSecond.PushBack(Zenith_AssetRegistry::Create<Zenith_MaterialAsset>("game:__material_section_test_3.zmtrl"));
+	xModel.GetDirect()->AddMesh(xMesh, xFirst);
+	xModel.GetDirect()->AddMesh(xMesh, xSecond);
+	xModel.GetDirect()->AddMesh(xMesh, xEmpty);
+	Flux_ModelInstance* pxModel = Flux_ModelInstance::CreateFromAsset(xModel.GetDirect());
+	ZENITH_ASSERT_NOT_NULL(pxModel, "real model instance created");
+	if (!pxModel) return;
+	ZENITH_ASSERT_EQ(pxModel->GetNumMeshes(), 3u, "all bindings loaded");
+	ZENITH_ASSERT_EQ(pxModel->GetNumMaterials(), 5u, "two pairs plus blank fallback");
+	ZENITH_ASSERT_EQ(pxModel->GetMeshMaterial(0u, 1u), xFirst.Get(1u).GetDirect(), "first binding slot 1");
+	ZENITH_ASSERT_EQ(pxModel->GetMeshMaterial(1u, 0u), xSecond.Get(0u).GetDirect(), "second binding starts after both first materials");
+	ZENITH_ASSERT_EQ(pxModel->GetMeshMaterial(1u, 1u), xSecond.Get(1u).GetDirect(), "second binding slot 1");
+	ZENITH_ASSERT_NOT_NULL(pxModel->GetMeshMaterial(2u, 0u), "empty binding receives blank material");
+	ZENITH_ASSERT_NULL(pxModel->GetMeshMaterial(0u, 2u), "invalid local slot cannot leak into next binding");
+	ZENITH_ASSERT_NULL(pxModel->GetMeshMaterial(3u, 0u), "invalid binding rejected");
+	pxModel->SetMaterial(2u, xFirst.Get(0u).GetDirect());
+	ZENITH_ASSERT_EQ(pxModel->GetMeshMaterial(1u, 0u), xFirst.Get(0u).GetDirect(), "flat serialized overrides still affect correct binding");
+	delete pxModel;
+}
 
 ZENITH_TEST(GPUScene, SameKeySharesOneBucketWithRefcount)
 {

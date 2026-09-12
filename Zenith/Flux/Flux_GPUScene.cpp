@@ -34,6 +34,8 @@ void Flux_AppendGPUSceneItem(const Flux_GPUSceneSourceItem& xItem,
 
 		Flux_GPUSceneBucketKey xKey;
 		xKey.m_uMeshGeometryId   = xSub.m_uMeshGeometryId;
+		xKey.m_uFirstIndex       = xSub.m_uFirstIndex;
+		xKey.m_uIndexCount       = xSub.m_uIndexCount;
 		xKey.m_uCullMode         = xSub.m_uCullMode;
 		xKey.m_ulMaterialAssetId = xSub.m_ulMaterialAssetId;
 		xKey.m_ulVATTextureId    = xSub.m_ulVATTextureId;

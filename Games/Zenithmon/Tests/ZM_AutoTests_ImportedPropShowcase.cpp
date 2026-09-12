@@ -134,6 +134,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Flux_Screenshot.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Maths/Zenith_FrustumCulling.h"          // Zenith_AABB -- the mesh's local bounds
@@ -469,6 +470,15 @@ namespace
 		{ "lamppost", "DawnmereHomeLampWest", 2u, ZM_PROP_LAMP_POST,
 			/* three-quarter */ { -135.0f, 8.0f, 1.55f },
 			/* detail        */ { -110.0f, 6.0f, 0.85f } },
+
+		// AB-PROP-11: inspect the blank oak arms and their iron fixings on both
+		// authored placements, from each sign's approach side.
+		{ "signpost_home", "DawnmereSignHome", 2u, ZM_PROP_SIGN_POST,
+			/* three-quarter */ { 155.0f, 8.0f, 1.55f },
+			/* detail        */ { 172.0f, 12.0f, 1.15f } },
+		{ "signpost_route", "DawnmereSignRoute", 2u, ZM_PROP_SIGN_POST,
+			/* three-quarter */ { 25.0f, 8.0f, 1.55f },
+			/* detail        */ { 8.0f, 12.0f, 1.15f } },
 	};
 	constexpr u_int uIPS_SUBJECT_COUNT =
 		(u_int)(sizeof(axIPS_SUBJECTS) / sizeof(axIPS_SUBJECTS[0]));
@@ -877,6 +887,34 @@ namespace
 			return;
 		}
 		const Zenith_AABB& xLocal = pxInstance->GetLocalBounds();
+		if (xRow.m_eProp == ZM_PROP_SIGN_POST)
+		{
+			// The signpost is the imported multi-material regression fixture:
+			// one shared mesh, two contiguous sections, two distinct PBR materials.
+			const Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
+			Flux_MeshDrawSection xFirst, xSecond;
+			const bool bSectionsValid = pxModelInstance && pxModelInstance->GetNumMeshes() == 1u
+				&& pxModelInstance->GetNumMaterials() == 2u
+				&& pxModelInstance->GetNumDrawSections(0u) == 2u
+				&& pxModelInstance->GetDrawSection(0u, 0u, xFirst)
+				&& pxModelInstance->GetDrawSection(0u, 1u, xSecond)
+				&& xFirst.m_uFirstIndex == 0u
+				&& xSecond.m_uFirstIndex == xFirst.m_uIndexCount
+				&& xSecond.m_uFirstIndex + xSecond.m_uIndexCount == pxInstance->GetNumIndices();
+			const auto* pxFirstMaterial = bSectionsValid
+				? pxModelInstance->GetMeshMaterial(0u, xFirst.m_uMaterialSlot) : nullptr;
+			const auto* pxSecondMaterial = bSectionsValid
+				? pxModelInstance->GetMeshMaterial(0u, xSecond.m_uMaterialSlot) : nullptr;
+			if (!pxFirstMaterial || !pxSecondMaterial || pxFirstMaterial == pxSecondMaterial)
+			{
+				FailIPS("the signpost must load one mesh with two complete index ranges and distinct wood/iron materials");
+				return;
+			}
+			Zenith_Log(LOG_CATEGORY_UNITTEST,
+				"[ZM_ImportedPropShowcase] '%s' multi-material verified: ranges [0,%u), [%u,%u), slots %u/%u",
+				xRow.m_szEntityName, xFirst.m_uIndexCount, xSecond.m_uFirstIndex,
+				pxInstance->GetNumIndices(), xFirst.m_uMaterialSlot, xSecond.m_uMaterialSlot);
+		}
 
 		Zenith_Maths::Vector3 xPosition(0.0f);
 		Zenith_Maths::Vector3 xScale(1.0f);

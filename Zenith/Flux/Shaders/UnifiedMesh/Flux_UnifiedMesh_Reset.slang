@@ -3,8 +3,8 @@
 //
 // Per-frame GPU reset of the per-(view,bucket) indirect-draw commands, BEFORE the
 // cull pass. One thread per (view,bucket) pair: writes the full
-// VkDrawIndexedIndirectCommand (indexCount from the bucket's shared mesh, the rest
-// zeroed). The cull pass then atomically increments each command's instanceCount.
+// VkDrawIndexedIndirectCommand using the bucket's index count and first index.
+// The cull pass then atomically increments each command's instanceCount.
 // Writing every indirect word on device each frame (rather than a host seed) lets
 // the render graph synthesise the reset->cull->draw barriers and removes the host
 // WRITE_AFTER_READ race.
@@ -12,7 +12,7 @@
 // VIEW dimension (Stage 2): view 0 = camera, views 1..N = the shadow cascades. The
 // indirect buffer is one VkDrawIndexedIndirectCommand per (view,bucket), laid out
 // view-major: command (v,b) at uint offset (v*numBuckets + b)*5. The index count is
-// view-invariant (same mesh), so every view of a bucket gets bucketIndexCount[b].
+// view-invariant (same mesh), so every view of a bucket gets bucketIndexCount[b * 2u].
 //
 // VkDrawIndexedIndirectCommand layout (uint[5] per command):
 // [0]=indexCount, [1]=instanceCount, [2]=firstIndex, [3]=vertexOffset,
@@ -34,7 +34,7 @@ struct ResetConstantsLayout
 struct PassParams
 {
     ConstantBuffer<ResetConstantsLayout> ResetConstants;
-    RWStructuredBuffer<uint>             bucketIndexCount;  // [numBuckets] per-bucket mesh index count (view-invariant)
+    RWStructuredBuffer<uint>             bucketIndexCount;  // [numBuckets*2] indexCount, firstIndex (view-invariant)
     RWStructuredBuffer<uint>             indirect;          // [numViews*numBuckets*5] VkDrawIndexedIndirectCommand
 };
 ParameterBlock<PassParams> g_xPassSet;
@@ -51,9 +51,9 @@ void csMain(uint3 id : SV_DispatchThreadID)
     uint b = tid - v * numBuckets;
 
     uint base = (v * numBuckets + b) * 5u;
-    g_xPassSet.indirect[base + 0u] = g_xPassSet.bucketIndexCount[b]; // indexCount (view-invariant)
+    g_xPassSet.indirect[base + 0u] = g_xPassSet.bucketIndexCount[b * 2u]; // indexCount (view-invariant)
     g_xPassSet.indirect[base + 1u] = 0u;                             // instanceCount (cull increments)
-    g_xPassSet.indirect[base + 2u] = 0u;                             // firstIndex
+    g_xPassSet.indirect[base + 2u] = g_xPassSet.bucketIndexCount[b * 2u + 1u]; // firstIndex
     g_xPassSet.indirect[base + 3u] = 0u;                             // vertexOffset
     g_xPassSet.indirect[base + 4u] = 0u;                             // firstInstance
 }

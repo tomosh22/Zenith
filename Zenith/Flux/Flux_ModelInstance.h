@@ -12,6 +12,18 @@ class Flux_MeshInstance;
 class Flux_MeshGeometry;
 class Flux_SkeletonInstance;
 
+// One draw within a mesh binding. Material slots are local to that binding.
+struct Flux_MeshDrawSection
+{
+	uint32_t m_uFirstIndex = 0;
+	uint32_t m_uIndexCount = 0;
+	uint32_t m_uMaterialSlot = 0;
+};
+
+// Pure range resolution; legacy/procedural meshes without sections draw whole.
+bool Flux_ResolveMeshDrawSection(const Zenith_MeshAsset* pxAsset, uint32_t uNumIndices,
+	uint32_t uSection, Flux_MeshDrawSection& xOut);
+
 /**
  * Flux_ModelInstance - A complete renderable model combining meshes, materials, and optional skeleton
  *
@@ -33,8 +45,14 @@ class Flux_SkeletonInstance;
  *   for (uint32_t u = 0; u < pxInstance->GetNumMeshes(); u++)
  *   {
  *       Flux_MeshInstance* pxMesh = pxInstance->GetMeshInstance(u);
- *       Zenith_MaterialAsset* pxMat = pxInstance->GetMaterial(u);
- *       // Submit draw call...
+ *       // Resolve each section's local material slot and index range.
+ *       for (uint32_t s = 0; s < pxInstance->GetNumDrawSections(u); ++s)
+ *       {
+ *           Flux_MeshDrawSection section;
+ *           if (!pxInstance->GetDrawSection(u, s, section)) continue;
+ *           Zenith_MaterialAsset* pxMat = pxInstance->GetMeshMaterial(u, section.m_uMaterialSlot);
+ *           // Submit section.m_uIndexCount indices starting at section.m_uFirstIndex.
+ *       }
  *   }
  *
  *   // For animated models
@@ -147,6 +165,9 @@ public:
 	 * @return Material asset, or nullptr if index out of range
 	 */
 	Zenith_MaterialAsset* GetMaterial(uint32_t uIndex) const;
+	Zenith_MaterialAsset* GetMeshMaterial(uint32_t uMesh, uint32_t uSlot) const;
+	uint32_t GetNumDrawSections(uint32_t uMesh) const;
+	bool GetDrawSection(uint32_t uMesh, uint32_t uSection, Flux_MeshDrawSection& xOut) const;
 
 	/**
 	 * Override material at the specified index
@@ -195,6 +216,8 @@ public:
 private:
 	// Source asset handle — keeps the asset alive for the lifetime of this instance.
 	ModelHandle m_xSourceAsset;
+	struct MeshMaterialRange { uint32_t m_uFirst; uint32_t m_uCount; };
+	Zenith_Vector<MeshMaterialRange> m_xMeshMaterialRanges;
 
 	// Runtime mesh instances (GPU-ready, owned by this instance)
 	// The static packed vertex format, for static or bind-pose rendering

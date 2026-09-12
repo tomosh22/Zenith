@@ -403,14 +403,15 @@ inline constexpr ZM_DawnmereProp axZM_DAWNMERE_PROPS[] =
 
 	// ---- The village's own signage, on the plaza's north edge ----------------
 	//
-	// All three face -Z (YAW180 from a model whose front is +X), which is the
-	// direction a player arriving from the spawn reads them from.
+	// SignPost's authored GLB has its bolted reading faces on +Z. YAW180
+	// points the home sign toward the southern plaza approach; YAW0 points
+	// the route sign toward travellers returning south from Route 1.
 	{ "DawnmereTownBoard",      ZM_PROP_TOWN_BOARD, 106.00f,  98.00f,
 		fZM_INTERIOR_YAW180_W, fZM_INTERIOR_YAW180_Y, ZM_DAWNMERE_ANCHOR_FREE },
 	{ "DawnmereSignHome",       ZM_PROP_SIGN_POST,  104.00f,  92.00f,
 		fZM_INTERIOR_YAW180_W, fZM_INTERIOR_YAW180_Y, ZM_DAWNMERE_ANCHOR_FREE },
 	{ "DawnmereSignRoute",      ZM_PROP_SIGN_POST,  132.00f, 124.00f,
-		fZM_INTERIOR_YAW180_W, fZM_INTERIOR_YAW180_Y, ZM_DAWNMERE_ANCHOR_FREE },
+		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 
 	// ---- Lantern posts lining the route lane --------------------------------
 	//

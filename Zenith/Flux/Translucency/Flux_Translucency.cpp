@@ -317,6 +317,7 @@ static Flux_TranslucentDrawItem BuildTranslucentDrawItem(Flux_MeshInstance* pxMe
 	const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
 	Flux_TranslucentDrawItem xItem;
 	xItem.m_pxMeshInstance = pxMeshInstance;
+	xItem.m_uIndexCount = pxMeshInstance->GetNumIndices();
 	xItem.m_pxMaterial = pxMaterial;
 	xItem.m_xModelMatrix = xModelMatrix;
 	const Zenith_Maths::Vector3 xToCamera = Zenith_Maths::Vector3(xModelMatrix[3]) - xCameraPos;
@@ -381,30 +382,38 @@ void Flux_TranslucencyImpl::GatherDrawPacket(void*)
 
 			for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
 			{
-				Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
-				if (!pxMaterial) continue;
-
-				const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
-				const bool bTranslucent = (xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT) ||
-										  (xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE);
-				if (!bTranslucent) continue;
-
-				// v1: skinned-animated translucent submeshes are not supported.
-				if (pxModelInstance->GetSkinnedMeshInstance(uMesh) != nullptr)
+				for (uint32_t uSection = 0; uSection < pxModelInstance->GetNumDrawSections(uMesh); ++uSection)
 				{
-					if (!m_bWarnedAnimatedTranslucent)
+					Flux_MeshDrawSection xSection;
+					if (!pxModelInstance->GetDrawSection(uMesh, uSection, xSection)) continue;
+					Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMeshMaterial(uMesh, xSection.m_uMaterialSlot);
+					if (!pxMaterial) continue;
+
+					const Zenith_MaterialParams& xParams = pxMaterial->GetResolved().m_xParams;
+					const bool bTranslucent = (xParams.m_eBlendMode == MATERIAL_BLEND_TRANSLUCENT) ||
+											  (xParams.m_eBlendMode == MATERIAL_BLEND_ADDITIVE);
+					if (!bTranslucent) continue;
+
+					// v1: skinned-animated translucent submeshes are not supported.
+					if (pxModelInstance->GetSkinnedMeshInstance(uMesh) != nullptr)
 					{
-						Zenith_Warning(LOG_CATEGORY_RENDERER,
-							"Flux_Translucency: skinned-animated translucent submesh skipped — animated translucency is not supported yet");
-						m_bWarnedAnimatedTranslucent = true;
+						if (!m_bWarnedAnimatedTranslucent)
+						{
+							Zenith_Warning(LOG_CATEGORY_RENDERER,
+								"Flux_Translucency: skinned-animated translucent submesh skipped — animated translucency is not supported yet");
+							m_bWarnedAnimatedTranslucent = true;
+						}
+						continue;
 					}
-					continue;
+
+					Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
+					if (!pxMeshInstance) continue;
+
+					auto xItem = BuildTranslucentDrawItem(pxMeshInstance, pxMaterial, xModelMatrix, xCameraPos);
+					xItem.m_uFirstIndex = xSection.m_uFirstIndex;
+					xItem.m_uIndexCount = xSection.m_uIndexCount;
+					xPacket.PushBack(xItem);
 				}
-
-				Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
-				if (!pxMeshInstance) continue;
-
-				xPacket.PushBack(BuildTranslucentDrawItem(pxMeshInstance, pxMaterial, xModelMatrix, xCameraPos));
 			}
 		}
 	}
@@ -531,6 +540,6 @@ static void ExecuteTranslucency(Flux_CommandBuffer* pxCmdList, void*)
 		// (g_axMaterials lives in the persistent GLOBAL set now — Phase 5.3 dissolved the
 		// fragile per-draw re-stage this forward pass used to need.)
 
-		pxCmdList->DrawIndexed(xItem.m_pxMeshInstance->GetNumIndices());
+		pxCmdList->DrawIndexed(xItem.m_uIndexCount, 1u, 0u, xItem.m_uFirstIndex);
 	}
 }

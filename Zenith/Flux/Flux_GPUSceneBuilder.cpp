@@ -88,6 +88,25 @@ static bool BuildStaticSubmeshDesc(Flux_MeshGeometryRegistry& xRegistry, Flux_Me
 	return true;
 }
 
+// Each material section shares the mesh's VB/IB residency, but owns an index
+// range in the bucket key. Do not conflate a mesh binding with a draw section.
+static void AppendStaticModelSections(Flux_MeshGeometryRegistry& xRegistry,
+	Flux_ModelInstance& xModel, uint32_t uMesh, Zenith_MaterialAsset* pxBlank,
+	Flux_GPUSceneSourceItem& xItem)
+{
+	for (uint32_t uSection = 0; uSection < xModel.GetNumDrawSections(uMesh); ++uSection)
+	{
+		Flux_MeshDrawSection xSection;
+		if (!xModel.GetDrawSection(uMesh, uSection, xSection)) continue;
+		Flux_GPUSceneSourceSubmesh xSub;
+		if (!BuildStaticSubmeshDesc(xRegistry, xModel.GetMeshInstance(uMesh),
+			xModel.GetMeshMaterial(uMesh, xSection.m_uMaterialSlot), pxBlank, xSub)) continue;
+		xSub.m_uFirstIndex = xSection.m_uFirstIndex;
+		xSub.m_uIndexCount = xSection.m_uIndexCount;
+		xItem.m_xSubmeshes.PushBack(xSub);
+	}
+}
+
 // Stage 4.3 (TAA): record one object's previous-frame world matrix — index-locked to
 // m_xUnifiedGPUScene.m_xObjects (called immediately after EACH append) — and remember this
 // frame's matrix as next frame's prev. A miss / id-0 (foliage, external) yields prev == current,
@@ -214,12 +233,8 @@ void Flux_RendererImpl::ExtractSnapshotStaticBuckets(const Flux_RenderSceneSnaps
 		const uint32_t uNumMeshes = pxModel->GetNumMeshes();
 		for (uint32_t uMesh = 0; uMesh < uNumMeshes; ++uMesh)
 		{
-			Flux_GPUSceneSourceSubmesh xSub;
-			if (BuildStaticSubmeshDesc(m_xUnifiedMeshGeometryRegistry, pxModel->GetMeshInstance(uMesh),
-				pxModel->GetMaterial(uMesh), pxBlankMaterial, xSub))
-			{
-				xItem.m_xSubmeshes.PushBack(xSub);
-			}
+			AppendStaticModelSections(m_xUnifiedMeshGeometryRegistry, *pxModel,
+				uMesh, pxBlankMaterial, xItem);
 		}
 
 		if (xItem.m_xSubmeshes.GetSize() > 0u)
@@ -412,12 +427,8 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 				{
 					// Non-skinned submesh of an animated model -> draw it as STATIC geometry (the
 					// model's world matrix). Skinned submeshes (below) are compute-skinned instead.
-					Flux_GPUSceneSourceSubmesh xStaticSub;
-					if (BuildStaticSubmeshDesc(m_xUnifiedMeshGeometryRegistry, pxModel->GetMeshInstance(uMesh),
-						pxModel->GetMaterial(uMesh), pxBlankMaterial, xStaticSub))
-					{
-						xStaticOfAnimated.m_xSubmeshes.PushBack(xStaticSub);
-					}
+					AppendStaticModelSections(m_xUnifiedMeshGeometryRegistry, *pxModel,
+						uMesh, pxBlankMaterial, xStaticOfAnimated);
 					continue;
 				}
 				Flux_MeshInstance* pxMeshInst = pxModel->GetMeshInstance(uMesh);
@@ -441,16 +452,6 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 					continue;
 				}
 
-				Zenith_MaterialAsset* pxMat = pxModel->GetMaterial(uMesh);
-				if (pxMat == nullptr)
-				{
-					pxMat = pxBlankMaterial;   // blank fallback (unifies the null-material policy)
-				}
-				const MaterialBlendMode eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
-				if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE)
-				{
-					continue;   // forward path
-				}
 
 				// Stable base in the persistent bind-pose pool (the words were appended once when the
 				// pose entry was first built — see Flux_SkinnedPoseRegistry::Reference).
@@ -483,20 +484,31 @@ void Flux_RendererImpl::ExtractSkinnedBuckets(const Flux_RenderSceneSnapshot& xS
 				xSD.m_uVertexOffset = uOutVertBase;
 				m_xUnifiedSkinnedDrawById.Insert(uStableId, xSD);
 
-				Flux_GPUSceneBucketKey xKey;
-				xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | uStableId;
-				xKey.m_uCullMode         = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
-				// Pointer-as-id: same per-frame-rebuilt lifetime contract as BuildStaticSubmeshDesc's SAFETY note.
-				xKey.m_ulMaterialAssetId = reinterpret_cast<u_int64>(pxMat);
-				xKey.m_ulVATTextureId    = 0u;   // skinned != VAT (keeps ResolveBucketVAT safe)
+				for (uint32_t uSection = 0; uSection < pxModel->GetNumDrawSections(uMesh); ++uSection)
+				{
+					Flux_MeshDrawSection xSection;
+					if (!pxModel->GetDrawSection(uMesh, uSection, xSection)) continue;
+					Zenith_MaterialAsset* pxMat = pxModel->GetMeshMaterial(uMesh, xSection.m_uMaterialSlot);
+					if (!pxMat) pxMat = pxBlankMaterial;
+					const auto eBlend = pxMat->GetResolved().m_xParams.m_eBlendMode;
+					if (eBlend == MATERIAL_BLEND_TRANSLUCENT || eBlend == MATERIAL_BLEND_ADDITIVE) continue;
+					Flux_GPUSceneBucketKey xKey;
+					xKey.m_uFirstIndex = xSection.m_uFirstIndex;
+					xKey.m_uIndexCount = xSection.m_uIndexCount;
+					xKey.m_uMeshGeometryId   = uFLUX_GPUSCENE_SKINNED_MESH_BIT | uStableId;
+					xKey.m_uCullMode         = pxMat->GetResolved().m_xParams.m_bTwoSided ? uFLUX_GPUSCENE_CULL_TWO_SIDED : uFLUX_GPUSCENE_CULL_ONE_SIDED;
+					// Pointer-as-id: same per-frame-rebuilt lifetime contract as BuildStaticSubmeshDesc's SAFETY note.
+					xKey.m_ulMaterialAssetId = reinterpret_cast<u_int64>(pxMat);
+					xKey.m_ulVATTextureId    = 0u;   // skinned != VAT (keeps ResolveBucketVAT safe)
 
-				const Zenith_AABB& xLocal = pxMeshInst->GetLocalBounds();
-				const Zenith_Maths::Vector4 xSphere = Flux_InflateBoundsSphere(
-					Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax), fFLUX_SKIN_BOUNDS_INFLATION);
+					const Zenith_AABB& xLocal = pxMeshInst->GetLocalBounds();
+					const Zenith_Maths::Vector4 xSphere = Flux_InflateBoundsSphere(
+						Flux_LocalBoundsSphereFromAABB(xLocal.m_xMin, xLocal.m_xMax), fFLUX_SKIN_BOUNDS_INFLATION);
 
-				Flux_AppendGPUSceneSkinnedInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
-					xSrc.m_xWorldMatrix, uBonePaletteBase, xKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE);
-				RecordUnifiedPrevTransform(xSrc.m_ulEntityIDPacked, xSrc.m_xWorldMatrix);   // Stage 4.3: one per skinned submesh append (same entity => same prev)
+					Flux_AppendGPUSceneSkinnedInstance(m_xUnifiedBucketRegistry, m_xUnifiedGPUScene,
+						xSrc.m_xWorldMatrix, uBonePaletteBase, xKey, xSphere, uFLUX_GPUSCENE_TINT_WHITE);
+					RecordUnifiedPrevTransform(xSrc.m_ulEntityIDPacked, xSrc.m_xWorldMatrix);   // Stage 4.3: one per skinned submesh append (same entity => same prev)
+				}
 			}
 
 			// Append the model's non-skinned submeshes (if any) as one static item — drawn via the

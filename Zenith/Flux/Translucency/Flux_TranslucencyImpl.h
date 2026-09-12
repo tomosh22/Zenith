@@ -22,6 +22,8 @@ class Flux_IBLImpl;
 // the record callback runs.
 struct Flux_TranslucentDrawItem
 {
+	u_int m_uFirstIndex = 0u;
+	u_int m_uIndexCount = 0u;
 	Flux_MeshInstance*    m_pxMeshInstance = nullptr;
 	Zenith_MaterialAsset* m_pxMaterial = nullptr;
 	Zenith_Maths::Matrix4 m_xModelMatrix;

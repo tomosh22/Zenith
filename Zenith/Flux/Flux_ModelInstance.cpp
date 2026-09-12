@@ -97,6 +97,7 @@ void Flux_ModelInstance::AppendProceduralMesh(Flux_MeshGeometry& xGeometry, Zeni
 
 	MaterialHandle xMaterialHandle;
 	xMaterialHandle.Set(&xMaterial);
+	m_xMeshMaterialRanges.PushBack({ static_cast<uint32_t>(m_xMaterials.GetSize()), 1u });
 	m_xMaterials.PushBack(std::move(xMaterialHandle));
 
 	// Phase 3: the mesh set grew — the cached local union bounds must be recomputed.
@@ -175,6 +176,8 @@ void Flux_ModelInstance::BuildSubMeshInstance(uint32_t uMeshIdx, Zenith_ModelAss
 	}
 
 	const uint32_t uNumMaterials = static_cast<uint32_t>(xBinding.m_xMaterials.GetSize());
+	m_xMeshMaterialRanges.PushBack({ static_cast<uint32_t>(m_xMaterials.GetSize()),
+		uNumMaterials > 0u ? uNumMaterials : 1u });
 	for (uint32_t uMatIdx = 0; uMatIdx < uNumMaterials; uMatIdx++)
 	{
 		const std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
@@ -231,6 +234,7 @@ void Flux_ModelInstance::Destroy()
 
 	// Clear materials (handles auto-release when cleared)
 	m_xMaterials.Clear();
+	m_xMeshMaterialRanges.Clear();
 
 	// Clear loaded mesh assets (handles auto-release when cleared)
 	m_xLoadedMeshAssets.Clear();
@@ -281,6 +285,47 @@ Zenith_MaterialAsset* Flux_ModelInstance::GetMaterial(uint32_t uIndex) const
 	return !xHandle.GetPath().empty()
 		? xHandle.Resolve()
 		: xHandle.GetDirect();
+}
+
+bool Flux_ResolveMeshDrawSection(const Zenith_MeshAsset* pxAsset, uint32_t uNumIndices,
+	uint32_t uSection, Flux_MeshDrawSection& xOut)
+{
+	xOut = {};
+	if (pxAsset && pxAsset->GetNumSubmeshes() > 0u)
+	{
+		if (uSection >= pxAsset->GetNumSubmeshes()) return false;
+		const auto& xSub = pxAsset->m_xSubmeshes.Get(uSection);
+		xOut = { xSub.m_uStartIndex, xSub.m_uIndexCount, xSub.m_uMaterialIndex };
+	}
+	else
+	{
+		if (uSection != 0u) return false;
+		xOut.m_uIndexCount = uNumIndices;
+	}
+	// Subtraction avoids overflow when an imported range is malformed.
+	return xOut.m_uIndexCount > 0u && xOut.m_uFirstIndex <= uNumIndices
+		&& xOut.m_uIndexCount <= uNumIndices - xOut.m_uFirstIndex;
+}
+
+uint32_t Flux_ModelInstance::GetNumDrawSections(uint32_t uMesh) const
+{
+	Flux_MeshInstance* pxMesh = GetMeshInstance(uMesh);
+	if (!pxMesh) return 0u;
+	Zenith_MeshAsset* pxAsset = pxMesh->GetSourceAsset();
+	return pxAsset && pxAsset->GetNumSubmeshes() ? pxAsset->GetNumSubmeshes() : 1u;
+}
+
+bool Flux_ModelInstance::GetDrawSection(uint32_t uMesh, uint32_t uSection, Flux_MeshDrawSection& xOut) const
+{
+	Flux_MeshInstance* pxMesh = GetMeshInstance(uMesh);
+	return pxMesh && Flux_ResolveMeshDrawSection(pxMesh->GetSourceAsset(), pxMesh->GetNumIndices(), uSection, xOut);
+}
+
+Zenith_MaterialAsset* Flux_ModelInstance::GetMeshMaterial(uint32_t uMesh, uint32_t uSlot) const
+{
+	if (uMesh >= m_xMeshMaterialRanges.GetSize()) return nullptr;
+	const auto& xRange = m_xMeshMaterialRanges.Get(uMesh);
+	return uSlot < xRange.m_uCount ? GetMaterial(xRange.m_uFirst + uSlot) : nullptr;
 }
 
 void Flux_ModelInstance::SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)

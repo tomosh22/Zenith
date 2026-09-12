@@ -1330,6 +1330,10 @@ public:
 		}
 		if (eProp >= ZM_PROP_COUNT)
 		{
+			eProp = ZM_PropForDawnmerePropEntity(szName);
+		}
+		if (eProp >= ZM_PROP_COUNT)
+		{
 			Zenith_Error(LOG_CATEGORY_MESH,
 				"[ZM_InteriorFurniture] entity '%s' carries a furniture component but "
 				"maps to no prop (see ZM_InteriorDressing.h for the two rooms, "

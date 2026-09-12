@@ -353,7 +353,7 @@ void Flux_UnifiedMeshImpl::Initialise()
 	m_uDrawItemCapacity = kuINITIAL_DRAWITEMS;
 
 	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_BUCKETS * sizeof(u_int), m_xBucketOffsetBuffer);
-	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_BUCKETS * sizeof(u_int), m_xBucketIndexCountBuffer);
+	xMem.InitialiseDynamicReadWriteBuffer(nullptr, kuINITIAL_BUCKETS * 2u * sizeof(u_int), m_xBucketIndexCountBuffer);
 	m_uBucketMetaCapacity = kuINITIAL_BUCKETS;
 
 	xMem.InitialiseDynamicConstantBuffer(nullptr, sizeof(UnifiedCullingConstants), m_xCullingConstantsBuffer);
@@ -693,7 +693,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	if (uSlotCount > uOldBucketMetaCapacity)
 	{
 		xMem.DestroyDynamicReadWriteBuffer(m_xBucketIndexCountBuffer);
-		xMem.InitialiseDynamicReadWriteBuffer(nullptr, m_uBucketMetaCapacity * sizeof(u_int), m_xBucketIndexCountBuffer);
+		xMem.InitialiseDynamicReadWriteBuffer(nullptr, m_uBucketMetaCapacity * 2u * sizeof(u_int), m_xBucketIndexCountBuffer);
 	}
 
 	// --- per-bucket counts → prefix-sum offsets (indexed by stable slot) ---
@@ -705,6 +705,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	for (u_int u = 0; u < uSlotCount; ++u)
 	{
 		m_auBucketCountScratch.PushBack(0u);
+		m_auBucketIndexCountScratch.PushBack(0u);
 		m_auBucketIndexCountScratch.PushBack(0u);
 	}
 	for (u_int u = 0; u < uNumDrawItems; ++u)
@@ -761,7 +762,11 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 			}
 			xDraw.m_pxVATTexture = ResolveBucketVAT(pxKey->m_ulVATTextureId, xDraw.m_xVATParams);
 		}
-		m_auBucketIndexCountScratch.Get(uSlot) = pxMesh->GetNumIndices();
+		const u_int uFirstIndex = pxKey->m_uFirstIndex;
+		const u_int uIndexCount = pxKey->m_uIndexCount == ~0u ? pxMesh->GetNumIndices() : pxKey->m_uIndexCount;
+		if (uFirstIndex > pxMesh->GetNumIndices() || uIndexCount > pxMesh->GetNumIndices() - uFirstIndex) continue;
+		m_auBucketIndexCountScratch.Get(uSlot * 2u) = uIndexCount;
+		m_auBucketIndexCountScratch.Get(uSlot * 2u + 1u) = uFirstIndex;
 		xDraw.m_pxMesh = pxMesh;
 
 		// Material registration is MAIN-THREAD only (this gather runs on the main
@@ -795,7 +800,7 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	xMem.UploadBufferData(m_xBucketOffsetBuffer.GetBuffer().m_xVRAMHandle,
 		m_auBucketOffsetScratch.GetDataPointer(), uSlotCount * sizeof(u_int));
 	xMem.UploadBufferData(m_xBucketIndexCountBuffer.GetBuffer().m_xVRAMHandle,
-		m_auBucketIndexCountScratch.GetDataPointer(), uSlotCount * sizeof(u_int));
+		m_auBucketIndexCountScratch.GetDataPointer(), uSlotCount * 2u * sizeof(u_int));
 
 	// --- multi-view culling constants (per-view frustum planes + camera + counts) ---
 	// Active views come from the render-view registry (fixed slots — camera always;

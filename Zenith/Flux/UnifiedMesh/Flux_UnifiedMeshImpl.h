@@ -102,7 +102,7 @@ public:
 	Flux_DynamicReadWriteBuffer m_xPrevTransformsBuffer; // Matrix4[] (float4x4)
 	Flux_DynamicReadWriteBuffer m_xDrawItemsBuffer;      // GPUSceneDrawItem[]
 	Flux_DynamicReadWriteBuffer m_xBucketOffsetBuffer;   // uint[bucketSlots] prefix-sum
-	Flux_DynamicReadWriteBuffer m_xBucketIndexCountBuffer;// uint[bucketSlots] mesh index count
+	Flux_DynamicReadWriteBuffer m_xBucketIndexCountBuffer;// uint[bucketSlots*2]: indexCount, firstIndex
 	Flux_DynamicConstantBuffer  m_xCullingConstantsBuffer;
 
 	// Capacities (element counts) — grow-only; growth reuses the same buffer object so

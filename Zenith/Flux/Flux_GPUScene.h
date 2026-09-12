@@ -182,7 +182,7 @@ bool Flux_CullDrawItemAgainstFrustum(const Zenith_Maths::Matrix4& xModel,
 
 // ---- reset-indirect packer (CPU mirror of Flux_UnifiedMesh_Reset.slang) ------
 // Packs one VkDrawIndexedIndirectCommand (5 uints): [indexCount, instanceCount=0,
-// firstIndex=0, vertexOffset, firstInstance=0]. The cull compute atomically increments
+// firstIndex, vertexOffset, firstInstance=0]. The cull compute atomically increments
 // word 1 (instanceCount); every other word stays as packed. Lives next to kuINDIRECT_WORDS.
 // uVertexOffset is the bucket's base vertex into a shared vertex arena — 0 for static /
 // foliage buckets (geometry bound directly), and the skinned submesh-instance's arena
@@ -190,11 +190,11 @@ bool Flux_CullDrawItemAgainstFrustum(const Zenith_Maths::Matrix4& xModel,
 // it to 0 keeps every existing caller byte-identical to the pre-Stage-5 layout.
 inline constexpr u_int uFLUX_GPUSCENE_INDIRECT_WORDS = 5u;   // VkDrawIndexedIndirectCommand
 inline void Flux_PackResetIndirectCommand(u_int auOut[uFLUX_GPUSCENE_INDIRECT_WORDS], u_int uIndexCount,
-	u_int uVertexOffset = 0u)
+	u_int uVertexOffset = 0u, u_int uFirstIndex = 0u)
 {
 	auOut[0] = uIndexCount;    // indexCount
 	auOut[1] = 0u;             // instanceCount (cull-incremented)
-	auOut[2] = 0u;             // firstIndex
+	auOut[2] = uFirstIndex;    // firstIndex
 	auOut[3] = uVertexOffset;  // vertexOffset (skinned-arena slice base; 0 for static/foliage)
 	auOut[4] = 0u;             // firstInstance
 }
@@ -247,10 +247,14 @@ struct Flux_GPUSceneBucketKey
 	// collide into one bucket. Keep the pointer; do NOT swap it for a path id.
 	u_int64 m_ulMaterialAssetId = 0u;
 	u_int64 m_ulVATTextureId    = 0u;  // stable VAT asset-handle identity (Stage 0c); 0 = no VAT
+	u_int   m_uFirstIndex = 0u;
+	u_int   m_uIndexCount = ~0u; // whole mesh for external/procedural submissions
 
 	bool operator==(const Flux_GPUSceneBucketKey& xOther) const
 	{
 		return m_uMeshGeometryId   == xOther.m_uMeshGeometryId
+		    && m_uFirstIndex       == xOther.m_uFirstIndex
+		    && m_uIndexCount       == xOther.m_uIndexCount
 		    && m_uCullMode         == xOther.m_uCullMode
 		    && m_ulMaterialAssetId == xOther.m_ulMaterialAssetId
 		    && m_ulVATTextureId    == xOther.m_ulVATTextureId;
@@ -271,6 +275,8 @@ struct Zenith_Hash<Flux_GPUSceneBucketKey>
 			for (size_t i = 0; i < n; ++i) { uHash ^= pb[i]; uHash *= 0x100000001b3ull; }
 		};
 		Bytes(&xKey.m_uMeshGeometryId,   sizeof(xKey.m_uMeshGeometryId));
+		Bytes(&xKey.m_uFirstIndex,       sizeof(xKey.m_uFirstIndex));
+		Bytes(&xKey.m_uIndexCount,       sizeof(xKey.m_uIndexCount));
 		Bytes(&xKey.m_uCullMode,         sizeof(xKey.m_uCullMode));
 		Bytes(&xKey.m_ulMaterialAssetId, sizeof(xKey.m_ulMaterialAssetId));
 		Bytes(&xKey.m_ulVATTextureId,    sizeof(xKey.m_ulVATTextureId));
@@ -290,6 +296,8 @@ struct Flux_GPUSceneSourceSubmesh
 	Zenith_Maths::Vector4 m_xLocalBoundsSphere = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
 	u_int   m_uColorTintPacked  = uFLUX_GPUSCENE_TINT_WHITE;
 	u_int   m_uFlags            = 0u;
+	u_int   m_uFirstIndex = 0u;
+	u_int   m_uIndexCount = ~0u;
 };
 
 struct Flux_GPUSceneSourceItem

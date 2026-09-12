@@ -349,7 +349,20 @@ collider in a corridor the automated walk driver has no way around
 - [ ] `AB-PROP-08` **LanternPost** -- 0.4 x 0.4 x 2.4 m -- The shorter, warmer cousin of the lamp post; a hung lantern rather than a fixed head.
 - [ ] `AB-PROP-09` **FenceWood** -- A short run of rough post-and-rail timber fencing. Must tile end to end with no visible seam.
 - [ ] `AB-PROP-10` **FenceStone** -- A dry-stone wall section, same tiling requirement.
-- [ ] `AB-PROP-11` **SignPost** -- A wayfinding signpost with blank arms. Text is applied separately; leave the faces clean.
+- [x] `AB-PROP-11` **SignPost** -- A wayfinding signpost with blank arms. Text is applied separately; leave the faces clean. -- source: `Games/Zenithmon/Assets/Props/SignPost/SignPost.glb`
+
+  Delivered 2026-09-12 through Blender Python (`Tools/Art/create_signpost.py`):
+  beveled oak arms and upright, iron bolts/washers, cap and foot ferrule;
+  4,768 triangles, separate oak and iron PBR materials, each with embedded
+  1024-square base-colour, tangent-normal and glTF metallic/roughness maps.
+  One mesh with two primitives tests per-section rendering. Measured import dimensions
+  are 0.9000 x 2.0000 x 0.1515 m (X/Y/Z), with the base at Y=0 and bolted
+  faces on +Z. DawnmereSignHome uses YAW180 toward the plaza; DawnmereSignRoute
+  uses YAW0 toward returning travellers. The generated fallback remains.
+  `ZM_ImportedPropShowcase_Test` verifies both live placements and captures
+  their three-quarter and detail views. Restored the missing Dawnmere-table
+  lookup in `ZM_InteriorFurniture::OnStart`, which had prevented outdoor
+  props from loading any model.
 - [ ] `AB-PROP-12` **TownBoard** -- A village notice board with a shingled roof and a blank pinning surface.
 - [ ] `AB-PROP-13` **BridgePlank** -- A plank footbridge section, tiling along its length.
 - [ ] `AB-PROP-14` **BridgeStone** -- A stone arch bridge section, tiling along its length.
