@@ -13,6 +13,7 @@
 
 #include "Core/Zenith_TestFramework.h"
 #include "Scripting/Zenith_GraphBlackboard.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
 #include "EntityComponent/Zenith_EngineGraphBuilder.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -553,6 +554,272 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListOmittedArgsKeepNodeDefaults)
 	}
 }
 
+// --- 3b. GetVariable: the blackboard as a WIRE (B-3) --------------------------
+
+namespace
+{
+	// ★ REGISTERED LAZILY, inside a test body, behind a latch - NEVER at static
+	// init. ScriptTest's provenance contract walks the live registry and asserts
+	// every row is engine-derived, and a static-init registration would put this
+	// scratch type there before that contract ever runs.
+	//
+	// One INT32 INPUT, its var name defaulting to "" so a fixture that merely
+	// places the node reads nothing, and a member recording what the pin
+	// delivered - a wire that silently delivered nothing must not be
+	// indistinguishable from one that delivered the right value.
+	class Test_RegConsumerNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Test_RegConsumerNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strValueVar, "")
+		ZENITH_PROPERTY(int32_t, m_iDefault, -1)
+
+		ZENITH_GRAPH_PINS_BEGIN(Test_RegConsumerNode)
+		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_iDefault", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			m_iLastValue = GetInput<int32_t>(xContext, 0u);
+			++m_uReadCount;
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "Test_RegConsumer"; }
+
+		int32_t m_iLastValue = 0;
+		u_int m_uReadCount = 0;
+	};
+
+	void EnsureRegistrationTestNodesRegistered()
+	{
+		// Keyed on the REGISTRY, not a static latch: this TU also owns the
+		// totality test, whose registrar swap ResetForTests()s every row and
+		// restores only the ENGINE set - a bool latch would then stay true with
+		// the scratch type gone, and test ORDER would decide the outcome.
+		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		xRegistry.EnsureInitialized();
+		if (xRegistry.Find("Test_RegConsumer") != nullptr)
+		{
+			return;
+		}
+		xRegistry.RegisterNodeType<Test_RegConsumerNode>("Test_RegConsumer", GRAPH_EVENT_NONE, 1, false, "Test");
+	}
+
+	// OnUpdate -> Test_RegConsumer, with a GetVariable wired into the consumer's
+	// INT32 input. Returns the consumer's node id; 0 means a node did not
+	// resolve (an exe without the engine node library).
+	u_int BuildGetVariableFixture(Zenith_GraphDefinition& xDefinition, const char* szVariable,
+		const Zenith_PropertyValue* pxDeclared, u_int& uOutGetVariableNode)
+	{
+		uOutGetVariableNode = 0;
+		if (pxDeclared != nullptr)
+		{
+			xDefinition.DeclareVariable(szVariable, *pxDeclared);
+		}
+		const u_int uSource = xDefinition.AddNode("OnUpdate");
+		const u_int uConsumer = xDefinition.AddNode("Test_RegConsumer");
+		const u_int uGet = xDefinition.AddNode("GetVariable");
+		if (uSource == 0u || uConsumer == 0u || uGet == 0u)
+		{
+			return 0u;
+		}
+
+		// The variable NAME is a node param, so it goes through the blob.
+		const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find("GetVariable");
+		if (pxInfo == nullptr || pxInfo->m_pfnCreate == nullptr)
+		{
+			return 0u;
+		}
+		Zenith_GraphNode* pxTemp = pxInfo->m_pfnCreate();
+		xDefinition.ApplyNodeParams(uGet, pxTemp, *pxInfo);
+		static_cast<Zenith_GraphNode_GetVariable*>(pxTemp)->m_strVariable = szVariable;
+		xDefinition.SetNodeParamsFromInstance(uGet, pxTemp);
+		delete pxTemp;
+
+		xDefinition.AddEdge(uSource, 0u, uConsumer);
+		xDefinition.AddDataEdge(uGet, "Value", uConsumer, "Value");
+		uOutGetVariableNode = uGet;
+		return uConsumer;
+	}
+
+	void FireOneUpdate(Zenith_BehaviourGraph& xGraph)
+	{
+		Zenith_GraphContext xContext;
+		xContext.m_fDt = 0.016f;
+		xContext.m_pxGraph = &xGraph;
+		xContext.m_pxBlackboard = &xGraph.GetBlackboard();
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	}
+}
+
+// ★ THE OUTPUT TYPE IS THE DECLARATION'S. A graph declaring "hp" INT32 wires
+// GetVariable straight into an INT32 consumer, and the value arrives.
+ZENITH_TEST(GraphNodeOps, GetVariable_OutputTypeFollowsDeclaration)
+{
+	EnsureRegistrationTestNodesRegistered();
+
+	Zenith_PropertyValue xDeclared;
+	xDeclared.SetInt32(7);
+	Zenith_GraphDefinition xDef;
+	u_int uGet = 0;
+	const u_int uConsumer = BuildGetVariableFixture(xDef, "hp", &xDeclared, uGet);
+	ZENITH_ASSERT_NE(uConsumer, 0u);
+	if (uConsumer == 0u)
+	{
+		return;
+	}
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	// The slot is typed off the DECLARATION, which is what lets SetOutput's tag
+	// check pass at all.
+	Zenith_GraphNode* pxGet = xGraph.FindNode(uGet);
+	ZENITH_ASSERT_NOT_NULL(pxGet);
+	if (pxGet != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxGet->GetOutputPinType(1u) == PROPERTY_TYPE_INT32);
+	}
+
+	FireOneUpdate(xGraph);
+
+	Test_RegConsumerNode* pxConsumer = static_cast<Test_RegConsumerNode*>(xGraph.FindNode(uConsumer));
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxConsumer->m_uReadCount, 1u);
+		ZENITH_ASSERT_EQ(pxConsumer->m_iLastValue, 7);
+	}
+}
+
+// A missing variable is FAILURE, and a non-SUCCESS pure source yields the
+// CONSUMER'S OWN pin default - never a fabricated zero.
+ZENITH_TEST(GraphNodeOps, GetVariable_MissingVariableFailsAndConsumerReadsDefault)
+{
+	EnsureRegistrationTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	u_int uGet = 0;
+	const u_int uConsumer = BuildGetVariableFixture(xDef, "nothing_declares_me", nullptr, uGet);
+	ZENITH_ASSERT_NE(uConsumer, 0u);
+	if (uConsumer == 0u)
+	{
+		return;
+	}
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	FireOneUpdate(xGraph);
+
+	Test_RegConsumerNode* pxConsumer = static_cast<Test_RegConsumerNode*>(xGraph.FindNode(uConsumer));
+	Zenith_GraphNode* pxGet = xGraph.FindNode(uGet);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxGet);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxConsumer->m_uReadCount, 1u);
+		ZENITH_ASSERT_EQ(pxConsumer->m_iLastValue, -1);	// the const half of its own pin
+	}
+	if (pxGet != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxGet->GetPureStatusWarningCountForTest(), 1u);
+	}
+}
+
+// ★ THE TAG IS COMPARED BEFORE THE WRITE. A live value whose type disagrees with
+// the declaration FAILS - it does not reach SetOutput, whose refusal would leave
+// the stamped zero SET and report SUCCESS while the consumer read 0.
+ZENITH_TEST(GraphNodeOps, GetVariable_TypeDisagreementWithLiveValueFails)
+{
+	EnsureRegistrationTestNodesRegistered();
+
+	Zenith_PropertyValue xDeclared;
+	xDeclared.SetInt32(7);
+	Zenith_GraphDefinition xDef;
+	u_int uGet = 0;
+	const u_int uConsumer = BuildGetVariableFixture(xDef, "hp", &xDeclared, uGet);
+	ZENITH_ASSERT_NE(uConsumer, 0u);
+	if (uConsumer == 0u)
+	{
+		return;
+	}
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+
+	// A FLOAT lands in a variable the graph declared INT32 - exactly what a
+	// SetBlackboardFloat aimed at "hp" would do.
+	Zenith_PropertyValue xFloat;
+	xFloat.SetFloat(3.5f);
+	xGraph.GetBlackboard().SetValue("hp", xFloat);
+
+	FireOneUpdate(xGraph);
+
+	Test_RegConsumerNode* pxConsumer = static_cast<Test_RegConsumerNode*>(xGraph.FindNode(uConsumer));
+	Zenith_GraphNode* pxGet = xGraph.FindNode(uGet);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxGet);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxConsumer->m_iLastValue, -1);	// its own pin default
+	}
+	if (pxGet != nullptr)
+	{
+		// The write never happened, so the slot's own mismatch counter is ZERO -
+		// the node refused, rather than being refused.
+		ZENITH_ASSERT_EQ(pxGet->GetOutputMismatchWarningCountForTest(1u), 0u);
+		ZENITH_ASSERT_EQ(pxGet->GetPureStatusWarningCountForTest(), 1u);
+	}
+}
+
+// PURE means: no exec pins, and evaluated when a consumer GATHERS rather than
+// when the exec walk reaches it.
+ZENITH_TEST(GraphNodeOps, GetVariable_IsPureAndRunsOnDemand)
+{
+	EnsureRegistrationTestNodesRegistered();
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+
+	const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find("GetVariable");
+	ZENITH_ASSERT_NOT_NULL(pxInfo);
+	if (pxInfo == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_TRUE(pxInfo->m_bPureNode);
+	ZENITH_ASSERT_EQ(pxInfo->m_uExecOutputCount, 0u);
+
+	Zenith_PropertyValue xDeclared;
+	xDeclared.SetInt32(7);
+	Zenith_GraphDefinition xDef;
+	u_int uGet = 0;
+	const u_int uConsumer = BuildGetVariableFixture(xDef, "hp", &xDeclared, uGet);
+	ZENITH_ASSERT_NE(uConsumer, 0u);
+	if (uConsumer == 0u)
+	{
+		return;
+	}
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+
+	// Changed AFTER instantiation and BEFORE the dispatch: a node that read its
+	// variable at init would still deliver the declared 7.
+	Zenith_PropertyValue xLive;
+	xLive.SetInt32(9);
+	xGraph.GetBlackboard().SetValue("hp", xLive);
+
+	FireOneUpdate(xGraph);
+
+	Test_RegConsumerNode* pxConsumer = static_cast<Test_RegConsumerNode*>(xGraph.FindNode(uConsumer));
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		ZENITH_ASSERT_EQ(pxConsumer->m_iLastValue, 9);
+	}
+}
+
 // --- 4. Pin-table totality + role spot-check (A-6) ----------------------------
 
 #include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
@@ -623,6 +890,35 @@ ZENITH_TEST(GraphPinTable, RegistrationRoleSpotCheck)
 	// own and must resolve to Zenith_GraphNode_CollisionSourceBase's.
 	Zenith_CheckGraphPin("OnCollisionEnter", "StoreEntity", GRAPH_PIN_ROLE_SELECTOR_WRITE, PROPERTY_TYPE_ENTITY_ID, "m_strStoreEntityVar");
 	Zenith_CheckGraphPin("OnCollisionExit", "StoreEntity", GRAPH_PIN_ROLE_SELECTOR_WRITE, PROPERTY_TYPE_ENTITY_ID, "m_strStoreEntityVar");
+}
+
+// GetVariable's two pins, spelled out: the totality walk above proves
+// m_strVariable is COVERED by some descriptor, and this proves it is covered by
+// the RIGHT ones - a SELECTOR_READ (the blackboard read, which declare-or-error
+// reports) plus a from-variable OUTPUT that binds NOTHING.
+ZENITH_TEST(GraphPinTable, GetVariable_TotalityRowPresent)
+{
+	// The read half: a SELECTOR_READ on m_strVariable, ANY (it reads whatever
+	// type the variable is declared as).
+	Zenith_CheckGraphPin("GetVariable", "Variable", GRAPH_PIN_ROLE_SELECTOR_READ, eGRAPH_PIN_TYPE_ANY, "m_strVariable");
+
+	// The wire half: an OUTPUT whose TYPE comes from the graph, and whose
+	// binding/const/fallback slots are all empty ON PURPOSE - a type source is
+	// never a writer, or every other reader's declare-or-error would be silently
+	// satisfied by the node that merely READ the variable.
+	const Zenith_GraphPinDesc* pxValue = Zenith_FindGraphPin("GetVariable", "Value");
+	ZENITH_ASSERT_NOT_NULL(pxValue);
+	if (pxValue == nullptr)
+	{
+		return;
+	}
+	ZENITH_ASSERT_EQ(static_cast<int>(pxValue->m_eRole), static_cast<int>(GRAPH_PIN_ROLE_OUTPUT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxValue->m_eType), static_cast<int>(eGRAPH_PIN_TYPE_ANY));
+	ZENITH_ASSERT_STREQ(pxValue->m_szTypeFromVarNameProperty, "m_strVariable");
+	ZENITH_ASSERT_STREQ(pxValue->m_szVarNameProperty, "");
+	ZENITH_ASSERT_STREQ(pxValue->m_szConstProperty, "");
+	ZENITH_ASSERT_STREQ(pxValue->m_szFallbackVarNameProperty, "");
+	ZENITH_ASSERT_FALSE(pxValue->m_bInstanceResolved);
 }
 
 #endif // ZENITH_TESTING

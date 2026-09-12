@@ -3333,16 +3333,20 @@ ZENITH_TEST(BehaviourGraph, Definition_ClearDropsDataEdges)
 // names resolve at INSTANTIATION, so refusing one here would make an asset
 // un-loadable on a build that merely lacks a node version.
 //
-// ★ B-3 CHANGES THIS ON PURPOSE. When the validator learns to resolve a wire's
-// pin names through the pin tables, an unknown name becomes a finding and this
-// test must be updated by that unit rather than deleted.
+// ★ B-3 CHANGED THIS ON PURPOSE, exactly as the B-1 comment said it would. The
+// ROUND-TRIP half is unchanged and is what this test exists for: a name no table
+// declares is still authorable, storable and loadable, because refusing it at
+// READ would make an asset un-loadable on a build that merely lacks a node
+// version. What changed is the FULL tier, which now resolves the name through
+// the pin tables and reports it - so the endpoints are ANNOTATED nodes here,
+// where B-1 used an opaque pair for which no name resolution could happen.
 ZENITH_TEST(BehaviourGraph, Definition_UnknownPinNameRoundTrips)
 {
 	EnsureTestNodesRegistered();
 
 	Zenith_GraphDefinition xDef;
-	const u_int uSrc = xDef.AddNode("Test_Counter");
-	const u_int uDst = xDef.AddNode("Test_Counter");
+	const u_int uSrc = xDef.AddNode("Test_PinProducer");
+	const u_int uDst = xDef.AddNode("Test_PinConsumer");
 	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSrc, "no_such_out", uDst, "no_such_in"));
 
 	Zenith_DataStream xStream;
@@ -3359,38 +3363,46 @@ ZENITH_TEST(BehaviourGraph, Definition_UnknownPinNameRoundTrips)
 		ZENITH_ASSERT_STREQ(pxEdge->m_strSrcPin.c_str(), "no_such_out");
 	}
 
-	// And the FULL tier says nothing about it today.
+	// The LOAD_SAFETY rules still say nothing about it - the load SUCCEEDED above,
+	// which is the point - and the FULL tier now reports exactly one unknown pin
+	// name, on the first endpoint it could not resolve.
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 	xRegistry.EnsureInitialized();
 	Zenith_GraphDefinitionValidator::Validate(xLoaded, xRegistry, "Test_Graph", axFindings);
 	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DATA_EDGE_MALFORMED), 0u);
 	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_DUPLICATE_DATA_INPUT), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_WIRE_PIN_UNKNOWN), 1u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_WIRE_ROLE_MISMATCH), 0u);
+	ZENITH_ASSERT_EQ(CountRuleFindings(axFindings, GRAPH_VALIDATION_RULE_TYPE_MISMATCH), 0u);
 }
 
 ZENITH_TEST(GraphBuilder, GraphBuilder_DataEdgeReachesDefinition)
 {
 	EnsureTestNodesRegistered();
 
+	// ★ RE-FIXTURED BY B-3 onto an ANNOTATED pair with their REAL pin names: the
+	// wire pass makes a made-up name on a registered node an error, and this test
+	// is about the builder reaching the definition, not about a bad wire.
 	Zenith_GraphDefinition xDef;
 	u_int uSrc = 0;
 	u_int uDst = 0;
 	{
 		Zenith_GraphBuilder xBuilder(xDef);
-		uSrc = xBuilder.Node("Test_Counter");
-		uDst = xBuilder.Node("Test_Counter");
-		xBuilder.DataEdge(uSrc, "out", uDst, "in");
+		uSrc = xBuilder.Node("Test_PinProducer");
+		uDst = xBuilder.Node("Test_PinConsumer");
+		xBuilder.DataEdge(uSrc, "Result", uDst, "Value");
 		ZENITH_ASSERT_FALSE(xBuilder.HasErrors());
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 	}
 
 	ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
-	const Zenith_GraphDataEdge* pxEdge = xDef.FindDataEdgeInto(uDst, "in");
+	const Zenith_GraphDataEdge* pxEdge = xDef.FindDataEdgeInto(uDst, "Value");
 	ZENITH_ASSERT_NOT_NULL(pxEdge);
 	if (pxEdge != nullptr)
 	{
 		ZENITH_ASSERT_EQ(pxEdge->m_uSrcNodeID, uSrc);
-		ZENITH_ASSERT_STREQ(pxEdge->m_strSrcPin.c_str(), "out");
+		ZENITH_ASSERT_STREQ(pxEdge->m_strSrcPin.c_str(), "Result");
 	}
 }
 

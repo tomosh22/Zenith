@@ -509,6 +509,69 @@ namespace
 		const char* GetTypeName() const override { return "SetBlackboardString"; }
 	};
 
+	//--------------------------------------------------------------------------
+	// GetVariable - the READ half of the blackboard, and the one node through
+	// which a declared variable becomes a WIRE.
+	//
+	// ★ ITS OUTPUT TYPE COMES FROM THE GRAPH. ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE
+	// types the Value pin as the DECLARED type of the variable m_strVariable
+	// names, so a wire out of it is checked at author time against the
+	// declaration - there is no "GetVariableFloat" family and no per-type node.
+	// The SELECTOR_READ beside it is the blackboard read itself, and it is what
+	// declare-or-error reports when the variable is undeclared; the from-variable
+	// descriptor binds nothing and writes nothing, so reading a variable can
+	// never register this node as a WRITER of it.
+	//
+	// PURE: it has no exec pins and evaluates on demand inside its consumer's
+	// gather, memoised for that one gather (Zenith_BehaviourGraph::PullSlot).
+	//--------------------------------------------------------------------------
+	class Zenith_GraphNode_GetVariable : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_GetVariable)
+	public:
+		ZENITH_PROPERTY(std::string, m_strVariable, "value")
+
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_GetVariable)
+		ZENITH_GRAPH_PIN_SELECTOR_READ(Variable, "m_strVariable", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE(Value, "m_strVariable")
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		// The Value pin's index in the table above.
+		static constexpr u_int uVALUE_PIN = 1u;
+
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			if (xContext.m_pxBlackboard == nullptr)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(m_strVariable);
+			if (pxValue == nullptr)
+			{
+				// A MISSING variable is FAILURE and nothing else: the pull yields
+				// the consumer's own pin default plus one [GraphPin] STATUS line.
+				// Writing a fabricated zero here would be indistinguishable, to the
+				// consumer, from a variable that really held zero.
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			// ★ THE TAG IS COMPARED HERE, not left to SetOutput's refusal. SetOutput
+			// would leave the slot at its stamped zero - still SET - and this node
+			// would then return SUCCESS while the consumer silently read that zero.
+			// The same FAILURE shape as the missing-variable case is the honest
+			// answer: the live value is not the declared type.
+			const Zenith_PropertyType eSlot = GetOutputPinType(uVALUE_PIN);
+			if (eSlot != eGRAPH_PIN_TYPE_ANY && pxValue->GetType() != eSlot)
+			{
+				return GRAPH_NODE_STATUS_FAILURE;
+			}
+			SetOutput(xContext, uVALUE_PIN, *pxValue);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "GetVariable"; }
+	};
+
 	// Integer sibling of CompareBlackboardFloat. Compares a blackboard int32
 	// against a constant, or against another variable when m_strCompareVar is
 	// set. m_iOp is a Zenith_GraphCompareIntOp (adds NOT_EQUAL over the float node).
@@ -888,6 +951,9 @@ void Zenith_RegisterEngineGraphNodes()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_BroadcastCustomEvent>("BroadcastCustomEvent", GRAPH_EVENT_NONE, 1, false, "Events");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_LoadSceneByIndex>("LoadSceneByIndex", GRAPH_EVENT_NONE, 1, false, "Scene");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_CompareBlackboardFloat>("CompareBlackboardFloat", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	// PURE (the last argument): no exec pins, evaluated on demand by whichever
+	// consumer gathers its Value wire.
+	xRegistry.RegisterNodeType<Zenith_GraphNode_GetVariable>("GetVariable", GRAPH_EVENT_NONE, 0, false, "Blackboard", false, true);
 
 	// Flow
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Wait>("Wait", GRAPH_EVENT_NONE, 1, false, "Flow");

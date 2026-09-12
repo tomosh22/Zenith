@@ -574,8 +574,20 @@ bool Zenith_GraphDefinition::ReadFromDataStream(Zenith_DataStream& xStream,
 	// LOAD_SAFETY tier: crash-class or silently-ambiguous structure only. An
 	// ORPHAN edge is deliberately NOT here - it is inert at runtime
 	// (FindSuccessor returns 0) and the FULL tier reports it.
+	//
+	// ★ THE REGISTRY IS DRAINED FIRST AND ALWAYS PASSED, so this tier's answer is
+	// DETERMINISTIC rather than boot-phase dependent. Two of its checks (the
+	// pure-data cycle and the static-vs-static wire mismatch) need the node
+	// library; asking "is the registry initialised yet" would make an asset read
+	// before the registrar is installed answer differently from the same read
+	// afterwards. A build with no registrar (the Sentinel link proofs) gets an
+	// initialised-but-EMPTY registry: every node is unregistered, so neither
+	// registry-dependent check has anything resolved to look at and the tier is
+	// exactly B-1's.
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
 	Zenith_Vector<Zenith_GraphValidationFinding> axLoadSafety;
-	Zenith_GraphDefinitionValidator::ValidateLoadSafety(*this, axLoadSafety);
+	Zenith_GraphDefinitionValidator::ValidateLoadSafety(*this, xRegistry, axLoadSafety);
 	if (axLoadSafety.GetSize() > 0)
 	{
 		for (u_int u = 0; u < axLoadSafety.GetSize(); ++u)
@@ -647,7 +659,7 @@ bool Zenith_BehaviourGraph::InitialiseFromDefinition(const Zenith_GraphDefinitio
 	// name a node that appears later in the definition).
 	for (u_int u = 0; u < m_axNodes.GetSize(); ++u)
 	{
-		BuildPinState(m_axNodes.Get(u));
+		BuildPinState(xDefinition, m_axNodes.Get(u));
 	}
 
 	for (u_int u = 0; u < xDefinition.GetEdgeCount(); ++u)
@@ -688,7 +700,7 @@ bool Zenith_BehaviourGraph::InitialiseFromDefinition(const Zenith_GraphDefinitio
 // Pin resolution (B-2)
 //------------------------------------------------------------------------------
 
-void Zenith_BehaviourGraph::BuildPinState(NodeInstance& xInstance)
+void Zenith_BehaviourGraph::BuildPinState(const Zenith_GraphDefinition& xDefinition, NodeInstance& xInstance)
 {
 	if (xInstance.m_pxNode == nullptr || xInstance.m_pxTypeInfo == nullptr)
 	{
@@ -751,7 +763,29 @@ void Zenith_BehaviourGraph::BuildPinState(NodeInstance& xInstance)
 			xSlot.m_bIsOutput = true;
 			xSlot.m_strVarName = strVar;
 			xSlot.m_eDeclaredType = xDesc.m_eType;
-			if (xDesc.m_bInstanceResolved)
+			if (xDesc.m_szTypeFromVarNameProperty != nullptr && xDesc.m_szTypeFromVarNameProperty[0] != '\0')
+			{
+				// ★ THE TYPE COMES FROM THE DECLARATION, not from the live
+				// blackboard: an ApplyOverridesFrom override can carry a different
+				// tag, and a slot typed off one would disagree with every consumer
+				// the validator checked. An undeclared variable leaves the slot ANY
+				// (the declare-or-error rule reports the read itself).
+				std::string strTypeVar;
+				xSlot.m_eDeclaredType = eGRAPH_PIN_TYPE_ANY;
+				if (Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szTypeFromVarNameProperty, strTypeVar)
+					== GRAPH_PIN_READ_PROPERTY_OK)
+				{
+					for (u_int uVar = 0; uVar < xDefinition.GetVariableCount(); ++uVar)
+					{
+						if (xDefinition.GetVariableAt(uVar).m_strName == strTypeVar)
+						{
+							xSlot.m_eDeclaredType = xDefinition.GetVariableAt(uVar).m_xDefault.GetType();
+							break;
+						}
+					}
+				}
+			}
+			else if (xDesc.m_bInstanceResolved)
 			{
 				// Asked ONCE, here, exactly as the validator asks it. A node that
 				// DECLINES leaves the slot ANY - never a fabricated type.
@@ -1818,6 +1852,16 @@ void Zenith_GraphNode::SetInputForTest(u_int uPinIndex, u_int uOrdinal, const Ze
 	xOverride.m_uPinIndex = uPinIndex;
 	xOverride.m_uOrdinal = uOrdinal;
 	m_axTestOverrides.PushBack(xOverride);
+}
+
+Zenith_PropertyType Zenith_GraphNode::GetOutputPinType(u_int uPinIndex) const
+{
+	if (uPinIndex >= m_axOutputs.GetSize())
+	{
+		return eGRAPH_PIN_TYPE_ANY;
+	}
+	const OutputSlot& xSlot = m_axOutputs.Get(uPinIndex);
+	return xSlot.m_bIsOutput ? xSlot.m_eDeclaredType : eGRAPH_PIN_TYPE_ANY;
 }
 
 const Zenith_PropertyValue* Zenith_GraphNode::GetOutputForTest(u_int uPinIndex) const

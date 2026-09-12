@@ -232,6 +232,20 @@ public:
 		SetOutput(xContext, uPinIndex, xStamped);
 	}
 
+	// The OUTPUT slot's RESOLVED type - static, instance-resolved, or taken from
+	// a DECLARED VARIABLE (ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE). Returns
+	// eGRAPH_PIN_TYPE_ANY for a pin that is out of range, is not an OUTPUT, or
+	// whose slot genuinely is ANY - bounds-checked, never reaching Zenith_Assert,
+	// exactly like every other accessor here.
+	//
+	// A node whose Execute must compare a value's tag to its own pin BEFORE
+	// writing reads it (GetVariable: SetOutput would REFUSE a mismatching tag,
+	// leaving the stamped zero SET, and the node would then report SUCCESS while
+	// the consumer silently read that zero). The validator's resolver-agreement
+	// unit reads it too, to prove the runtime slot and
+	// Zenith_GraphDefinitionValidator::ResolvePinType answer the same thing.
+	Zenith_PropertyType GetOutputPinType(u_int uPinIndex) const;
+
 	//--------------------------------------------------------------------------
 	// TEST SEAM. Always compiled (they are tiny) but engine code never calls
 	// them: they exist so a unit can drive one node without authoring a producer,

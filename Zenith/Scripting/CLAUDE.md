@@ -21,7 +21,7 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   (slot list, blackboard overrides, lifecycle/collision dispatch, custom-event
   firing with optional payload, registered at meta order 60 as "Graph").
 - `EntityComponent/Zenith_GraphNode_Registration.cpp` — the engine node library
-  (**139 nodes** — count them with
+  (**140 nodes** — count them with
   `grep -c "RegisterNodeType<" EntityComponent/Zenith_GraphNode_Registration*.cpp`
   rather than trusting this line, which has been stale before: core
   events/blackboard/flow in
@@ -459,7 +459,32 @@ ZENITH_GRAPH_PINS_END
 `PROPERTY_TYPE_COUNT`), `m_szVarNameProperty` / `m_szConstProperty` (either may
 be `""`), `m_szFallbackVarNameProperty` (when the bound var-name property reads
 EMPTY the pin binds to THIS property's value instead — the in-place maths-node
-form), `m_bInstanceResolved`, and `m_uAcceptedTypeMask` for TARGET_REF.
+form), `m_bInstanceResolved`, `m_szTypeFromVarNameProperty` (below), and
+`m_uAcceptedTypeMask` for TARGET_REF.
+
+**★ A pin's type has THREE sources, and only one of them is the graph.** The
+CLASS answers statically (`m_eType`); the INSTANCE answers per configured node
+(`m_bInstanceResolved` → `GetPinType`); and the GRAPH answers through
+`ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE(Pin, "m_strSomeVar")`, which types the pin
+as the **DECLARED** type of the variable that property's value names —
+`GetVariable`'s output, and the only pin form whose type is a fact about the
+graph rather than about the code. An **undeclared** variable leaves it ANY and
+earns no finding of its own: the `SELECTOR_READ` naming the same property is
+already reported by declare-or-error, and one mistake deserves one finding. A
+writer-only variable is not a type source either — **the declaration is the
+contract**.
+
+**★ The from-variable form is a TYPE source and NOTHING else** — never a
+binding, never a writer, never dual-written. Its descriptor leaves
+`m_szVarNameProperty`, `m_szConstProperty` and `m_szFallbackVarNameProperty` all
+`""` deliberately: re-using the var-name binding would make a node that merely
+READS a variable an annotated **WRITER** of it, which would silently satisfy
+every other reader's declare-or-error and make the node dual-write the variable
+to itself. `Zenith_BehaviourGraph::BuildPinState` resolves the runtime slot off
+the **declaration** for the same reason an `ApplyOverridesFrom` override could
+otherwise retype a slot the validator already checked. The totality harness
+treats `m_szTypeFromVarNameProperty` as a fourth named-property slot, because a
+typo in it resolves to ANY **silently**.
 
 **Roles.** Only INPUT and OUTPUT ever become drawn wires (Epic B); every role
 participates in validation.
@@ -520,7 +545,10 @@ fabricates a type.
   read (`SELF_READWRITE`).
 - **Type agreement** between a reader and the declaration and every writer. ANY
   unifies with everything; a TARGET_REF checks its mask.
-- **Informational** — a declared-but-unreferenced variable, and a LIST name.
+- **WIRES** (pass 1b — see the next section).
+- **DOMINANCE** — a consumer that can run before its producer (warning).
+- **Informational** — a declared-but-unreferenced variable, a LIST name, and an
+  in-place OUTPUT alias.
 
 **★ OPAQUE NODES.** A node type with NO pin table contributes nothing and reads
 nothing as far as the validator can tell. That is the deliberate migration
@@ -528,6 +556,96 @@ shape: annotating the node library is a later unit, and an un-annotated node
 must never produce a false finding. **While ANY node in a graph is opaque the
 declared-but-unreferenced warning is SUPPRESSED for that graph** — otherwise
 every `Variable(...)` declaration in every shipped graph would warn.
+
+**★ …EXCEPT ON A WIRE, AND THAT SUPERSEDES THE DOCTRINE FOR WIRES ONLY.** A DATA
+edge whose endpoint type is REGISTERED but declares no pin table is an **ERROR**
+(`WIRE_PIN_UNKNOWN`). The doctrine above protects the annotation MIGRATION from
+*false* findings, and this is not one: `ResolveDataEdges` SKIPS exactly that
+wire at instantiation, so it can never carry a value. An **UNREGISTERED**
+endpoint stays silent (a per-game node library this exe does not carry — the
+instantiation warning covers it), and exec chains through opaque nodes are
+unreported exactly as before. The consequence is real and deliberate: a
+deliberately-opaque node type cannot be WIRED until it gets pins.
+
+### The wire pass (pass 1b)
+
+Every data edge is resolved to a real pin, of the right role, on a real node,
+with agreeing endpoint types. **At most ONE finding per edge** — the first
+defect is reported and the edge abandoned — so "one finding per defect" holds
+and a test can assert an exact count.
+
+| Check | Rule |
+|---|---|
+| an endpoint node is not in the graph | `ORPHAN_EDGE` (reused) |
+| an endpoint type is UNREGISTERED here | *skipped silently* |
+| an endpoint type is registered and OPAQUE | `WIRE_PIN_UNKNOWN` |
+| the source name is not a pin / the destination name is not a pin, is a BARE variadic family, or is an ordinal past the configured member count | `WIRE_PIN_UNKNOWN` |
+| a real pin of the wrong ROLE (source must be OUTPUT, destination INPUT) | `WIRE_ROLE_MISMATCH` |
+| two RESOLVED types that differ, neither ANY | `TYPE_MISMATCH` |
+| an exec edge INTO a pure node | `EXEC_INTO_PURE` |
+| a pure node with no outgoing wire | `PURE_UNCONSUMED` (warning) |
+
+Destination names follow B-2's algorithm exactly: an exact pin name first, then
+`"<family><ordinal>"` against a variadic family whose member count comes from the
+param-applied instance.
+
+- **There is no rule for an exec edge OUT of a pure node.** A surviving PURE flag
+  forces the type's exec-output count to 0, so the existing range check already
+  reports it as `PIN_OUT_OF_RANGE`. A second rule would be a second finding for
+  one mistake.
+- **There is deliberately NO warning for an ANY output feeding a typed input.**
+  "ANY unifies" is exact. The residual value-dependent case — an ANY producer
+  that happens to write the wrong tag at runtime — is B-2's `[GraphPin] MISMATCH`
+  census, which is where it can actually be observed.
+- **A wire supersedes the fallback the C-1 sweep deletes.** When pass 1b resolved
+  BOTH endpoints and BOTH pins — exactly the conditions under which the runtime
+  sets `m_bConnected` — the destination input is recorded as WIRED and pass 3
+  skips its var-name checks entirely: a connected input never consults its var
+  name (`ResolveInput` takes the pull path), so the name is not a read. In the
+  silent-skip case the record is deliberately NOT taken, because the runtime
+  *will* fall back to the var name there.
+- **No double-counting.** A STATIC-vs-STATIC type disagreement is owned by the
+  LOAD_SAFETY body, which `Validate` runs first; pass 1b reports a type mismatch
+  only when at least one endpoint needed PARAMS or a DECLARATION to resolve
+  (instance-resolved or from-variable).
+- **`IN_PLACE_ALIASING`** (warning) fires on an OUTPUT whose primary var-name
+  property reads EMPTY and whose FALLBACK reads non-empty — the two Math nodes'
+  in-place form, where the result is written back over its own source. B-6.1
+  records the per-game count; C-1 requires zero.
+
+### Data cycles and dominance
+
+- **`DATA_CYCLE`** (error) is a DFS over data edges **restricted to edges whose
+  SOURCE is a pure node**. ★ **An impure producer BREAKS a cycle by design**: its
+  slot is LATCHED by its own `Execute`, so a consumer pulling it reads a previous
+  run's value rather than re-entering it. One finding per run, naming the ring.
+- **`DOMINANCE`** (warning, never an error) follows an impure producer's data
+  edges THROUGH pure relays to every executable consumer, then asks: with the
+  producer removed from the exec graph, is the consumer still reachable from an
+  event source? If so the wire may read the slot's default. **Two named blind
+  spots:** it models neither `Sequence`'s branch ORDER nor reactive preemption,
+  either of which can make a "reachable" consumer unreachable in practice — which
+  is exactly why a false positive here must never fail a `Build()`. Bounded at
+  ONE finding per PRODUCER (naming the first consumer and the count), with the
+  event-source roots found once per `Validate`. Two degenerate cases, both
+  deliberate: a consumer that is itself an event source ALWAYS warns
+  (conservative), and a producer that is an event source is SKIPPED — what it
+  publishes is a dispatch payload, not a latched pin.
+
+### `ResolvePinType` — one resolver, exported
+
+`Zenith_GraphDefinitionValidator::ResolvePinType(def, registry, nodeID, pinIndex,
+out)` is the single answer to "what type is this pin": static, the
+param-applied instance's `GetPinType`, or the declared variable's type. `false`
+means the node/pin does not exist or the type is unregistered; `out` may
+legitimately be ANY. Pass 0 uses it, B-4's editor colours and labels pins through
+it, and `BuildPinState` stamps the runtime slot with the same answer — a unit
+asserts the two agree for all three forms.
+
+★ **It ALLOCATES** (one temp instance per instance-resolved or from-variable
+query) and is a QUERY, not a draw-time accessor. A caller that draws pins **must
+cache the per-node answer** and invalidate on a definition edit, a param edit or
+a reload.
 
 **★ CAUGHT AT `Build()`, LITERALLY.** `Zenith_GraphBuilder::Build()` runs the
 validator after the commit loop (before it the blobs still hold `AddNode`
@@ -540,8 +658,10 @@ test fixture depends on that. There is no way to turn the latch off; the
 severity is the rule's, full stop.
 
 Errors: `ORPHAN_EDGE`, `PIN_OUT_OF_RANGE`, `SELF_READWRITE`, `UNDECLARED_READ`,
-`TYPE_MISMATCH` (including the TARGET masks). Warnings: `DECLARED_UNUSED`,
-`LIST_NAME`, `INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID` — the last stays
+`TYPE_MISMATCH` (including the TARGET masks), `WIRE_PIN_UNKNOWN`,
+`WIRE_ROLE_MISMATCH`, `EXEC_INTO_PURE`, `DATA_CYCLE`. Warnings:
+`DECLARED_UNUSED`, `LIST_NAME`, `INSTANCE_TYPE_UNRESOLVED`, `DOMINANCE`,
+`PURE_UNCONSUMED`, `IN_PLACE_ALIASING`, `PIN_BINDING_INVALID` — the last stays
 a warning deliberately, because a mis-declared pin table is an ENGINE defect the
 graph author cannot fix (the per-TU totality tests guard it instead).
 
@@ -586,20 +706,31 @@ group is unbindable by construction and is satisfied by declaration alone.
   `Zenith_GraphDefinition::ReadFromDataStream` BEFORE anything instantiates the
   definition, and **a finding makes the read return `false` with the definition
   cleared** (the optional out-param hands the findings back, empty on success and
-  on a non-tier refusal such as the stream's read-failure flag). It takes NO
-  registry: every check is a pure fact about the definition. Scope is
+  on a non-tier refusal such as the stream's read-failure flag). Scope is
   **crash-class or silently-ambiguous** structure only — two exec edges leaving
   one (node, pin) (the ambiguous one: the walk would silently take the first),
-  two data edges entering one (node, pin name), and a malformed data edge (zero
-  node id, self-loop, empty pin name). An `ORPHAN_EDGE` is deliberately NOT in
-  this tier: it is inert at runtime, so it stays a FULL-tier ERROR and a graph
-  carrying one still loads. `Validate` runs the load-safety checks first and
-  appends their findings, so one report covers both tiers.
-  - Two more checks belong here and are not written yet, each blocked on
-    machinery a later unit adds: **pure-data cycles** among resolved nodes and
-    **static-vs-static type mismatch across a wire** (B-3). B-2 makes a runtime
-    data cycle SAFE (one warning, the consumer's pin default) rather than
-    detected at author time; the static check still belongs in this tier.
+  two data edges entering one (node, pin name), a malformed data edge (zero
+  node id, self-loop, empty pin name), a **pure-sourced data cycle**, and a
+  **static-vs-static type mismatch across a wire**. An `ORPHAN_EDGE` is
+  deliberately NOT in this tier: it is inert at runtime, so it stays a FULL-tier
+  ERROR and a graph carrying one still loads. `Validate` runs the load-safety
+  checks first and appends their findings, so one report covers both tiers —
+  and that is why pass 1b never re-reports the static wire mismatch.
+  - ★ **It TAKES THE REGISTRY now, so the tier's answer depends on the REGISTERED
+    NODE SET.** The last two checks cannot be pure facts about the definition —
+    one needs `m_bPureNode`, the other needs a pin NAME resolved through a pin
+    table. `ReadFromDataStream` therefore calls `EnsureInitialized()` and ALWAYS
+    passes the registry, so the answer is **deterministic** rather than
+    boot-phase dependent (an optional registry would make the same asset accepted
+    or refused depending on when it was read). A build with no registrar — the
+    Sentinel link proofs — gets an initialised-but-EMPTY registry: nothing
+    resolves, both checks are no-ops, and the tier is exactly B-1's.
+  - ★ **The two test windows that swap or empty the registry must not read a
+    `.bgraph` inside the window** — `Zenith_GraphPinTotality_SwapToRegistrar` and
+    `RunNodeProvenanceChecks`' `ResetForTests`. Neither does today.
+  - **A refused load is `LoadedOk() == false`, i.e. "no graph" for every
+    consumer** — the accepted outcome, and the same one a bad-magic payload
+    produces.
 
 **The log line** — `LOG_CATEGORY_CORE`; an ERROR goes to `Zenith_Error` and a
 WARNING to `Zenith_Log`, and the summary line follows the errors count. The
@@ -612,9 +743,14 @@ WARNING to `Zenith_Log`, and the summary line follows the errors count. The
 
 `RULE` is one of `UNDECLARED_READ`, `TYPE_MISMATCH`, `PIN_OUT_OF_RANGE`,
 `ORPHAN_EDGE`, `DECLARED_UNUSED`, `LIST_NAME`, `SELF_READWRITE`,
-`INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID`, and the three LOAD_SAFETY
-rules `DUPLICATE_EXEC_SOURCE`, `DUPLICATE_DATA_INPUT`, `DATA_EDGE_MALFORMED`
-(all ERROR). `PIN_BINDING_INVALID` fires when a
+`INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID`, the wire rules
+`WIRE_PIN_UNKNOWN`, `WIRE_ROLE_MISMATCH`, `EXEC_INTO_PURE`, `PURE_UNCONSUMED`,
+`DOMINANCE`, `IN_PLACE_ALIASING`, and the LOAD_SAFETY rules
+`DUPLICATE_EXEC_SOURCE`, `DUPLICATE_DATA_INPUT`, `DATA_EDGE_MALFORMED`,
+`DATA_CYCLE` (all ERROR). Every game's clean test counts **ERROR-severity
+findings only**, so a new WARNING rule lands without reding a gate — which is
+also why nobody should "fix" a warning by weakening it to nothing.
+`PIN_BINDING_INVALID` fires when a
 pin names a property the class does not declare as a string — a mis-declared
 table is a warning, never a `DebugBreak`; the tagged property getters ASSERT, so
 the tag is checked before `GetString`. The `[GraphValidator]` prefix appears on

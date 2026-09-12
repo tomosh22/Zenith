@@ -306,8 +306,17 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 			for (u_int uPin = 0; uPin < pxPins->GetPinCount(); ++uPin)
 			{
 				const Zenith_GraphPinDesc& xDesc = pxPins->GetPinAt(uPin);
-				const char* aszNamed[3] = { xDesc.m_szVarNameProperty, xDesc.m_szConstProperty, xDesc.m_szFallbackVarNameProperty };
-				for (u_int uSlot = 0; uSlot < 3u; ++uSlot)
+				// ★ FOUR slots, not three: m_szTypeFromVarNameProperty (B-3) names
+				// a property like the other three, and a typo in it resolves the
+				// pin to ANY SILENTLY - the from-variable form has no other symptom.
+				const char* aszNamed[4] =
+				{
+					xDesc.m_szVarNameProperty,
+					xDesc.m_szConstProperty,
+					xDesc.m_szFallbackVarNameProperty,
+					xDesc.m_szTypeFromVarNameProperty,
+				};
+				for (u_int uSlot = 0; uSlot < 4u; ++uSlot)
 				{
 					if (aszNamed[uSlot] == nullptr || aszNamed[uSlot][0] == '\0')
 					{

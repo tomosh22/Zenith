@@ -324,7 +324,11 @@ private:
 	// binding/slot arrays are built from its descriptors FIRST (a data edge may
 	// name a node that appears later in the definition), then every data edge is
 	// resolved to (instance, slot) by NAME.
-	void BuildPinState(NodeInstance& xInstance);
+	// Takes the DEFINITION because a from-variable OUTPUT pin
+	// (ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE) resolves its slot type off the
+	// DECLARATION - never off the live blackboard, whose value an
+	// ApplyOverridesFrom override could have retyped.
+	void BuildPinState(const Zenith_GraphDefinition& xDefinition, NodeInstance& xInstance);
 	void ResolveDataEdges(const Zenith_GraphDefinition& xDefinition);
 
 	Zenith_Vector<NodeInstance> m_axNodes;
