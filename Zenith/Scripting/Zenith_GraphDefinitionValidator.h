@@ -31,10 +31,12 @@ class Zenith_GraphNodeRegistry;
 // declared-but-unreferenced warning is SUPPRESSED for that graph - otherwise
 // every variable declaration in every shipped graph would warn.
 //
-// ★ REPORT-ONLY TODAY. Callers pass bLatchErrors = false, and every would-be
-// ERROR is then reported at WARNING severity with m_bWouldBeError set. Nothing
-// latches, no Build() return changes, and the log line carries the flag - so the
-// day the latch flips is one argument, and the report before it is the evidence.
+// ★ ERRORS ARE ERRORS. A finding's severity is the rule's severity, full stop:
+// ORPHAN_EDGE, PIN_OUT_OF_RANGE, SELF_READWRITE, UNDECLARED_READ and
+// TYPE_MISMATCH are ERROR; DECLARED_UNUSED, LIST_NAME,
+// INSTANCE_TYPE_UNRESOLVED and PIN_BINDING_INVALID are WARNING.
+// Zenith_GraphBuilder::Build() returns false on any ERROR. (A-5..A-7 ran this
+// report-only while the node library was annotated; A-8 latched it.)
 //
 // Leaf-safe: Scripting + Core + Collections only.
 //------------------------------------------------------------------------------
@@ -65,9 +67,6 @@ struct Zenith_GraphValidationFinding
 {
 	Zenith_GraphValidationSeverity m_eSeverity = GRAPH_VALIDATION_SEVERITY_WARNING;
 	Zenith_GraphValidationRule m_eRule = GRAPH_VALIDATION_RULE_UNDECLARED_READ;
-	// True when this would be an ERROR under a latching run. Reported at WARNING
-	// severity while the validator is report-only.
-	bool m_bWouldBeError = false;
 	u_int m_uNodeID = 0;			// 0 = not attributable to one node
 	std::string m_strTypeName;		// COPIED, not borrowed: a type info can be torn down by a test reset
 	std::string m_strPin;			// pin name, or empty
@@ -89,12 +88,12 @@ public:
 	// szGraphName is reporting-only (a definition carries no name); null or empty
 	// reports as "<unnamed>".
 	static void Validate(const Zenith_GraphDefinition& xDefinition, const Zenith_GraphNodeRegistry& xRegistry,
-		const char* szGraphName, bool bLatchErrors, Zenith_Vector<Zenith_GraphValidationFinding>& axOut);
+		const char* szGraphName, Zenith_Vector<Zenith_GraphValidationFinding>& axOut);
 
-	// One Zenith_Log line per finding plus one summary line, all prefixed
+	// One line per finding plus one summary line, all prefixed
 	// "[GraphValidator] " - a prefix that appears on no other log line in the
-	// repo, so the tools-boot report is one Select-String away. Zenith_Log and
-	// never Zenith_Error: a report-only pass must not turn the boot console red.
+	// repo, so the tools-boot report is one Select-String away. An ERROR finding
+	// goes to Zenith_Error (it is a real defect); a WARNING to Zenith_Log.
 	static void LogFindings(const char* szGraphName, u_int uNodeCount,
 		const Zenith_Vector<Zenith_GraphValidationFinding>& axFindings);
 

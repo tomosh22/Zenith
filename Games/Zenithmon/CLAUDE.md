@@ -230,7 +230,8 @@ is unchanged.
 run in ZM's unit gate, so they move Zenithmon's pinned baseline by two):
 `ZenithmonNodesTotality` fails if a var-name property is ever added without a
 descriptor, and `ZenithmonTrainerChallengeValidatesClean` builds the production
-definition in-process and fails on any finding with `m_bWouldBeError`. The
+definition in-process and fails on any ERROR-severity validation finding (A-8
+latched the validator, so such a finding also fails `Build()`). The
 behavioural units for the same graph stay in
 `Tests/ZM_Tests_TrainerChallengeGraph.cpp` — they drive the BEAT; these two
 gate the descriptor table and the report.

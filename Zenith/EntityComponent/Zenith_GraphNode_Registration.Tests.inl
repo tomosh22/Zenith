@@ -166,12 +166,46 @@ static bool GraphDefsSerializeIdentically(Zenith_GraphDefinition& xA, Zenith_Gra
 	return true;
 }
 
+// ★ EVERY HALF DECLARES WHAT IT READS, IN THE SAME ORDER. A-8 latched the
+// validator, so a fixture whose node reads an undeclared variable fails its
+// Build(); and variables serialize FIRST, so the two halves must declare the
+// same names, with the same types, in the same order or the byte comparison
+// below fails for a reason that has nothing to do with the factory.
+static void DeclareFloatVar(Zenith_GraphBuilder& xBuilder, const char* szName)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(0.0f);
+	xBuilder.Variable(szName, xValue);
+}
+
+static void DeclareIntVar(Zenith_GraphBuilder& xBuilder, const char* szName)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetInt32(0);
+	xBuilder.Variable(szName, xValue);
+}
+
+static void DeclareBoolVar(Zenith_GraphBuilder& xBuilder, const char* szName)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetBool(false);
+	xBuilder.Variable(szName, xValue);
+}
+
+static void DeclareEntityVar(Zenith_GraphBuilder& xBuilder, const char* szName)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetPackedEntityID(0);
+	xBuilder.Variable(szName, xValue);
+}
+
 // A factory must emit the SAME node + params as the hand-written Node()+Param*.
 ZENITH_TEST(EngineGraphBuilder, CompareFloatFactoryMatchesRaw)
 {
 	Zenith_GraphDefinition xFac;
 	{
 		Zenith_GraphBuilder xBuilder(xFac);
+		DeclareFloatVar(xBuilder, "v");		// CompareBlackboardFloat's Value pin READS it
 		Zenith_EngineGraphBuilder xB(xBuilder);
 		xB.CompareFloat("v", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.08f, "due");
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
@@ -179,6 +213,7 @@ ZENITH_TEST(EngineGraphBuilder, CompareFloatFactoryMatchesRaw)
 	Zenith_GraphDefinition xRaw;
 	{
 		Zenith_GraphBuilder xBuilder(xRaw);
+		DeclareFloatVar(xBuilder, "v");
 		const u_int uNode = xBuilder.Node("CompareBlackboardFloat");
 		ZENITH_ASSERT_NE(uNode, 0u);	// engine node resolved (test not vacuous)
 		xBuilder.ParamString(uNode, "m_strVar", "v");
@@ -325,24 +360,24 @@ ZENITH_TEST(EngineGraphBuilder, ReadActionAxisOmittedResultVarKeepsNodeDefault)
 
 ZENITH_TEST(EngineGraphBuilder, FlowFactoriesMatchRaw)
 {
-	{	// Branch
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.Branch("c"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("Branch"); xBd.ParamString(u, "m_strConditionVar", "c"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// Branch - Condition is an INPUT BOOL read
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareBoolVar(xBd, "c"); Zenith_EngineGraphBuilder xB(xBd); xB.Branch("c"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareBoolVar(xBd, "c"); const u_int u = xBd.Node("Branch"); xBd.ParamString(u, "m_strConditionVar", "c"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// Gate
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.Gate("o"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("Gate"); xBd.ParamString(u, "m_strOpenVar", "o"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// Gate - Open is an INPUT BOOL read
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareBoolVar(xBd, "o"); Zenith_EngineGraphBuilder xB(xBd); xB.Gate("o"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareBoolVar(xBd, "o"); const u_int u = xBd.Node("Gate"); xBd.ParamString(u, "m_strOpenVar", "o"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// SwitchOnInt
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.SwitchOnInt("v", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("SwitchOnInt"); xBd.ParamString(u, "m_strVar", "v"); xBd.ParamInt(u, "m_iCaseCount", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// SwitchOnInt - Value is an INPUT INT32 read
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "v"); Zenith_EngineGraphBuilder xB(xBd); xB.SwitchOnInt("v", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "v"); const u_int u = xBd.Node("SwitchOnInt"); xBd.ParamString(u, "m_strVar", "v"); xBd.ParamInt(u, "m_iCaseCount", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// StateMachine
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.StateMachine("s", 4, "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("StateMachine"); xBd.ParamString(u, "m_strStateVar", "s"); xBd.ParamInt(u, "m_iStateCount", 4); xBd.ParamString(u, "m_strStateNames", "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// StateMachine - State is an INPUT INT32 read
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "s"); Zenith_EngineGraphBuilder xB(xBd); xB.StateMachine("s", 4, "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "s"); const u_int u = xBd.Node("StateMachine"); xBd.ParamString(u, "m_strStateVar", "s"); xBd.ParamInt(u, "m_iStateCount", 4); xBd.ParamString(u, "m_strStateNames", "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 }
@@ -350,8 +385,8 @@ ZENITH_TEST(EngineGraphBuilder, FlowFactoriesMatchRaw)
 ZENITH_TEST(EngineGraphBuilder, BlackboardFactoriesMatchRaw)
 {
 	{	// CompareInt (with the int-only NOT_EQUAL enum to exercise the mapping)
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.CompareInt("v", GRAPH_COMPARE_INT_OP_NOT_EQUAL, 7, "r"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("CompareBlackboardInt"); xBd.ParamString(u, "m_strVar", "v"); xBd.ParamInt(u, "m_iCompareTo", 7); xBd.ParamInt(u, "m_iOp", 5); xBd.ParamString(u, "m_strResultVar", "r"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "v"); Zenith_EngineGraphBuilder xB(xBd); xB.CompareInt("v", GRAPH_COMPARE_INT_OP_NOT_EQUAL, 7, "r"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "v"); const u_int u = xBd.Node("CompareBlackboardInt"); xBd.ParamString(u, "m_strVar", "v"); xBd.ParamInt(u, "m_iCompareTo", 7); xBd.ParamInt(u, "m_iOp", 5); xBd.ParamString(u, "m_strResultVar", "r"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// SetBlackboardInt
@@ -381,14 +416,16 @@ ZENITH_TEST(EngineGraphBuilder, FireCustomEventFactoryAndDefaults)
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// with target var
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.FireCustomEvent("E", "tgt"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strTargetVar", "tgt"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// with target var - Target is a TARGET_ENTITY ref, so ENTITY_ID is the
+		// only type its mask accepts
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareEntityVar(xBd, "tgt"); Zenith_EngineGraphBuilder xB(xBd); xB.FireCustomEvent("E", "tgt"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareEntityVar(xBd, "tgt"); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strTargetVar", "tgt"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// with payload var only (target left default)
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.FireCustomEvent("E", nullptr, "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strPayloadVar", "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// with payload var only (target left default) - Payload is an INPUT ANY
+		// read, so any declared type unifies; FLOAT is arbitrary
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareFloatVar(xBd, "pl"); Zenith_EngineGraphBuilder xB(xBd); xB.FireCustomEvent("E", nullptr, "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareFloatVar(xBd, "pl"); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strPayloadVar", "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 }
@@ -418,9 +455,9 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListFactoriesMatchRaw)
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("GetListCount"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strResultVar", "n"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// GetListElement WITH an index var
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.GetListElement("bag", 3, "elem", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("GetListElement"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 3); xBd.ParamString(u, "m_strResultVar", "elem"); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// GetListElement WITH an index var - Index is an INPUT INT32 read
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "cursor"); Zenith_EngineGraphBuilder xB(xBd); xB.GetListElement("bag", 3, "elem", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "cursor"); const u_int u = xBd.Node("GetListElement"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 3); xBd.ParamString(u, "m_strResultVar", "elem"); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// ForEach WITH an index var
@@ -428,14 +465,16 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListFactoriesMatchRaw)
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ForEach"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strElementVar", "elem"); xBd.ParamString(u, "m_strIndexVar", "idx"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// ListAdd
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ListAdd("bag", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ListAdd"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strValueVar", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// ListAdd - Value is an INPUT ANY read (the value pushed onto the list);
+		// nothing in this fixture writes it, so ENTITY_ID is a plausible pick and
+		// ANY unifies with it either way
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareEntityVar(xBd, "spawned"); Zenith_EngineGraphBuilder xB(xBd); xB.ListAdd("bag", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareEntityVar(xBd, "spawned"); const u_int u = xBd.Node("ListAdd"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strValueVar", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// ListRemoveAt WITH an index var
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ListRemoveAt("bag", 2, "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ListRemoveAt"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 2); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+	{	// ListRemoveAt WITH an index var - Index is an INPUT INT32 read
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "cursor"); Zenith_EngineGraphBuilder xB(xBd); xB.ListRemoveAt("bag", 2, "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "cursor"); const u_int u = xBd.Node("ListRemoveAt"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 2); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// ListClear

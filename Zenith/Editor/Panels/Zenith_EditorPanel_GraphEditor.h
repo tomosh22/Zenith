@@ -50,9 +50,14 @@ public:
 	static const char* GetConnectRefusalText();
 
 	// The FULL-tier report from the last validation run (asset open, parameter
-	// edit, successful connect). REPORT-ONLY: nothing here blocks an edit or a
-	// save. Null from GetValidationFindingAt for an out-of-range index.
+	// edit, successful connect). ADVISORY: an asset with ERROR findings still
+	// opens, edits and saves - nothing here blocks either. Null from
+	// GetValidationFindingAt for an out-of-range index.
 	static u_int GetValidationFindingCount();
+	// How many of those are ERROR severity - the toolbar's "N errors / M
+	// warnings" split, and the one number a headless unit can assert the
+	// latched tier on.
+	static u_int GetValidationErrorCount();
 	static const Zenith_GraphValidationFinding* GetValidationFindingAt(u_int uIndex);
 
 	//--------------------------------------------------------------------------

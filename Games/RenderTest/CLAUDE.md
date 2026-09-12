@@ -235,8 +235,8 @@ name PROPERTY, so no descriptor can bind them: they stay OPAQUE to
 
 What DOES exist is `Tests/Test_GraphsValidateClean.cpp` — an automated test
 (`RT_GraphsValidateClean`) that builds BOTH graphs in-process from their own
-builders and fails on any finding with `m_bWouldBeError`, which is the
-mechanical precondition for latching the validator. RenderTest reported zero
+builders and fails on any ERROR-severity validation finding — the mechanical
+precondition A-8 then latched into `Build()`'s return. RenderTest reported zero
 before this unit and needed no new `Variable(...)`: in particular
 `k_szOppEntity` and `k_szBallEntity` stay deliberately undeclared
 (`RenderTest.cpp:1726-1727` — the brain shim's `OnStart` seeds both, and

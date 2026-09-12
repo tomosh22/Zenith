@@ -8,7 +8,7 @@
  *
  * Each is built HERE, in process, from the SAME BuildGraph_RenderTest*
  * function the tools boot writes the .bgraph from, and asserted to produce ZERO
- * findings with m_bWouldBeError. A-8 turns that property into a hard error; if
+ * ERROR-severity findings. A-8 latched that property into Build()'s return; if
  * it ever stops holding, this unit names the rule, the variable and the node,
  * instead of a tools boot going red later with no owner.
  *
@@ -121,15 +121,15 @@ namespace
 		std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
 		CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
 
-		int iWouldBeErrors = 0;
+		int iErrors = 0;
 		for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
 		{
 			const Zenith_GraphValidationFinding& xFinding = xBuilder.GetValidationFindingAt(uFinding);
-			if (!xFinding.m_bWouldBeError)
+			if (xFinding.m_eSeverity != GRAPH_VALIDATION_SEVERITY_ERROR)
 			{
 				continue;	// LIST_NAME / DECLARED_UNUSED are warnings and stay
 			}
-			++iWouldBeErrors;
+			++iErrors;
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[RTGraphs]   %s node=%u:%s pin=%s var=%s rule=%s | %s",
 				xRow.m_szAssetPath, xFinding.m_uNodeID,
@@ -140,8 +140,8 @@ namespace
 				xFinding.m_strWhat.c_str());
 		}
 		std::snprintf(acWhat, sizeof(acWhat),
-			"%s reports ZERO would-be-error findings (A-8 can latch)", xRow.m_szAssetPath);
-		CheckEqInt(iWouldBeErrors, 0, acWhat);
+			"%s reports ZERO error-severity findings (Build() latches on one)", xRow.m_szAssetPath);
+		CheckEqInt(iErrors, 0, acWhat);
 	}
 
 	void Setup_GraphsValidateClean()

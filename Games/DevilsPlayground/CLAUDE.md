@@ -219,8 +219,9 @@ DevilsPlayground.cpp regenerates every `.bgraph` each tools boot through
 definitions live inside DevilsPlayground.cpp's `#ifdef ZENITH_TOOLS` block): the
 12 top-level `BuildGraph_DP*` are no longer `static`, so
 `Tests/Test_GraphsValidateClean.cpp` can build every one of them IN PROCESS and
-assert `Build() == true` plus ZERO `m_bWouldBeError` validator findings — the
-mechanical precondition for latching the validator. The per-concern sub-builders
+assert `Build() == true` plus ZERO ERROR-severity validator findings — the
+mechanical precondition A-8 then latched into `Build()`'s own return, which is
+why the two clauses now imply each other. The per-concern sub-builders
 (`BuildDPItem_*` / `BuildDPVillager_*`) stay `static`: they are stages, not
 graphs. Add an `AddStep_GraphBuild` line and the matching test row together —
 nothing enumerates builders at compile time, so a thirteenth graph without a row

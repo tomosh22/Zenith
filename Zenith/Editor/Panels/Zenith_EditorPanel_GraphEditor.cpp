@@ -68,8 +68,9 @@ namespace
 		// Displayed near the toolbar: a refused drag that says nothing is
 		// indistinguishable from a missed drop.
 		std::string m_strConnectRefusal;
-		// Report-only FULL-tier validation, refreshed on open / param edit /
-		// successful connect. Nothing here blocks an edit or a save.
+		// FULL-tier validation, refreshed on open / param edit / successful
+		// connect. ADVISORY: an asset with ERROR findings still opens, edits
+		// and saves - refusing would trap the author inside the mistake.
 		Zenith_Vector<Zenith_GraphValidationFinding> m_axValidationFindings;
 
 #ifdef ZENITH_TESTING
@@ -104,10 +105,11 @@ namespace
 		return g_xGraphEditor.m_pxAsset ? &g_xGraphEditor.m_pxAsset->GetDefinition() : nullptr;
 	}
 
-	// Re-runs the FULL-tier report over the open definition. REPORT-ONLY:
-	// bLatchErrors is false, so nothing here can refuse an edit or a save - the
-	// findings are displayed and readable, and that is all. Called on asset
-	// open, after a parameter edit commits, and after a connect lands.
+	// Re-runs the FULL-tier report over the open definition. ADVISORY: errors
+	// are reported AS errors (and drawn in the error colour), but nothing here
+	// refuses an edit or a save - a panel that locked the author out of a graph
+	// with a mistake in it would leave them no way to fix the mistake. Called
+	// on asset open, after a parameter edit commits, and after a connect lands.
 	void ValidateOpenGraph()
 	{
 		g_xGraphEditor.m_axValidationFindings.Clear();
@@ -119,7 +121,22 @@ namespace
 		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 		xRegistry.EnsureInitialized();
 		Zenith_GraphDefinitionValidator::Validate(*pxDef, xRegistry,
-			g_xGraphEditor.m_strAssetPath.c_str(), false, g_xGraphEditor.m_axValidationFindings);
+			g_xGraphEditor.m_strAssetPath.c_str(), g_xGraphEditor.m_axValidationFindings);
+	}
+
+	// How many of the last run's findings are ERRORs. The toolbar splits the
+	// count on this, and the findings block colours on it.
+	u_int CountValidationFindingsOfSeverity(Zenith_GraphValidationSeverity eSeverity)
+	{
+		u_int uCount = 0;
+		for (u_int u = 0; u < g_xGraphEditor.m_axValidationFindings.GetSize(); ++u)
+		{
+			if (g_xGraphEditor.m_axValidationFindings.Get(u).m_eSeverity == eSeverity)
+			{
+				++uCount;
+			}
+		}
+		return uCount;
 	}
 
 	void DestroyParamInstance()
@@ -294,21 +311,36 @@ namespace
 			ImGui::TextWrapped("%s", g_xGraphEditor.m_strConnectRefusal.c_str());
 		}
 
-		// The report-only validation summary + the first few findings. Nothing
-		// here blocks an edit or a save; it is a report, and it says so.
+		// The validation summary + the first few findings. ERRORs are counted
+		// separately and drawn in a distinct colour; nothing here blocks an
+		// edit or a save (see ValidateOpenGraph).
 		const u_int uFindings = g_xGraphEditor.m_axValidationFindings.GetSize();
 		if (uFindings > 0)
 		{
 			constexpr u_int uMAX_DISPLAYED_FINDINGS = 5;
-			ImGui::TextWrapped("Validation (report-only): %u finding(s)", uFindings);
+			// Red-ish for a defect, amber for advice - the two must not read the
+			// same at a glance, which is the whole point of latching errors.
+			const ImVec4 xERROR_COLOUR(0.95f, 0.32f, 0.28f, 1.0f);
+			const ImVec4 xWARNING_COLOUR(0.90f, 0.75f, 0.30f, 1.0f);
+
+			const u_int uErrors = CountValidationFindingsOfSeverity(GRAPH_VALIDATION_SEVERITY_ERROR);
+			const u_int uWarnings = uFindings - uErrors;
+			ImGui::PushStyleColor(ImGuiCol_Text, uErrors > 0 ? xERROR_COLOUR : xWARNING_COLOUR);
+			ImGui::TextWrapped("Validation: %u errors / %u warnings", uErrors, uWarnings);
+			ImGui::PopStyleColor();
+
 			for (u_int u = 0; u < uFindings && u < uMAX_DISPLAYED_FINDINGS; ++u)
 			{
 				const Zenith_GraphValidationFinding& xFinding = g_xGraphEditor.m_axValidationFindings.Get(u);
-				ImGui::TextWrapped("  [%s] node %u %s: %s",
+				const bool bError = xFinding.m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR;
+				ImGui::PushStyleColor(ImGuiCol_Text, bError ? xERROR_COLOUR : xWARNING_COLOUR);
+				ImGui::TextWrapped("  [%s] [%s] node %u %s: %s",
+					Zenith_GraphDefinitionValidator::GetSeverityName(xFinding.m_eSeverity),
 					Zenith_GraphDefinitionValidator::GetRuleName(xFinding.m_eRule),
 					xFinding.m_uNodeID,
 					xFinding.m_strTypeName.empty() ? "-" : xFinding.m_strTypeName.c_str(),
 					xFinding.m_strWhat.c_str());
+				ImGui::PopStyleColor();
 			}
 			if (uFindings > uMAX_DISPLAYED_FINDINGS)
 			{
@@ -1042,8 +1074,8 @@ void Zenith_GraphEditorPanel::OpenAsset(const char* szAssetPath)
 	g_xGraphEditor.m_uSelectedNodeID = 0;
 	g_xGraphEditor.m_strConnectRefusal.clear();
 
-	// Report-only validation on LOAD: an asset whose bindings went stale while
-	// nobody was looking says so the moment it is opened.
+	// Validation on LOAD: an asset whose bindings went stale while nobody was
+	// looking says so the moment it is opened. Advisory - it still opens.
 	ValidateOpenGraph();
 }
 
@@ -1301,6 +1333,11 @@ const char* Zenith_GraphEditorPanel::GetConnectRefusalText()
 u_int Zenith_GraphEditorPanel::GetValidationFindingCount()
 {
 	return g_xGraphEditor.m_axValidationFindings.GetSize();
+}
+
+u_int Zenith_GraphEditorPanel::GetValidationErrorCount()
+{
+	return CountValidationFindingsOfSeverity(GRAPH_VALIDATION_SEVERITY_ERROR);
 }
 
 const Zenith_GraphValidationFinding* Zenith_GraphEditorPanel::GetValidationFindingAt(u_int uIndex)

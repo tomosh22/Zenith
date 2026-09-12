@@ -26,7 +26,9 @@
 //
 // Every failure (unknown type, unknown property, rejected edge) logs, latches
 // HasErrors(), and keeps going - a boot-authoring typo surfaces as one failed
-// Build() with every problem reported, not a cascade of crashes.
+// Build() with every problem reported, not a cascade of crashes. A FULL-tier
+// validation ERROR (an undeclared read, a type disagreement, an orphan edge)
+// latches exactly the same way.
 //------------------------------------------------------------------------------
 class Zenith_GraphBuilder
 {
@@ -94,16 +96,20 @@ public:
 
 	// Commits every touched node's params into its blob and lays nodes out on
 	// an auto grid (column = chain depth) so the editor opens boot-authored
-	// graphs legibly. Returns !HasErrors(). Single-shot.
+	// graphs legibly, then runs the FULL-tier validator over the COMMITTED
+	// definition. Returns !HasErrors() - false when any authoring failure OR
+	// any validation ERROR was seen. Single-shot.
+	//
+	// ★ A false return still leaves a COMPLETE definition: validation is the
+	// last thing Build() does, and nothing is rolled back.
 	bool Build();
 
 	bool HasErrors() const { return m_bErrors; }
 
-	// The FULL-tier validation report Build() produced, report-only: Build()'s
-	// return and HasErrors() are untouched by it. Kept on the builder because
-	// Zenith_TestFramework.h has no log-capture seam - without this a test could
-	// only assert that Build() still succeeded, which is exactly the half that
-	// proves nothing.
+	// The FULL-tier validation report Build() produced. An ERROR in it is what
+	// latched HasErrors(). Kept on the builder because Zenith_TestFramework.h
+	// has no log-capture seam - without this a test could only assert on the
+	// bool, which is exactly the half that says nothing about WHY.
 	u_int GetValidationFindingCount() const { return m_axValidationFindings.GetSize(); }
 	const Zenith_GraphValidationFinding& GetValidationFindingAt(u_int uIndex) const { return m_axValidationFindings.Get(uIndex); }
 

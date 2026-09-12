@@ -61,7 +61,25 @@ ZENITH_TEST(GraphNodeFailurePin, AIOptIns)
 		// SetNavDestination: FAILURE at Registration_AI.cpp:306 (NO BOUND
 		// AGENT). Nothing in this fixture ever binds one - EnsureNavAgent
 		// returns above its allocation - so the node reaches its own gate.
-		{ "SetNavDestination", nullptr },
+		//
+		// ★ The configure fn exists only to DECLARE what the node READS.
+		// m_strDestinationVar defaults to "target" and its pin is a
+		// TARGET_POSITION ref, so without a declaration the harness graph
+		// carries an UNDECLARED_READ - an ERROR since A-8 - and
+		// Zenith_BuildFailurePinGraph's Build() would return false. VECTOR3 is
+		// one of the two types that mask accepts. The tested branch is
+		// untouched: the node FAILs at the no-agent guard before it ever
+		// resolves the reference.
+		{
+			"SetNavDestination",
+			[](Zenith_GraphBuilder& xBuilder, u_int uNode)
+			{
+				(void)uNode;
+				Zenith_PropertyValue xDestination;
+				xDestination.SetVector3(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+				xBuilder.Variable("target", xDestination);
+			}
+		},
 		// FindRandomReachablePoint: FAILURE at Registration_AI.cpp:447 (no bound
 		// agent, hence no mesh). This is the DEEPEST branch reachable headless:
 		// :459 ("no reachable point in the radius") needs a LOADED navmesh,

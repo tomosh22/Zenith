@@ -7,7 +7,7 @@
 //                                          property in ZM's node library is
 //                                          covered by a pin descriptor.
 //   TrainerChallengeGraph_ValidatesClean -- the one graph ZM authors reports no
-//                                          would-be error.
+//                                          error-severity finding.
 //
 // WHY BOTH ARE ZENITH_TESTs. Zenithmon's gate runs its boot units
 // (run_unit_gate.ps1 -Game Zenithmon), which is the home where a unit actually
@@ -47,7 +47,7 @@ ZENITH_TEST(GraphPinTable, ZenithmonNodesTotality)
 	Zenith_CheckPinTableTotality(&ZM_RegisterGraphNodes, "ZM_GraphNodes.h", nullptr, 0u);
 }
 
-// ---- The graph half: zero would-be errors, so A-8 can latch ------------------
+// ---- The graph half: zero error-severity findings, so Build() stays true ------------------
 //
 // Built IN-PROCESS from BuildGraph_ZM_TrainerChallenge, never from disk:
 // `.bgraph` files are gitignored and written only by a TOOLS boot, so a
@@ -66,15 +66,15 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerChallengeValidatesClean)
 		"BuildGraph_ZM_TrainerChallenge's Build() failed -- the tools boot would "
 		"write a broken .bgraph");
 
-	u_int uWouldBeErrors = 0u;
+	u_int uErrors = 0u;
 	for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
 	{
 		const Zenith_GraphValidationFinding& xFinding = xBuilder.GetValidationFindingAt(uFinding);
-		if (!xFinding.m_bWouldBeError)
+		if (xFinding.m_eSeverity != GRAPH_VALIDATION_SEVERITY_ERROR)
 		{
 			continue;	// LIST_NAME / DECLARED_UNUSED are warnings and stay
 		}
-		++uWouldBeErrors;
+		++uErrors;
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"[ZMGraphs]   %s node=%u:%s pin=%s var=%s rule=%s | %s",
 			szZM_GRAPH_TRAINER_CHALLENGE_ASSET, xFinding.m_uNodeID,
@@ -85,9 +85,9 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerChallengeValidatesClean)
 			xFinding.m_strWhat.c_str());
 	}
 
-	ZENITH_ASSERT_EQ(uWouldBeErrors, 0u,
-		"%s reports a would-be-error finding -- latching the validator (A-8) "
-		"would red this game's tools boot. The lines above name the rule, the "
+	ZENITH_ASSERT_EQ(uErrors, 0u,
+		"%s reports an error-severity finding -- Build() latches on it and "
+		"this game's tools boot reds. The lines above name the rule, the "
 		"variable and the node.",
 		szZM_GRAPH_TRAINER_CHALLENGE_ASSET);
 }

@@ -2291,6 +2291,11 @@ namespace
 {
 	// Graph authoring steps assert on failure so a bad boot-authoring sequence
 	// (typo'd node type, wrong occurrence, invalid pin) surfaces immediately.
+	//
+	// ★ ONE EXCEPTION, at GRAPH_BUILD: a Build() that returned false because the
+	// VALIDATOR found errors is authored content, not an automation typo, and is
+	// reported with a Zenith_Error + a skipped save rather than a DebugBreak.
+	// Only the save/attach mechanics of that step stay under this wrapper.
 	void GraphActionChecked(bool bOk, const char* szAction, const char* szArg)
 	{
 		Zenith_Assert(bOk, "EditorAutomation graph step %s('%s') failed", szAction, szArg ? szArg : "");
@@ -3440,16 +3445,46 @@ static void ExecuteGraphAuthoringAction(const Zenith_EditorAction& xAction)
 		// disk bytes + re-instantiates live slots).
 		Zenith_BehaviourGraphAsset xAsset;
 		Zenith_GraphBuilder xBuilder(xAsset.GetDefinition());
-		// Names the graph for Build()'s report-only validation log line
+		// Names the graph for Build()'s validation log lines
 		// ("[GraphValidator] graph=<asset path>"); changes nothing about what is
 		// built. A definition carries no name of its own.
 		xBuilder.SetGraphName(xAction.m_szArg1.c_str());
+		// A MISSING build function IS an automation typo - the step was queued
+		// with nothing to run - so it stays under the asserting wrapper.
+		GraphActionChecked(xAction.m_pfnGraphBuild != nullptr, "GraphBuild", xAction.m_szArg1.c_str());
 		if (xAction.m_pfnGraphBuild != nullptr)
 		{
 			xAction.m_pfnGraphBuild(xBuilder);
 		}
 		const bool bBuilt = xBuilder.Build();
-		GraphActionChecked(bBuilt && xAction.m_pfnGraphBuild != nullptr, "GraphBuild", xAction.m_szArg1.c_str());
+		if (!bBuilt)
+		{
+			// ★ A FAILED Build() IS AUTHORED CONTENT, NOT AN AUTOMATION TYPO, so
+			// it must NOT DebugBreak a headless boot (ZENITH_ASSERT is
+			// unconditional - Zenith.h). One error line naming the asset and the
+			// error count, NO save (a .bgraph with errors is never written), and
+			// the queue continues. Downstream attaches to the unwritten asset
+			// come up unresolved and RED that game's suite - the intended hard
+			// signal, delivered by the game's own tests rather than by a break.
+			u_int uErrors = 0;
+			for (u_int u = 0; u < xBuilder.GetValidationFindingCount(); ++u)
+			{
+				if (xBuilder.GetValidationFindingAt(u).m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR)
+				{
+					++uErrors;
+				}
+			}
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"EditorAutomation GraphBuild('%s') FAILED with %u validation error(s) - not saved; see the [GraphValidator] lines above",
+				xAction.m_szArg1.c_str(), uErrors);
+			// .bgraph files are gitignored bake products that PERSIST in the
+			// output dir across boots, so "not saved" alone would leave the
+			// previous, valid asset in place and every downstream attach would
+			// stay green on a warm tree. Remove the stale asset: the failure is
+			// then visible on every machine, not only on a cold clone.
+			std::error_code xRemoveEC;
+			std::filesystem::remove(std::filesystem::path(Zenith_AssetRegistry::ResolvePath(xAction.m_szArg1)), xRemoveEC);
+		}
 		if (bBuilt)
 		{
 			std::error_code xEC;

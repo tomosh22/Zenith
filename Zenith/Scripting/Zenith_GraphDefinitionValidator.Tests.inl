@@ -434,12 +434,12 @@ namespace
 		xRegistry.RegisterNodeType<ValTestDynamicPinNode>("Test_ValDynPin", GRAPH_EVENT_NONE, 1, true, "Test");
 	}
 
-	void RunValidate(const Zenith_GraphDefinition& xDefinition, bool bLatchErrors,
+	void RunValidate(const Zenith_GraphDefinition& xDefinition,
 		Zenith_Vector<Zenith_GraphValidationFinding>& axOut)
 	{
 		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 		xRegistry.EnsureInitialized();
-		Zenith_GraphDefinitionValidator::Validate(xDefinition, xRegistry, "Test_Graph", bLatchErrors, axOut);
+		Zenith_GraphDefinitionValidator::Validate(xDefinition, xRegistry, "Test_Graph", axOut);
 	}
 
 	u_int CountRule(const Zenith_Vector<Zenith_GraphValidationFinding>& axFindings, Zenith_GraphValidationRule eRule)
@@ -633,6 +633,12 @@ ZENITH_TEST(GraphPinTable, Definition_ApplyNodeParamsRoundTrip)
 	u_int uReader = 0;
 	{
 		Zenith_GraphBuilder xBuilder(xDef);
+		// A POSITIVE fixture, so it DECLARES what it reads: the rule applies to
+		// test authors too, and an undeclared read would fail Build() here for a
+		// reason that has nothing to do with param round-tripping.
+		Zenith_PropertyValue xFloat;
+		xFloat.SetFloat(0.0f);
+		xBuilder.Variable("roundtrip", xFloat);
 		uReader = xBuilder.Node("Test_ValReader");
 		xBuilder.ParamString(uReader, "m_strValueVar", "roundtrip");
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
@@ -705,7 +711,10 @@ ZENITH_TEST(GraphPinTable, Registry_ExecOutputCountFunnel)
 // Declare-or-error
 //==============================================================================
 
-ZENITH_TEST(GraphValidator, Validator_UndeclaredReadIsErrorWhenLatched)
+// ★ NEGATIVE FIXTURE. The graph deliberately reads a variable nothing declares,
+// so Build() now returns FALSE - and the definition it leaves behind is still
+// complete, which is what lets the validation below run over it at all.
+ZENITH_TEST(GraphValidator, Validator_UndeclaredReadIsError)
 {
 	EnsureValidatorTestNodesRegistered();
 
@@ -714,11 +723,12 @@ ZENITH_TEST(GraphValidator, Validator_UndeclaredReadIsErrorWhenLatched)
 		Zenith_GraphBuilder xBuilder(xDef);
 		const u_int uReader = xBuilder.Node("Test_ValReader");
 		xBuilder.ParamString(uReader, "m_strValueVar", "missing");
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());
 	}
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 1u);	// a failed Build() rolls nothing back
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 1u);
 	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ);
@@ -726,37 +736,9 @@ ZENITH_TEST(GraphValidator, Validator_UndeclaredReadIsErrorWhenLatched)
 	if (pxFinding)
 	{
 		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
-		ZENITH_ASSERT_TRUE(pxFinding->m_bWouldBeError);
 		ZENITH_ASSERT_STREQ(pxFinding->m_strVar.c_str(), "missing");
 		ZENITH_ASSERT_STREQ(pxFinding->m_strPin.c_str(), "Value");
 		ZENITH_ASSERT_STREQ(pxFinding->m_strTypeName.c_str(), "Test_ValReader");
-	}
-}
-
-// The SAME graph under the report-only setting every A-5 caller uses: the
-// finding is still made, at WARNING, carrying the flag that says what it would
-// have been. That flag is the whole latch mechanism.
-ZENITH_TEST(GraphValidator, Validator_UndeclaredReadIsWarningWhenNotLatched)
-{
-	EnsureValidatorTestNodesRegistered();
-
-	Zenith_GraphDefinition xDef;
-	{
-		Zenith_GraphBuilder xBuilder(xDef);
-		const u_int uReader = xBuilder.Node("Test_ValReader");
-		xBuilder.ParamString(uReader, "m_strValueVar", "missing");
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
-	}
-
-	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, false, axFindings);
-
-	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 1u);
-	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ);
-	if (pxFinding)
-	{
-		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
-		ZENITH_ASSERT_TRUE(pxFinding->m_bWouldBeError);
 	}
 }
 
@@ -775,7 +757,7 @@ ZENITH_TEST(GraphValidator, Validator_DeclaredReadPasses)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 }
 
@@ -792,13 +774,13 @@ ZENITH_TEST(GraphValidator, Validator_OtherWriterSatisfiesRead)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 }
 
 // ★ A read-modify-write cannot seed itself: the value it writes is a function
 // of the value it read, so its own write is not a writer for its own read.
-ZENITH_TEST(GraphValidator, Validator_OwnReadWriteDoesNotSatisfyItselfWhenLatched)
+ZENITH_TEST(GraphValidator, Validator_OwnReadWriteDoesNotSatisfyItself)
 {
 	EnsureValidatorTestNodesRegistered();
 
@@ -806,11 +788,11 @@ ZENITH_TEST(GraphValidator, Validator_OwnReadWriteDoesNotSatisfyItselfWhenLatche
 	{
 		Zenith_GraphBuilder xBuilder(xDef);
 		xBuilder.Node("Test_ValAccumulate");	// READWRITE FLOAT on "value"
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());	// negative fixture: SELF_READWRITE is an ERROR
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_SELF_READWRITE), 1u);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
@@ -819,29 +801,6 @@ ZENITH_TEST(GraphValidator, Validator_OwnReadWriteDoesNotSatisfyItselfWhenLatche
 	{
 		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
 		ZENITH_ASSERT_STREQ(pxFinding->m_strVar.c_str(), "value");
-	}
-}
-
-ZENITH_TEST(GraphValidator, Validator_OwnReadWriteDoesNotSatisfyItselfWhenNotLatched)
-{
-	EnsureValidatorTestNodesRegistered();
-
-	Zenith_GraphDefinition xDef;
-	{
-		Zenith_GraphBuilder xBuilder(xDef);
-		xBuilder.Node("Test_ValAccumulate");
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
-	}
-
-	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, false, axFindings);
-
-	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_SELF_READWRITE), 1u);
-	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_SELF_READWRITE);
-	if (pxFinding)
-	{
-		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
-		ZENITH_ASSERT_TRUE(pxFinding->m_bWouldBeError);
 	}
 }
 
@@ -858,10 +817,10 @@ ZENITH_TEST(GraphValidator, Validator_UndeclaredReadWriteTargetIsError)
 			Zenith_GraphBuilder xBuilder(xDef);
 			const u_int uAdd = xBuilder.Node("Test_ValAccumulate");
 			xBuilder.ParamString(uAdd, "m_strVariable", "score");
-			ZENITH_ASSERT_TRUE(xBuilder.Build());
+			ZENITH_ASSERT_FALSE(xBuilder.Build());	// the flagged half is a negative fixture
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_SELF_READWRITE), 1u);
 	}
 
@@ -877,7 +836,7 @@ ZENITH_TEST(GraphValidator, Validator_UndeclaredReadWriteTargetIsError)
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 	}
 }
@@ -895,11 +854,11 @@ ZENITH_TEST(GraphValidator, Validator_TypeMismatchWriterReaderIsError)
 		Zenith_GraphBuilder xBuilder(xDef);
 		xBuilder.Node("Test_ValIntWriter");	// OUTPUT INT32 -> "value"
 		xBuilder.Node("Test_ValReader");	// INPUT  FLOAT <- "value"
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());	// negative fixture: TYPE_MISMATCH is an ERROR
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	// The write SATISFIES the read - the problem is what it writes.
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
@@ -925,7 +884,7 @@ ZENITH_TEST(GraphValidator, Validator_AnyUnifies)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 }
 
@@ -942,7 +901,7 @@ ZENITH_TEST(GraphValidator, Validator_TargetRefPairsWithEntityIdWriter)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 }
 
@@ -959,7 +918,7 @@ ZENITH_TEST(GraphValidator, Validator_TargetPositionAcceptsVector3AndEntityId)
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 	}
 
@@ -972,7 +931,7 @@ ZENITH_TEST(GraphValidator, Validator_TargetPositionAcceptsVector3AndEntityId)
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 	}
 }
@@ -988,11 +947,11 @@ ZENITH_TEST(GraphValidator, Validator_TargetEntityRefusesVector3)
 		Zenith_GraphBuilder xBuilder(xDef);
 		xBuilder.Node("Test_ValVec3Writer");	// OUTPUT VECTOR3 -> "target"
 		xBuilder.Node("Test_ValTargetEntity");	// entity-only TARGET_REF <- "target"
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());	// negative fixture: the mask rejects VECTOR3
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_TYPE_MISMATCH), 1u);
@@ -1013,7 +972,7 @@ ZENITH_TEST(GraphValidator, Validator_FallbackVarNameBinds)
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 	}
 
@@ -1024,10 +983,10 @@ ZENITH_TEST(GraphValidator, Validator_FallbackVarNameBinds)
 			const u_int uFallback = xBuilder.Node("Test_ValFallback");
 			xBuilder.ParamString(uFallback, "m_strVar", "elsewhere");
 			xBuilder.Node("Test_ValReader");	// still reads "value" - now unwritten
-			ZENITH_ASSERT_TRUE(xBuilder.Build());
+			ZENITH_ASSERT_FALSE(xBuilder.Build());	// negative half: the read is unsatisfied
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 1u);
 	}
 }
@@ -1048,7 +1007,7 @@ ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarnin
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 	}
 
@@ -1062,7 +1021,7 @@ ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarnin
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, true, axFindings);
+		RunValidate(xDef, axFindings);
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED), 1u);
 		// ANY, so no fabricated disagreement with the FLOAT reader...
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_TYPE_MISMATCH), 0u);
@@ -1072,7 +1031,8 @@ ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarnin
 			FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED);
 		if (pxFinding)
 		{
-			ZENITH_ASSERT_FALSE(pxFinding->m_bWouldBeError);
+			// A node declining to answer is not the graph author's defect.
+			ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
 		}
 	}
 }
@@ -1097,15 +1057,15 @@ ZENITH_TEST(GraphValidator, Validator_DeclaredUnreferencedIsWarning)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DECLARED_UNUSED), 1u);
 	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_DECLARED_UNUSED);
 	if (pxFinding)
 	{
-		// Never an error, even latched: an unused declaration breaks nothing.
+		// Never an error: an unused declaration breaks nothing, so a graph that
+		// carries one still BUILDS.
 		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
-		ZENITH_ASSERT_FALSE(pxFinding->m_bWouldBeError);
 		ZENITH_ASSERT_STREQ(pxFinding->m_strVar.c_str(), "unused");
 	}
 }
@@ -1131,7 +1091,7 @@ ZENITH_TEST(GraphValidator, Validator_UnreferencedWarningSuppressedByOpaqueNode)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_DECLARED_UNUSED), 0u);
 
 	// Control: the SAME declarations with no opaque node DO warn, so the
@@ -1147,7 +1107,7 @@ ZENITH_TEST(GraphValidator, Validator_UnreferencedWarningSuppressedByOpaqueNode)
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 	}
 	Zenith_Vector<Zenith_GraphValidationFinding> axControl;
-	RunValidate(xControl, true, axControl);
+	RunValidate(xControl, axControl);
 	ZENITH_ASSERT_EQ(CountRule(axControl, GRAPH_VALIDATION_RULE_DECLARED_UNUSED), 1u);
 }
 
@@ -1165,7 +1125,7 @@ ZENITH_TEST(GraphValidator, Validator_PinBindingToNonStringPropertyIsReportedNot
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 	}
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID), 1u);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
 }
@@ -1188,6 +1148,11 @@ ZENITH_TEST(GraphPinTable, Registry_ExecOutputCountAppliesParamsBeforeCounting)
 		Zenith_GraphBuilder xBuilder(xDef);
 		const u_int uSwitch = xBuilder.Node("SwitchOnString");
 		xBuilder.ParamString(uSwitch, "m_strCases", "a,b,c");
+		// SwitchOnString's Value pin reads m_strVar, whose default is "state" -
+		// a positive fixture must DECLARE what it reads or Build() latches.
+		Zenith_PropertyValue xState;
+		xState.SetString("");
+		xBuilder.Variable("state", xState);
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 		ZENITH_ASSERT_EQ(xRegistry.GetExecOutputCount(xDef, uSwitch), 4u);	// 3 cases + default
 	}
@@ -1219,7 +1184,7 @@ ZENITH_TEST(GraphValidator, Validator_ListNameIsWarning)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_LIST_NAME), 1u);
 	// A list name is NOT an undeclared read: lists are a separate store that is
@@ -1228,7 +1193,7 @@ ZENITH_TEST(GraphValidator, Validator_ListNameIsWarning)
 	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_LIST_NAME);
 	if (pxFinding)
 	{
-		ZENITH_ASSERT_FALSE(pxFinding->m_bWouldBeError);
+		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
 		ZENITH_ASSERT_STREQ(pxFinding->m_strVar.c_str(), "items");
 	}
 }
@@ -1254,7 +1219,7 @@ ZENITH_TEST(GraphValidator, Validator_OpaqueNodeProducesNothing)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 }
 
@@ -1275,7 +1240,7 @@ ZENITH_TEST(GraphValidator, Validator_EmptyBindingIsSkipped)
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(axFindings.GetSize(), 0u);
 }
 
@@ -1315,14 +1280,13 @@ ZENITH_TEST(GraphValidator, Validator_OrphanEdgeIsError)
 	ZENITH_ASSERT_EQ(xDef.GetEdgeCount(), 1u);
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_ORPHAN_EDGE), 1u);
 	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_ORPHAN_EDGE);
 	if (pxFinding)
 	{
 		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
-		ZENITH_ASSERT_TRUE(pxFinding->m_bWouldBeError);
 	}
 }
 
@@ -1339,11 +1303,11 @@ ZENITH_TEST(GraphValidator, Validator_PinBeyondOutputCountIsErrorOnUnflaggedType
 		const u_int uSrc = xBuilder.Node("Test_ValPlain");	// 1 output pin, unflagged
 		const u_int uDst = xBuilder.Node("Test_ValPlain");
 		xBuilder.Edge(uSrc, 1, uDst);						// pin 1 does not exist
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());				// negative fixture: PIN_OUT_OF_RANGE
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_PIN_OUT_OF_RANGE), 1u);
 }
 
@@ -1361,11 +1325,11 @@ ZENITH_TEST(GraphValidator, Validator_FailurePinIndexAllowedOnFlaggedType)
 		const u_int uHandler = xBuilder.Node("Test_ValPlain");
 		xBuilder.Edge(uFlaggedA, 1, uHandler);	// the failure pin - legal
 		xBuilder.Edge(uFlaggedB, 2, uHandler);	// one past it - not
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());	// the second edge is a PIN_OUT_OF_RANGE error
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_PIN_OUT_OF_RANGE), 1u);
 	const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_PIN_OUT_OF_RANGE);
@@ -1390,11 +1354,11 @@ ZENITH_TEST(GraphValidator, Validator_PinBeyondOutputCountUsesDynamicInstanceCou
 		xBuilder.Edge(uDynamic, 0, uDst);
 		xBuilder.Edge(uDynamic, 2, uDst);	// the last configured pin - legal
 		xBuilder.Edge(uDynamic, 3, uDst);	// one past it - not
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		ZENITH_ASSERT_FALSE(xBuilder.Build());	// the last edge is a PIN_OUT_OF_RANGE error
 	}
 
 	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, true, axFindings);
+	RunValidate(xDef, axFindings);
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_PIN_OUT_OF_RANGE), 1u);
 }
 
@@ -1402,9 +1366,10 @@ ZENITH_TEST(GraphValidator, Validator_PinBeyondOutputCountUsesDynamicInstanceCou
 // The builder seam
 //==============================================================================
 
-// ★ REPORT-ONLY. A graph with an undeclared read still BUILDS, still reports no
-// errors, and still produces findings - which is the whole of A-5's posture.
-ZENITH_TEST(GraphValidator, GraphBuilder_BuildRunsValidatorReportOnly)
+// ★ THE LATCH. A graph with an undeclared read FAILS its Build() - "caught at
+// Build()" is literal - and the definition it leaves behind is still complete,
+// with the findings readable off the builder.
+ZENITH_TEST(GraphValidator, GraphBuilder_BuildFailsOnValidationError)
 {
 	EnsureValidatorTestNodesRegistered();
 
@@ -1413,24 +1378,57 @@ ZENITH_TEST(GraphValidator, GraphBuilder_BuildRunsValidatorReportOnly)
 	const u_int uReader = xBuilder.Node("Test_ValReader");
 	xBuilder.ParamString(uReader, "m_strValueVar", "nobody_declares_me");
 
-	ZENITH_ASSERT_TRUE(xBuilder.Build());
-	ZENITH_ASSERT_FALSE(xBuilder.HasErrors());
-	ZENITH_ASSERT_GT(xBuilder.GetValidationFindingCount(), 0u);
+	ZENITH_ASSERT_FALSE(xBuilder.Build());
+	ZENITH_ASSERT_TRUE(xBuilder.HasErrors());
 
+	// Exactly ONE finding, and it is the ERROR - not a warning that happens to
+	// sit beside one.
+	ZENITH_ASSERT_EQ(xBuilder.GetValidationFindingCount(), 1u);
+	u_int uErrors = 0;
 	bool bFoundUndeclaredRead = false;
 	for (u_int u = 0; u < xBuilder.GetValidationFindingCount(); ++u)
 	{
 		const Zenith_GraphValidationFinding& xFinding = xBuilder.GetValidationFindingAt(u);
-		// Report-only: NOTHING is reported at ERROR severity from Build().
-		ZENITH_ASSERT_TRUE(xFinding.m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
+		if (xFinding.m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR)
+		{
+			++uErrors;
+		}
 		if (xFinding.m_eRule == GRAPH_VALIDATION_RULE_UNDECLARED_READ)
 		{
 			bFoundUndeclaredRead = true;
-			ZENITH_ASSERT_TRUE(xFinding.m_bWouldBeError);
+			ZENITH_ASSERT_TRUE(xFinding.m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
 			ZENITH_ASSERT_STREQ(xFinding.m_strVar.c_str(), "nobody_declares_me");
 		}
 	}
+	ZENITH_ASSERT_EQ(uErrors, 1u);
 	ZENITH_ASSERT_TRUE(bFoundUndeclaredRead);
+
+	// ★ THE DEFINITION IS STILL COMPLETE. Validation is the LAST thing Build()
+	// does and nothing is rolled back, so a false return is a report, not a
+	// half-built graph - the negative fixtures above all depend on this.
+	ZENITH_ASSERT_EQ(xDef.GetNodeCount(), 1u);
+	ZENITH_ASSERT_NOT_NULL(xDef.FindNodeDef(uReader));
+}
+
+// The other half: a WARNING-only graph still builds. Without it, the test above
+// would pass on a Build() that latched on any finding at all.
+ZENITH_TEST(GraphValidator, GraphBuilder_BuildPassesWithWarningsOnly)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	Zenith_GraphDefinition xDef;
+	Zenith_GraphBuilder xBuilder(xDef);
+	Zenith_PropertyValue xFloat;
+	xFloat.SetFloat(0.0f);
+	xBuilder.Variable("value", xFloat);		// the reader's default var - satisfied
+	xBuilder.Variable("unused", xFloat);	// DECLARED_UNUSED: a warning, and only that
+	xBuilder.Node("Test_ValReader");
+
+	ZENITH_ASSERT_TRUE(xBuilder.Build());
+	ZENITH_ASSERT_FALSE(xBuilder.HasErrors());
+	ZENITH_ASSERT_EQ(xBuilder.GetValidationFindingCount(), 1u);
+	ZENITH_ASSERT_TRUE(xBuilder.GetValidationFindingAt(0).m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
+	ZENITH_ASSERT_TRUE(xBuilder.GetValidationFindingAt(0).m_eRule == GRAPH_VALIDATION_RULE_DECLARED_UNUSED);
 }
 
 // A definition carries no name, so the report's graph= field comes from the

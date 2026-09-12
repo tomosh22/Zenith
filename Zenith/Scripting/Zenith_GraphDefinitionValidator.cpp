@@ -112,19 +112,15 @@ namespace
 		return false;
 	}
 
-	// Every finding is built here. bWouldBeError distinguishes "this is an error
-	// the day the latch flips" from a plain informational warning; with
-	// bLatchErrors false a would-be error is reported at WARNING severity and
-	// carries the flag.
-	void AddFinding(Zenith_Vector<Zenith_GraphValidationFinding>& axOut, bool bLatchErrors, bool bWouldBeError,
+	// Every finding is built here. bError IS the severity bit: true = a defect
+	// that fails Zenith_GraphBuilder::Build(), false = an informational warning.
+	void AddFinding(Zenith_Vector<Zenith_GraphValidationFinding>& axOut, bool bError,
 		Zenith_GraphValidationRule eRule, u_int uNodeID, const char* szTypeName, const char* szPin, const char* szVar,
 		const char* szFormat, ...)
 	{
 		Zenith_GraphValidationFinding xFinding;
 		xFinding.m_eRule = eRule;
-		xFinding.m_bWouldBeError = bWouldBeError;
-		xFinding.m_eSeverity = (bWouldBeError && bLatchErrors)
-			? GRAPH_VALIDATION_SEVERITY_ERROR : GRAPH_VALIDATION_SEVERITY_WARNING;
+		xFinding.m_eSeverity = bError ? GRAPH_VALIDATION_SEVERITY_ERROR : GRAPH_VALIDATION_SEVERITY_WARNING;
 		xFinding.m_uNodeID = uNodeID;
 		xFinding.m_strTypeName = szTypeName ? szTypeName : "";
 		xFinding.m_strPin = szPin ? szPin : "";
@@ -164,7 +160,7 @@ namespace
 //==============================================================================
 
 void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDefinition,
-	const Zenith_GraphNodeRegistry& xRegistry, const char* szGraphName, bool bLatchErrors,
+	const Zenith_GraphNodeRegistry& xRegistry, const char* szGraphName,
 	Zenith_Vector<Zenith_GraphValidationFinding>& axOut)
 {
 	(void)szGraphName;	// the graph name travels on the LOG line, not on a per-node finding
@@ -214,7 +210,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 				if (ePrimary == READ_PROPERTY_INVALID)
 				{
 					strVar.clear();
-					AddFinding(axOut, bLatchErrors, false, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
+					AddFinding(axOut, false, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, "",
 						"pin binds var-name property '%s', which the type does not declare as a string property",
 						xDesc.m_szVarNameProperty ? xDesc.m_szVarNameProperty : "");
@@ -225,7 +221,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 					const ReadPropertyResult eFallback = ReadStringProperty(pxProperties, pxTemp, xDesc.m_szFallbackVarNameProperty, strFallback);
 					if (eFallback == READ_PROPERTY_INVALID)
 					{
-						AddFinding(axOut, bLatchErrors, false, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
+						AddFinding(axOut, false, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
 							xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, "",
 							"pin names fallback var-name property '%s', which the type does not declare as a string property",
 							xDesc.m_szFallbackVarNameProperty);
@@ -254,7 +250,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 						// is the normal shape, not a defect.
 						xPin.m_eType = eGRAPH_PIN_TYPE_ANY;
 						if (!xPin.m_strVar.empty())
-						AddFinding(axOut, bLatchErrors, false, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED,
+						AddFinding(axOut, false, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED,
 							xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 							"instance-resolved pin: '%s' declined to answer GetPinType, treating the pin as ANY",
 							xNode.m_strTypeName.c_str());
@@ -286,7 +282,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 
 		if (pxSrc == nullptr || pxDst == nullptr)
 		{
-			AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_ORPHAN_EDGE,
+			AddFinding(axOut, true, GRAPH_VALIDATION_RULE_ORPHAN_EDGE,
 				pxSrc ? xEdge.m_uSrcNodeID : xEdge.m_uDstNodeID,
 				pxSrc ? pxSrc->m_strTypeName.c_str() : (pxDst ? pxDst->m_strTypeName.c_str() : ""),
 				"", "",
@@ -298,7 +294,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 		const u_int uOutputs = xRegistry.GetExecOutputCount(xDefinition, xEdge.m_uSrcNodeID);
 		if (xEdge.m_uSrcPin >= uOutputs)
 		{
-			AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_PIN_OUT_OF_RANGE,
+			AddFinding(axOut, true, GRAPH_VALIDATION_RULE_PIN_OUT_OF_RANGE,
 				xEdge.m_uSrcNodeID, pxSrc->m_strTypeName.c_str(), "", "",
 				"edge leaves pin %u, but the node has %u exec output pin(s)", xEdge.m_uSrcPin, uOutputs);
 		}
@@ -354,7 +350,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 			{
 				// Lists live in the blackboard's parallel store: never declared,
 				// never typed, created on first use. Informational only.
-				AddFinding(axOut, bLatchErrors, false, GRAPH_VALIDATION_RULE_LIST_NAME,
+				AddFinding(axOut, false, GRAPH_VALIDATION_RULE_LIST_NAME,
 					xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 					"blackboard list name (lists are runtime-only and never declared)");
 				continue;
@@ -392,14 +388,14 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 				{
 					// A READWRITE reference cannot satisfy its own read: the
 					// value it writes is a function of the value it read.
-					AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_SELF_READWRITE,
+					AddFinding(axOut, true, GRAPH_VALIDATION_RULE_SELF_READWRITE,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 						"reads '%s', which nothing declares and only this node writes - a read-modify-write cannot seed itself",
 						xPin.m_strVar.c_str());
 				}
 				else
 				{
-					AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_UNDECLARED_READ,
+					AddFinding(axOut, true, GRAPH_VALIDATION_RULE_UNDECLARED_READ,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 						"reads '%s', which this graph neither declares nor writes", xPin.m_strVar.c_str());
 				}
@@ -411,7 +407,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 				if (pxDecl != nullptr
 					&& (xDesc.m_uAcceptedTypeMask & Zenith_GraphPinTypeMaskBit(pxDecl->m_xDefault.GetType())) == 0u)
 				{
-					AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
+					AddFinding(axOut, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 						"target reference '%s' is declared %s, which this pin's resolver does not accept",
 						xPin.m_strVar.c_str(), TypeName(pxDecl->m_xDefault.GetType()));
@@ -425,7 +421,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 					}
 					if ((xDesc.m_uAcceptedTypeMask & Zenith_GraphPinTypeMaskBit(xWriter.m_eType)) == 0u)
 					{
-						AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
+						AddFinding(axOut, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
 							xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 							"target reference '%s' is written as %s by node %u, which this pin's resolver does not accept",
 							xPin.m_strVar.c_str(), TypeName(xWriter.m_eType), xWriter.m_uNodeID);
@@ -436,7 +432,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 			{
 				if (pxDecl != nullptr && pxDecl->m_xDefault.GetType() != xPin.m_eType)
 				{
-					AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
+					AddFinding(axOut, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 						"reads '%s' as %s, but the graph declares it %s",
 						xPin.m_strVar.c_str(), TypeName(xPin.m_eType), TypeName(pxDecl->m_xDefault.GetType()));
@@ -450,7 +446,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 					}
 					if (xWriter.m_eType != xPin.m_eType)
 					{
-						AddFinding(axOut, bLatchErrors, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
+						AddFinding(axOut, true, GRAPH_VALIDATION_RULE_TYPE_MISMATCH,
 							xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 							"reads '%s' as %s, but node %u writes it as %s",
 							xPin.m_strVar.c_str(), TypeName(xPin.m_eType), xWriter.m_uNodeID, TypeName(xWriter.m_eType));
@@ -474,7 +470,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 			const Zenith_GraphVariableDecl& xDecl = xDefinition.GetVariableAt(u);
 			if (!VectorContainsString(axReferenced, xDecl.m_strName))
 			{
-				AddFinding(axOut, bLatchErrors, false, GRAPH_VALIDATION_RULE_DECLARED_UNUSED,
+				AddFinding(axOut, false, GRAPH_VALIDATION_RULE_DECLARED_UNUSED,
 					0, "", "", xDecl.m_strName.c_str(),
 					"variable '%s' is declared (%s) but no annotated pin references it",
 					xDecl.m_strName.c_str(), TypeName(xDecl.m_xDefault.GetType()));
@@ -493,7 +489,8 @@ void Zenith_GraphDefinitionValidator::LogFindings(const char* szGraphName, u_int
 	for (u_int u = 0; u < axFindings.GetSize(); ++u)
 	{
 		const Zenith_GraphValidationFinding& xFinding = axFindings.Get(u);
-		if (xFinding.m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR)
+		const bool bError = xFinding.m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR;
+		if (bError)
 		{
 			++uErrors;
 		}
@@ -502,24 +499,47 @@ void Zenith_GraphDefinitionValidator::LogFindings(const char* szGraphName, u_int
 			++uWarnings;
 		}
 
-		// Zenith_Log, never Zenith_Error: a report-only pass over every shipped
-		// graph must not turn the tools-boot console red.
-		Zenith_Log(LOG_CATEGORY_CORE,
-			"[GraphValidator] %s wouldBeError=%d graph=%s node=%u:%s pin=%s var=%s rule=%s | %s",
-			GetSeverityName(xFinding.m_eSeverity),
-			xFinding.m_bWouldBeError ? 1 : 0,
-			szGraph,
-			xFinding.m_uNodeID,
-			xFinding.m_strTypeName.empty() ? "-" : xFinding.m_strTypeName.c_str(),
-			xFinding.m_strPin.empty() ? "-" : xFinding.m_strPin.c_str(),
-			xFinding.m_strVar.empty() ? "-" : xFinding.m_strVar.c_str(),
-			GetRuleName(xFinding.m_eRule),
-			xFinding.m_strWhat.c_str());
+		// The <SEV> token carries the severity: an ERROR is a real defect and
+		// goes to Zenith_Error, a WARNING stays on Zenith_Log.
+		if (bError)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE,
+				"[GraphValidator] %s graph=%s node=%u:%s pin=%s var=%s rule=%s | %s",
+				GetSeverityName(xFinding.m_eSeverity),
+				szGraph,
+				xFinding.m_uNodeID,
+				xFinding.m_strTypeName.empty() ? "-" : xFinding.m_strTypeName.c_str(),
+				xFinding.m_strPin.empty() ? "-" : xFinding.m_strPin.c_str(),
+				xFinding.m_strVar.empty() ? "-" : xFinding.m_strVar.c_str(),
+				GetRuleName(xFinding.m_eRule),
+				xFinding.m_strWhat.c_str());
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_CORE,
+				"[GraphValidator] %s graph=%s node=%u:%s pin=%s var=%s rule=%s | %s",
+				GetSeverityName(xFinding.m_eSeverity),
+				szGraph,
+				xFinding.m_uNodeID,
+				xFinding.m_strTypeName.empty() ? "-" : xFinding.m_strTypeName.c_str(),
+				xFinding.m_strPin.empty() ? "-" : xFinding.m_strPin.c_str(),
+				xFinding.m_strVar.empty() ? "-" : xFinding.m_strVar.c_str(),
+				GetRuleName(xFinding.m_eRule),
+				xFinding.m_strWhat.c_str());
+		}
 	}
 
 	// findings=<errors>/<warnings>
-	Zenith_Log(LOG_CATEGORY_CORE, "[GraphValidator] graph=%s nodes=%u findings=%u/%u",
-		szGraph, uNodeCount, uErrors, uWarnings);
+	if (uErrors > 0)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "[GraphValidator] graph=%s nodes=%u findings=%u/%u",
+			szGraph, uNodeCount, uErrors, uWarnings);
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_CORE, "[GraphValidator] graph=%s nodes=%u findings=%u/%u",
+			szGraph, uNodeCount, uErrors, uWarnings);
+	}
 }
 
 const char* Zenith_GraphDefinitionValidator::GetRuleName(Zenith_GraphValidationRule eRule)

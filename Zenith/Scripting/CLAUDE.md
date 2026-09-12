@@ -70,7 +70,8 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   → `GetPinTableStatic()`, concept-detected by `RegisterNodeType` exactly like
   the property table, and inherited the same way). See "Validation" below.
 - `Zenith_GraphDefinitionValidator.{h,cpp}` + `.Tests.inl` — the FULL-tier
-  static check of a definition against those tables. Report-only today.
+  static check of a definition against those tables. An ERROR finding FAILS
+  `Zenith_GraphBuilder::Build()`.
 - `Zenith_GraphBlackboard.{h,cpp}` — name → `Zenith_PropertyValue` store with
   typed getters (`GetFloat/GetBool/GetInt32/GetVector2/3/4/GetString/
   GetPackedEntityID(name, default)` — return the default on missing OR type
@@ -317,16 +318,34 @@ must never produce a false finding. **While ANY node in a graph is opaque the
 declared-but-unreferenced warning is SUPPRESSED for that graph** — otherwise
 every `Variable(...)` declaration in every shipped graph would warn.
 
-**★ REPORT-ONLY, AND WHY IT STAYS THAT WAY FOR NOW.** `Validate(..., bLatchErrors,
-out)` is called with `false` everywhere today: every would-be ERROR is reported
-at WARNING severity with `m_bWouldBeError` set. `Zenith_GraphBuilder::Build()`
-runs it after the commit loop (before it the blobs still hold `AddNode`
-defaults, not `Param*` values) and never touches `m_bErrors` or its return
-value. Every var-name property has a NON-EMPTY default (`"value"`, `"result"`,
-`"target"`, …) and `SetValue` creates undeclared variables by design, so the
-moment the node library IS annotated, declare-or-error WILL flag shipped graphs.
-The order is: annotate → declare the variables the sweep surfaces → flip the
-latch once that report is clean.
+**★ CAUGHT AT `Build()`, LITERALLY.** `Zenith_GraphBuilder::Build()` runs the
+validator after the commit loop (before it the blobs still hold `AddNode`
+defaults, not `Param*` values), and **any `GRAPH_VALIDATION_SEVERITY_ERROR`
+finding latches `m_bErrors` and makes `Build()` return `false`.** Validation is
+the LAST thing `Build()` does and nothing is rolled back, so a false return
+still leaves a COMPLETE definition with the findings readable off the builder
+(`GetValidationFindingCount()` / `GetValidationFindingAt(i)`) — every negative
+test fixture depends on that. There is no way to turn the latch off; the
+severity is the rule's, full stop.
+
+Errors: `ORPHAN_EDGE`, `PIN_OUT_OF_RANGE`, `SELF_READWRITE`, `UNDECLARED_READ`,
+`TYPE_MISMATCH` (including the TARGET masks). Warnings: `DECLARED_UNUSED`,
+`LIST_NAME`, `INSTANCE_TYPE_UNRESOLVED`, `PIN_BINDING_INVALID` — the last stays
+a warning deliberately, because a mis-declared pin table is an ENGINE defect the
+graph author cannot fix (the per-TU totality tests guard it instead).
+
+*History, one line:* A-5..A-7 ran this report-only (a `bLatchErrors` argument
+and an `m_bWouldBeError` flag) while the engine and game node libraries were
+annotated and every game's graphs were swept clean; A-8 deleted that tier and
+latched it.
+
+**★ A TEST FIXTURE DECLARES WHAT IT READS TOO.** Every var-name property has a
+NON-EMPTY default (`"value"`, `"result"`, `"target"`, …), so a builder graph that
+merely places a node often reads something. A POSITIVE fixture must
+`Variable(...)` it with the reader's type; a NEGATIVE one asserts
+`Build() == false`. In a byte-identity fixture (`GraphDefsSerializeIdentically`)
+both halves must declare the SAME names, with the SAME types, in the SAME order
+— variables serialise FIRST.
 
 **★ GAME NODES ARE ANNOTATED TOO, AND A DECLARATION IS SCENE BYTES.** The sweep
 that follows the engine library covers each game's node header (DevilsPlayground
@@ -352,12 +371,12 @@ asset open (`OpenAsset` and `OpenAssetFresh`), on a parameter edit, and after a
 connection lands. A LOAD_SAFETY
 tier is a later unit.
 
-**The log line** — `Zenith_Log`, `LOG_CATEGORY_CORE`, **never `Zenith_Error`**
-(a report-only pass over every shipped graph must not turn the tools-boot
-console red):
+**The log line** — `LOG_CATEGORY_CORE`; an ERROR goes to `Zenith_Error` and a
+WARNING to `Zenith_Log`, and the summary line follows the errors count. The
+`<SEV>` token carries the severity (there is no separate flag any more):
 
 ```
-[GraphValidator] <WARN|ERROR> wouldBeError=<0|1> graph=<name> node=<id>:<type> pin=<pin|-> var=<var|-> rule=<RULE> | <text>
+[GraphValidator] <WARN|ERROR> graph=<name> node=<id>:<type> pin=<pin|-> var=<var|-> rule=<RULE> | <text>
 [GraphValidator] graph=<name> nodes=N findings=<errors>/<warnings>
 ```
 

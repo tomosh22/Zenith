@@ -480,7 +480,7 @@ namespace
 
 	//-------------------------------------------------------------------------
 	// (c) BUILDER INTEGRITY. Each builder must Build() cleanly, report ZERO
-	// would-be-error validation findings, name only node types from the engine
+	// error-severity validation findings, name only node types from the engine
 	// set derived in (a), and instantiate with nothing
 	// unresolved. The last clause is the one that matters most: an unresolved
 	// node loads, round-trips and silently fails its chain, so a graph can be
@@ -508,28 +508,26 @@ namespace
 				std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", xRow.m_szAssetPath);
 				CheckTrue(bBuilt, acWhat);
 
-				// ...and the graph is CLEAN of would-be errors. Build() runs the
-				// FULL-tier validation pass after the commit loop (before it the
-				// blobs still hold AddNode defaults rather than Param* values) and
+				// ...and the graph is CLEAN of ERRORs. Build() runs the FULL-tier
+				// validation pass after the commit loop (before it the blobs
+				// still hold AddNode defaults rather than Param* values) and
 				// keeps the report on the builder, which is why this clause lives
 				// INSIDE the builder's scope rather than beside the clauses below.
 				//
-				// This is the mechanical precondition for A-8's bLatchErrors=true:
-				// today every would-be ERROR is reported at WARNING severity with
-				// m_bWouldBeError set and Build() ignores it, so without this
-				// clause a graph could read a variable nothing declares or writes
-				// and every ScriptTest signal would stay green. LIST_NAME (27 of
-				// them here) and DECLARED_UNUSED are WARNINGS and are deliberately
-				// not counted.
-				int iWouldBeErrors = 0;
+				// A-8 latched the validator, so an ERROR here also fails the
+				// bBuilt clause above. This clause stays because it is the one
+				// that NAMES the rule, the variable and the node. LIST_NAME (27
+				// of them here) and DECLARED_UNUSED are WARNINGS and are
+				// deliberately not counted.
+				int iErrors = 0;
 				for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
 				{
 					const Zenith_GraphValidationFinding& xFinding = xBuilder.GetValidationFindingAt(uFinding);
-					if (!xFinding.m_bWouldBeError)
+					if (xFinding.m_eSeverity != GRAPH_VALIDATION_SEVERITY_ERROR)
 					{
 						continue;
 					}
-					++iWouldBeErrors;
+					++iErrors;
 					Zenith_Log(LOG_CATEGORY_UNITTEST,
 						"[ScriptTestContract]   %s node=%u:%s pin=%s var=%s rule=%s | %s",
 						xRow.m_szAssetPath, xFinding.m_uNodeID,
@@ -540,8 +538,8 @@ namespace
 						xFinding.m_strWhat.c_str());
 				}
 				std::snprintf(acWhat, sizeof(acWhat),
-					"%s reports ZERO would-be-error validation findings", xRow.m_szAssetPath);
-				CheckEqInt(iWouldBeErrors, 0, acWhat);
+					"%s reports ZERO error-severity validation findings", xRow.m_szAssetPath);
+				CheckEqInt(iErrors, 0, acWhat);
 			}
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);

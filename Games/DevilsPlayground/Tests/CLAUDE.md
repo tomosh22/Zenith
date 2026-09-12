@@ -467,7 +467,8 @@ carrying a blackboard-variable-name property has lost its pin descriptor table â
 an un-annotated node is OPAQUE to the graph validator, so it would silently drop
 out of the second test's report. The second builds all twelve `BuildGraph_DP*`
 in process (declared in `DP_Graphs.h`) and requires `Build() == true` plus ZERO
-findings with `m_bWouldBeError`.
+ERROR-severity validation findings (A-8 latched the validator, so the second
+clause now implies the first; it is kept because only it NAMES the rule).
 
 â˜… **Both are AUTOMATED tests rather than `ZENITH_TEST`s, deliberately.** DP's
 gate passes `--skip-unit-tests` and dp-tests.yml has no unit leg, so a

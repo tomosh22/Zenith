@@ -17,6 +17,7 @@
 //------------------------------------------------------------------------------
 
 #include "Core/Zenith_TestFramework.h"
+#include "Scripting/Zenith_GraphPinTable.h"
 
 #ifdef ZENITH_TESTING
 
@@ -46,6 +47,25 @@ namespace
 		const char* GetTypeName() const override { return "Test_EditorPlain"; }
 	};
 
+	// Carries a PIN TABLE, so it is not opaque to the validator, and its one
+	// INPUT pin reads a variable whose default name nothing declares - the
+	// smallest graph that produces exactly one ERROR finding and no warnings.
+	class GraphEditorTestReaderNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphEditorTestReaderNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strValueVar, "editorPanelUndeclared")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphEditorTestReaderNode)
+		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_EditorReader"; }
+	};
+
 	// Idempotent via a static rather than the registry's duplicate guard, which
 	// would log an error line per re-entry.
 	void EnsureGraphEditorTestNodesRegistered()
@@ -60,6 +80,7 @@ namespace
 		xRegistry.EnsureInitialized();
 		xRegistry.RegisterNodeType<GraphEditorTestFailurePinNode>("Test_EditorFailurePin", GRAPH_EVENT_NONE, 1, false, "Test", true);
 		xRegistry.RegisterNodeType<GraphEditorTestPlainNode>("Test_EditorPlain", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<GraphEditorTestReaderNode>("Test_EditorReader", GRAPH_EVENT_NONE, 1, false, "Test");
 	}
 
 	//--------------------------------------------------------------------------
@@ -278,6 +299,65 @@ ZENITH_TEST(GraphEditorPanel, GraphEditor_TryConnectIsTheOneFunnel)
 	ZENITH_ASSERT_STREQ(Zenith_GraphEditorPanel::GetConnectRefusalText(), "");
 
 	Zenith_GraphEditorPanel::Close();
+}
+
+// ★ THE PANEL IS ADVISORY, AND STAYS ADVISORY NOW THAT ERRORS ARE ERRORS.
+// A-8 latched the validator so a boot-authoring Build() FAILS on an undeclared
+// read - but the editor is where an author FIXES one, so refusing to open, edit
+// or save a graph with errors in it would trap them inside the mistake. This
+// pins both halves: the count says ERROR, and every gesture still works.
+ZENITH_TEST(GraphEditorPanel, GraphEditor_ValidationErrorsAreAdvisory)
+{
+	EnsureGraphEditorTestNodesRegistered();
+
+	Zenith_GraphEditorPanel::OpenAsset("game:Graphs/zz_unit_validation_error.bgraph");
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::IsOpen());
+
+	// A fresh, empty definition validates clean - so the count below is the
+	// node's doing and not a leftover from another test's asset.
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetValidationFindingCount(), 0u);
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetValidationErrorCount(), 0u);
+
+	// One annotated node reading a variable nothing declares. The pass re-runs
+	// on a COMMITTED PARAMETER EDIT (not on Action_AddNode), so the var-name
+	// edit below is what refreshes the report - which is also the edit that
+	// breaks a binding in real use.
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddNode("Test_EditorReader"));
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_SelectNode("Test_EditorReader", 0));
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_SetSelectedNodeParamString("m_strValueVar", "stillUndeclared"));
+
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetValidationFindingCount(), 1u);
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetValidationErrorCount(), 1u);
+
+	const Zenith_GraphValidationFinding* pxFinding = Zenith_GraphEditorPanel::GetValidationFindingAt(0);
+	ZENITH_ASSERT_NOT_NULL(pxFinding);
+	if (pxFinding != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
+		ZENITH_ASSERT_TRUE(pxFinding->m_eRule == GRAPH_VALIDATION_RULE_UNDECLARED_READ);
+		ZENITH_ASSERT_STREQ(pxFinding->m_strVar.c_str(), "stillUndeclared");
+	}
+	// An out-of-range index is a null, not an assert.
+	ZENITH_ASSERT_NULL(Zenith_GraphEditorPanel::GetValidationFindingAt(1));
+
+	// ADVISORY: the panel is still open and every Action_* still lands with an
+	// ERROR standing.
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::IsOpen());
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddVariable("stillUndeclared", "float", 0.0f));
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_AddNode("Test_EditorPlain"));
+	// A landed connect is the other re-validation trigger.
+	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_Connect("Test_EditorReader", 0, 0, "Test_EditorPlain", 0));
+
+	// ...and the declaration CLEARED the error, which is the proof the pass
+	// re-runs rather than latching its first answer. (Test_EditorPlain carries
+	// no pin table, so it is OPAQUE and the declared-but-unreferenced warning
+	// is suppressed for this graph - hence zero findings, not just zero
+	// errors.)
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetValidationErrorCount(), 0u);
+	ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetValidationFindingCount(), 0u);
+
+	Zenith_GraphEditorPanel::Close();
+	ZENITH_ASSERT_FALSE(Zenith_GraphEditorPanel::IsOpen());
 }
 
 #endif // ZENITH_TESTING

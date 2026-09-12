@@ -4,7 +4,7 @@
 
 // ============================================================================
 // DP_GraphsValidateClean_Test -- every DevilsPlayground graph builds, and the
-// graph validator reports ZERO would-be errors for it.
+// graph validator reports ZERO error-severity findings for it.
 //
 // Each of the 12 builders is run IN PROCESS through a Zenith_GraphBuilder, so
 // there is no .bgraph on disk to go stale and no dependency on a prior tools
@@ -12,14 +12,13 @@
 //
 //   - Build() == true               (no authoring error: unknown type, unknown
 //                                    property, rejected edge)
-//   - zero findings with m_bWouldBeError
+//   - zero ERROR-severity validation findings
 //
-// m_bWouldBeError is the flag the validator sets on a finding that WOULD be an
-// error if it were latching (Zenith_GraphDefinitionValidator.h:68). It is
-// report-only today, so this test is the mechanical precondition for flipping
-// `bLatchErrors` to true: the day that flag latches, a graph that reports one of
-// these stops loading. Anything that stays a WARNING -- DECLARED_UNUSED, a LIST
-// name, an unresolved instance type -- is deliberately NOT checked here.
+// A-8 latched the validator: an ERROR finding is what makes Build() return
+// false, so the first bullet now implies the second. Both are still asserted,
+// because only the second NAMES the rule, the variable and the node. Anything
+// that stays a WARNING -- DECLARED_UNUSED, a LIST name, an unresolved instance
+// type -- is deliberately NOT checked here.
 //
 // Each hit is logged with its rule, variable, node id and node type, because the
 // count alone would not tell anyone which of a dozen chains moved.
@@ -135,7 +134,7 @@ namespace
 			char acWhat[256];
 
 			Zenith_GraphDefinition xDefinition;
-			int iWouldBeErrors = 0;
+			int iErrors = 0;
 			{
 				Zenith_GraphBuilder xBuilder(xDefinition);
 				xBuilder.SetGraphName(xRow.m_szAssetPath);
@@ -150,11 +149,11 @@ namespace
 				for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
 				{
 					const Zenith_GraphValidationFinding& xFinding = xBuilder.GetValidationFindingAt(uFinding);
-					if (!xFinding.m_bWouldBeError)
+					if (xFinding.m_eSeverity != GRAPH_VALIDATION_SEVERITY_ERROR)
 					{
 						continue;	// warnings stay warnings (DECLARED_UNUSED, LIST_NAME, ...)
 					}
-					++iWouldBeErrors;
+					++iErrors;
 					Zenith_Log(LOG_CATEGORY_UNITTEST,
 						"[DPGraphsClean]   %s node=%u:%s pin=%s var=%s rule=%s | %s",
 						xRow.m_szAssetPath,
@@ -167,8 +166,8 @@ namespace
 				}
 			}
 
-			std::snprintf(acWhat, sizeof(acWhat), "%s reports ZERO would-be-error findings", xRow.m_szAssetPath);
-			CheckEqInt(iWouldBeErrors, 0, acWhat);
+			std::snprintf(acWhat, sizeof(acWhat), "%s reports ZERO error-severity findings", xRow.m_szAssetPath);
+			CheckEqInt(iErrors, 0, acWhat);
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
 			CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);

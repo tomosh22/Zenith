@@ -202,8 +202,10 @@ writer set is graph-wide; `payload` is written by the `OnCustomEvent` source's
 (`ZENITH_TEST(GraphPinTable, CombatNodesTotality)` — Combat's FIRST boot unit,
 so it moves Combat's pinned baseline) fails if a var-name property is ever added
 without a descriptor, and `Tests/Combat_Tests_GraphsValidateClean.cpp` (an
-automated test) builds all five graphs in-process and fails on any finding with
-`m_bWouldBeError`. To make that possible the five top-level `BuildGraph_Combat*`
+automated test) builds all five graphs in-process and fails on any ERROR-severity
+validation finding (A-8 latched the validator, so such a finding also fails
+`Build()`; the test is what NAMES the rule, the variable and the node). To make
+that possible the five top-level `BuildGraph_Combat*`
 functions are no longer `static`; they are declared in **`Combat_Graphs.h`**,
 which is `#ifdef ZENITH_TOOLS` because the definitions are (`Combat.cpp`'s tools
 block). The `BuildCombatGameFlow_*` sub-builders stay `static`. A sixth builder

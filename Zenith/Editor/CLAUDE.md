@@ -908,15 +908,21 @@ is `Zenith/Scripting/` — see its CLAUDE.md):
   `GraphEditor_DropRefusalIsVisible` and `GraphEditor_TryConnectIsTheOneFunnel`
   drive `TryConnect` directly — that is the only way a headless unit can say
   anything about the human gesture.
-- **Validation on load and on edit (REPORT-ONLY).** `OpenAsset`,
+- **Validation on load and on edit (ADVISORY).** `OpenAsset`,
   `OpenAssetFresh`, a committed parameter edit (`OnSelectedNodeParamChanged`,
   AFTER `SetNodeParamsFromInstance` — before it the blob still holds the old
   value) and a landed connect each re-run
-  `Zenith_GraphDefinitionValidator::Validate` with `bLatchErrors = false`. The
-  report is kept on the panel state, displayed under the toolbar as a count plus
-  the first five findings, and readable via `GetValidationFindingCount()` /
-  `GetValidationFindingAt(i)`. **Nothing here blocks an edit or a save** — the
-  rules, the roles and the latch plan are `Scripting/CLAUDE.md` → *Validation*.
+  `Zenith_GraphDefinitionValidator::Validate`. Note the four triggers: adding a
+  node or a variable is NOT one of them, so a report refreshes on the next param
+  edit or connect. The report is kept on the panel state, displayed under the
+  toolbar as **"N errors / M warnings"** plus the first five findings — ERROR
+  findings in a distinct red-ish colour, warnings amber — and readable via
+  `GetValidationFindingCount()` / `GetValidationErrorCount()` /
+  `GetValidationFindingAt(i)`. **Nothing here blocks an edit or a save**, and
+  that survives A-8's latch on purpose: the editor is where an author FIXES an
+  error, so refusing to open or save a graph carrying one would trap them inside
+  the mistake. Unit: `GraphEditor_ValidationErrorsAreAdvisory` (headless). The
+  rules and the severities are `Scripting/CLAUDE.md` → *Validation*.
 - **Open/Save/Close:** `OpenAsset` (registry-backed), `OpenAssetFresh`
   (boot-time authoring: clears the definition for regenerate-from-scratch),
   `Save` (creates parent directories, writes through the asset registry, then
@@ -1479,6 +1485,20 @@ scene authoring): `AddStep_GraphOpenFresh`, `AddStep_GraphAddNode`,
 and appends the slot). Each graph step is wrapped in `GraphActionChecked`,
 which asserts on failure so an authoring typo (wrong node type/occurrence/pin)
 surfaces at boot, not as a silently-empty graph.
+
+**★ ONE EXCEPTION, AND IT IS DELIBERATE: `GRAPH_BUILD` ON A VALIDATION ERROR.**
+`Zenith_Assert` is unconditional in every config (`Zenith.h`), so leaving the
+`bBuilt` return under `GraphActionChecked` would `Zenith_DebugBreak` a headless
+boot over **authored content** rather than an automation typo. Since A-8 latched
+the graph validator, `Zenith_GraphBuilder::Build()` returns false on an
+undeclared read or a type disagreement — so that case now emits ONE
+`Zenith_Error` naming the asset path and the error count, **skips the save** (a
+`.bgraph` with errors is never written, and the STALE one from an earlier boot is
+removed so a warm tree fails the same way a cold clone does), and lets the queue
+continue. A missing
+`m_pfnGraphBuild`, and the save/attach mechanics, stay under the asserting
+wrapper. The hard signal is delivered downstream instead: the unwritten asset
+makes every attach to it unresolved and reds that game's suite.
 
 **★ AUTHORED ROTATIONS THAT LAND IN A COMMITTED SCENE.** All three rotation steps are
 now byte-stable across build configurations, but they are not equally strong:

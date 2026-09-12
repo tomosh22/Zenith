@@ -260,19 +260,29 @@ bool Zenith_GraphBuilder::Build()
 
 	AssignEditorPositions();
 
-	// FULL-tier validation, REPORT-ONLY. Deliberately AFTER the commit loop:
-	// before it the param blobs still hold AddNode's defaults rather than the
-	// Param* values, so every var-name binding would read the wrong string.
+	// FULL-tier validation. Deliberately AFTER the commit loop: before it the
+	// param blobs still hold AddNode's defaults rather than the Param* values,
+	// so every var-name binding would read the wrong string.
 	//
-	// Nothing here touches m_bErrors or the return - a would-be error is logged
-	// with wouldBeError=1 and the build still succeeds. The report over every
-	// game's boot-authored graphs is the evidence the latch is eventually
-	// flipped on; see Scripting/CLAUDE.md -> Validation.
+	// ★ THE DEFINITION IS FULLY COMMITTED BEFORE THIS RUNS, and stays so on a
+	// failing build: a caller that gets false back still holds a complete
+	// definition and can read the findings off the builder. An ERROR finding
+	// latches m_bErrors BELOW, before the return - "caught at Build()" is
+	// literal. See Scripting/CLAUDE.md -> Validation.
 	{
 		Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 		xRegistry.EnsureInitialized();
-		Zenith_GraphDefinitionValidator::Validate(m_xDefinition, xRegistry, GetGraphName(), false, m_axValidationFindings);
+		Zenith_GraphDefinitionValidator::Validate(m_xDefinition, xRegistry, GetGraphName(), m_axValidationFindings);
 		Zenith_GraphDefinitionValidator::LogFindings(GetGraphName(), m_xDefinition.GetNodeCount(), m_axValidationFindings);
+
+		for (u_int u = 0; u < m_axValidationFindings.GetSize(); ++u)
+		{
+			if (m_axValidationFindings.Get(u).m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR)
+			{
+				m_bErrors = true;
+				break;
+			}
+		}
 	}
 
 	return !m_bErrors;
