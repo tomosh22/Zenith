@@ -232,6 +232,23 @@ builds the graph it is about in-process from the same `BuildGraph_ST_*` function
 so there is no `.bgraph` on disk to go stale and no dependency on a prior tools
 run having left one behind.
 
+**C2's builder loop also gates the graph VALIDATOR.** Per builder, alongside
+`Build()`, the node-type membership check and the unresolved-count check, it now
+asserts ZERO findings with `m_bWouldBeError` (`Zenith_GraphBuilder`'s
+report-only pass — see `Zenith/Scripting/CLAUDE.md` § Validation) and logs the
+rule, variable and node for any hit. That is the mechanical precondition for
+latching the validator, and it is deliberately a clause inside the existing loop
+rather than a seventeenth test: it is a property of every builder, so it belongs
+where every builder already runs. Three graphs needed a declared seed to satisfy
+it — `ST_SineBob`'s `t`, `ST_KillVolume`'s `killCount` and `ST_FlowScore`'s
+`score` are all `AddBlackboard*` read-modify-writes, and a read-modify-write
+cannot seed itself. Each now carries an explicit `Variable(<name>, 0)`; the
+blackboard's typed getters already defaulted to 0, so nothing behaves
+differently, but a declared variable is serialized into a live slot's
+blackboard, which moves the committed `Gym_Motion.zscen` and `Gym_Physics.zscen`
+bytes. `LIST_NAME` (27 of them here) and `DECLARED_UNUSED` stay WARNINGS and are
+not counted.
+
 **That scope is the whole claim — the other twelve tests DO depend on bake
 products.** They load the committed `.zscen`, whose slots reference the twenty
 `.bgraph`, the two generated meshes and the ball prefab, and every one of those
@@ -332,7 +349,7 @@ gate rather than being skipped-as-passed there. All are guarded by
 | Test | File (C#) | What it proves |
 |---|---|---|
 | `ScriptTest_Boot_Test` | `ScriptTest_BootCharacterization.cpp` | The game boots to a valid active scene. Also the cheapest way to drive the boot authoring pass — it is what the CI cold-bake step runs. |
-| `ST_NoGameExtensionsContract` | `ScriptTest_Contracts.cpp` (C2) | THE CLAIM, mechanically: node-registry reset/re-derive set-equality, the component-meta allowlist, and per-builder node-type membership. Read its header for the two properties it *cannot* see. |
+| `ST_NoGameExtensionsContract` | `ScriptTest_Contracts.cpp` (C2) | THE CLAIM, mechanically: node-registry reset/re-derive set-equality, the component-meta allowlist, per-builder node-type membership, and — per builder — ZERO validation findings with `m_bWouldBeError`. Read its header for the two properties it *cannot* see. |
 | `ST_TrafficLightContract` | `ScriptTest_Contracts.cpp` (C3) | The `StateMachine` + `Wait` cadence, read off the **blackboard** rather than off a rendered lamp. |
 | `ST_PlayerMoveContract` | `ScriptTest_Contracts.cpp` (C4) | The input → blackboard half of the movement chain, driven through the real device layer. |
 | `ST_SequenceFanOutContract` | `ScriptTest_Contracts.cpp` (C15) | The **shape** of the two graphs that fan out per-frame chains off one anchor: `ST_Dispenser` has exactly one `OnUpdate` and one `Sequence` with four branches, `ST_NavWalker` exactly two of each (2 + 5 branches), every branch set is a **contiguous** pin range 0..N-1, and each pin 0 heads the chain it is supposed to. The anchor **census** is the deliverable: a superseded `OnUpdate` left unwired still registers as an `ON_UPDATE` source and keeps `NeedsUpdateDispatch` true, so a half-done conversion is indistinguishable at runtime; and `AddEdge` validates no pin against a branch count, so an edge on a pin past the end is accepted and simply never runs. |

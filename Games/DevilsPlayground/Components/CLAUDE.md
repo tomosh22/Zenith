@@ -200,6 +200,31 @@ every tools boot by `AuthorBehaviourGraphs()` in DevilsPlayground.cpp through
 | `DPPriestApprehendChannel` / `DPPriestPickPatrolTarget` | the priest's apprehend channel + scent-biased patrol picker (retired BT leaves, verbatim) |
 | `DPReadTuningFloat` | live `DP_Tuning` float → blackboard stage (shared) |
 
+**Pin descriptor tables (A-7).** Every DP node class that carries a blackboard
+variable NAME declares a `ZENITH_GRAPH_PINS_BEGIN` block beside its properties —
+37 var-name properties across 23 classes — so `Zenith_GraphDefinitionValidator`
+can see what each node reads and writes (`Zenith/Scripting/CLAUDE.md` §
+Validation carries the role rulings). Roles as they fall out of the Execute
+bodies: a villager/tag/flag READ is an `INPUT` with its real type (an
+`ENTITY_ID` read through `DPGraph_GetEntityVar` is a typed INPUT, **not** a
+`TARGET_REF` — nothing calls `ResolveTargetEntity`, so there is no `""`-means-self
+rule); a computed answer is an `OUTPUT` (`DPReadHeldObjective.Tag`,
+`DPPickVillagerUnderCursor.Result`, `DPReadTuningFloat.Result`); a variable read
+and written back under the SAME name in one Execute is a `SELECTOR_READWRITE`
+(`openT`, `requiredKey`, `craftCount`).
+
+Three kinds of string are deliberately NOT pins, each for a reason a reader
+would otherwise have to rediscover: the six `*Key` properties plus
+`DPReadTuningFloat::m_strKey` are **DP_Tuning keys**, not blackboard names;
+several nodes reach the blackboard through **hard-coded literals**
+(`DPItemArmChannel`'s `channelVillager`/`channelRemaining`/`channelDuration`,
+`DPItemRingBell`'s `specialBehaviour`, `DPDoorAdvanceAnim`'s settle write to
+`"anim"`), which no descriptor can bind; and both **priest nodes declare no
+properties at all**, reaching it through the `DP_AI::BB_KEY_*` constants — they
+stay opaque until those become properties (Epic B). Everything in those last two
+groups is instead DECLARED by the reading graph. `Tests/Test_GraphPinTotality.cpp`
+fails if a node with a var-name property ever loses its table.
+
 Registered via `DP_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
 The wave-1 deleted components (DPPentagram / DPChest / DPDoubleDoor /
 DummyNoiseMachine / DPMainMenuController) have NO C++ remnants; equivalence

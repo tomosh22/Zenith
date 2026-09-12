@@ -491,6 +491,16 @@ void BuildGraph_ST_PingPong(Zenith_GraphBuilder& xBuilder)
 // compound cos(t) frame after frame and collapse the vector to zero.
 void BuildGraph_ST_SineBob(Zenith_GraphBuilder& xBuilder)
 {
+	// 't' is a read-modify-write on AddBlackboardFloat, and a read-modify-write
+	// cannot seed itself (the validator's SELF_READWRITE rule: the node that
+	// WRITES a variable is never counted as its writer for its own READ). The
+	// blackboard's typed getters already default to 0, so this declaration is
+	// behaviourally identical to the undeclared state -- what it changes is that
+	// the seed is now STATED, which is what lets A-8 latch.
+	Zenith_PropertyValue xF0;
+	xF0.SetFloat(0.0f);
+	xBuilder.Variable(ScriptTest::Vars::szT, xF0);
+
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	Zenith_GraphChain xTick = xB.OnUpdate();
@@ -616,6 +626,13 @@ void BuildGraph_ST_BallSpawner(Zenith_GraphBuilder& xBuilder)
 // from DYNAMIC bodies, which is exactly what the balls are.
 void BuildGraph_ST_KillVolume(Zenith_GraphBuilder& xBuilder)
 {
+	// 'killCount' is the AddBlackboardInt read-modify-write below; see the note
+	// in BuildGraph_ST_SineBob for why the seed has to be declared rather than
+	// left to the getter's default.
+	Zenith_PropertyValue xI0;
+	xI0.SetInt32(0);
+	xBuilder.Variable(ScriptTest::Vars::szKILL_COUNT, xI0);
+
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	// Two separate OnStart chains rather than one with two actions: keeping
@@ -1146,6 +1163,18 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 // caller's score at zero and nothing else would look any different.
 void BuildGraph_ST_FlowScore(Zenith_GraphBuilder& xBuilder)
 {
+	// 'score' is this graph's AddBlackboardInt read-modify-write, so it needs the
+	// same declared seed as 't' and 'killCount'.
+	//
+	// ★ NO RESET-PER-CALL HAZARD, even though this graph is a CallGraph CHILD.
+	// A child runs against the CALLER's blackboard and its declared variables
+	// are its parameter list: they are seeded where ABSENT and never overwritten
+	// (Zenith_GraphNode_Registration_Flow.cpp:717-724). The running total the
+	// caller accumulates therefore survives every call.
+	Zenith_PropertyValue xI0;
+	xI0.SetInt32(0);
+	xBuilder.Variable(ScriptTest::Vars::szSCORE, xI0);
+
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	const u_int uCall = xB.Node("OnGraphCall");

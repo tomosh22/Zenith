@@ -94,6 +94,16 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 
+	// The villager is READ straight off the blackboard by DPGraph_GetEntityVar
+	// (which demands PROPERTY_TYPE_ENTITY_ID and has no ""-means-self rule), so
+	// it is a typed INPUT rather than a TARGET_REF. The tag is this node's own
+	// computed answer, staged for the rest of the deposit chain.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ReadHeldObjective)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -121,6 +131,12 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 
+	// Read-only: the objective tag DPReadHeldObjective staged upstream.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_WinCheckAlreadyCollected)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const DP_ItemTag eHeld =
@@ -142,6 +158,13 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 
+	// Both read-only; the win-state side table is C++, not the blackboard.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_WinNotifyCollected)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -162,6 +185,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ConsumeHeldItem)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -189,6 +217,12 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchObjectivePlaced)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -215,6 +249,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strLoudnessKey, "interactables.noise_machine_loudness")
 	ZENITH_PROPERTY(std::string, m_strRadiusKey, "interactables.noise_machine_radius_m")
+
+	// NO PINS, deliberately: both properties are DP_Tuning KEYS
+	// (DP_Tuning::Get<float> below), not blackboard variable names, so no
+	// descriptor could bind them - and they escape the m_str*Var* matcher too.
+	// The node reads and writes no blackboard variable at all.
 
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
@@ -253,6 +292,13 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(int32_t, m_iKeyTag, (int32_t)DP_ItemTag::Key)
 
+	// m_iKeyTag is an inline constant with no var partner (the double door's
+	// hard-coded Key semantics), so it is not a pin of its own.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ConsumeKeyForUnlock)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -272,6 +318,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchDoorOpened)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_EventDispatcher::Get().Dispatch(
@@ -290,6 +341,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchDoorClosed)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_EventDispatcher::Get().Dispatch(
@@ -312,6 +368,16 @@ public:
 	ZENITH_PROPERTY(std::string, m_strYawKey, "interactables.double_door_open_yaw_deg")
 	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.double_door_open_duration_s")
 
+	// openT is read AND written back under the SAME name in one Execute (the
+	// in-place advance below) - a SELECTOR_READWRITE, which by ruling cannot
+	// satisfy its own read: the graph declares openT. The two *Key properties
+	// are DP_Tuning keys, not blackboard names, so neither is a pin.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_AnimateDoorLeaves)
+	ZENITH_GRAPH_PIN_INPUT(IsOpen, "m_strIsOpenVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(OpenT, "m_strOpenTVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		if (!xContext.m_pxBlackboard->GetBool(m_strIsOpenVar)) return GRAPH_NODE_STATUS_SUCCESS;
@@ -370,6 +436,13 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 
+	// Read-only, and deliberately ungated: an INVALID payload still opens the
+	// chest (quirk preserved) - the read just yields an invalid EntityID.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchChestOpened)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_EventDispatcher::Get().Dispatch(
@@ -405,6 +478,16 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strRequiredKeyVar, "requiredKey")
 
+	// requiredKey is read (which key does this door want?) and, on a successful
+	// unlock, written back to None under the SAME name - the STICKY unlock. That
+	// is a SELECTOR_READWRITE; the graph declares requiredKey, and the bootstrap
+	// seeds it per door after attach.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorCheckKey)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(RequiredKey, "m_strRequiredKeyVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -444,6 +527,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorPentagramDeferral)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -479,6 +567,9 @@ public:
 	ZENITH_PROPERTY(std::string, m_strLoudnessKey, "interactables.door_audible_loudness")
 	ZENITH_PROPERTY(std::string, m_strRadiusKey, "interactables.door_audible_at_m")
 
+	// NO PINS: both properties are DP_Tuning keys (read LIVE per press), not
+	// blackboard names. This node touches no blackboard variable.
+
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		DPDoor_Component* pxShim = xContext.m_xSelf.IsValid()
@@ -506,6 +597,21 @@ public:
 	ZENITH_PROPERTY(std::string, m_strOpenTVar, "openT")
 	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.door_open_duration_s")
 
+	// ★ m_strAnimVar is an INPUT, not a READWRITE, and the difference is real:
+	// the settle writes through the private SetAnim helper, which names the
+	// blackboard variable "anim" as a HARD-CODED LITERAL rather than through
+	// this property (see SetAnim below - changing that is an Execute change and
+	// out of this unit's scope). A pin can only describe the property, so the
+	// honest annotation is "this node READS the named anim variable"; the graph
+	// declares anim, and its SetBlackboardInt nodes are its visible writers.
+	// openT IS read-modify-written through its property (StoreT), so it is a
+	// SELECTOR_READWRITE. m_strDurationKey is a DP_Tuning key, not a pin.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorAdvanceAnim)
+	ZENITH_GRAPH_PIN_INPUT(Anim, "m_strAnimVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(OpenT, "m_strOpenTVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		DPDoor_Component* pxShim = xContext.m_xSelf.IsValid()
@@ -639,6 +745,17 @@ public:
 	ZENITH_PROPERTY(std::string, m_strRadiusVar, "footstepRadius")
 	ZENITH_PROPERTY(std::string, m_strQuietMultVar, "quietLoudnessMult")
 
+	// Four pure READS: the emission verb computes nothing it stores. Loudness,
+	// radius and the quiet multiplier are the OnAwake-seeded tuning mirror; the
+	// graph declares all four.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_VillagerEmitFootstep)
+	ZENITH_GRAPH_PIN_INPUT(WalkQuiet, "m_strWalkQuietVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(Loudness, "m_strLoudnessVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(Radius, "m_strRadiusVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(QuietMult, "m_strQuietMultVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		float fLoudness = xContext.m_pxBlackboard->GetFloat(m_strLoudnessVar);
@@ -677,6 +794,9 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_VillagerTutorialPing)
 public:
 	ZENITH_PROPERTY(int32_t, m_iKind, 0)
+
+	// NO PINS: m_iKind is an inline DP_Tutorial::Kind constant and the node
+	// touches no blackboard variable.
 
 	GraphNodeStatus Execute(Zenith_GraphContext&) override
 	{
@@ -745,6 +865,13 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strResultVar, "clicked")
 
+	// The picked villager is this node's own computed answer - an OUTPUT, and
+	// the in-graph WRITER that satisfies DPTryPossess' read of "clicked".
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_PickVillagerUnderCursor)
+	ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_CameraComponent* pxCam = Zenith_GetMainCameraAcrossScenes();
@@ -803,6 +930,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "clicked")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_TryPossess)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -870,6 +1002,19 @@ public:
 	ZENITH_PROPERTY(std::string, m_strRecipeOutputVar, "recipeOutput")
 	ZENITH_PROPERTY(std::string, m_strCraftCountVar, "craftCount")
 
+	// The recipe pair is READ (SetRecipe seeds it on the blackboard); the craft
+	// count is read and incremented back under the SAME name in one Execute, so
+	// it is a SELECTOR_READWRITE and the graph declares it. The two hammer-audio
+	// tuning keys are string LITERALS inside Execute, not properties, so no pin
+	// can name them.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ForgeCraft)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(RecipeInput, "m_strRecipeInputVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(RecipeOutput, "m_strRecipeOutputVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(CraftCount, "m_strCraftCountVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		if (!xContext.m_xSelf.IsValid())
@@ -952,6 +1097,15 @@ public:
 	ZENITH_PROPERTY(std::string, m_strKey, "")
 	ZENITH_PROPERTY(std::string, m_strVar, "value")
 
+	// m_strKey is a DP_Tuning KEY, not a blackboard name - not a pin (and it
+	// escapes the m_str*Var* matcher). The staged float IS this node's computed
+	// result, so m_strVar is an OUTPUT: it is the in-graph writer that satisfies
+	// DP_Chest's read of "lidDuration" and DP_Villager's of "faintRecovery".
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ReadTuningFloat)
+	ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		if (m_strKey.empty() || m_strVar.empty())
@@ -983,6 +1137,15 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 
+	// Both READS. possessedVillager is written by the DPItemBase shim each frame
+	// (DPItemBase_Component.h:156), which no pin can express - the graph
+	// DECLARES it.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemChildRefusal)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -1018,6 +1181,15 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
 
+	// One pin: the villager READ. The arm also writes "channelVillager" and
+	// "channelRemaining" and reads "channelDuration", but all three are
+	// HARD-CODED LITERALS in Execute rather than properties, so no descriptor
+	// can bind them (the graph declares all three).
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemArmChannel)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_PropertyValue xValue;
@@ -1041,6 +1213,14 @@ public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 
+	// Two READS; the channel clears below go to hard-coded literals, not to
+	// these properties.
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemCommitPickup)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
@@ -1074,6 +1254,13 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
 
+	// The "specialBehaviour" guard below reads a HARD-CODED variable name, not a
+	// property, so it cannot be a pin (the graph declares it).
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemRingBell)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		if (xContext.m_pxBlackboard->GetString("specialBehaviour", "") != "rings_bell_on_pickup")
@@ -1105,6 +1292,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemEvaporate)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xContext.m_xSelf.GetEntityID());
@@ -1201,6 +1393,13 @@ public:
 // reactive Selector; these two nodes carry the DP-specific leaves VERBATIM.
 // The perception bridge stays C++ (Priest_Component) and writes THIS graph's
 // blackboard under the same DP_AI::BB_KEY_* names.)
+//
+// ★ NEITHER PRIEST NODE CAN CARRY PINS, and that is a property of the nodes
+// rather than an omission: both declare NO properties at all and reach the
+// blackboard through the compile-time DP_AI::BB_KEY_* constants, so there is no
+// name for a descriptor to bind (the same shape as RenderTest's RTTennis*
+// nodes). They stay opaque to the validator until the keys become properties -
+// Epic B work. DP_Priest.bgraph declares every one of those variables anyway.
 //==============================================================================
 
 // The retired DP_BTAction_FindPosInSuspicionSphere body verbatim: suspicion-

@@ -215,6 +215,27 @@ DevilsPlayground.cpp regenerates every `.bgraph` each tools boot through
 | `DP_PauseMenu.bgraph` | pause shim fires "PauseKeys" (staged esc/r/q edges) | the retired early-return structure via chain-reuse (PauseRQ/PauseEsc): (shown\|\|runOver) → R restart / Q quit; Esc → `DPPauseCanToggle` → flip shown → `DPPauseApplyToggle`. Blackboard rides `DontDestroyOnLoad` (R6, pinned by the engine unit `GraphSurvivesDontDestroyOnLoadRelocation`) |
 | `DP_Priest.bgraph` | priest shim fires "PriestTick" (dt payload) AFTER the perception bridge | reactive `Selector`: `DPPriestApprehendChannel` > `QueryEntityValid`+`NavMoveTo`(1.5/0.4/3D) > investigate `NavMoveTo`(1.0)+`Wait`(2)+clear > `DPPriestPickPatrolTarget`+`NavMoveTo`(1.0)+`Wait`(1). Bridge/scent/bell all write THIS blackboard (same `DP_AI::BB_KEY_*` names) |
 
+**The builders are declared in `DP_Graphs.h`** (tools-gated, because their
+definitions live inside DevilsPlayground.cpp's `#ifdef ZENITH_TOOLS` block): the
+12 top-level `BuildGraph_DP*` are no longer `static`, so
+`Tests/Test_GraphsValidateClean.cpp` can build every one of them IN PROCESS and
+assert `Build() == true` plus ZERO `m_bWouldBeError` validator findings — the
+mechanical precondition for latching the validator. The per-concern sub-builders
+(`BuildDPItem_*` / `BuildDPVillager_*`) stay `static`: they are stages, not
+graphs. Add an `AddStep_GraphBuild` line and the matching test row together —
+nothing enumerates builders at compile time, so a thirteenth graph without a row
+goes unchecked.
+
+**Variables a C++ bridge writes must be DECLARED by the reading graph.** A
+`SetValue` from a shim is invisible to the validator (no pin can name it), so the
+graph declares the variable with the type its readers expect —
+`DP_Item.bgraph`'s `possessedVillager` (`ENTITY_ID`, written every frame by
+`DPItemBase_Component`) is the one A-7 added. ★ A declaration is SCENE BYTES:
+`Zenith_GraphComponent::WriteToDataStream` serialises a live slot's whole
+blackboard, seeded from the definition's declared variables, so adding one
+changes every `.zscen` that attaches that graph — re-author the scenes in the
+same commit.
+
 The shims keep all systems work in C++ (input plumbing, navmesh, colliders,
 materials, prefab spawns, perception, the persistent-scene singleton); graph
 nodes call back into them synchronously. Graphs are SELF-ATTACHED by their

@@ -16,6 +16,11 @@
 #include "EntityComponent/Zenith_GraphOps.h"
 #include "EntityComponent/Zenith_EngineGraphBuilder.h"
 #include "Source/DPResources.h"
+// The 12 top-level graph builders below are DECLARED here (tools-only) so the
+// GraphsValidateClean test can build every one of them in process. Including
+// the header in the defining TU is what makes a signature drift a compile
+// error rather than a link error.
+#include "DP_Graphs.h"
 
 #include <cstdio>
 #include <cstring>
@@ -1440,7 +1445,9 @@ static void BuildDPVillager_Footsteps(Zenith_EngineGraphBuilder& xB)
 // fired from DPVillager_Component::OnUpdate with dt as the payload (stashed
 // to "dt"); the shim stages possessedNow/moving/sprintHeld/quietHeld before
 // each fire and seeds maxLife + the cached movement tuning at OnAwake.
-static void BuildGraph_DPVillager(Zenith_GraphBuilder& xBuilder)
+// Not `static`: declared in DP_Graphs.h so Test_GraphsValidateClean can build
+// it in process (the sub-builders above stay internal).
+void BuildGraph_DPVillager(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
@@ -1478,7 +1485,7 @@ static void BuildGraph_DPVillager(Zenith_GraphBuilder& xBuilder)
 // (packed villager payload) fired by the DPForge shim's HandleInteract /
 // CraftForTest. Recipe tags + craft count live on the blackboard so
 // SetRecipe/GetCraftCount stay the component's public surface.
-static void BuildGraph_DPForge(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPForge(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_PropertyValue xInput; xInput.SetInt32((int32_t)DP_ItemTag::Iron);
 	Zenith_PropertyValue xOutput; xOutput.SetInt32((int32_t)DP_ItemTag::Key);
@@ -1497,7 +1504,7 @@ static void BuildGraph_DPForge(Zenith_GraphBuilder& xBuilder)
 // stages clickPressed/dropPressed and fires "PlayerTick" once per frame at
 // the retired handlers' call site; chains run in node order (click before
 // drop, like the old HandleClickToPossess -> HandleDropItem sequence).
-static void BuildGraph_DPPlayerControl(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPPlayerControl(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xFalse; xFalse.SetBool(false);
@@ -1526,7 +1533,7 @@ static void BuildGraph_DPPlayerControl(Zenith_GraphBuilder& xBuilder)
 //   if (esc && overlay exists) { flip shown; apply. }
 // Chain-reuse ("PauseRQ"/"PauseEsc" fired at self) stands in for the
 // fall-throughs, since exec chains cannot rejoin.
-static void BuildGraph_DPPauseMenu(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPPauseMenu(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xFalse; xFalse.SetBool(false);
@@ -1694,7 +1701,7 @@ static void BuildDPItem_Commit(Zenith_EngineGraphBuilder& xB)
 // OnUpdate's early-return structure maps to chain-reuse events: a chain that
 // ENDS is a `return`; falling through fires the next stage at self. Stages
 // split into BuildDPItem_* sub-builders, called in node-creation order.
-static void BuildGraph_DPItem(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPItem(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
@@ -1712,6 +1719,12 @@ static void BuildGraph_DPItem(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xNoEntity; xNoEntity.SetPackedEntityID(0);
 	xB.Variable("channelVillager", xNoEntity);
 	// Per-frame staged facts.
+	// possessedVillager is written EVERY frame by the DPItemBase shim
+	// (DPItemBase_Component.h:156, SetPackedEntityID) and read here by
+	// CompareBlackboardEntity and by the three DPItem* nodes' Villager pins. A
+	// C++ bridge write is invisible to the validator - no pin can name it - so
+	// the READING graph declares it, with the type the readers expect.
+	xB.Variable("possessedVillager", xNoEntity);
 	xB.Variable("possessedValid", xBF);
 	xB.Variable("handsEmpty", xBF);
 	xB.Variable("inRange", xBF);
@@ -1732,7 +1745,7 @@ static void BuildGraph_DPItem(Zenith_GraphBuilder& xBuilder)
 // chain is ALSO re-driven by the engine ON_UPDATE dispatch each frame (real
 // dt - that drive advances the timers; the PriestTick drive settles the
 // decisions on fresh bridge data with dt 0).
-static void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
@@ -1814,7 +1827,7 @@ static void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 // DPOpenChest / DPAdvanceChestLid / DPDoorHandleInteract) are DELETED and
 // their decision steps are engine nodes + single-action DP nodes.
 
-static void BuildGraph_DPMainMenu(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPMainMenu(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	{
@@ -1837,7 +1850,7 @@ static void BuildGraph_DPMainMenu(Zenith_GraphBuilder& xBuilder)
 	}
 }
 
-static void BuildGraph_DPPentagram(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPPentagram(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_GraphChain xStart = xB.OnStart();
@@ -1857,7 +1870,7 @@ static void BuildGraph_DPPentagram(Zenith_GraphBuilder& xBuilder)
 	xInteract.Then(uRead).Then(uCheck).Then(uNotify).Then(uConsume).Then(uPlaced);
 }
 
-static void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
@@ -1911,7 +1924,7 @@ static void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
 	}
 }
 
-static void BuildGraph_DPNoiseMachine(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPNoiseMachine(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
@@ -1919,7 +1932,7 @@ static void BuildGraph_DPNoiseMachine(Zenith_GraphBuilder& xBuilder)
 	xInteract.Then(uNoise);
 }
 
-static void BuildGraph_DPDoubleDoor(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPDoubleDoor(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 	Zenith_PropertyValue xF0; xF0.SetFloat(0.0f);
@@ -1951,7 +1964,7 @@ static void BuildGraph_DPDoubleDoor(Zenith_GraphBuilder& xBuilder)
 	}
 }
 
-static void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 {
 	// anim is the DoorAnim int (0=Closed 1=Opening 2=Open 3=Closing);
 	// requiredKey is the DP_ItemTag int seeded per-door by the bootstrap

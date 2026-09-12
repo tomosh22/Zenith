@@ -328,6 +328,25 @@ moment the node library IS annotated, declare-or-error WILL flag shipped graphs.
 The order is: annotate → declare the variables the sweep surfaces → flip the
 latch once that report is clean.
 
+**★ GAME NODES ARE ANNOTATED TOO, AND A DECLARATION IS SCENE BYTES.** The sweep
+that follows the engine library covers each game's node header (DevilsPlayground
+first: 37 var-name properties, `Games/DevilsPlayground/Components/DP_GraphNodes.h`)
+under the same rulings, and then closes what annotation cannot: a variable a C++
+BRIDGE writes — a shim's `SetValue`, a `FireCustomEventWithArgs` arg — has no
+property for any pin to name, so the READING graph must `Variable(...)` it with
+the type its readers expect. Two consequences worth knowing before you add one.
+First, annotate BEFORE you declare: a finding whose writer turns out to be a game
+node in the same graph disappears the moment that node's `OUTPUT` pin exists (the
+validator's writer set is graph-wide), and a `Variable(...)` added instead would
+be a declaration nothing needed. Second, `Zenith_GraphComponent::WriteToDataStream`
+serialises a live slot's WHOLE blackboard, seeded from the definition's declared
+variables — so a new declaration changes the `.zscen` of every committed scene
+that attaches that graph, and those scenes must be re-authored in the same
+commit. Three strings that are NOT blackboard names recur and are worth naming:
+tuning KEYS, asset paths / entity names, and any variable a node reaches through
+a hard-coded literal or a compile-time constant rather than a property — the last
+group is unbindable by construction and is satisfied by declaration alone.
+
 **Where it runs.** `Build()` (the boot-authoring path) and the editor panel on
 asset open (`OpenAsset` and `OpenAssetFresh`), on a parameter edit, and after a
 connection lands. A LOAD_SAFETY

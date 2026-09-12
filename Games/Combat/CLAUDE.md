@@ -42,8 +42,11 @@ Games/Combat/
     Combat_EnemyAI.h             # Simple enemy behavior (chase + attack)
     Combat_QueryHelper.h         # Entity query utilities
     Combat_UIManager.h           # Health bars + combo display
-    Combat_GraphNodes.h          # Behaviour Graph node library (all 5 graphs)
+    Combat_GraphNodes.h          # Behaviour Graph node library (all 5 graphs; 26 annotated pins)
+  Combat_Graphs.h                # ZENITH_TOOLS: the 5 BuildGraph_Combat* declarations
   Tests/
+    Combat_Tests_GraphPinTotality.cpp    # ZENITH_TEST: every var-name property carries a pin descriptor
+    Combat_Tests_GraphsValidateClean.cpp # automated: all 5 graphs build with ZERO would-be-error findings
     Test_CombatCharacterization.cpp  # 16 automated tests: 14 graph-conversion characterizations (attack/heavy, player combo/dodge/hit-stun, enemy engage/hit-stun, victory/game-over/combo-timer, pause/restart/menu/play) + Combat_GPUParticles_Test (requiresGraphics — see "GPU particles" below) + Combat_SimPad_Test (the GAMEPAD column end to end; see "Controls" below)
   Assets/
     Scenes/MainMenu.zscen, Arena.zscen  # Boot-authored scenes
@@ -185,6 +188,27 @@ Enter/Exit events, no RUNNING leaves). Shims: `Combat_PlayerComponent`/
 `Combat_EnemyComponent` `Graph_*` forwarders, `Combat_GameComponent::SetGameState`/
 `Graph_*` (public static / public). Nodes registered via
 `Combat_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
+
+**Pin tables + validation.** All 26 blackboard-variable-name properties across
+the 18 node classes in `Combat_GraphNodes.h` carry a `ZENITH_GRAPH_PIN_*`
+descriptor, so no Combat node is OPAQUE to `Zenith_GraphDefinitionValidator`
+(see `Zenith/Scripting/CLAUDE.md` § Validation). Getting the ROLE right is what
+made the report clean with **no `Variable(...)` declaration added**: the seven
+variables the validator used to call `UNDECLARED_READ` — `attackJustStarted`,
+`isAttacking`, `hitFrameReady`, `uHits`, `aliveCount`, `hasEnemies`,
+`playerDead` — are all `OUTPUT`s of a Combat node in the SAME graph, and the
+writer set is graph-wide; `payload` is written by the `OnCustomEvent` source's
+`SELECTOR_WRITE`. Two units hold that: `Tests/Combat_Tests_GraphPinTotality.cpp`
+(`ZENITH_TEST(GraphPinTable, CombatNodesTotality)` — Combat's FIRST boot unit,
+so it moves Combat's pinned baseline) fails if a var-name property is ever added
+without a descriptor, and `Tests/Combat_Tests_GraphsValidateClean.cpp` (an
+automated test) builds all five graphs in-process and fails on any finding with
+`m_bWouldBeError`. To make that possible the five top-level `BuildGraph_Combat*`
+functions are no longer `static`; they are declared in **`Combat_Graphs.h`**,
+which is `#ifdef ZENITH_TOOLS` because the definitions are (`Combat.cpp`'s tools
+block). The `BuildCombatGameFlow_*` sub-builders stay `static`. A sixth builder
+added without a row in the validate-clean table goes unchecked — the row goes in
+with the builder.
 
 **Accepted divergences** (unobservable / precedented): `Combat_GameFlow`'s
 `@60`-graph / `@100`-component split shifts the systems block by one frame on a

@@ -9,6 +9,7 @@
 #include "Combat/Components/Combat_EnemyComponent.h"
 #include "Combat/Components/Combat_GraphNodes.h"
 #include "Combat/Components/Combat_Config.h"
+#include "Combat/Combat_Graphs.h"                  // the five builders, declared for the validate-clean unit
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "EntityComponent/Zenith_GraphOps.h"
 #include "EntityComponent/Zenith_EngineGraphBuilder.h"
@@ -537,7 +538,9 @@ void Project_InitializeResources()
 // node order, so guard order is preserved; the first chain runs
 // CombatQueryAttackState to populate the blackboard before the later guards
 // read it.
-static void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
+// Not `static`: declared in Combat_Graphs.h so Combat_Tests_GraphsValidateClean
+// can build the production definition in-process. Same for the four below.
+void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
@@ -568,7 +571,7 @@ static void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 // payload) then the decomposed win/lose decision. Two "RoundTick" chains run in
 // node order: chain 1 = tick + VICTORY check, chain 2 = GAME_OVER check,
 // preserving the old VICTORY-before-GAME_OVER, both-independent evaluation.
-static void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
@@ -603,7 +606,7 @@ static void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
 // = PreTick then per-state dispatch; chain 2 = PostTick. Per-pin node instances
 // avoid exec fan-in (IDLE/WALKING share the movement handler; the four attack
 // states share the attack handler).
-static void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_PropertyValue xVal;
 	xVal.SetInt32(static_cast<int32_t>(Combat_PlayerState::IDLE));
@@ -644,7 +647,7 @@ static void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
 // Combat_EnemyAI::Update decision switch becomes a StateMachine(enemyState).
 // Two "EnemyBrainTick" chains run in node order: chain 1 = PreTick then the
 // per-state handler dispatch; chain 2 = PostTick (anim + IK).
-static void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_PropertyValue xVal;
 	xVal.SetInt32(static_cast<int32_t>(Combat_EnemyState::IDLE));
@@ -763,7 +766,7 @@ static void BuildCombatGameFlow_ReturnToMenu(Zenith_EngineGraphBuilder& xB)
 // ★ On a pad that stops being unreachable for ONE pair: B is bound to both
 // DODGE and RETURN_TO_MENU (the C2 table), which is a binding collision rather
 // than a graph one -- see Combat_Bindings.h.
-static void BuildGraph_CombatGameFlow(Zenith_GraphBuilder& xBuilder)
+void BuildGraph_CombatGameFlow(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_PropertyValue xVal;
 	xVal.SetInt32(static_cast<int32_t>(Combat_GameState::MAIN_MENU));

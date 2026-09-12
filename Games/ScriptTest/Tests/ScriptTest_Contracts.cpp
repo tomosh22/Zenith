@@ -57,6 +57,7 @@
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphBlackboard.h"
 #include "Scripting/Zenith_GraphBuilder.h"
+#include "Scripting/Zenith_GraphDefinitionValidator.h"
 #include "Scripting/Zenith_GraphNode.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -478,8 +479,9 @@ namespace
 	}
 
 	//-------------------------------------------------------------------------
-	// (c) BUILDER INTEGRITY. Each builder must Build() cleanly, name only node
-	// types from the engine set derived in (a), and instantiate with nothing
+	// (c) BUILDER INTEGRITY. Each builder must Build() cleanly, report ZERO
+	// would-be-error validation findings, name only node types from the engine
+	// set derived in (a), and instantiate with nothing
 	// unresolved. The last clause is the one that matters most: an unresolved
 	// node loads, round-trips and silently fails its chain, so a graph can be
 	// completely inert while every other signal says it is fine.
@@ -505,6 +507,41 @@ namespace
 				const bool bBuilt = xBuilder.Build();
 				std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", xRow.m_szAssetPath);
 				CheckTrue(bBuilt, acWhat);
+
+				// ...and the graph is CLEAN of would-be errors. Build() runs the
+				// FULL-tier validation pass after the commit loop (before it the
+				// blobs still hold AddNode defaults rather than Param* values) and
+				// keeps the report on the builder, which is why this clause lives
+				// INSIDE the builder's scope rather than beside the clauses below.
+				//
+				// This is the mechanical precondition for A-8's bLatchErrors=true:
+				// today every would-be ERROR is reported at WARNING severity with
+				// m_bWouldBeError set and Build() ignores it, so without this
+				// clause a graph could read a variable nothing declares or writes
+				// and every ScriptTest signal would stay green. LIST_NAME (27 of
+				// them here) and DECLARED_UNUSED are WARNINGS and are deliberately
+				// not counted.
+				int iWouldBeErrors = 0;
+				for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
+				{
+					const Zenith_GraphValidationFinding& xFinding = xBuilder.GetValidationFindingAt(uFinding);
+					if (!xFinding.m_bWouldBeError)
+					{
+						continue;
+					}
+					++iWouldBeErrors;
+					Zenith_Log(LOG_CATEGORY_UNITTEST,
+						"[ScriptTestContract]   %s node=%u:%s pin=%s var=%s rule=%s | %s",
+						xRow.m_szAssetPath, xFinding.m_uNodeID,
+						xFinding.m_strTypeName.c_str(),
+						xFinding.m_strPin.empty() ? "-" : xFinding.m_strPin.c_str(),
+						xFinding.m_strVar.empty() ? "-" : xFinding.m_strVar.c_str(),
+						Zenith_GraphDefinitionValidator::GetRuleName(xFinding.m_eRule),
+						xFinding.m_strWhat.c_str());
+				}
+				std::snprintf(acWhat, sizeof(acWhat),
+					"%s reports ZERO would-be-error validation findings", xRow.m_szAssetPath);
+				CheckEqInt(iWouldBeErrors, 0, acWhat);
 			}
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);

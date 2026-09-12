@@ -457,6 +457,28 @@ names or world positions, because procgen reshuffles those per seed.
 APIs + source-bug guards: `DP_HeldItem_Test`, `DP_FindItemByTag_Test`,
 `DP_Win_Test`, `DP_Fog_Test`, `DP_Unlock_Test`).
 
+### Behaviour Graph contract tests (hermetic)
+
+`DP_GraphPinTotality_Test` (`Test_GraphPinTotality.cpp`) and
+`DP_GraphsValidateClean_Test` (`Test_GraphsValidateClean.cpp`) load no scene,
+need no graphics device and finish in one frame. The first runs the shared
+engine harness over `DP_RegisterGraphNodes` and fails if any DP node class
+carrying a blackboard-variable-name property has lost its pin descriptor table —
+an un-annotated node is OPAQUE to the graph validator, so it would silently drop
+out of the second test's report. The second builds all twelve `BuildGraph_DP*`
+in process (declared in `DP_Graphs.h`) and requires `Build() == true` plus ZERO
+findings with `m_bWouldBeError`.
+
+★ **Both are AUTOMATED tests rather than `ZENITH_TEST`s, deliberately.** DP's
+gate passes `--skip-unit-tests` and dp-tests.yml has no unit leg, so a
+`ZENITH_TEST` here never executes; worse, `ZENITH_ASSERT_*` called outside a
+`ZENITH_TEST` body records against nothing and passes unconditionally. That is
+why the shared harness has a COUNT-RETURNING front door
+(`Zenith_CountPinTableTotalityFailures`) beside its asserting one, and why both
+tests use the counted-check accumulator whose `ReportChecks` refuses a run that
+checked nothing. `Test_GraphsValidateClean.cpp` is additionally `ZENITH_TOOLS`-
+gated: the builders it names live in DevilsPlayground.cpp's tools block.
+
 ### The gamepad column
 
 `DP_SimPad_Test` (`Tests/Test_SimPad.cpp`, `requiresGraphics=false`) is the ONLY

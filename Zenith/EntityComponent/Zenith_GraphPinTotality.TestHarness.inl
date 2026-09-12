@@ -1,8 +1,11 @@
 #pragma once
 
 //------------------------------------------------------------------------------
-// Shared harness for the PIN-TABLE TOTALITY tests of the engine node TUs.
-// Included by each Zenith_GraphNode_Registration[_<TU>].Tests.inl; carries NO
+// Shared harness for the PIN-TABLE TOTALITY tests of the engine node TUs AND of
+// the GAME node headers (each game's registrar hook is just another
+// Zenith_GraphNodeRegistrarFn).
+// Included by each Zenith_GraphNode_Registration[_<TU>].Tests.inl and by the
+// per-game totality test TUs; carries NO
 // node classes and makes NO registry registrations of its own, so including it
 // from every TU is safe (the hazard that keeps test NODE types per-TU is
 // duplicate name-keyed registration, which a harness has none of).
@@ -194,22 +197,37 @@ struct Zenith_GraphPinTotalityRegistryGuard
 	Zenith_Vector<const Zenith_GraphNodeTypeInfo*> m_apxRowAddresses;
 };
 
-// The whole walk for one TU.
+// The whole walk for one TU - ONE implementation, TWO front doors.
 //
-// pfnRegistrar          - this TU's Zenith_RegisterEngineGraphNodes_<TU>.
+// This is the COUNTING form: it logs every failure with Zenith_Error and
+// RETURNS how many there were. The asserting form below is a thin wrapper that
+// asserts the count is zero.
+//
+// ★ WHY BOTH EXIST. ZENITH_ASSERT_* outside a ZENITH_TEST body asserts on
+// NOTHING (Zenith_TestFramework.h:275 - the runner has no live test case to
+// record against), so a game whose gate runs AUTOMATED tests rather than
+// ZENITH_TESTs - DevilsPlayground, whose `zenith test` passes
+// --skip-unit-tests - could only call the asserting form and watch it pass
+// unconditionally. A counted return is the shape an automated test can check
+// (ScriptTest_Contracts.cpp:86-135). The registry RAII restore is unchanged and
+// applies to both, since it is this function's own local.
+//
+// pfnRegistrar          - this TU's Zenith_RegisterEngineGraphNodes_<TU>, or a
+//                         GAME's registrar (DP_RegisterGraphNodes and siblings).
 // apfnExcludedRegistrars/uExcludedCount - registrars whose types are NOT this
 //                         TU's. Only the CORE TU needs these: its registrar,
 //                         Zenith_RegisterEngineGraphNodes, calls every sibling
 //                         sub-registrar, so core's own set is the difference.
-// szTuName              - prefixes every assertion message.
+// szTuName              - prefixes every message.
 // aszExemptProperties   - matcher hits that no pin can express (see
 //                         LogicBlackboardBool.m_strVars, a comma-separated LIST
 //                         of variable names). Passed per TU, never global.
-inline void Zenith_CheckPinTableTotalityEx(Zenith_GraphNodeRegistrarFn pfnRegistrar,
+inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn pfnRegistrar,
 	Zenith_GraphNodeRegistrarFn const* apfnExcludedRegistrars, u_int uExcludedCount,
 	const char* szTuName, const char* const* aszExemptProperties, u_int uExemptCount)
 {
 	Zenith_GraphPinTotalityRegistryGuard xGuard;
+	u_int uFailures = 0;
 
 	Zenith_Vector<std::string> xExcludedNames;
 	for (u_int u = 0; u < uExcludedCount; ++u)
@@ -218,8 +236,12 @@ inline void Zenith_CheckPinTableTotalityEx(Zenith_GraphNodeRegistrarFn pfnRegist
 		Zenith_GraphPinTotality_CollectNames(apfnExcludedRegistrars[u], xExcludedNames);
 		// A sibling registrar that produced nothing would silently widen this
 		// TU's set instead of narrowing it.
-		ZENITH_ASSERT_GT(xExcludedNames.GetSize(), uBefore,
-			"%s: an excluded sibling registrar registered NO node types", szTuName);
+		if (xExcludedNames.GetSize() <= uBefore)
+		{
+			++uFailures;
+			Zenith_Error(LOG_CATEGORY_UNITTEST,
+				"%s: an excluded sibling registrar registered NO node types", szTuName);
+		}
 	}
 
 	Zenith_GraphPinTotality_SwapToRegistrar(pfnRegistrar);
@@ -267,10 +289,14 @@ inline void Zenith_CheckPinTableTotalityEx(Zenith_GraphNodeRegistrarFn pfnRegist
 							|| (xDesc.m_szFallbackVarNameProperty != nullptr && std::strcmp(xDesc.m_szFallbackVarNameProperty, szProperty) == 0);
 					}
 				}
-				ZENITH_ASSERT_TRUE(bCovered,
-					"%s: node type '%s' carries blackboard-variable-name property '%s' with no pin descriptor%s - the node is OPAQUE to the graph validator for that name",
-					szTuName, xInfo.m_strTypeName.c_str(), szProperty,
-					pxPins == nullptr ? " (the class declares NO pin table at all)" : "");
+				if (!bCovered)
+				{
+					++uFailures;
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"%s: node type '%s' carries blackboard-variable-name property '%s' with no pin descriptor%s - the node is OPAQUE to the graph validator for that name",
+						szTuName, xInfo.m_strTypeName.c_str(), szProperty,
+						pxPins == nullptr ? " (the class declares NO pin table at all)" : "");
+				}
 			}
 		}
 
@@ -289,10 +315,14 @@ inline void Zenith_CheckPinTableTotalityEx(Zenith_GraphNodeRegistrarFn pfnRegist
 					}
 					const bool bExists = pxProperties != nullptr
 						&& pxProperties->FindProperty(aszNamed[uSlot]) != nullptr;
-					ZENITH_ASSERT_TRUE(bExists,
-						"%s: node type '%s' pin '%s' names property '%s', which its property table does not declare",
-						szTuName, xInfo.m_strTypeName.c_str(),
-						xDesc.m_szName != nullptr ? xDesc.m_szName : "(null)", aszNamed[uSlot]);
+					if (!bExists)
+					{
+						++uFailures;
+						Zenith_Error(LOG_CATEGORY_UNITTEST,
+							"%s: node type '%s' pin '%s' names property '%s', which its property table does not declare",
+							szTuName, xInfo.m_strTypeName.c_str(),
+							xDesc.m_szName != nullptr ? xDesc.m_szName : "(null)", aszNamed[uSlot]);
+					}
 				}
 			}
 		}
@@ -302,9 +332,39 @@ inline void Zenith_CheckPinTableTotalityEx(Zenith_GraphNodeRegistrarFn pfnRegist
 	// nothing - or a TU whose pin-registering statics were dead-stripped away,
 	// leaving empty tables AND no properties to check them against - would pass
 	// this test by examining nothing at all.
-	ZENITH_ASSERT_GT(uTypesWalked, 0u, "%s: the registrar swap yielded NO node types for this TU", szTuName);
-	ZENITH_ASSERT_GT(uVarNamePropertiesSeen, 0u,
-		"%s: not one m_str*Var* property was found across this TU - the walk proved nothing", szTuName);
+	if (uTypesWalked == 0u)
+	{
+		++uFailures;
+		Zenith_Error(LOG_CATEGORY_UNITTEST, "%s: the registrar swap yielded NO node types for this TU", szTuName);
+	}
+	if (uVarNamePropertiesSeen == 0u)
+	{
+		++uFailures;
+		Zenith_Error(LOG_CATEGORY_UNITTEST,
+			"%s: not one m_str*Var* property was found across this TU - the walk proved nothing", szTuName);
+	}
+	return uFailures;
+}
+
+// The counting form, plain: a registrar that registers only its own types.
+inline u_int Zenith_CountPinTableTotalityFailures(Zenith_GraphNodeRegistrarFn pfnRegistrar, const char* szTuName,
+	const char* const* aszExemptProperties, u_int uExemptCount)
+{
+	return Zenith_CountPinTableTotalityFailuresEx(pfnRegistrar, nullptr, 0u, szTuName, aszExemptProperties, uExemptCount);
+}
+
+// The ASSERTING front door - for a ZENITH_TEST body, where ZENITH_ASSERT_* has a
+// live test case to record against. One walk: the per-failure detail is already
+// on the log as Zenith_Error lines; this assertion carries the count.
+inline void Zenith_CheckPinTableTotalityEx(Zenith_GraphNodeRegistrarFn pfnRegistrar,
+	Zenith_GraphNodeRegistrarFn const* apfnExcludedRegistrars, u_int uExcludedCount,
+	const char* szTuName, const char* const* aszExemptProperties, u_int uExemptCount)
+{
+	const u_int uFailures = Zenith_CountPinTableTotalityFailuresEx(pfnRegistrar, apfnExcludedRegistrars,
+		uExcludedCount, szTuName, aszExemptProperties, uExemptCount);
+	ZENITH_ASSERT_EQ(uFailures, 0u,
+		"%s: %u pin-table totality failure(s) - each is a Zenith_Error line above naming the node type and the property",
+		szTuName, uFailures);
 }
 
 // The plain form: a TU whose registrar registers only its own types.

@@ -92,6 +92,19 @@ public:
 	// EXACT-DEFAULT RULE and emits no ParamString for it.
 	ZENITH_PROPERTY(std::string, m_strTrainerIdVar, "zmTrainerId")
 
+	// The ONE pin Zenithmon's node library has. A plain INPUT of an INT32: the
+	// node READS the trainer id the OnCustomEvent source stashed under this name
+	// (that source's m_strStorePayloadVar is a SELECTOR_WRITE, so the write and
+	// the read are both visible to Zenith_GraphDefinitionValidator and
+	// ZM_TrainerChallenge.bgraph needs no Variable(...) declaration).
+	//
+	// NOT a TARGET_REF: an id here is a data value the node maps to a roster row
+	// through ZM_IsRegisteredTrainer, never anything ResolveTargetEntity sees.
+	ZENITH_GRAPH_PINS_BEGIN(ZM_GraphNode_PushTrainerChallenge)
+	ZENITH_GRAPH_PIN_INPUT(TrainerId, "m_strTrainerIdVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		// Bumped FIRST and unconditionally: this is the anti-vacuity handle every

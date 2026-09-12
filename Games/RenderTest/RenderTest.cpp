@@ -62,6 +62,7 @@
 // procedurally post-load (see RenderTest_Tennis.cpp). Component headers are
 // included here so the ZENITH_REGISTER_COMPONENT thunks below name the types.
 #include "RenderTest/RenderTest_Tennis.h"
+#include "RenderTest/RenderTest_Graphs.h"   // BuildGraph_RenderTestPlayerActions, for the validate-clean unit
 #include "RenderTest/Components/RenderTest_TennisMatchComponent.h"
 #include "RenderTest/Components/RenderTest_TennisPlayerComponent.h"
 #include "RenderTest/Components/RenderTest_TennisAgentComponent.h"
@@ -1941,7 +1942,9 @@ static void RenderTest_ApplyTestbedEntityConfig()
 // action NAMES are the contract between this graph and RenderTest_Bindings.h --
 // a rename on either side leaves the node inert with one logged error, which is
 // what RT_SimPad_Test exists to catch.
-static void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
+// Not `static`: declared in RenderTest_Graphs.h so Test_GraphsValidateClean can
+// build the production definition in-process.
+void BuildGraph_RenderTestPlayerActions(Zenith_GraphBuilder& xBuilder)
 {
 	Zenith_EngineGraphBuilder xB(xBuilder);
 

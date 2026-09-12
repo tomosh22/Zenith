@@ -222,6 +222,31 @@ are DELETED.
 | `RenderTest_TennisBrain.bgraph` | both tennis NPCs | its own ON_UPDATE tick chain | An authored accumulator reproduces the retired AIAgent 0.08 s interval EXACTLY (`RTTennisTickGate` mirrors the enable freeze; `AddBlackboardFloat(dt)` → `CompareBlackboardFloat(>=0.08)` → `Gate` → `SetBlackboardFloat(0)` = accumulate/fire/reset-to-zero), then a 3-pin `Selector`: serve (phase/IsServer/ServeBallParked engine gates → decide → position → arm) > rally (phase/IsMyBall gates → `RTTennisBallReachable` → move → decide → arm) > recover. |
 | `RenderTest_PlayerActions.bgraph` | Player | engine ACTION sources | The discrete PRESS decisions only, each an `OnActionPressed` node naming a C2 action (input program B10) rather than a device code: INTERACT → `RTPlayerInteractGun`, RELOAD → `RTPlayerTryReload`, FIRE → `RTPlayerTryFire`, CYCLE_TENNIS_CAMERA → `RTPlayerCycleTennisCam`. That is why the pad column needs no second chain per row. Holds (MOVE / SPRINT / JUMP+jetpack / AIM) and all systems stay C++. |
 
+### Pin tables + validate-clean
+
+RenderTest's own node headers carry **zero** blackboard-variable-name
+properties, so there is no annotation sweep to do here and deliberately NO pin
+totality test (the harness's `uVarNamePropertiesSeen > 0` positive control
+would fail on an empty walk). The `RTTennis*` nodes reach the blackboard
+through the compile-time constants `RenderTest_TennisBB::k_sz*`
+(`Components/RenderTest_TennisAgentComponent.h:47-59`) rather than through a
+name PROPERTY, so no descriptor can bind them: they stay OPAQUE to
+`Zenith_GraphDefinitionValidator` in Epic A and become pins in Epic B.
+
+What DOES exist is `Tests/Test_GraphsValidateClean.cpp` — an automated test
+(`RT_GraphsValidateClean`) that builds BOTH graphs in-process from their own
+builders and fails on any finding with `m_bWouldBeError`, which is the
+mechanical precondition for latching the validator. RenderTest reported zero
+before this unit and needed no new `Variable(...)`: in particular
+`k_szOppEntity` and `k_szBallEntity` stay deliberately undeclared
+(`RenderTest.cpp:1726-1727` — the brain shim's `OnStart` seeds both, and
+declaring one would move `RenderTest.zscen` for no validator gain). To make the
+player-actions graph reachable, `BuildGraph_RenderTestPlayerActions` lost its
+`static` and is declared in **`RenderTest_Graphs.h`**, `#ifdef ZENITH_TOOLS`
+because its definition sits in RenderTest.cpp's tools block;
+`BuildGraph_RenderTestTennisBrain` was already declared (unconditionally) in
+`RenderTest_Tennis.h:103`, and the `BuildTennisBrain_*` helpers stay `static`.
+
 ### RNG-determinism contract (risk R2, discharged)
 
 The tennis decide nodes consume the brains' per-side `TennisRng` streams only

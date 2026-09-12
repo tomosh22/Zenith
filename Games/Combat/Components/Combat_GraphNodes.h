@@ -24,6 +24,19 @@
  * same-frame ordering is preserved bit-for-bit.
  *
  * Registered from Project_RegisterGameComponents via Combat_RegisterGraphNodes().
+ *
+ * PIN TABLES. Every one of the 26 m_str*Var* properties below carries a
+ * ZENITH_GRAPH_PIN_* descriptor (Zenith/Scripting/Zenith_GraphPinTable.h), so no
+ * Combat node is OPAQUE to Zenith_GraphDefinitionValidator. Getting the ROLE
+ * right is what makes the report clean without a single Variable(...)
+ * declaration: the seven variables the validator used to call UNDECLARED_READ
+ * (attackJustStarted / isAttacking / hitFrameReady / uHits / aliveCount /
+ * hasEnemies / playerDead) are all OUTPUTS of a node in the SAME graph, and the
+ * validator's writer set is graph-wide. `payload` is written by the
+ * OnCustomEvent source's SELECTOR_WRITE, so the dt INPUTs are covered too.
+ * Combat_Tests_GraphPinTotality.cpp fails if a var-name property is ever added
+ * without a descriptor; Combat_Tests_GraphsValidateClean.cpp fails if any
+ * builder starts reporting a would-be error.
  */
 
 #include "Scripting/Zenith_GraphNode.h"
@@ -89,6 +102,20 @@ public:
 	ZENITH_PROPERTY(std::string, m_strComboCountVar, "comboCount")
 	ZENITH_PROPERTY(std::string, m_strHitFrameVar, "hitFrameReady")
 
+	// Every one of the five is this node's OWN computed answer, SetValue'd from
+	// the controller below - the graph reads them one node later (the three
+	// Branch guards and the uHits compare of Combat_PlayerAttack.bgraph), which
+	// is exactly what makes those reads declared-by-a-writer rather than
+	// undeclared.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_QueryAttackState)
+	ZENITH_GRAPH_PIN_OUTPUT(AttackStarted, "m_strAttackStartedVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_OUTPUT(IsAttacking, "m_strIsAttackingVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_OUTPUT(AttackType, "m_strAttackTypeVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_OUTPUT(ComboCount, "m_strComboCountVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_OUTPUT(HitFrame, "m_strHitFrameVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -128,6 +155,15 @@ public:
 	ZENITH_PROPERTY(std::string, m_strAttackTypeVar, "attackType")
 	ZENITH_PROPERTY(std::string, m_strComboCountVar, "comboCount")
 
+	// Both are READS of what CombatQueryAttackState wrote earlier in the chain.
+	// The four damage/range floats are designer tuning, not blackboard names -
+	// no pin binds them (the matcher does not see them either).
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_ActivateHitbox)
+	ZENITH_GRAPH_PIN_INPUT(AttackType, "m_strAttackTypeVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(ComboCount, "m_strComboCountVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -152,6 +188,12 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strHitCountVar, "uHits")
 
+	// The overlap scan's answer - read one node later by the uHits>0 compare.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_RegisterHits)
+	ZENITH_GRAPH_PIN_OUTPUT(HitCount, "m_strHitCountVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -178,6 +220,13 @@ public:
 	ZENITH_PROPERTY(float, m_fComboHitTimer, 2.0f)
 	ZENITH_PROPERTY(std::string, m_strComboCountVar, "comboCount")
 
+	// A read of the count CombatQueryAttackState cached. m_fComboHitTimer is
+	// tuning, not a blackboard name.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_NotifyComboHit)
+	ZENITH_GRAPH_PIN_INPUT(ComboCount, "m_strComboCountVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const uint32_t uCombo = static_cast<uint32_t>(xContext.m_pxBlackboard->GetInt32(m_strComboCountVar, 0));
@@ -214,6 +263,14 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	// dt rides the RoundTick payload, stashed by the OnCustomEvent source's
+	// SELECTOR_WRITE - so this read has an in-graph writer and needs no
+	// Variable(...) declaration.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_TickComboTimer)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const float fDt = xContext.m_pxBlackboard->GetFloat(m_strDtVar);
@@ -245,6 +302,14 @@ public:
 	ZENITH_PROPERTY(std::string, m_strAliveCountVar, "aliveCount")
 	ZENITH_PROPERTY(std::string, m_strHasEnemiesVar, "hasEnemies")
 
+	// Both are this node's own counts - read by the compare + branch that
+	// follow it in Combat_RoundFlow.bgraph.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_CountAliveEnemies)
+	ZENITH_GRAPH_PIN_OUTPUT(AliveCount, "m_strAliveCountVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_OUTPUT(HasEnemies, "m_strHasEnemiesVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		uint32_t uAlive = 0;
@@ -274,6 +339,12 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strPlayerDeadVar, "playerDead")
 
+	// The GAME_OVER guard's answer, read by the Branch that follows.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_CheckPlayerDead)
+	ZENITH_GRAPH_PIN_OUTPUT(PlayerDead, "m_strPlayerDeadVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_EntityID uPlayerID = Combat_GameComponent::GetPlayerEntityID();
@@ -326,6 +397,15 @@ public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strStateVar, "playerState")
 
+	// dt comes in on the PlayerTick payload; the post-UpdateTimers state is
+	// this node's own answer, and the StateMachine one node later dispatches
+	// on it.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_PlayerPreTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -348,6 +428,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_PlayerMovementTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -366,6 +451,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_PlayerAttackTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -384,6 +474,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_PlayerDodgeTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -402,6 +497,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_PlayerHitStunTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_PlayerComponent* pxShim = Combat_GraphNodeDetail::ResolvePlayer(xContext);
@@ -451,6 +551,14 @@ public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strStateVar, "enemyState")
 
+	// The enemy twin of CombatPlayerPreTick: dt in on the payload, the
+	// post-death-check state out for the StateMachine that follows.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_EnemyPreTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_EnemyComponent* pxEnemy = Combat_GraphNodeDetail::ResolveEnemy(xContext);
@@ -487,6 +595,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_EnemyChaseTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_EnemyComponent* pxEnemy = Combat_GraphNodeDetail::ResolveEnemy(xContext);
@@ -505,6 +618,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_EnemyAttackTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_EnemyComponent* pxEnemy = Combat_GraphNodeDetail::ResolveEnemy(xContext);
@@ -523,6 +641,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_EnemyHitStunTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_EnemyComponent* pxEnemy = Combat_GraphNodeDetail::ResolveEnemy(xContext);
@@ -541,6 +664,11 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strDtVar, "payload")
 
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_EnemyPostTick)
+	ZENITH_GRAPH_PIN_INPUT(Dt, "m_strDtVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Combat_EnemyComponent* pxEnemy = Combat_GraphNodeDetail::ResolveEnemy(xContext);
@@ -569,6 +697,13 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strStateVar, "gameState")
 
+	// s_eGameState mirrored into the blackboard - this node's own answer, read
+	// by the SwitchOnInt gates of Combat_GameFlow.bgraph.
+	ZENITH_GRAPH_PINS_BEGIN(CombatNode_GetGameState)
+	ZENITH_GRAPH_PIN_OUTPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_PropertyValue xVal;

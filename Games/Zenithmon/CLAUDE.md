@@ -209,6 +209,32 @@ HIDDEN); `ZM_TouchLayoutController` shows the ones the current context wants, at
 frame-contract step 9. Each publishes through **one virtual source per ACTION,
 never per widget**.
 
+## Behaviour Graph nodes + validation
+
+Zenithmon's node library is ONE class,
+`ZM_GraphNode_PushTrainerChallenge` (`Components/ZM_GraphNodes.h`), driving the
+one graph the game authors (`BuildGraph_ZM_TrainerChallenge`,
+`Source/Graph/ZM_GraphAuthoring.h`). Its single blackboard-variable-name
+property `m_strTrainerIdVar` now carries a pin descriptor —
+`ZENITH_GRAPH_PIN_INPUT(TrainerId, "m_strTrainerIdVar", PROPERTY_TYPE_INT32)` —
+so the node is no longer OPAQUE to `Zenith_GraphDefinitionValidator` (see
+`Zenith/Scripting/CLAUDE.md` § Validation). It is a plain `INPUT`, not a
+`TARGET_REF`: the id is a data value the node maps to a roster row, never
+anything `ResolveTargetEntity` sees. **No `Variable(...)` declaration was
+needed and none was added** — the `OnCustomEvent` source's
+`m_strStorePayloadVar` is a `SELECTOR_WRITE` of the same name, so the read has
+an in-graph writer, and the graph's blackboard (and therefore no `.zscen`)
+is unchanged.
+
+`Tests/ZM_Tests_GraphPinTotality.cpp` holds both halves as `ZENITH_TEST`s (they
+run in ZM's unit gate, so they move Zenithmon's pinned baseline by two):
+`ZenithmonNodesTotality` fails if a var-name property is ever added without a
+descriptor, and `ZenithmonTrainerChallengeValidatesClean` builds the production
+definition in-process and fails on any finding with `m_bWouldBeError`. The
+behavioural units for the same graph stay in
+`Tests/ZM_Tests_TrainerChallengeGraph.cpp` — they drive the BEAT; these two
+gate the descriptor table and the report.
+
 ## Testing
 
 ```
