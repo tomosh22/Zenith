@@ -1,5 +1,6 @@
 #include "Core/Zenith_Engine.h"
 #include "UnitTests/Zenith_UnitTests.h"
+#include "AI/Zenith_AIManagerTestScope.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -10,7 +11,7 @@
 // ============================================================================
 ZENITH_TEST(AI, TacticalPointRegistration) { Zenith_UnitTests::TestTacticalPointRegistration(); }
 void Zenith_UnitTests::TestTacticalPointRegistration(){
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Maths::Vector3 xPos(10.0f, 0.0f, 10.0f);
 	Zenith_EntityID xOwner;
@@ -31,14 +32,13 @@ void Zenith_UnitTests::TestTacticalPointRegistration(){
 
 	ZENITH_ASSERT_GE(axPoints.GetSize(), 1, "Should have at least 1 cover point");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
 ZENITH_TEST(AI, TacticalPointCoverScoring) { Zenith_UnitTests::TestTacticalPointCoverScoring(); }
 
 void Zenith_UnitTests::TestTacticalPointCoverScoring(){
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Register a cover point
 	Zenith_Maths::Vector3 xCoverPos(10.0f, 0.0f, 0.0f);
@@ -57,14 +57,13 @@ void Zenith_UnitTests::TestTacticalPointCoverScoring(){
 	// Should find the cover point
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xBestCover - xCoverPos), 1.0f, "Should find cover point near registered position");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
 ZENITH_TEST(AI, TacticalPointFlankScoring) { Zenith_UnitTests::TestTacticalPointFlankScoring(); }
 
 void Zenith_UnitTests::TestTacticalPointFlankScoring(){
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Register flank positions on sides of target
 	Zenith_Maths::Vector3 xTargetPos(10.0f, 0.0f, 10.0f);
@@ -89,14 +88,13 @@ void Zenith_UnitTests::TestTacticalPointFlankScoring(){
 	float fDistToRight = Zenith_Maths::Length(xBestFlank - xFlankRight);
 	ZENITH_ASSERT_TRUE(fDistToLeft < 1.0f || fDistToRight < 1.0f, "Should find a flank position to the side");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
 ZENITH_TEST(AI, FindBestPointNoPointsActive) { Zenith_UnitTests::TestFindBestPointNoPointsActive(); }
 
 void Zenith_UnitTests::TestFindBestPointNoPointsActive(){
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// No points registered - FindBestPoint should return nullptr
 	Zenith_TacticalPointQuery xQuery;
@@ -116,13 +114,12 @@ void Zenith_UnitTests::TestFindBestPointNoPointsActive(){
 	pxResult = Zenith_TacticalPointSystem::FindBestPoint(xQuery);
 	ZENITH_ASSERT_NULL(pxResult, "FindBestPoint with no active points should return nullptr");
 
-	Zenith_TacticalPointSystem::Shutdown();
 }
 
 ZENITH_TEST(AI, FindBestPointOutOfRange) { Zenith_UnitTests::TestFindBestPointOutOfRange(); }
 
 void Zenith_UnitTests::TestFindBestPointOutOfRange(){
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Register a point far away
 	Zenith_TacticalPointSystem::RegisterPoint(
@@ -143,7 +140,6 @@ void Zenith_UnitTests::TestFindBestPointOutOfRange(){
 	pxResult = Zenith_TacticalPointSystem::FindBestPoint(xQuery);
 	ZENITH_ASSERT_NOT_NULL(pxResult, "FindBestPoint should find point when radius is large enough");
 
-	Zenith_TacticalPointSystem::Shutdown();
 }
 
 // ============================================================================
@@ -196,7 +192,7 @@ ZENITH_TEST(AI, FindBestPointNoMatches) { Zenith_UnitTests::TestFindBestPointNoM
 
 void Zenith_UnitTests::TestFindBestPointNoMatches(){
 
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Register only PATROL_WAYPOINT points
 	Zenith_TacticalPointSystem::RegisterPoint(
@@ -215,7 +211,6 @@ void Zenith_UnitTests::TestFindBestPointNoMatches(){
 	// When no cover is found, should return agent position (stay in place)
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xResult - xAgentPos), 0.001f, "FindBestCoverPosition with no cover points should return agent position");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
@@ -223,7 +218,7 @@ ZENITH_TEST(AI, FindBestPointSelectsHighest) { Zenith_UnitTests::TestFindBestPoi
 
 void Zenith_UnitTests::TestFindBestPointSelectsHighest(){
 
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Register multiple cover points at different distances from agent
 	// Agent at origin, threat far away at (100, 0, 0)
@@ -247,7 +242,6 @@ void Zenith_UnitTests::TestFindBestPointSelectsHighest(){
 	// The full cover close point should score highest (close + full cover bonus)
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xResult - xFullCoverPos), 0.001f, "Should select the full cover close point as best");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
@@ -255,7 +249,7 @@ ZENITH_TEST(AI, ScoreCoverDistance) { Zenith_UnitTests::TestScoreCoverDistance()
 
 void Zenith_UnitTests::TestScoreCoverDistance(){
 
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Register two half-cover points at different distances
 	Zenith_Maths::Vector3 xAgentPos(0.0f, 0.0f, 0.0f);
@@ -274,7 +268,6 @@ void Zenith_UnitTests::TestScoreCoverDistance(){
 	// Near point should be selected (distance score: 1 - 5/50 = 0.9 vs 1 - 30/50 = 0.4)
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xResult - xNearPos), 0.001f, "Closer cover point should score higher when cover scores are similar");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
@@ -282,7 +275,7 @@ ZENITH_TEST(AI, ScoreFlankAngle) { Zenith_UnitTests::TestScoreFlankAngle(); }
 
 void Zenith_UnitTests::TestScoreFlankAngle(){
 
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	// Target at (10, 0, 10) facing (0, 0, -1) (facing toward negative Z)
 	Zenith_Maths::Vector3 xTargetPos(10.0f, 0.0f, 10.0f);
@@ -308,7 +301,6 @@ void Zenith_UnitTests::TestScoreFlankAngle(){
 	float fFrontScore = Zenith_TacticalPointSystem::EvaluateFlankAngle(xFrontPos, xTargetPos, xTargetFacing);
 	ZENITH_ASSERT_GT(fSideScore, fFrontScore, "Perpendicular flank angle should score higher than frontal angle");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 
@@ -316,7 +308,7 @@ ZENITH_TEST(AI, ScoreOverwatchElevation) { Zenith_UnitTests::TestScoreOverwatchE
 
 void Zenith_UnitTests::TestScoreOverwatchElevation(){
 
-	Zenith_TacticalPointSystem::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Maths::Vector3 xAreaToWatch(10.0f, 0.0f, 10.0f);
 	Zenith_Maths::Vector3 xAgentPos(0.0f, 0.0f, 0.0f);
@@ -344,7 +336,6 @@ void Zenith_UnitTests::TestScoreOverwatchElevation(){
 
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xResult - xHighPos), 0.001f, "Elevated overwatch point should score higher than ground-level");
 
-	Zenith_TacticalPointSystem::Shutdown();
 
 }
 

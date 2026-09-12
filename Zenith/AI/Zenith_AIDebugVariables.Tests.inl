@@ -1,4 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
+#include "AI/Zenith_AIManagerTestScope.h"
 #include "AI/Zenith_AI.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Squad/Zenith_Squad.h"
@@ -148,6 +149,10 @@ void Zenith_UnitTests::TestAIDebugDrawMasterToggleShortCircuits(){
 ZENITH_TEST(AI, AIDebugDrawSafeWithNoAIContent) { Zenith_UnitTests::TestAIDebugDrawSafeWithNoAIContent(); }
 
 void Zenith_UnitTests::TestAIDebugDrawSafeWithNoAIContent(){
+	// Restores whatever the boot had armed (ScriptTest's engine AI tick keeps both
+	// managers initialised) once this test has finished shutting them down.
+	Zenith_AIManagerTestScope xAIScope;
+
 	// A game that never forms a squad never calls Zenith_SquadManager::Initialise().
 	// DebugDrawAllSquads used to ASSERT on that, which would have fired on the very
 	// first frame of every such game once the engine started calling it. It now
@@ -166,12 +171,10 @@ void Zenith_UnitTests::TestAIDebugDrawSafeWithNoAIContent(){
 
 	Zenith_AIDebugVariables::s_bEnableAllAIDebug = bPrevMaster;
 
-	// Confirm the visualiser walked an empty world rather than populating one,
-	// then leave the manager shut down again (the Initialise/.../Shutdown shape
-	// every other test in this AI suite uses).
+	// Confirm the visualiser walked an empty world rather than populating one;
+	// xAIScope puts the managers back the way the boot left them.
 	Zenith_SquadManager::Initialise();
 	ZENITH_ASSERT_EQ(Zenith_SquadManager::GetSquadCount(), 0u,
 		"DebugDraw must not create squads");
-	Zenith_SquadManager::Shutdown();
 }
 

@@ -74,3 +74,5 @@ namespace Zenith_AI
 	}
 #endif
 }
+
+#include "AI/Zenith_AI.Tests.inl"

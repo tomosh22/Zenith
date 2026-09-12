@@ -1,4 +1,5 @@
 #include "UnitTests/Zenith_UnitTests.h"
+#include "AI/Zenith_AIManagerTestScope.h"
 #include "AI/Squad/Zenith_Squad.h"
 
 // ============================================================================
@@ -6,7 +7,7 @@
 // ============================================================================
 ZENITH_TEST(AI, SquadAddRemoveMember) { Zenith_UnitTests::TestSquadAddRemoveMember(); }
 void Zenith_UnitTests::TestSquadAddRemoveMember(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -26,14 +27,13 @@ void Zenith_UnitTests::TestSquadAddRemoveMember(){
 	ZENITH_ASSERT_FALSE(pxSquad->HasMember(xMember1), "Should not have member 1");
 	ZENITH_ASSERT_TRUE(pxSquad->HasMember(xMember2), "Should still have member 2");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
 ZENITH_TEST(AI, SquadRoleAssignment) { Zenith_UnitTests::TestSquadRoleAssignment(); }
 
 void Zenith_UnitTests::TestSquadRoleAssignment(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -47,14 +47,13 @@ void Zenith_UnitTests::TestSquadRoleAssignment(){
 	eRole = pxSquad->GetMemberRole(xMember);
 	ZENITH_ASSERT_EQ(eRole, SquadRole::SUPPORT, "Role should be SUPPORT after change");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
 ZENITH_TEST(AI, SquadLeaderSelection) { Zenith_UnitTests::TestSquadLeaderSelection(); }
 
 void Zenith_UnitTests::TestSquadLeaderSelection(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -68,14 +67,13 @@ void Zenith_UnitTests::TestSquadLeaderSelection(){
 	ZENITH_ASSERT_TRUE(pxSquad->HasLeader(), "Should have leader");
 	ZENITH_ASSERT_EQ(pxSquad->GetLeader(), xMember2, "Leader should be member 2");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
 ZENITH_TEST(AI, SquadSharedKnowledge) { Zenith_UnitTests::TestSquadSharedKnowledge(); }
 
 void Zenith_UnitTests::TestSquadSharedKnowledge(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -96,7 +94,6 @@ void Zenith_UnitTests::TestSquadSharedKnowledge(){
 	ZENITH_ASSERT_NOT_NULL(pxShared, "Should have shared target info");
 	ZENITH_ASSERT_EQ(pxShared->m_xReportedBy, xMember1, "Should know who reported");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
@@ -107,7 +104,7 @@ void Zenith_UnitTests::TestSquadSharedKnowledge(){
 ZENITH_TEST(AI, SharedTargetUpdate) { Zenith_UnitTests::TestSharedTargetUpdate(); }
 
 void Zenith_UnitTests::TestSharedTargetUpdate(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 	Zenith_EntityID xMember1(1001);
@@ -136,14 +133,13 @@ void Zenith_UnitTests::TestSharedTargetUpdate(){
 	// Only one target should exist (not duplicated)
 	ZENITH_ASSERT_EQ(pxSquad->GetAllSharedTargets().GetSize(), 1, "Should have exactly 1 shared target after update");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
 ZENITH_TEST(AI, SharedTargetUnknown) { Zenith_UnitTests::TestSharedTargetUnknown(); }
 
 void Zenith_UnitTests::TestSharedTargetUnknown(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 	Zenith_EntityID xMember1(1001);
@@ -160,14 +156,13 @@ void Zenith_UnitTests::TestSharedTargetUnknown(){
 	pxSquad->SetTargetEngaged(xUnknown, xMember1);
 	ZENITH_ASSERT_FALSE(pxSquad->IsTargetEngaged(xUnknown), "Engaging unknown target should have no effect");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
 ZENITH_TEST(AI, FormationSlotsLeaderFirst) { Zenith_UnitTests::TestFormationSlotsLeaderFirst(); }
 
 void Zenith_UnitTests::TestFormationSlotsLeaderFirst(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 	pxSquad->SetFormation(Zenith_Formation::GetWedge());
@@ -185,14 +180,13 @@ void Zenith_UnitTests::TestFormationSlotsLeaderFirst(){
 	ZENITH_ASSERT_NOT_NULL(pxLeader, "Leader member should exist");
 	ZENITH_ASSERT_EQ(pxLeader->m_iFormationSlot, 0, "Leader should always get slot 0");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
 ZENITH_TEST(AI, FormationSlotsRoleMatching) { Zenith_UnitTests::TestFormationSlotsRoleMatching(); }
 
 void Zenith_UnitTests::TestFormationSlotsRoleMatching(){
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 	pxSquad->SetFormation(Zenith_Formation::GetWedge());
@@ -219,7 +213,6 @@ void Zenith_UnitTests::TestFormationSlotsRoleMatching(){
 	ZENITH_ASSERT_NE(pxLeaderM->m_iFormationSlot, pxFlankerM->m_iFormationSlot, "Leader and Flanker should have different slots");
 	ZENITH_ASSERT_NE(pxAssaultM->m_iFormationSlot, pxFlankerM->m_iFormationSlot, "Assault and Flanker should have different slots");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
@@ -231,7 +224,7 @@ ZENITH_TEST(AI, SquadPositionOrder) { Zenith_UnitTests::TestSquadPositionOrder()
 
 void Zenith_UnitTests::TestSquadPositionOrder(){
 
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -243,7 +236,6 @@ void Zenith_UnitTests::TestSquadPositionOrder(){
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xOrder.m_xTargetPosition - xTarget), 0.01f, "Order position should match issued position");
 	ZENITH_ASSERT_FALSE(xOrder.m_xTargetEntity.IsValid(), "Position order should have invalid target entity");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
@@ -251,7 +243,7 @@ ZENITH_TEST(AI, SquadTargetOrderClearsPosition) { Zenith_UnitTests::TestSquadTar
 
 void Zenith_UnitTests::TestSquadTargetOrderClearsPosition(){
 
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -262,7 +254,6 @@ void Zenith_UnitTests::TestSquadTargetOrderClearsPosition(){
 	ZENITH_ASSERT_EQ(xOrder.m_eType, SquadOrderType::ATTACK, "Order type should be ATTACK");
 	ZENITH_ASSERT_EQ(xOrder.m_xTargetEntity, xTarget, "Target entity should match issued target");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
@@ -270,7 +261,7 @@ ZENITH_TEST(AI, SquadSimpleOrderClearsAll) { Zenith_UnitTests::TestSquadSimpleOr
 
 void Zenith_UnitTests::TestSquadSimpleOrderClearsAll(){
 
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -285,7 +276,6 @@ void Zenith_UnitTests::TestSquadSimpleOrderClearsAll(){
 	ZENITH_ASSERT_LT(Zenith_Maths::Length(xOrder.m_xTargetPosition), 0.01f, "Simple order should zero position");
 	ZENITH_ASSERT_FALSE(xOrder.m_xTargetEntity.IsValid(), "Simple order should have invalid target entity");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
@@ -293,7 +283,7 @@ ZENITH_TEST(AI, SquadDeadMemberTriggersLeaderReassign) { Zenith_UnitTests::TestS
 
 void Zenith_UnitTests::TestSquadDeadMemberTriggersLeaderReassign(){
 
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -314,7 +304,6 @@ void Zenith_UnitTests::TestSquadDeadMemberTriggersLeaderReassign(){
 	ZENITH_ASSERT_NE(pxSquad->GetLeader(), xMember1, "Leader should no longer be the dead member");
 	ZENITH_ASSERT_TRUE(pxSquad->GetLeader() == xMember2 || pxSquad->GetLeader() == xMember3, "New leader should be one of the alive members");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 
@@ -322,7 +311,7 @@ ZENITH_TEST(AI, SquadAliveMemberPreservesLeader) { Zenith_UnitTests::TestSquadAl
 
 void Zenith_UnitTests::TestSquadAliveMemberPreservesLeader(){
 
-	Zenith_SquadManager::Initialise();
+	Zenith_AIManagerTestScope xAIScope;
 
 	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
 
@@ -340,7 +329,6 @@ void Zenith_UnitTests::TestSquadAliveMemberPreservesLeader(){
 	ZENITH_ASSERT_EQ(pxSquad->GetLeader(), xMember1, "Leader should remain member 1 after marking non-leader alive");
 	ZENITH_ASSERT_TRUE(pxSquad->IsMemberAlive(xMember2), "Member 2 should be alive");
 
-	Zenith_SquadManager::Shutdown();
 
 }
 

@@ -193,6 +193,8 @@ class Zenith_SquadManager
 public:
 	static void Initialise();
 	static void Shutdown();
+	// Read by Zenith_AIManagerTestScope so a unit test can restore the state it found.
+	static bool IsInitialised() { return s_bInitialised; }
 	static void Update(float fDt);
 
 	// Squad management

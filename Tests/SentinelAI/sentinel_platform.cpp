@@ -144,6 +144,27 @@ void Zenith_TestRunner::AssertTrue(bool bExpr, const char* strExpr, const char* 
 		Zenith_DebugBreak();
 	}
 }
+
+// Zenith_AI.cpp's own units (Zenith_AI.Tests.inl) reach the AI lib this exe links
+// and use the FALSE / NOT_NULL forms as well; each stub is the same shape.
+
+void Zenith_TestRunner::AssertFalse(bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
+{
+	if (bExpr)
+	{
+		fprintf(stderr, "sentinel: AssertFalse(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
+		Zenith_DebugBreak();
+	}
+}
+
+void Zenith_TestRunner::AssertNotNull(const void* pPtr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
+{
+	if (pPtr == nullptr)
+	{
+		fprintf(stderr, "sentinel: AssertNotNull(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
+		Zenith_DebugBreak();
+	}
+}
 #endif
 
 void Zenith_Callstack::Initialise()
