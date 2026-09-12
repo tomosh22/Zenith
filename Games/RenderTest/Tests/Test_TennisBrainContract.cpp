@@ -289,6 +289,12 @@ namespace
 		// ---- last-tick execution trace ----------------------------------------
 		// GetRecentlyExecuted is cleared at the top of every ON_UPDATE dispatch, so
 		// after a Tick it holds exactly that tick's chain walk, in execution order.
+		//
+		// ★ A PULLED PURE NODE IS ALSO IN THE TRACE (B-4), landing AFTER the
+		// consumer that pulled it - the pull runs from inside that consumer's
+		// Execute. This brain wires no pure node, so every count and every relative
+		// index below is still a statement about the CHAIN alone; wire one and the
+		// trace gains an entry that is not a chain step.
 		const char* TypeOfNode(u_int uNodeID) const
 		{
 			const Zenith_GraphNodeDef* pxDef = xDefinition.FindNodeDef(uNodeID);

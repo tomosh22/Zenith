@@ -4253,6 +4253,121 @@ ZENITH_TEST(BehaviourGraph, PinRuntime_PureNotMemoisedAcrossFires)
 	}
 }
 
+// ★ A PULLED PURE NODE IS IN THE EXECUTION TRACE, ONCE PER FRAME (B-4).
+// GetRecentlyExecuted drives the editor's live highlighting, and a pure node was
+// the one kind that really did run every frame and never lit up - so an author
+// debugging a wire could not tell "my producer is not reached" from "my producer
+// ran and wrote the wrong value". The push is DEDUPLICATED because one pure
+// source commonly feeds many consumers in one frame and the reader scans the
+// vector linearly; the CAP is unchanged.
+ZENITH_TEST(BehaviourGraph, PinRuntime_PulledPureNodeInRecentlyExecutedOnce)
+{
+	EnsureTestNodesRegistered();
+
+	// THREE consumers, one pure source, one frame.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uPure = PinAddPureAdd(xDef, 0);
+		const u_int uFirst = PinAddConsumer(xDef, "", "", "");
+		const u_int uSecond = PinAddConsumer(xDef, "", "", "");
+		const u_int uThird = PinAddConsumer(xDef, "", "", "");
+		xDef.AddEdge(uSource, 0, uFirst);
+		xDef.AddEdge(uFirst, 0, uSecond);
+		xDef.AddEdge(uSecond, 0, uThird);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uFirst, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uSecond, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uThird, "Value"));
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+		// THREE evaluations - one gather per consumer Execute - and that is the
+		// point: the trace entry is deduplicated, not the evaluation.
+		GraphTestPureAdd* pxPure = PinFindPureAdd(xGraph, uPure);
+		ZENITH_ASSERT_NOT_NULL(pxPure);
+		if (pxPure != nullptr)
+		{
+			ZENITH_ASSERT_EQ(pxPure->m_uExecuteCount, 3u);
+		}
+
+		const Zenith_Vector<u_int>& auTrace = xGraph.GetRecentlyExecuted();
+		u_int uPureEntries = 0;
+		int iPureAt = -1;
+		int iFirstConsumerAt = -1;
+		for (u_int u = 0; u < auTrace.GetSize(); ++u)
+		{
+			if (auTrace.Get(u) == uPure)
+			{
+				++uPureEntries;
+				if (iPureAt < 0)
+				{
+					iPureAt = static_cast<int>(u);
+				}
+			}
+			if (auTrace.Get(u) == uFirst && iFirstConsumerAt < 0)
+			{
+				iFirstConsumerAt = static_cast<int>(u);
+			}
+		}
+		ZENITH_ASSERT_EQ(uPureEntries, 1u);
+		// Three consumers + one pure producer. The event SOURCE is not in the
+		// trace (a chain hangs off its pin 0), so this is an exact count.
+		ZENITH_ASSERT_EQ(auTrace.GetSize(), 4u);
+		// ★ THE PRODUCER LANDS AFTER ITS CONSUMER: the pull happens from inside the
+		// consumer's Execute, which was pushed first. The trace is "what ran", not
+		// a topological order.
+		ZENITH_ASSERT_TRUE(iFirstConsumerAt >= 0);
+		ZENITH_ASSERT_GT(iPureAt, iFirstConsumerAt);
+
+		// The window is per ON_UPDATE: the next fire re-traces it rather than
+		// accumulating a second entry.
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+		ZENITH_ASSERT_EQ(xGraph.GetRecentlyExecuted().GetSize(), 4u);
+	}
+
+	// The CAP IS NOT LIFTED. A 70-node exec chain fills the 64-entry window, and
+	// the pure node - pulled by the FIRST consumer in the chain - is inside it.
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("Test_OnUpdate");
+		const u_int uPure = PinAddPureAdd(xDef, 0);
+		u_int uPrevious = 0;
+		u_int uHead = 0;
+		for (u_int u = 0; u < 70; ++u)
+		{
+			const u_int uNode = PinAddConsumer(xDef, "", "", "");
+			if (u == 0)
+			{
+				uHead = uNode;
+				xDef.AddEdge(uSource, 0, uNode);
+			}
+			else
+			{
+				xDef.AddEdge(uPrevious, 0, uNode);
+			}
+			uPrevious = uNode;
+		}
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPure, "Sum", uHead, "Value"));
+
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		Zenith_GraphContext xContext = MakeTestContext(xGraph);
+		xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+
+		const Zenith_Vector<u_int>& auTrace = xGraph.GetRecentlyExecuted();
+		ZENITH_ASSERT_EQ(auTrace.GetSize(), 64u);
+		bool bPureTraced = false;
+		for (u_int u = 0; u < auTrace.GetSize() && !bPureTraced; ++u)
+		{
+			bPureTraced = auTrace.Get(u) == uPure;
+		}
+		ZENITH_ASSERT_TRUE(bPureTraced);
+	}
+}
+
 ZENITH_TEST(BehaviourGraph, PinRuntime_GatherGenerationAdvancesPerExecute)
 {
 	EnsureTestNodesRegistered();

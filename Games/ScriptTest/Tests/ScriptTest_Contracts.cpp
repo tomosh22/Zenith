@@ -685,6 +685,12 @@ namespace
 		// RunChainFromPin, so it holds exactly that tick's chain IN EXECUTION
 		// ORDER - and the SOURCE node is not in it (a chain hangs OFF the
 		// source's pin 0), so the first entry is the source's successor.
+		//
+		// ★ ONE OTHER THING APPENDS TO IT (B-4): PullSlot pushes a PULLED PURE
+		// node, once per frame, AFTER the consumer that pulled it (the pull runs
+		// from inside that consumer's Execute). No graph in this game wires a pure
+		// node, so every expected string below is still the chain and nothing else -
+		// but a pure producer would appear in it, and it would not be a chain step.
 		void FormatTrace(char* pcOut, size_t uCapacity) const
 		{
 			pcOut[0] = '\0';

@@ -1525,6 +1525,37 @@ const Zenith_PropertyValue* Zenith_BehaviourGraph::PullSlot(u_int uSrcNodeID, u_
 			xNode.m_ulMemoGather = m_ulCurrentGather;
 			xNode.m_bMemoValid = true;
 		}
+
+		// ★ A PULLED PURE NODE JOINS THE EXECUTION TRACE (B-4). The editor's live
+		// highlighting reads m_auRecentlyExecuted, so without this a pure node that
+		// really did run - every frame, on demand - was the one kind of node that
+		// never lit up, and an author debugging a wire had no way to see whether
+		// their producer was reached at all.
+		//
+		// On an evaluation AND on a MEMO HIT: the node is feeding this frame's
+		// consumers either way, and lighting it only on the frames the memo happens
+		// to miss would flicker for reasons the author cannot see. The non-SUCCESS
+		// and CYCLE paths above returned already - those pulls yield the consumer's
+		// default, so nothing of this node reached anybody.
+		//
+		// DEDUPLICATED, unlike RunChainFromPin's push: one pure source commonly
+		// feeds many consumers in one frame, and the reader scans this vector
+		// LINEARLY for one id - N duplicate entries would crowd out the cap for no
+		// added information. Same cap 64, and ungated exactly like the exec push
+		// (the trace is cheap and the editor is not the only reader).
+		bool bAlreadyTraced = false;
+		for (u_int u = 0; u < m_auRecentlyExecuted.GetSize() && !bAlreadyTraced; ++u)
+		{
+			bAlreadyTraced = m_auRecentlyExecuted.Get(u) == uSrcNodeID;
+		}
+		if (!bAlreadyTraced && m_auRecentlyExecuted.GetSize() < 64)
+		{
+			// ★ A PULLED PRODUCER LANDS AFTER ITS CONSUMER IN THE TRACE. The pull
+			// happens from inside the consumer's Execute, which was pushed first.
+			// The trace is "what ran", not a topological order, and nothing may read
+			// it as one.
+			m_auRecentlyExecuted.PushBack(uSrcNodeID);
+		}
 	}
 
 	if (uSrcSlot >= xNode.m_axOutputs.GetSize())

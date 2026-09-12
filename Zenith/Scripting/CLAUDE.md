@@ -369,10 +369,20 @@ demand when a consumer gathers an input wired to one of its OUTPUT pins.
 - **No lifecycle.** `OnEnter`/`OnExit`/`OnAbort` are never called on a pure node,
   and **an exec edge whose DESTINATION is a pure type is DROPPED at
   instantiation** with one `[GraphPin]` line (the chain simply ends there). B-3
-  makes that an author-time error. A pure evaluation is also **not pushed to
-  `GetRecentlyExecuted()`** and does not move `GetExecutingNodeID()`, so the
-  editor's live highlighting does not light up a pulled node today — B-4 changes
-  that.
+  makes that an author-time error. A pure evaluation does not move
+  `GetExecutingNodeID()`.
+- **A PULLED pure node IS in `GetRecentlyExecuted()` (B-4).** `PullSlot` pushes
+  the source's id on an evaluation **and on a memo hit** — it is feeding this
+  frame's consumers either way — DEDUPLICATED (one pure source commonly feeds
+  many consumers in one frame, and the reader scans linearly), under the same
+  cap of 64, and ungated exactly like `RunChainFromPin`'s push. The CYCLE and
+  non-SUCCESS paths return before it: those pulls yield the consumer's default,
+  so nothing of that node reached anybody. **A pulled producer therefore lands
+  AFTER its consumer in the trace** — the pull happens from inside the consumer's
+  `Execute`, which was pushed first. The trace is "what ran", never a topological
+  order. This is what makes the editor light a pulled node up like an executed
+  one (`Zenith_GraphEditorPanel::IsNodeHighlightedForTest`); unit
+  `PinRuntime_PulledPureNodeInRecentlyExecutedOnce`.
 - **A non-SUCCESS pure `Execute` means the slot is NOT read** — the consumer
   takes its default plus one `[GraphPin] STATUS` per instance. RUNNING is refused
   the same way: there is no cursor to suspend on.
