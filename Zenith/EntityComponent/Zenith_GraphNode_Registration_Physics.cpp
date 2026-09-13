@@ -24,6 +24,42 @@
 //   - LockRotation is ONE-WAY: passing false does not restore inertia.
 //   - RebuildCollider (any SetScale) silently resets sensor/gravity/lock
 //     state - re-apply after scale changes.
+//
+// ★ THE PINS IN THIS TU ARE LIVE (B-6.3). Every INPUT descriptor is read through
+// Zenith_GraphNode::GetInput and every OUTPUT descriptor is written through
+// SetOutput, so a wire into or out of any of these 10 nodes carries a value. An
+// UNCONNECTED node behaves byte-for-byte as it did (with ONE divergence: an OUTPUT
+// whose var name reads EMPTY - ReadVelocity - no longer creates a blackboard
+// variable named ""): the var-name fallback IS the
+// old `var.empty() ? const : bb->GetVector3(var, const)` read, and SetOutput's
+// dual-write IS the old SetValue. Each node that addresses a pin declares
+// `static constexpr u_int uPIN_<Name>` immediately before its pin table (the
+// INDEX is the runtime address; table order is the contract, asserted by
+// GraphPinTable.PhysicsPinIndicesMatchTables).
+//
+// Three things specific to THIS TU:
+//   - EVERY input read sits AFTER the node's body guard, exactly where its
+//     blackboard read sat, so a bodyless target FAILURE reads no pin at all
+//     (fallback count 0). SetVelocity's read stays ABOVE the per-axis-preserve
+//     branch - the preserve only overwrites components, it does not decide
+//     whether the value is fetched.
+//   - RAYCAST IS THE EXCEPTION and deliberately so: Direction is read after the
+//     origin resolve but BEFORE the zero-direction and NO-HIT exits, which is
+//     where its blackboard read has always been. A zero-direction or MISSING
+//     execution therefore HAS already read the pin (and, in a graph, pulled
+//     Direction's producer).
+//   - A MISS returns FAILURE without touching a slot: the four hit slots keep
+//     whatever they last held (their stamped zeros on a fresh instance). A hit
+//     latches all four unconditionally - the four `!m_strHitXVar.empty()` guards
+//     are gone, and the dual-write's own non-empty rule reproduces exactly which
+//     of them reach the blackboard. ReadVelocity has the same shape: a bodyless
+//     target FAILURES before the write. A wire off either node's output must be
+//     gated on SUCCESS (Raycast's FAILURE exec pin is how a graph expresses it).
+//
+// ★ An ENTITY_ID slot's stamped zero is packed 0 = {index 0, generation 0},
+// which is a LEGAL entity id and NOT INVALID_ENTITY_ID (index 0xFFFFFFFF). A
+// consumer that reads HitEntity without gating on SUCCESS therefore sees a
+// plausible entity, not an obviously-invalid one.
 //------------------------------------------------------------------------------
 
 namespace
@@ -61,7 +97,11 @@ namespace
 
 		// Target reaches xContext.ResolveTargetEntity through ResolveTargetBody
 		// (this TU's resolver, top of file), so it is an ENTITY reference, not a
-		// value input. Every node in this TU targets the same way.
+		// value input. Every node in this TU targets the same way - a target
+		// reference is never a wire, so it declares no uPIN_ constant and its
+		// resolution stays direct.
+		static constexpr u_int uPIN_Impulse = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ApplyImpulse)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Impulse, "m_strImpulseVar", "m_xImpulse", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -75,8 +115,8 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector3 xImpulse = m_strImpulseVar.empty()
-				? m_xImpulse : xContext.m_pxBlackboard->GetVector3(m_strImpulseVar, m_xImpulse);
+			// After the body guard, exactly where the blackboard read sat.
+			const Zenith_Maths::Vector3 xImpulse = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_Impulse);
 			g_xEngine.Physics().AddImpulse(pxCollider->GetBodyID(), xImpulse);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -94,6 +134,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strForceVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		static constexpr u_int uPIN_Force = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ApplyForce)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Force, "m_strForceVar", "m_xForce", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -107,8 +149,7 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector3 xForce = m_strForceVar.empty()
-				? m_xForce : xContext.m_pxBlackboard->GetVector3(m_strForceVar, m_xForce);
+			const Zenith_Maths::Vector3 xForce = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_Force);
 			g_xEngine.Physics().AddForce(pxCollider->GetBodyID(), xForce);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -132,6 +173,8 @@ namespace
 
 		// The three per-axis SET flags are pin-less consts with no var partner:
 		// they select which components of Velocity land, not a blackboard value.
+		static constexpr u_int uPIN_Velocity = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetVelocity)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Velocity, "m_strVelocityVar", "m_xVelocity", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -145,8 +188,11 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_Maths::Vector3 xVelocity = m_strVelocityVar.empty()
-				? m_xVelocity : xContext.m_pxBlackboard->GetVector3(m_strVelocityVar, m_xVelocity);
+			// UNCONDITIONAL, and ABOVE the per-axis branch: the preserve flags
+			// overwrite components of the value, they do not decide whether it is
+			// fetched. Folding the read into the branch would stop a wired
+			// producer from being pulled on an all-axes-preserve instance.
+			Zenith_Maths::Vector3 xVelocity = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_Velocity);
 			if (!m_bSetX || !m_bSetY || !m_bSetZ)
 			{
 				const Zenith_Maths::Vector3 xCurrent = g_xEngine.Physics().GetLinearVelocity(pxCollider->GetBodyID());
@@ -170,8 +216,14 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "velocity")
 
-		// Result is the node's own COMPUTED value (SetVector3 + SetValue in the
+		// Result is the node's own COMPUTED value (SetVector3 + SetOutput in the
 		// Execute below), so it registers a writer - OUTPUT, not SELECTOR_WRITE.
+		//
+		// ★ INDEX 1, NOT 0. Target is declared first, so a copy of the sibling
+		// TUs' `uPIN_Result = 0u` would address the TARGET_REF pin - and a
+		// wrong-role SetOutput is a silent no-op, not an error.
+		static constexpr u_int uPIN_Result = 1u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadVelocity)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
@@ -187,7 +239,7 @@ namespace
 			}
 			Zenith_PropertyValue xValue;
 			xValue.SetVector3(g_xEngine.Physics().GetLinearVelocity(pxCollider->GetBodyID()));
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput(xContext, uPIN_Result, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadVelocity"; }
@@ -204,6 +256,11 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The const half is m_xAngularVelocity while the var half is
+		// m_strVelocityVar - the pin's NAME follows neither, so the constant is
+		// named for the pin (Velocity) and not for either property.
+		static constexpr u_int uPIN_Velocity = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAngularVelocity)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Velocity, "m_strVelocityVar", "m_xAngularVelocity", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -217,8 +274,7 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector3 xVelocity = m_strVelocityVar.empty()
-				? m_xAngularVelocity : xContext.m_pxBlackboard->GetVector3(m_strVelocityVar, m_xAngularVelocity);
+			const Zenith_Maths::Vector3 xVelocity = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_Velocity);
 			g_xEngine.Physics().SetAngularVelocity(pxCollider->GetBodyID(), xVelocity);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -238,7 +294,9 @@ namespace
 		ZENITH_PROPERTY(bool, m_bLockZ, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// The three lock flags are consts with no var partner - not pins.
+		// The three lock flags are consts with no var partner - not pins. The one
+		// pin is the target reference, resolved directly, so this Execute
+		// addresses no pin at all and declares no uPIN_ constant.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_LockRotation)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -266,6 +324,7 @@ namespace
 		ZENITH_PROPERTY(bool, m_bEnabled, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Target only: no pin is addressed, so no uPIN_ constant exists.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetGravityEnabled)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -293,6 +352,7 @@ namespace
 		ZENITH_PROPERTY(bool, m_bSensor, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Target only: no pin is addressed, so no uPIN_ constant exists.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetSensor)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -312,9 +372,10 @@ namespace
 	};
 
 	// World raycast. Origin = position ref ("" = self, vec3 or EntityID var)
-	// + constant offset; direction = const or vec3 var (normalized by the
-	// engine). Self is excluded by default. Hit -> SUCCESS + hit vars stashed;
-	// no hit -> FAILURE (the chain-gate pattern, like Gate).
+	// + constant offset; direction = a wire, a vec3 var or the const (normalized
+	// by the engine). Self is excluded by default. Hit -> SUCCESS + all four hit
+	// outputs latched (and dual-written where named); no hit -> FAILURE touching
+	// nothing (the chain-gate pattern, like Gate).
 	class Zenith_GraphNode_Raycast : public Zenith_GraphNode
 	{
 	public:
@@ -336,7 +397,14 @@ namespace
 		// hit vars are the node's own computed results, each typed by the
 		// Zenith_PropertyValue::Set* the Execute actually calls.
 		// m_xOriginOffset, m_fMaxDistance and m_bIgnoreSelf are consts with no
-		// var partner - not pins.
+		// var partner - not pins. Origin stays direct (a position REFERENCE is
+		// never a wire), so it declares no constant.
+		static constexpr u_int uPIN_Direction = 1u;
+		static constexpr u_int uPIN_HitEntity = 2u;
+		static constexpr u_int uPIN_HitPoint = 3u;
+		static constexpr u_int uPIN_HitNormal = 4u;
+		static constexpr u_int uPIN_HitDistance = 5u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Raycast)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Origin, "m_strOriginVar")
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Direction, "m_strDirectionVar", "m_xDirection", PROPERTY_TYPE_VECTOR3)
@@ -355,8 +423,10 @@ namespace
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 			xOrigin += m_xOriginOffset;
-			const Zenith_Maths::Vector3 xDirection = m_strDirectionVar.empty()
-				? m_xDirection : xContext.m_pxBlackboard->GetVector3(m_strDirectionVar, m_xDirection);
+			// ★ EXACTLY WHERE THE BLACKBOARD READ WAS, which for this node is
+			// BEFORE the zero-direction and NO-HIT exits rather than after every
+			// guard. Moving it down would change which executions read the pin.
+			const Zenith_Maths::Vector3 xDirection = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_Direction);
 			if (glm::dot(xDirection, xDirection) < 0.0001f)
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
@@ -368,30 +438,33 @@ namespace
 				Zenith_PhysicsQuery::RaycastIgnoring(xOrigin, xDirection, m_fMaxDistance, xIgnoreID);
 			if (!xResult.m_bHit)
 			{
+				// A MISS TOUCHES NO SLOT - deliberately. Latching zeros here would
+				// hand a consumer a hit at the origin with distance 0; leaving the
+				// slots alone means a fresh instance still reads its stamped zeros
+				// and a re-cast that misses keeps the PREVIOUS hit, which is what
+				// the FAILURE exec pin is there to gate on.
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 
+			// A HIT latches all four, unconditionally. The four
+			// `!m_strHitXVar.empty()` guards are GONE: SetOutput's dual-write
+			// applies the same non-empty rule, so which of the four reach the
+			// blackboard is unchanged (hitEntity / hitPoint by default, the other
+			// two only when the author names them) while the SLOTS now always
+			// carry the hit - which is what a wire reads. HitEntity is written
+			// even when the hit body carries no entity (INVALID_ENTITY_ID packed),
+			// exactly as today; an IsValid() guard added here would leave the slot
+			// holding the PREVIOUS cast's entity while the other three describe
+			// this one.
 			Zenith_PropertyValue xValue;
-			if (!m_strHitEntityVar.empty())
-			{
-				xValue.SetPackedEntityID(xResult.m_xHitEntity.GetPacked());
-				xContext.m_pxBlackboard->SetValue(m_strHitEntityVar, xValue);
-			}
-			if (!m_strHitPointVar.empty())
-			{
-				xValue.SetVector3(xResult.m_xHitPoint);
-				xContext.m_pxBlackboard->SetValue(m_strHitPointVar, xValue);
-			}
-			if (!m_strHitNormalVar.empty())
-			{
-				xValue.SetVector3(xResult.m_xHitNormal);
-				xContext.m_pxBlackboard->SetValue(m_strHitNormalVar, xValue);
-			}
-			if (!m_strHitDistanceVar.empty())
-			{
-				xValue.SetFloat(xResult.m_fDistance);
-				xContext.m_pxBlackboard->SetValue(m_strHitDistanceVar, xValue);
-			}
+			xValue.SetPackedEntityID(xResult.m_xHitEntity.GetPacked());
+			SetOutput(xContext, uPIN_HitEntity, xValue);
+			xValue.SetVector3(xResult.m_xHitPoint);
+			SetOutput(xContext, uPIN_HitPoint, xValue);
+			xValue.SetVector3(xResult.m_xHitNormal);
+			SetOutput(xContext, uPIN_HitNormal, xValue);
+			xValue.SetFloat(xResult.m_fDistance);
+			SetOutput(xContext, uPIN_HitDistance, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "Raycast"; }
@@ -417,7 +490,8 @@ namespace
 		// xContext.ResolveTargetEntity rather than through ResolveTargetBody
 		// (this node also drives a bodyless transform), which is the same ENTITY
 		// reference either way. m_xOffset and m_bTeleport are consts with no var
-		// partner - not pins.
+		// partner - not pins. Both pins are references, so this Execute addresses
+		// no pin and declares no uPIN_ constant.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetEntityPosition)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -476,8 +550,8 @@ void Zenith_RegisterEngineGraphNodes_Physics()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_LockRotation>("LockRotation", GRAPH_EVENT_NONE, 1, false, "Physics");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetGravityEnabled>("SetGravityEnabled", GRAPH_EVENT_NONE, 1, false, "Physics");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetSensor>("SetSensor", GRAPH_EVENT_NONE, 1, false, "Physics");
-	// On Failure = NO HIT (:302) + misconfiguration guards (unresolvable origin
-	// :286, zero-length direction :293).
+	// On Failure = NO HIT + the two misconfiguration guards (an unresolvable
+	// origin reference, a zero-length direction).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_Raycast>("Raycast", GRAPH_EVENT_NONE, 1, false, "Physics", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetEntityPosition>("SetEntityPosition", GRAPH_EVENT_NONE, 1, false, "Physics");
 }
