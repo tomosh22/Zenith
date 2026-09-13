@@ -318,7 +318,9 @@ static u_int ST_BuildBallSpawnChain(Zenith_EngineGraphBuilder& xB)
 	xB.ParamString(uText, "m_strTargetVar", ScriptTest::Vars::szUI_TARGET);
 	xB.ParamString(uText, "m_strElement", ScriptTest::UINames::szSPAWNED);
 	xB.ParamString(uText, "m_strText", "Spawned: {}");
-	xB.ParamString(uText, "m_strValueVar", ScriptTest::Vars::szSPAWN_COUNT);
+	const u_int uValue = xB.Node("GetVariable");
+	xB.ParamString(uValue, "m_strVariable", ScriptTest::Vars::szSPAWN_COUNT);
+	xB.Raw().DataEdge(uValue, "Value", uText, "Value");
 
 	xB.Chain(uSpawn, uCount).Chain(uCount, uText);
 	return uSpawn;
@@ -335,7 +337,9 @@ static u_int ST_BuildCounterBumpChain(Zenith_EngineGraphBuilder& xB, int32_t iDe
 	const u_int uText = xB.Node("SetUIText");
 	xB.ParamString(uText, "m_strElement", ScriptTest::UINames::szCOUNTER);
 	xB.ParamString(uText, "m_strText", "Count: {}");
-	xB.ParamString(uText, "m_strValueVar", ScriptTest::Vars::szCOUNT);
+	const u_int uValue = xB.Node("GetVariable");
+	xB.ParamString(uValue, "m_strVariable", ScriptTest::Vars::szCOUNT);
+	xB.Raw().DataEdge(uValue, "Value", uText, "Value");
 
 	xB.Chain(uAdd, uText);
 	return uAdd;
@@ -524,12 +528,12 @@ void BuildGraph_ST_SineBob(Zenith_GraphBuilder& xBuilder)
 	const u_int uScale = xB.Node("MathBlackboardVector3");
 	xB.ParamString(uScale, "m_strVar", ScriptTest::Vars::szBOB_VEL);
 	xB.ParamInt(uScale, "m_iOp", 2);
-	xB.ParamString(uScale, "m_strScalarVar", ScriptTest::Vars::szCOS_T);
+	xB.Raw().DataEdge(uCos, "Result", uScale, "Scalar");
 	xB.ParamString(uScale, "m_strResultVar", ScriptTest::Vars::szBOB_VEL);
 
 	// TranslateEntity multiplies by dt itself, so bobVel is a VELOCITY.
 	const u_int uMove = xB.Node("TranslateEntity");
-	xB.ParamString(uMove, "m_strUnitsVar", ScriptTest::Vars::szBOB_VEL);
+	xB.Raw().DataEdge(uScale, "Result", uMove, "UnitsPerSecond");
 
 	xTick.Then(uAdvance).Then(uCos).Then(uSeed).Then(uScale).Then(uMove);
 }
@@ -564,7 +568,7 @@ void BuildGraph_ST_PlayerMove(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uScale, "m_strResultVar", ScriptTest::Vars::szMOVE_VEL);
 
 	const u_int uVelocity = xB.Node("SetVelocity");
-	xB.ParamString(uVelocity, "m_strVelocityVar", ScriptTest::Vars::szMOVE_VEL);
+	xB.Raw().DataEdge(uScale, "Result", uVelocity, "Velocity");
 	xB.ParamBool(uVelocity, "m_bSetY", false);
 
 	xTick.Then(uRead).Then(uScale).Then(uVelocity);
@@ -599,6 +603,10 @@ void BuildGraph_ST_Jump(Zenith_GraphBuilder& xBuilder)
 // SetUIText targets it through m_strTargetVar.
 void BuildGraph_ST_BallSpawner(Zenith_GraphBuilder& xBuilder)
 {
+	Zenith_PropertyValue xI0;
+	xI0.SetInt32(0);
+	xBuilder.Variable(ScriptTest::Vars::szSPAWN_COUNT, xI0);
+
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	// Chain 1: resolve the HUD entity once.
@@ -665,7 +673,9 @@ void BuildGraph_ST_KillVolume(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uText, "m_strTargetVar", ScriptTest::Vars::szUI_TARGET);
 	xB.ParamString(uText, "m_strElement", ScriptTest::UINames::szKILLED);
 	xB.ParamString(uText, "m_strText", "Killed: {}");
-	xB.ParamString(uText, "m_strValueVar", ScriptTest::Vars::szKILL_COUNT);
+	const u_int uValue = xB.Node("GetVariable");
+	xB.ParamString(uValue, "m_strVariable", ScriptTest::Vars::szKILL_COUNT);
+	xB.Raw().DataEdge(uValue, "Value", uText, "Value");
 
 	xB.Chain(uHit, uDestroy).Chain(uDestroy, uCount).Chain(uCount, uText);
 }
@@ -770,7 +780,13 @@ void BuildGraph_ST_TrafficLight(Zenith_GraphBuilder& xBuilder)
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
 	Zenith_GraphChain xTick = xB.OnUpdate();
-	const u_int uStateMachine = xB.StateMachine(ScriptTest::Vars::szLIGHT, 3, ScriptTest::Events::szTL_STATE_NAMES);
+	const u_int uStateMachine = xB.Node("StateMachine");
+	xB.ParamString(uStateMachine, "m_strStateVar", "");
+	xB.ParamInt(uStateMachine, "m_iStateCount", 3);
+	xB.ParamString(uStateMachine, "m_strStateNames", ScriptTest::Events::szTL_STATE_NAMES);
+	const u_int uState = xB.Node("GetVariable");
+	xB.ParamString(uState, "m_strVariable", ScriptTest::Vars::szLIGHT);
+	xB.Raw().DataEdge(uState, "Value", uStateMachine, "State");
 	xB.ParamString(uStateMachine, "m_strEventPrefix", ScriptTest::Events::szTL_PREFIX);
 	xTick.Then(uStateMachine);
 
@@ -848,7 +864,9 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder)
 	const u_int uClockText = xB.Node("SetUIText");
 	xB.ParamString(uClockText, "m_strElement", ScriptTest::UINames::szCLOCK);
 	xB.ParamString(uClockText, "m_strText", "t = {}s");
-	xB.ParamString(uClockText, "m_strValueVar", ScriptTest::Vars::szCLOCK);
+	const u_int uClockValue = xB.Node("GetVariable");
+	xB.ParamString(uClockValue, "m_strVariable", ScriptTest::Vars::szCLOCK);
+	xB.Raw().DataEdge(uClockValue, "Value", uClockText, "Value");
 	xB.ParamInt(uClockText, "m_iDecimals", 1);	// -1 would print the shortest form
 
 	// cycle = fmod(clock, 5); fill01 = cycle / 5 -- a 5 s sawtooth in [0, 1).
@@ -866,11 +884,17 @@ void BuildGraph_ST_UIPlayground(Zenith_GraphBuilder& xBuilder)
 
 	const u_int uFill = xB.Node("SetUIFillAmount");
 	xB.ParamString(uFill, "m_strElement", ScriptTest::UINames::szBAR_FILL);
-	xB.ParamString(uFill, "m_strAmountVar", ScriptTest::Vars::szFILL01);
+	xB.Raw().DataEdge(uDivide, "Result", uFill, "Amount");
 
-	const u_int uCompare = xB.CompareFloat(
-		ScriptTest::Vars::szFILL01, GRAPH_COMPARE_FLOAT_OP_GREATER, 0.8f, ScriptTest::Vars::szHOT);
-	const u_int uBranch = xB.Branch(ScriptTest::Vars::szHOT);
+	const u_int uCompare = xB.Node("CompareBlackboardFloat");
+	xB.ParamString(uCompare, "m_strVar", "");
+	xB.ParamFloat(uCompare, "m_fCompareTo", 0.8f);
+	xB.ParamEnum(uCompare, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER);
+	xB.ParamString(uCompare, "m_strResultVar", ScriptTest::Vars::szHOT);
+	xB.Raw().DataEdge(uDivide, "Result", uCompare, "Value");
+	const u_int uBranch = xB.Node("Branch");
+	xB.ParamString(uBranch, "m_strConditionVar", "");
+	xB.Raw().DataEdge(uCompare, "Result", uBranch, "Condition");
 
 	// Both colours come from the header, not from literals here: SetUIColor is
 	// chain-TERMINAL on both Branch pins, so ST_UIGym_Test reading the element's
@@ -950,6 +974,12 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 		xValue.SetBool(bValue);
 		xBuilder.Variable(szName, xValue);
 	};
+	auto DeclareString = [&xBuilder](const char* szName, const char* szValue)
+	{
+		Zenith_PropertyValue xValue;
+		xValue.SetString(szValue);
+		xBuilder.Variable(szName, xValue);
+	};
 
 	DeclareInt(ScriptTest::Vars::szBONUS, 0);
 	DeclareInt(ScriptTest::Vars::szDISPENSED, 0);
@@ -969,6 +999,7 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	DeclareBool(ScriptTest::Vars::szALARM, false);
 	DeclareBool(ScriptTest::Vars::szNOT_JAMMED, false);
 	DeclareBool(ScriptTest::Vars::szCAN_DISPENSE, false);
+	DeclareString(ScriptTest::Vars::szLABEL, "");
 
 	Zenith_EngineGraphBuilder xB(xBuilder);
 
@@ -1004,11 +1035,20 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xDispense = xB.OnKeyPressed(ZENITH_KEY_SPACE);
 	const u_int uCooldown = xB.Node("Cooldown");
 	xB.ParamFloat(uCooldown, "m_fSeconds", 0.75f);
-	const u_int uGateArmed = xB.Gate(ScriptTest::Vars::szARMED);
+	const u_int uGateArmed = xB.Node("Gate");
+	xB.ParamString(uGateArmed, "m_strOpenVar", "");
+	const u_int uArmed = xB.Node("GetVariable");
+	xB.ParamString(uArmed, "m_strVariable", ScriptTest::Vars::szARMED);
+	xB.Raw().DataEdge(uArmed, "Value", uGateArmed, "Open");
 	const u_int uCount = xB.Node("AddBlackboardInt");
 	xB.ParamString(uCount, "m_strVariable", ScriptTest::Vars::szDISPENSED);
 	xB.ParamInt(uCount, "m_iDelta", 1);
-	const u_int uRecord = xB.ListAdd(ScriptTest::Vars::szBAG, ScriptTest::Vars::szDISPENSED);
+	const u_int uRecord = xB.Node("ListAdd");
+	xB.ParamString(uRecord, "m_strListVar", ScriptTest::Vars::szBAG);
+	xB.ParamString(uRecord, "m_strValueVar", "");
+	const u_int uDispensedRecord = xB.Node("GetVariable");
+	xB.ParamString(uDispensedRecord, "m_strVariable", ScriptTest::Vars::szDISPENSED);
+	xB.Raw().DataEdge(uDispensedRecord, "Value", uRecord, "Value");
 	const u_int uScore = xB.Node("CallGraph");
 	xB.ParamString(uScore, "m_strGraphAssetPath", ScriptTest::Graphs::szFLOW_SCORE);
 	xDispense.Then(uCooldown).Then(uGateArmed).Then(uCount).Then(uRecord).Then(uScore);
@@ -1088,7 +1128,12 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const u_int uCanDispense = xB.LogicBool(
 		strDispenseOperands.c_str(), GRAPH_LOGIC_BOOL_OP_AND, ScriptTest::Vars::szCAN_DISPENSE);
 	const u_int uBagCount = xB.GetListCount(ScriptTest::Vars::szBAG, ScriptTest::Vars::szBAG_COUNT);
-	const u_int uMode = xB.SwitchOnInt(ScriptTest::Vars::szMODE, 3);
+	const u_int uMode = xB.Node("SwitchOnInt");
+	xB.ParamString(uMode, "m_strVar", "");
+	xB.ParamInt(uMode, "m_iCaseCount", 3);
+	const u_int uModeValue = xB.Node("GetVariable");
+	xB.ParamString(uModeValue, "m_strVariable", ScriptTest::Vars::szMODE);
+	xB.Raw().DataEdge(uModeValue, "Value", uMode, "Value");
 	xB.Edge(uPerFrame, 0, uNotJammed);
 	xB.Chain(uNotJammed, uCanDispense);
 	xB.Chain(uCanDispense, uBagCount);
@@ -1110,8 +1155,11 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const std::string strModeCases = std::string(ScriptTest::Labels::szRED) + ","
 		+ ScriptTest::Labels::szGREEN + "," + ScriptTest::Labels::szBLUE;
 	const u_int uLabelSwitch = xB.Node("SwitchOnString");
-	xB.ParamString(uLabelSwitch, "m_strVar", ScriptTest::Vars::szLABEL);
+	xB.ParamString(uLabelSwitch, "m_strVar", "");
 	xB.ParamString(uLabelSwitch, "m_strCases", strModeCases.c_str());
+	const u_int uLabelValue = xB.Node("GetVariable");
+	xB.ParamString(uLabelValue, "m_strVariable", ScriptTest::Vars::szLABEL);
+	xB.Raw().DataEdge(uLabelValue, "Value", uLabelSwitch, "Value");
 	xB.Edge(uPerFrame, 1, uLabelSwitch);
 
 	const u_int uIndexRed   = xB.SetBlackboardInt(ScriptTest::Vars::szLABEL_INDEX, 0);
@@ -1132,7 +1180,11 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	xB.ParamInt(uSelector, "m_iBranchCount", 2);
 	xB.Edge(uPerFrame, 2, uSelector);
 
-	const u_int uAlarmGate = xB.Gate(ScriptTest::Vars::szALARM);
+	const u_int uAlarmGate = xB.Node("Gate");
+	xB.ParamString(uAlarmGate, "m_strOpenVar", "");
+	const u_int uAlarm = xB.Node("GetVariable");
+	xB.ParamString(uAlarm, "m_strVariable", ScriptTest::Vars::szALARM);
+	xB.Raw().DataEdge(uAlarm, "Value", uAlarmGate, "Open");
 	const u_int uAlarmRuns = xB.Node("AddBlackboardInt");
 	xB.ParamString(uAlarmRuns, "m_strVariable", ScriptTest::Vars::szALARM_RUNS);
 	xB.ParamInt(uAlarmRuns, "m_iDelta", 1);
@@ -1151,7 +1203,9 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const u_int uHudText = xB.Node("SetUIText");
 	xB.ParamString(uHudText, "m_strElement", ScriptTest::UINames::szDISPENSED);
 	xB.ParamString(uHudText, "m_strText", "Dispensed: {}");
-	xB.ParamString(uHudText, "m_strValueVar", ScriptTest::Vars::szDISPENSED);
+	const u_int uDispensedHud = xB.Node("GetVariable");
+	xB.ParamString(uDispensedHud, "m_strVariable", ScriptTest::Vars::szDISPENSED);
+	xB.Raw().DataEdge(uDispensedHud, "Value", uHudText, "Value");
 	xB.Edge(uPerFrame, 3, uHudText);
 }
 
@@ -1297,7 +1351,11 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	xB.Chain(uReady, uReadState);
 
 	// --- Chain 3 (pin 1): the movement, gated.
-	const u_int uGoGate = xB.Gate(ScriptTest::Vars::szGO);
+	const u_int uGoGate = xB.Node("Gate");
+	xB.ParamString(uGoGate, "m_strOpenVar", "");
+	const u_int uGo = xB.Node("GetVariable");
+	xB.ParamString(uGo, "m_strVariable", ScriptTest::Vars::szGO);
+	xB.Raw().DataEdge(uGo, "Value", uGoGate, "Open");
 	const u_int uIssue = xB.Node("SetNavDestination");
 	xB.ParamString(uIssue, "m_strDestinationVar", ScriptTest::Vars::szDEST);
 	const u_int uMove = xB.Node("NavMoveTo");
@@ -1400,7 +1458,9 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uHud, "m_strTargetVar", ScriptTest::Vars::szMANAGER_REF);
 	xB.ParamString(uHud, "m_strElement", ScriptTest::UINames::szNAV_STATE);
 	xB.ParamString(uHud, "m_strText", "Nav: {}");
-	xB.ParamString(uHud, "m_strValueVar", ScriptTest::Vars::szNAV_STATE);
+	const u_int uNavState = xB.Node("GetVariable");
+	xB.ParamString(uNavState, "m_strVariable", ScriptTest::Vars::szNAV_STATE);
+	xB.Raw().DataEdge(uNavState, "Value", uHud, "Value");
 	xB.Edge(uSenseSeq, 4, uHud);
 }
 

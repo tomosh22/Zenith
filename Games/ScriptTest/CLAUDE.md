@@ -312,6 +312,30 @@ There is **no unit-gate line and no `Tools/unit_baselines.json` row**: this game
 adds no boot units, and `Test_UnitBaselineManifest.ps1` requires every row there
 to be gated or declared advisory, so an ungated pin cannot be added silently.
 
+## B-7.1 wire authoring
+
+The eight migrated builders author 22 `Raw().DataEdge` wires: six adjacent
+producer-to-consumer edges and sixteen one-consumer `GetVariable` producers.
+`ST_SineBob` has 2, `ST_PlayerMove` 1, `ST_BallSpawner` 2, `ST_KillVolume` 1,
+`ST_TrafficLight` 1, `ST_UIPlayground` 7, `ST_Dispenser` 6 and `ST_NavWalker` 2.
+Each `GetVariable` is private to its consumer so it is pulled at that consumer's
+execution point. The two new declared seeds are `spawnCount` as INT32 zero and
+`label` as STRING empty; the tools boot re-authors exactly `Gym_Physics` and
+`Gym_Flow` for those attached graphs.
+The B-6.10 ScriptTest fallback census was 69 lines, all mapped by this unit, so
+the B-7.1 target is zero remaining `FALLBACK` lines; the 27 list warnings and
+zero errors remain unchanged.
+
+The inlined legacy factory sites are `StateMachine`, `CompareFloat`, `Branch`,
+three `Gate`s, `ListAdd`, and `SwitchOnInt`; B-7.6 may re-collapse those only
+onto wire-aware factory forms. Wired consumers with nonempty class defaults
+explicitly clear their old variable property. Output, selector, target and list
+names remain strings. C-1 remains: `ReadMovementAxis -> MathBlackboardVector3`
+is OUTPUT-to-SELECTOR_READ; `bobVel` is reseeded before its math operation every
+tick with no feedback dependency; the cycle OUTPUT-to-SELECTOR_READ pair also
+remains outside wire form. All retained `m_strResultVar` dual-writes remain
+candidates for a later structural deletion.
+
 ## The manual demo (what a person should see)
 
 ```

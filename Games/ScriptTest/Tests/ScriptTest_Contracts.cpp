@@ -279,6 +279,79 @@ namespace
 	constexpr u_int uGRAPH_BUILDER_ROWS =
 		static_cast<u_int>(sizeof(g_axGraphBuilders) / sizeof(g_axGraphBuilders[0]));
 
+	u_int ExpectedDataEdgeCount(const char* szAssetPath)
+	{
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szSINE_BOB) == 0) return 2;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szPLAYER_MOVE) == 0) return 1;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szBALL_SPAWNER) == 0) return 2;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szKILL_VOLUME) == 0) return 1;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szTRAFFIC_LIGHT) == 0) return 1;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szUI_PLAYGROUND) == 0) return 7;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szDISPENSER) == 0) return 6;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szNAV_WALKER) == 0) return 2;
+		return 0;
+	}
+
+	bool ExpectedGetVariableType(const char* szVariable, Zenith_PropertyType& eOut)
+	{
+		if (std::strcmp(szVariable, ScriptTest::Vars::szCLOCK) == 0) { eOut = PROPERTY_TYPE_FLOAT; return true; }
+		if (std::strcmp(szVariable, ScriptTest::Vars::szLABEL) == 0) { eOut = PROPERTY_TYPE_STRING; return true; }
+		if (std::strcmp(szVariable, ScriptTest::Vars::szARMED) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szALARM) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szGO) == 0) { eOut = PROPERTY_TYPE_BOOL; return true; }
+		if (std::strcmp(szVariable, ScriptTest::Vars::szSPAWN_COUNT) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szCOUNT) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szKILL_COUNT) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szDISPENSED) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szMODE) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szLIGHT) == 0
+			|| std::strcmp(szVariable, ScriptTest::Vars::szNAV_STATE) == 0) { eOut = PROPERTY_TYPE_INT32; return true; }
+		return false;
+	}
+
+	void CheckGetVariableTypes(const Zenith_GraphDefinition& xDefinition, const char* szAssetPath)
+	{
+		const Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		for (u_int uNode = 0; uNode < xDefinition.GetNodeCount(); ++uNode)
+		{
+			const Zenith_GraphNodeDef& xNodeDef = xDefinition.GetNodeAt(uNode);
+			if (xNodeDef.m_strTypeName != "GetVariable")
+			{
+				continue;
+			}
+			const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find("GetVariable");
+			Zenith_GraphNode* pxNode = pxInfo ? pxInfo->m_pfnCreate() : nullptr;
+			CheckTrue(pxNode != nullptr, "GetVariable is registered for type-resolution checks");
+			if (pxNode == nullptr)
+			{
+				continue;
+			}
+			xDefinition.ApplyNodeParams(xNodeDef.m_uNodeID, pxNode, *pxInfo);
+			Zenith_PropertyValue xVariable;
+			const Zenith_PropertyTable* pxProperties = pxInfo->m_pfnGetPropertyTable ? pxInfo->m_pfnGetPropertyTable() : nullptr;
+			const Zenith_ReflectedProperty* pxVariable = pxProperties ? pxProperties->FindProperty("m_strVariable") : nullptr;
+			if (pxVariable != nullptr)
+			{
+				pxVariable->m_pfnGet(pxNode, xVariable);
+			}
+			Zenith_PropertyType eExpected = eGRAPH_PIN_TYPE_ANY;
+			const bool bExpected = pxVariable != nullptr && xVariable.GetType() == PROPERTY_TYPE_STRING
+				&& ExpectedGetVariableType(xVariable.GetString().c_str(), eExpected);
+			const Zenith_GraphPinTable* pxPins = pxInfo->m_pfnGetPinTable ? pxInfo->m_pfnGetPinTable() : nullptr;
+			const u_int uValuePin = pxPins ? pxPins->FindPinIndex("Value") : 0;
+			Zenith_PropertyType eActual = eGRAPH_PIN_TYPE_ANY;
+			const bool bResolved = pxPins != nullptr && uValuePin < pxPins->GetPinCount()
+				&& Zenith_GraphDefinitionValidator::ResolvePinType(
+				xDefinition, xRegistry, xNodeDef.m_uNodeID, uValuePin, eActual);
+			char acWhat[256];
+			std::snprintf(acWhat, sizeof(acWhat), "%s GetVariable(%s) resolves its concrete Value type",
+				szAssetPath, pxVariable && xVariable.GetType() == PROPERTY_TYPE_STRING
+					? xVariable.GetString().c_str() : "<missing or non-string>");
+			CheckTrue(bExpected && bResolved && eActual == eExpected && eActual != eGRAPH_PIN_TYPE_ANY, acWhat);
+			delete pxNode;
+		}
+	}
+
 	bool g_bNoGameExtensionsRan = false;
 
 	//-------------------------------------------------------------------------
@@ -501,10 +574,11 @@ namespace
 			char acWhat[256];
 
 			Zenith_GraphDefinition xDefinition;
+			bool bBuilt = false;
 			{
 				Zenith_GraphBuilder xBuilder(xDefinition);
 				xRow.m_pfnBuild(xBuilder);
-				const bool bBuilt = xBuilder.Build();
+				bBuilt = xBuilder.Build();
 				std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", xRow.m_szAssetPath);
 				CheckTrue(bBuilt, acWhat);
 
@@ -541,9 +615,16 @@ namespace
 					"%s reports ZERO error-severity validation findings", xRow.m_szAssetPath);
 				CheckEqInt(iErrors, 0, acWhat);
 			}
+			if (!bBuilt)
+			{
+				continue; // the Build() failure above is the actionable finding.
+			}
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
 			CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its required data-edge count", xRow.m_szAssetPath);
+			CheckTrue(xDefinition.GetDataEdgeCount() >= ExpectedDataEdgeCount(xRow.m_szAssetPath), acWhat);
+			CheckGetVariableTypes(xDefinition, xRow.m_szAssetPath);
 
 			int iNonEngineNodes = 0;
 			for (u_int uNode = 0; uNode < xDefinition.GetNodeCount(); ++uNode)
@@ -564,9 +645,16 @@ namespace
 			const bool bInstanced = xGraph.InitialiseFromDefinition(xDefinition);
 			std::snprintf(acWhat, sizeof(acWhat), "%s instantiates", xRow.m_szAssetPath);
 			CheckTrue(bInstanced, acWhat);
+			if (!bInstanced)
+			{
+				xGraph.Shutdown();
+				continue; // avoid inspecting a partially-instantiated graph.
+			}
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s instantiates with ZERO unresolved nodes", xRow.m_szAssetPath);
 			CheckEqInt(static_cast<int>(xGraph.GetUnresolvedCount()), 0, acWhat);
+			std::snprintf(acWhat, sizeof(acWhat), "%s resolves ZERO skipped data edges", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(xGraph.GetResolutionSkipCountForTest()), 0, acWhat);
 
 			xGraph.Shutdown();
 		}
@@ -688,9 +776,9 @@ namespace
 		//
 		// ★ ONE OTHER THING APPENDS TO IT (B-4): PullSlot pushes a PULLED PURE
 		// node, once per frame, AFTER the consumer that pulled it (the pull runs
-		// from inside that consumer's Execute). No graph in this game wires a pure
-		// node, so every expected string below is still the chain and nothing else -
-		// but a pure producer would appear in it, and it would not be a chain step.
+		// from inside that consumer's Execute). Several ScriptTest builders now wire
+		// pure GetVariable nodes; ST_PlayerMove wires its impure MathBlackboardVector3 result into
+		// SetVelocity, so the expected string below remains the exec chain alone.
 		void FormatTrace(char* pcOut, size_t uCapacity) const
 		{
 			pcOut[0] = '\0';

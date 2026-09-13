@@ -1319,10 +1319,13 @@ namespace
 	int          g_iLiveBallPeak   = 0;
 	std::string  g_strSpawnedText;
 	std::string  g_strSpawnedExpected;
+	std::string  g_strKilledText;
+	std::string  g_strKilledExpected;
 	bool         g_bPhysicsReady   = false;
 	bool         g_bTimerSpawnSeen = false;
 	bool         g_bManualSpawned  = false;
 	bool         g_bSpawnedTextRead = false;
+	bool         g_bKilledTextRead = false;
 	bool         g_bPhysicsDone    = false;
 
 	// Names are not unique and SpawnPrefab stamps the prefab root with the one
@@ -1376,10 +1379,13 @@ static void Setup_PhysicsGym()
 	g_iLiveBallPeak = 0;
 	g_strSpawnedText.clear();
 	g_strSpawnedExpected.clear();
+	g_strKilledText.clear();
+	g_strKilledExpected.clear();
 	g_bPhysicsReady = false;
 	g_bTimerSpawnSeen = false;
 	g_bManualSpawned = false;
 	g_bSpawnedTextRead = false;
+	g_bKilledTextRead = false;
 	g_bPhysicsDone = false;
 }
 
@@ -1458,6 +1464,8 @@ static bool Step_PhysicsGym(int iFrame)
 			// constant. The prefix mirrors the builder's "Spawned: {}" (an int32
 			// renders through "%d", so no decimals appear).
 			g_strSpawnedExpected = std::string("Spawned: ") + std::to_string(g_iSpawnAfterKey);
+			g_bKilledTextRead = ST_ReadUIText(ScriptTest::UINames::szKILLED, g_strKilledText);
+			g_strKilledExpected = std::string("Killed: ") + std::to_string(g_iKillCount);
 			g_bPhysicsDone = true;
 			g_ePhysicsPhase = PhysicsPhase::Done;
 			return false;
@@ -1498,6 +1506,13 @@ static bool Verify_PhysicsGym()
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[PhysicsGym] killCount %d, expected >= %d (spawnCount %d)",
 			g_iKillCount, iST_PHYSICS_MIN_COUNT, g_iSpawnCount);
+		return false;
+	}
+	if (!g_bKilledTextRead || g_strKilledText != g_strKilledExpected)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[PhysicsGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szKILLED, g_strKilledText.c_str(), g_strKilledExpected.c_str(),
+			ScriptTest::Vars::szKILL_COUNT);
 		return false;
 	}
 	// Reported before the key clause: without a synchronising timer spawn the key
@@ -1942,7 +1957,9 @@ namespace
 	float   g_fUIClockSample   = -1.0f;
 	float   g_fUIFillSample    = -1.0f;
 	std::string g_strUICounterText;
+	std::string g_strUIClockText;
 	bool    g_bUICounterTextRead = false;
+	bool    g_bUIClockTextRead = false;
 	bool    g_bUIReady      = false;
 	bool    g_bUIClickFailed = false;
 	bool    g_bHotAtCool    = true;
@@ -1978,7 +1995,9 @@ static void Setup_UIGym()
 	g_fUIClockSample = -1.0f;
 	g_fUIFillSample = -1.0f;
 	g_strUICounterText.clear();
+	g_strUIClockText.clear();
 	g_bUICounterTextRead = false;
+	g_bUIClockTextRead = false;
 	g_bUIReady = false;
 	g_bUIClickFailed = false;
 	g_bHotAtCool = true;
@@ -2075,6 +2094,7 @@ static bool Step_UIGym(int iFrame)
 			return true;
 		}
 		g_fUIClockSample = ST_ReadUIClock();
+		g_bUIClockTextRead = ST_ReadUIText(ScriptTest::UINames::szCLOCK, g_strUIClockText);
 		g_fUIFillSample = ST_ReadFloat(
 			ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT, ScriptTest::Vars::szFILL01, -1.0f);
 		g_iUIFrame = 0;
@@ -2180,6 +2200,14 @@ static bool Verify_UIGym()
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[UIGym] '%s' never advanced (%.4f)",
 			ScriptTest::Vars::szCLOCK, g_fUIClockSample);
+		return false;
+	}
+	char acClockText[64];
+	std::snprintf(acClockText, sizeof(acClockText), "t = %.1fs", g_fUIClockSample);
+	if (!g_bUIClockTextRead || g_strUIClockText != acClockText)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[UIGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szCLOCK, g_strUIClockText.c_str(), acClockText, ScriptTest::Vars::szCLOCK);
 		return false;
 	}
 	if (!(g_fUIFillSample > 0.0f) || g_fUIFillSample > 1.0f)
@@ -2362,6 +2390,8 @@ namespace
 	int32_t g_iFlowDispensedDouble  = -1;
 	int32_t g_iFlowDispensedSecond  = -1;
 	int32_t g_iFlowDispensedThird   = -1;
+	std::string g_strFlowDispensedText;
+	bool g_bFlowDispensedTextRead = false;
 	int32_t g_iFlowBagAfterFill     = -1;
 	int32_t g_iFlowScoreAfterFill   = -1;
 	int32_t g_iFlowVisited          = -1;
@@ -2443,6 +2473,7 @@ namespace
 	void ST_FlowSampleThird()
 	{
 		g_iFlowDispensedThird = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1);
+		g_bFlowDispensedTextRead = ST_ReadUIText(ScriptTest::UINames::szDISPENSED, g_strFlowDispensedText);
 		g_iFlowBagAfterFill = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
 		g_iFlowScoreAfterFill = ST_FlowInt(ScriptTest::Vars::szSCORE, -1);
 	}
@@ -2554,6 +2585,8 @@ static void Setup_FlowGym()
 	g_iFlowDispensedDouble = -1;
 	g_iFlowDispensedSecond = -1;
 	g_iFlowDispensedThird = -1;
+	g_strFlowDispensedText.clear();
+	g_bFlowDispensedTextRead = false;
 	g_iFlowBagAfterFill = -1;
 	g_iFlowScoreAfterFill = -1;
 	g_iFlowVisited = -1;
@@ -2707,6 +2740,14 @@ static bool Verify_FlowGym()
 			"[FlowGym] '%s' = %d then %d after two further presses a window apart, expected 2 then 3 -- "
 			"the Cooldown never re-opened",
 			ScriptTest::Vars::szDISPENSED, g_iFlowDispensedSecond, g_iFlowDispensedThird);
+		return false;
+	}
+	const std::string strExpectedDispensed = std::string("Dispensed: ") + std::to_string(g_iFlowDispensedThird);
+	if (!g_bFlowDispensedTextRead || g_strFlowDispensedText != strExpectedDispensed)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[FlowGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szDISPENSED, g_strFlowDispensedText.c_str(), strExpectedDispensed.c_str(),
+			ScriptTest::Vars::szDISPENSED);
 		return false;
 	}
 
@@ -2954,6 +2995,8 @@ namespace
 	Zenith_Maths::Vector3 g_xAIHalfB    = Zenith_Maths::Vector3(0.0f);
 
 	int32_t g_iAINavStateMoving   = -99;
+	std::string g_strAINavStateText;
+	bool g_bAINavStateTextRead = false;
 	int32_t g_iAINavStateStopped  = -99;
 	float   g_fAINavLeftEarly     = -1.0f;
 	float   g_fAINavLeftLate      = -1.0f;
@@ -3032,6 +3075,7 @@ namespace
 	{
 		g_xAIFullB = ST_AIWalkerPos();
 		g_iAINavStateMoving = ST_AIInt(ScriptTest::Vars::szNAV_STATE);
+		g_bAINavStateTextRead = ST_ReadUIText(ScriptTest::UINames::szNAV_STATE, g_strAINavStateText);
 		g_fAINavLeftEarly = ST_AIFloat(ScriptTest::Vars::szNAV_LEFT);
 		const Zenith_Maths::Vector3 xVel = ST_AIVec3(ScriptTest::Vars::szNAV_VEL);
 		g_fAINavSpeedSample = std::sqrt(xVel.x * xVel.x + xVel.y * xVel.y + xVel.z * xVel.z);
@@ -3160,6 +3204,8 @@ static void Setup_AIGym()
 	g_xAIHalfB = Zenith_Maths::Vector3(0.0f);
 
 	g_iAINavStateMoving = -99;
+	g_strAINavStateText.clear();
+	g_bAINavStateTextRead = false;
 	g_iAINavStateStopped = -99;
 	g_fAINavLeftEarly = -1.0f;
 	g_fAINavLeftLate = -1.0f;
@@ -3348,6 +3394,14 @@ static bool Verify_AIGym()
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"[AIGym] '%s' = %d while en route, expected 2 (moving)",
 			ScriptTest::Vars::szNAV_STATE, g_iAINavStateMoving);
+		return false;
+	}
+	const std::string strExpectedNavState = std::string("Nav: ") + std::to_string(g_iAINavStateMoving);
+	if (!g_bAINavStateTextRead || g_strAINavStateText != strExpectedNavState)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AIGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szNAV_STATE, g_strAINavStateText.c_str(), strExpectedNavState.c_str(),
+			ScriptTest::Vars::szNAV_STATE);
 		return false;
 	}
 	if (!(g_fAINavSpeedSample > 0.1f))
