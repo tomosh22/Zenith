@@ -30,6 +30,47 @@
 // pattern - safe mid-dispatch, Tween pool != Graph pool). One tween per
 // property: starting a tween on a property cancels that property's running
 // tween (same-property sequences do not queue).
+//
+// ★ THE PINS IN THIS TU ARE LIVE (B-6.4). Every INPUT descriptor is read
+// through Zenith_GraphNode::GetInput and every OUTPUT descriptor is written
+// through SetOutput, so a wire into or out of any of these 14 nodes carries a
+// value. An UNCONNECTED node behaves byte-for-byte as it did: the var-name
+// fallback IS the old `var.empty() ? const : bb->GetX(var, const)` read, and
+// SetOutput's dual-write IS the old SetValue. Each node that addresses a pin
+// declares `static constexpr u_int uPIN_<Name>` immediately before its pin
+// table (the INDEX is the runtime address; table order is the contract,
+// asserted by GraphPinTable.AnimationPinIndicesMatchTables).
+//
+// Five things specific to THIS TU:
+//   - SEVEN of the fourteen classes declare NO uPIN_ constant at all:
+//     SetAnimatorTrigger, CrossFadeAnimation, WaitForTween, StopTweens,
+//     EmitParticles, SetParticleEmitting and SetParticleEmitPosition address no
+//     pin from their Execute (their only pins are references, resolved
+//     directly). The index test still asserts the name, role and pin COUNT of
+//     all fourteen, which is what would notice a value pin being ADDED to one
+//     of them without its Execute being migrated.
+//   - EVERY input read sits AFTER the node's resolver guard - and, for the
+//     three tween starters, after the ValidEasing guard as well - exactly where
+//     its blackboard read sat. A resolver FAILURE therefore reads no pin at all
+//     (fallback count 0 for a var-bound pin).
+//   - THIS TU TAKES NO `""` DIVERGENCE. All four ReadAnimatorState writes were
+//     already guarded on a non-empty name, so deleting those guards is PARITY
+//     on the blackboard (SetOutput's dual-write applies the same non-empty
+//     rule); what is new is that the four SLOTS are now latched on every
+//     SUCCESS, which is the only reason a wire can come off a Transitioning or
+//     a HasLooped whose author never named a variable.
+//   - ReadAnimatorState's FAILURE is ABOVE every read and every write, and its
+//     only accessor is SetOutput - so a failed execution builds NO pin state,
+//     latches no slot and writes no variable. A DIRECTLY-CONSTRUCTED instance
+//     that has only ever failed answers GetOutputForTest == nullptr (no pin
+//     state was ever built); a GRAPH instance has its four slots stamped at
+//     instantiation, so a failed run leaves them at their zeros. It
+//     has no failure exec pin, so a consumer wire off any of its four outputs
+//     must be gated on SUCCESS.
+//   - ReadAnimatorState.StateName is the library's first STRING output, written
+//     through the template SetOutput<std::string> (Zenith_PropertyTraits has a
+//     std::string specialisation, unlike the ENTITY_ID outputs in _Entity /
+//     _Physics).
 //------------------------------------------------------------------------------
 
 namespace
@@ -69,7 +110,11 @@ namespace
 		// m_strParameter names an ANIMATOR parameter declared by the game's
 		// animator setup - not a blackboard variable, so it is not a pin. Target
 		// reaches xContext.ResolveTargetEntity through ResolveTargetAnimator
-		// (this TU's resolver, top of file).
+		// (this TU's resolver, top of file), so it is an ENTITY reference rather
+		// than a value input: it declares no uPIN_ constant and stays direct.
+		// uPIN_Value addresses the Value pin (index 0).
+		static constexpr u_int uPIN_Value = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorFloat)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_fValue", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -83,8 +128,9 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			pxAnimator->SetFloat(m_strParameter, m_strValueVar.empty()
-				? m_fValue : xContext.m_pxBlackboard->GetFloat(m_strValueVar, m_fValue));
+			// After the animator guard, exactly where the blackboard read sat.
+			const float fValue = GetInput<float>(xContext, uPIN_Value);
+			pxAnimator->SetFloat(m_strParameter, fValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "SetAnimatorFloat"; }
@@ -100,6 +146,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		static constexpr u_int uPIN_Value = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorInt)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_iValue", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -113,8 +161,8 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			pxAnimator->SetInt(m_strParameter, m_strValueVar.empty()
-				? m_iValue : xContext.m_pxBlackboard->GetInt32(m_strValueVar, m_iValue));
+			const int32_t iValue = GetInput<int32_t>(xContext, uPIN_Value);
+			pxAnimator->SetInt(m_strParameter, iValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "SetAnimatorInt"; }
@@ -130,6 +178,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		static constexpr u_int uPIN_Value = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorBool)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_bValue", PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -143,8 +193,8 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			pxAnimator->SetBool(m_strParameter, m_strValueVar.empty()
-				? m_bValue : xContext.m_pxBlackboard->GetBool(m_strValueVar, m_bValue));
+			const bool bValue = GetInput<bool>(xContext, uPIN_Value);
+			pxAnimator->SetBool(m_strParameter, bValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "SetAnimatorBool"; }
@@ -210,10 +260,12 @@ namespace
 		const char* GetTypeName() const override { return "CrossFadeAnimation"; }
 	};
 
-	// Current animator state -> blackboard: state name (string), normalized
-	// time (fractional part, 0-1), transitioning (bool), hasLooped (bool -
-	// "wrapped past the end at least once", not "clip is a looping clip").
-	// Empty result-var properties skip that output.
+	// Current animator state -> four OUTPUT pins: state name (string),
+	// normalized time (fractional part, 0-1), transitioning (bool), hasLooped
+	// (bool - "wrapped past the end at least once", not "clip is a looping
+	// clip"). Every slot is latched on SUCCESS; only the BLACKBOARD write is
+	// skipped for an empty name. A FAILURE (no animator, no state machine)
+	// returns above all four, so it writes nothing and latches nothing.
 	class Zenith_GraphNode_ReadAnimatorState : public Zenith_GraphNode
 	{
 	public:
@@ -225,9 +277,17 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strHasLoopedVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// All four are the node's own READ RESULTS (SetValue in the Execute
-		// below), each typed by the Zenith_PropertyValue::Set* that feeds it - an
-		// empty property simply skips that output, which no role expresses.
+		// All four are the node's own READ RESULTS (SetOutput in the Execute
+		// below), each typed by the value the Execute actually writes. An empty
+		// name no longer skips anything the pin can see: the SLOT is always
+		// latched on SUCCESS and only the dual-write to the blackboard obeys the
+		// non-empty rule - which is exactly what the four deleted
+		// `!m_strXVar.empty()` guards used to express.
+		static constexpr u_int uPIN_StateName = 0u;
+		static constexpr u_int uPIN_NormalizedTime = 1u;
+		static constexpr u_int uPIN_Transitioning = 2u;
+		static constexpr u_int uPIN_HasLooped = 3u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadAnimatorState)
 		ZENITH_GRAPH_PIN_OUTPUT(StateName, "m_strStateNameVar", PROPERTY_TYPE_STRING)
 		ZENITH_GRAPH_PIN_OUTPUT(NormalizedTime, "m_strNormalizedTimeVar", PROPERTY_TYPE_FLOAT)
@@ -244,29 +304,19 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
+			// ALL FOUR, UNCONDITIONALLY. The four `!m_strXVar.empty()` guards are
+			// gone and so is the Zenith_PropertyValue scratch they shared; the
+			// normalized-time computation came out of its guard with its write.
+			// SetOutput's own dual-write rule reproduces exactly which of them
+			// reach the blackboard (animState / animTime by default, the other
+			// two only when the author names them).
 			const Zenith_AnimatorStateInfo xInfo = pxAnimator->GetCurrentAnimatorStateInfo();
-			Zenith_PropertyValue xValue;
-			if (!m_strStateNameVar.empty())
-			{
-				xValue.SetString(xInfo.m_strStateName);
-				xContext.m_pxBlackboard->SetValue(m_strStateNameVar, xValue);
-			}
-			if (!m_strNormalizedTimeVar.empty())
-			{
-				// Unity packing: integer part = loop count; expose progress 0-1.
-				xValue.SetFloat(xInfo.m_fNormalizedTime - std::floor(xInfo.m_fNormalizedTime));
-				xContext.m_pxBlackboard->SetValue(m_strNormalizedTimeVar, xValue);
-			}
-			if (!m_strTransitioningVar.empty())
-			{
-				xValue.SetBool(xInfo.m_bIsTransitioning);
-				xContext.m_pxBlackboard->SetValue(m_strTransitioningVar, xValue);
-			}
-			if (!m_strHasLoopedVar.empty())
-			{
-				xValue.SetBool(xInfo.m_bHasLooped);
-				xContext.m_pxBlackboard->SetValue(m_strHasLoopedVar, xValue);
-			}
+			SetOutput<std::string>(xContext, uPIN_StateName, xInfo.m_strStateName);
+			// Unity packing: integer part = loop count; expose progress 0-1.
+			SetOutput<float>(xContext, uPIN_NormalizedTime,
+				xInfo.m_fNormalizedTime - std::floor(xInfo.m_fNormalizedTime));
+			SetOutput<bool>(xContext, uPIN_Transitioning, xInfo.m_bIsTransitioning);
+			SetOutput<bool>(xContext, uPIN_HasLooped, xInfo.m_bHasLooped);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadAnimatorState"; }
@@ -314,6 +364,8 @@ namespace
 
 		// Target reaches xContext.ResolveTargetEntity through ResolveOrAddTween.
 		// m_fDuration and m_iEasing are consts with no var partner - not pins.
+		static constexpr u_int uPIN_To = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenPosition)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xTo", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -327,8 +379,10 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector3 xTo = m_strToVar.empty()
-				? m_xTo : xContext.m_pxBlackboard->GetVector3(m_strToVar, m_xTo);
+			// After BOTH guards, exactly where the blackboard read sat. Note the
+			// pre-existing order: ResolveOrAddTween has already ADDED the tween
+			// component by the time an invalid easing fails the node.
+			const Zenith_Maths::Vector3 xTo = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_To);
 			pxTween->TweenPosition(xTo, m_fDuration, static_cast<Zenith_EasingType>(m_iEasing));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -346,6 +400,8 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		static constexpr u_int uPIN_To = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenScale)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xTo", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -359,8 +415,7 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector3 xTo = m_strToVar.empty()
-				? m_xTo : xContext.m_pxBlackboard->GetVector3(m_strToVar, m_xTo);
+			const Zenith_Maths::Vector3 xTo = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_To);
 			pxTween->TweenScale(xTo, m_fDuration, static_cast<Zenith_EasingType>(m_iEasing));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -381,6 +436,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// The const half is the EULER-DEGREES property, not an m_xTo.
+		static constexpr u_int uPIN_To = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenRotation)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xToEulerDegrees", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -394,8 +451,10 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector3 xTo = m_strToVar.empty()
-				? m_xToEulerDegrees : xContext.m_pxBlackboard->GetVector3(m_strToVar, m_xToEulerDegrees);
+			// The pin's const half is m_xToEulerDegrees; GetInput reads it through
+			// the descriptor, so the differently-spelled constant is honoured
+			// without this Execute naming it.
+			const Zenith_Maths::Vector3 xTo = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_To);
 			pxTween->TweenRotation(xTo, m_fDuration, static_cast<Zenith_EasingType>(m_iEasing));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
