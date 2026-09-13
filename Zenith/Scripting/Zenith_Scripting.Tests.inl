@@ -445,6 +445,28 @@ namespace
 		const char* GetTypeName() const override { return "Test_PinInstanceDeclined"; }
 	};
 
+	// SELECTOR_READ + OUTPUT_FROM_VARIABLE on ONE property - the GetVariable shape
+	// (a distinct registered name from the validator TU's Test_ValFromVar). The
+	// from-variable slot takes the DECLARED type of whatever m_strVariable names, so
+	// a SELF-BOUND instance - which can see no declarations at all - must leave it
+	// ANY, and therefore UNSET, rather than fabricate one.
+	class GraphTestPinFromVar : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(GraphTestPinFromVar)
+	public:
+		ZENITH_PROPERTY(std::string, m_strVariable, "fromvar")
+
+		ZENITH_GRAPH_PINS_BEGIN(GraphTestPinFromVar)
+		ZENITH_GRAPH_PIN_SELECTOR_READ(Source, "m_strVariable", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE(Value, "m_strVariable")
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_PinFromVar"; }
+	};
+
 	// The packed-ENTITY_ID accessor's fixture: reads pin 0, optionally latches
 	// pin 1.
 	class GraphTestPinEntity : public Zenith_GraphNode
@@ -765,6 +787,9 @@ namespace
 		xRegistry.RegisterNodeType<GraphTestPinEntity>("Test_PinEntity", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestPinInstanceOut>("Test_PinInstanceOut", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestPinInstanceDeclined>("Test_PinInstanceDeclined", GRAPH_EVENT_NONE, 1, false, "Test");
+		// B-6.1 self-binding: the from-variable shape, whose slot type comes from the
+		// DEFINITION and so has nowhere to come from on a self-bound instance.
+		xRegistry.RegisterNodeType<GraphTestPinFromVar>("Test_PinFromVar", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestPinFlow>("Test_PinFlow", GRAPH_EVENT_NONE, 1, true, "Test");
 		xRegistry.RegisterNodeType<GraphTestVariadic>("Test_Variadic", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<GraphTestVariadicCollision>("Test_VariadicCollision", GRAPH_EVENT_NONE, 1, false, "Test");
@@ -4900,6 +4925,225 @@ ZENITH_TEST(BehaviourGraph, PinRuntime_VariadicNameCollisionRefused)
 	// "in" + "in0" in one table: the type is still REGISTERED (an asset naming it
 	// must still load), but its family is never expanded.
 	ZENITH_ASSERT_TRUE(pxColliding->m_bVariadicNameCollision);
+
+	// ★ THE BEHAVIOURAL HALF, pinned because the flag now travels as a PARAMETER
+	// into Zenith_GraphNode::BuildPinStateFromTables rather than being read off the
+	// instance's type info inside it. A collided family is not expanded, so an
+	// ordinal member has no binding and the accessor BAD-ACCESSES.
+	Zenith_GraphDefinition xDef;
+	const u_int uCollide = xDef.AddNode("Test_VariadicCollision");
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+
+	Zenith_GraphNode* pxNode = xGraph.FindNode(uCollide);
+	ZENITH_ASSERT_NOT_NULL(pxNode);
+	if (pxNode != nullptr)
+	{
+		ZENITH_ASSERT_EQ_FLOAT(pxNode->GetInput<float>(xContext, 0u, 0u), 0.0f, 0.0001f);
+		ZENITH_ASSERT_EQ(pxNode->GetBadAccessWarningCountForTest(), 1u);
+		// The LITERAL pin "in0" (table index 1) is a perfectly ordinary INPUT and
+		// still resolves - the refusal is scoped to the family.
+		ZENITH_ASSERT_EQ_FLOAT(pxNode->GetInput<float>(xContext, 1u), 0.0f, 0.0001f);
+		ZENITH_ASSERT_EQ(pxNode->GetBadAccessWarningCountForTest(), 1u);	// still ONE line
+	}
+}
+
+//------------------------------------------------------------------------------
+// LAZY SELF-BINDING (B-6.1) - permanent runtime behaviour, not a transitional
+// path. A node constructed DIRECTLY (the shape ~29 standalone node tests use)
+// binds itself from its own tables on the first accessor call, so it behaves
+// exactly like an UNWIRED graph node.
+//------------------------------------------------------------------------------
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SelfBindsWhenConstructedDirectly)
+{
+	EnsureTestNodesRegistered();
+
+	// No graph, no definition, no registry lookup: a node on the stack and a bare
+	// context carrying only a blackboard.
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xContext;
+	xContext.m_pxBlackboard = &xBB;
+
+	GraphTestPinConsumer xNode;
+	xNode.m_strValueVar = "bbvalue";
+	xNode.m_strEchoVar = "echo";
+
+	// (a) var name bound but ABSENT -> the CONST, exactly like an unwired graph node.
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(xNode.m_fLastValue, fPIN_TEST_CONST, 0.0001f);
+
+	// (b) var PRESENT -> the blackboard value, and ONE census line for the pin.
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(fPIN_TEST_BLACKBOARD);
+	xBB.SetValue("bbvalue", xValue);
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(xNode.m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(0u), 1u);
+
+	// (c) SetOutput latched the slot AND dual-wrote the blackboard.
+	const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(2u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_FLOAT);
+		ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), fPIN_TEST_BLACKBOARD, 0.0001f);
+	}
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("echo", -1.0f), fPIN_TEST_BLACKBOARD, 0.0001f);
+
+	// (d) NOT a bad access: the node found its own descriptors.
+	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
+
+	// (e) ...and the arrays are sized to the TABLE, so one pin past it still
+	//     bad-accesses exactly as it does on a graph-resolved instance.
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_FALSE(xNode.TryGetInput(xContext, 4u, pxOut));
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(4u)), static_cast<int>(eGRAPH_PIN_TYPE_ANY));
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SelfBindingIsIdempotentAndGraphRebuildWins)
+{
+	EnsureTestNodesRegistered();
+
+	// --- (A) A SECOND build of ONE instance CLEARS rather than appends ----------
+	// The builder used to only Reserve + PushBack, so a rebuild would leave pins
+	// 0..N-1 addressing stale bindings while the arrays grew to 2N.
+	// ApplyNodeParams is the reachable second-build trigger: it resets the built
+	// flag on the instance it configures (the graph's own build always follows it).
+	Zenith_GraphDefinition xParamDef;
+	const u_int uParamNode = PinAddConsumer(xParamDef, "second", "", "");
+	const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find("Test_PinConsumer");
+	ZENITH_ASSERT_NOT_NULL(pxInfo);
+	if (pxInfo == nullptr)
+	{
+		return;
+	}
+
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xBareContext;
+	xBareContext.m_pxBlackboard = &xBB;
+	Zenith_PropertyValue xFirst;
+	xFirst.SetFloat(fPIN_TEST_BLACKBOARD);
+	xBB.SetValue("first", xFirst);
+	Zenith_PropertyValue xSecond;
+	xSecond.SetFloat(fPIN_TEST_SLOT);
+	xBB.SetValue("second", xSecond);
+
+	GraphTestPinConsumer xNode;
+	xNode.m_strValueVar = "first";
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xBareContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(xNode.m_fLastValue, fPIN_TEST_BLACKBOARD, 0.0001f);
+
+	// Re-configure and re-run: the NEW var name governs...
+	ZENITH_ASSERT_TRUE(xParamDef.ApplyNodeParams(uParamNode, &xNode, *pxInfo));
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xBareContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(xNode.m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+	// ...and the arrays DID NOT GROW. With an appending builder, pin 4 would be a
+	// live copy of pin 0 (var-bound and present) and pin 6 a FLOAT output slot.
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_FALSE(xNode.TryGetInput(xBareContext, 4u, pxOut),
+		"the pin arrays grew on a second build - a rebuild must CLEAR, not append");
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(6u)), static_cast<int>(eGRAPH_PIN_TYPE_ANY));
+
+	// --- (B) THE GRAPH'S BUILD WINS, with its wire ------------------------------
+	// The graph owns its instances from creation, so self-binding can never have
+	// run first there; the wired binding is what a re-initialised graph carries.
+	Zenith_GraphDefinition xDef;
+	const u_int uSource = xDef.AddNode("Test_OnUpdate");
+	const u_int uProducer = PinAddProducer(xDef, "", fPIN_TEST_SLOT);
+	const u_int uConsumer = PinAddConsumer(xDef, "bbvalue", "", "");
+	xDef.AddEdge(uSource, 0, uProducer);
+	xDef.AddEdge(uProducer, 0, uConsumer);
+	ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Result", uConsumer, "Value"));
+
+	Zenith_BehaviourGraph xGraph;
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	// A SECOND initialisation over the same graph object: every instance is rebuilt
+	// from the definition, and the wire must still govern.
+	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+	Zenith_GraphContext xContext = MakeTestContext(xGraph);
+	PinSetFloat(xGraph, "bbvalue", fPIN_TEST_BLACKBOARD);
+
+	xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xContext);
+	GraphTestPinConsumer* pxConsumer = PinFindConsumer(xGraph, uConsumer);
+	ZENITH_ASSERT_NOT_NULL(pxConsumer);
+	if (pxConsumer != nullptr)
+	{
+		// The WIRE, not the blackboard fallback - and no FALLBACK line for pin 0.
+		ZENITH_ASSERT_EQ_FLOAT(pxConsumer->m_fLastValue, fPIN_TEST_SLOT, 0.0001f);
+		ZENITH_ASSERT_EQ(pxConsumer->GetFallbackUseCountForTest(0u), 0u);
+		const Zenith_PropertyValue* pxPast = nullptr;
+		ZENITH_ASSERT_FALSE(pxConsumer->TryGetInput(xContext, 4u, pxPast));
+		ZENITH_ASSERT_EQ(static_cast<int>(pxConsumer->GetOutputPinType(4u)), static_cast<int>(eGRAPH_PIN_TYPE_ANY));
+	}
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_OpaqueNodeStillBadAccess)
+{
+	EnsureTestNodesRegistered();
+
+	// No pin table at all, so GetPinTableVirtual() answers null and self-binding
+	// never happens: the bad-access path is exactly what it was before B-6.1.
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xContext;
+	xContext.m_pxBlackboard = &xBB;
+
+	GraphTestPureOpaque xNode;
+	ZENITH_ASSERT_NULL(xNode.GetPinTableVirtual());
+	ZENITH_ASSERT_NULL(xNode.GetPropertyTableVirtual());
+
+	ZENITH_ASSERT_EQ_FLOAT(xNode.GetInput<float>(xContext, 0u), 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ(xNode.GetInputPackedEntityID(xContext, 0u), 0ull);
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_FALSE(xNode.TryGetInput(xContext, 0u, pxOut));
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(1.0f);
+	xNode.SetOutput(xContext, 0u, xValue);				// a no-op
+	ZENITH_ASSERT_NULL(xNode.GetOutputForTest(0u));
+	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 1u);	// ONE line per instance
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "an opaque node must not dual-write anything");
+}
+
+ZENITH_TEST(BehaviourGraph, PinRuntime_SelfBoundFromVariableSlotIsAny)
+{
+	EnsureTestNodesRegistered();
+
+	// A from-variable OUTPUT takes its type from the DEFINITION's declaration. A
+	// self-bound instance has no definition, so the slot is ANY - which means it
+	// starts UNSET and accepts any tag, never a fabricated type.
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xContext;
+	xContext.m_pxBlackboard = &xBB;
+
+	GraphTestPinFromVar xNode;
+
+	// The SELECTOR_READ half is not an INPUT, so reading it through the runtime is
+	// a bad access - a selector stays a validated string forever.
+	const Zenith_PropertyValue* pxOut = nullptr;
+	ZENITH_ASSERT_FALSE(xNode.TryGetInput(xContext, 0u, pxOut));
+	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 1u);
+
+	// ANY => UNSET until written, whatever the tag.
+	ZENITH_ASSERT_NULL(xNode.GetOutputForTest(1u));
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(1u)), static_cast<int>(eGRAPH_PIN_TYPE_ANY));
+
+	xNode.SetOutput<float>(xContext, 1u, 4.0f);
+	const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(1u);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	if (pxSlot != nullptr)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetType() == PROPERTY_TYPE_FLOAT);
+		ZENITH_ASSERT_EQ_FLOAT(pxSlot->GetFloat(), 4.0f, 0.0001f);
+	}
+	ZENITH_ASSERT_EQ(xNode.GetOutputMismatchWarningCountForTest(1u), 0u);
+
+	// ★ THE FROM-VARIABLE DESCRIPTOR BINDS NOTHING - no var name, no fallback - so
+	// there is NO dual-write. Reading a variable must never register the node as an
+	// annotated writer of it.
+	ZENITH_ASSERT_NULL(xBB.TryGetValue("fromvar"));
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 }
 
 //------------------------------------------------------------------------------

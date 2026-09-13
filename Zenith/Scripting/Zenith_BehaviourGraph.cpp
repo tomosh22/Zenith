@@ -106,6 +106,11 @@ bool Zenith_GraphDefinition::ApplyNodeParams(u_int uNodeID, Zenith_GraphNode* px
 	// Wrap the blob (no copy, no ownership) and apply the params.
 	Zenith_DataStream xParamRead(const_cast<void*>(pxDef->m_xParamBlob.GetData()), pxDef->m_xParamBlob.GetCursor());
 	Zenith_PropertySystem::ReadProperties(pxNode, *xInfo.m_pfnGetPropertyTable(), xParamRead);
+	// Pin state is DERIVED from these properties (var names, the const pointer, the
+	// instance-resolved slot type), so a param write invalidates it. The graph's own
+	// BuildPinState always follows this call; a directly-configured instance rebuilds
+	// on its next accessor.
+	pxNode->m_bPinStateBuilt = false;
 	return true;
 }
 
@@ -712,17 +717,43 @@ void Zenith_BehaviourGraph::BuildPinState(const Zenith_GraphDefinition& xDefinit
 	{
 		return;	// OPAQUE node: the arrays stay empty and cost nothing
 	}
+	// ★ THE REGISTRY'S TABLE, not the node's GetPropertyTableVirtual(). For an
+	// inheriting family the virtual resolves to the PIN-TABLE OWNER's property
+	// table, which is the right answer for self-binding (it has nothing else) but
+	// is not necessarily the table the registry recorded for this TYPE. The graph
+	// knows the type; the node does not.
 	const Zenith_PropertyTable* pxProperties = xInstance.m_pxTypeInfo->m_pfnGetPropertyTable
 		? xInstance.m_pxTypeInfo->m_pfnGetPropertyTable() : nullptr;
 
-	Zenith_GraphNode& xNode = *xInstance.m_pxNode;
-	const u_int uPinCount = pxPins->GetPinCount();
+	xInstance.m_pxNode->BuildPinStateFromTables(*pxPins, pxProperties, &xDefinition,
+		xInstance.m_pxTypeInfo->m_bVariadicNameCollision);
+}
+
+// The builder core, on the NODE so a directly-constructed instance can run it
+// against its own tables (EnsurePinState). Behaviour with a definition is
+// identical to the Zenith_BehaviourGraph member this was lifted out of - the B-2
+// and B-3 units prove it.
+void Zenith_GraphNode::BuildPinStateFromTables(const Zenith_GraphPinTable& xPins,
+	const Zenith_PropertyTable* pxProperties, const Zenith_GraphDefinition* pxDefinition,
+	bool bVariadicNameCollision)
+{
+	// ★ CLEARED, not merely reserved: this may be the SECOND build of one instance
+	// (ApplyNodeParams resets the flag, and the graph's build always follows a
+	// self-binding one), and appending would leave pins 0..N-1 pointing at stale
+	// bindings while the wires resolved against the new tail.
+	m_axInputs.Clear();
+	m_axOutputs.Clear();
+	m_axVariadicInputs.Clear();
+	m_bPinStateBuilt = true;
+
+	Zenith_GraphNode& xNode = *this;
+	const u_int uPinCount = xPins.GetPinCount();
 	xNode.m_axInputs.Reserve(uPinCount);
 	xNode.m_axOutputs.Reserve(uPinCount);
 
 	for (u_int uPin = 0; uPin < uPinCount; ++uPin)
 	{
-		const Zenith_GraphPinDesc& xDesc = pxPins->GetPinAt(uPin);
+		const Zenith_GraphPinDesc& xDesc = xPins.GetPinAt(uPin);
 
 		// The bound variable name, read EXACTLY the way the validator reads it
 		// (one lifted helper), including the empty-primary fallback.
@@ -769,17 +800,20 @@ void Zenith_BehaviourGraph::BuildPinState(const Zenith_GraphDefinition& xDefinit
 				// blackboard: an ApplyOverridesFrom override can carry a different
 				// tag, and a slot typed off one would disagree with every consumer
 				// the validator checked. An undeclared variable leaves the slot ANY
-				// (the declare-or-error rule reports the read itself).
+				// (the declare-or-error rule reports the read itself) - and so does a
+				// NULL definition, which is the self-binding case: a
+				// directly-constructed node can see no declarations at all.
 				std::string strTypeVar;
 				xSlot.m_eDeclaredType = eGRAPH_PIN_TYPE_ANY;
-				if (Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szTypeFromVarNameProperty, strTypeVar)
+				if (pxDefinition != nullptr
+					&& Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szTypeFromVarNameProperty, strTypeVar)
 					== GRAPH_PIN_READ_PROPERTY_OK)
 				{
-					for (u_int uVar = 0; uVar < xDefinition.GetVariableCount(); ++uVar)
+					for (u_int uVar = 0; uVar < pxDefinition->GetVariableCount(); ++uVar)
 					{
-						if (xDefinition.GetVariableAt(uVar).m_strName == strTypeVar)
+						if (pxDefinition->GetVariableAt(uVar).m_strName == strTypeVar)
 						{
-							xSlot.m_eDeclaredType = xDefinition.GetVariableAt(uVar).m_xDefault.GetType();
+							xSlot.m_eDeclaredType = pxDefinition->GetVariableAt(uVar).m_xDefault.GetType();
 							break;
 						}
 					}
@@ -811,8 +845,7 @@ void Zenith_BehaviourGraph::BuildPinState(const Zenith_GraphDefinition& xDefinit
 		// A variadic family expands into <count> ordinal members, addressed
 		// through the ordinal overload of GetInput. The count is read off the
 		// PARAM-APPLIED instance, so it is whatever the node was configured with.
-		if (xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT && xDesc.m_bVariadic
-			&& !xInstance.m_pxTypeInfo->m_bVariadicNameCollision)
+		if (xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT && xDesc.m_bVariadic && !bVariadicNameCollision)
 		{
 			// Clamped exactly like the exec-pin count
 			// (Zenith_GraphNodeRegistry::GetExecOutputCount): a node that answers
@@ -823,7 +856,7 @@ void Zenith_BehaviourGraph::BuildPinState(const Zenith_GraphDefinition& xDefinit
 			{
 				Zenith_Log(LOG_CATEGORY_CORE,
 					"[GraphPin] node %u:%s reports %d variadic members on pin '%s'; clamped to 255",
-					xInstance.m_uNodeID, xNode.GetTypeName(), iCount,
+					xNode.m_uNodeID, xNode.GetTypeName(), iCount,
 					xDesc.m_szName ? xDesc.m_szName : "(null)");
 				iCount = 255;
 			}
@@ -1578,6 +1611,42 @@ const Zenith_PropertyValue* Zenith_BehaviourGraph::PullSlot(u_int uSrcNodeID, u_
 // forward-declares both. Node TUs therefore include nothing new.
 //==============================================================================
 
+// LAZY SELF-BINDING (B-6.1). PERMANENT runtime behaviour, not a transitional
+// path: a node the graph never resolved, but whose class declares a pin table,
+// binds itself the first time an Execute touches an accessor. It gets EXACTLY
+// what an unwired graph node gets - the var-name fallback with the const as the
+// default, and the dual-write on SetOutput.
+//
+// The BAD-ACCESS path therefore survives for, and only for: an OPAQUE node (no
+// pin table at all - the virtual answers null), an out-of-range or wrong-role
+// pin, a CONNECTED pin read through a context with a null m_pxGraph, and a
+// var-bound pin read through a context with a null m_pxBlackboard.
+//
+// Temp instances (the registry's dynamic-pin probe, GetExecOutputCount, the
+// validator, the builder, AddNode, the editor's param panel) never call an
+// accessor, so the zero-capacity invariant still holds for every one of them. A
+// future caller that DOES touch an accessor on a temp instance pays one build.
+void Zenith_GraphNode::EnsurePinState()
+{
+	if (m_bPinStateBuilt)
+	{
+		return;
+	}
+	const Zenith_GraphPinTable* pxPins = GetPinTableVirtual();
+	if (pxPins == nullptr || pxPins->GetPinCount() == 0)
+	{
+		// OPAQUE: the arrays stay empty and every accessor bad-accesses. The
+		// flag is still set, so an opaque node pays one bool test per call like
+		// everyone else instead of a virtual dispatch forever.
+		m_bPinStateBuilt = true;
+		return;
+	}
+	// No definition: a from-variable OUTPUT slot has no declaration to read and
+	// stays ANY (and therefore UNSET). No collision flag either - that is a
+	// property of the registered TYPE, which a bare instance cannot see.
+	BuildPinStateFromTables(*pxPins, GetPropertyTableVirtual(), nullptr, false);
+}
+
 Zenith_GraphNode::InputBinding* Zenith_GraphNode::FindInputBinding(u_int uPinIndex, u_int uOrdinal)
 {
 	if (uOrdinal != uGRAPH_PIN_NO_ORDINAL)
@@ -1656,6 +1725,7 @@ const Zenith_PropertyValue* Zenith_GraphNode::CheckedExtract(InputBinding& xBind
 const Zenith_PropertyValue* Zenith_GraphNode::ResolveInput(Zenith_GraphContext& xContext, u_int uPinIndex,
 	u_int uOrdinal, Zenith_PropertyType eExpected)
 {
+	EnsurePinState();
 	InputBinding* pxBinding = FindInputBinding(uPinIndex, uOrdinal);
 	if (pxBinding == nullptr)
 	{
@@ -1762,6 +1832,7 @@ bool Zenith_GraphNode::TryGetInput(Zenith_GraphContext& xContext, u_int uPinInde
 	// consumer owns that check (see the truth table in Scripting/CLAUDE.md).
 	pxOut = nullptr;
 
+	EnsurePinState();
 	InputBinding* pxBinding = FindInputBinding(uPinIndex, uOrdinal);
 	if (pxBinding == nullptr)
 	{
@@ -1821,6 +1892,7 @@ bool Zenith_GraphNode::TryGetInput(Zenith_GraphContext& xContext, u_int uPinInde
 
 void Zenith_GraphNode::SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue& xValue)
 {
+	EnsurePinState();
 	if (uPinIndex >= m_axOutputs.GetSize())
 	{
 		WarnBadAccess(uPinIndex);

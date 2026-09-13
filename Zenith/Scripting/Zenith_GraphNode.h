@@ -33,6 +33,7 @@
 
 class Zenith_BehaviourGraph;
 class Zenith_GraphBlackboard;
+class Zenith_GraphDefinition;
 
 enum GraphNodeStatus : u_int8
 {
@@ -161,6 +162,14 @@ public:
 	// GetInput. This is the DATA-pin sibling of GetDynamicExecOutputCount.
 	virtual int32_t GetDynamicDataInputCount() const { return -1; }
 
+	// The class's PIN and PROPERTY tables, reachable from a base-class pointer.
+	// ZENITH_GRAPH_PINS_BEGIN overrides both; a node with no pin block (an OPAQUE
+	// node) keeps these null defaults and therefore never self-binds. They exist
+	// for ONE caller - EnsurePinState() below - and are the only way a node that
+	// no graph ever resolved can find its own descriptors.
+	virtual const Zenith_GraphPinTable* GetPinTableVirtual() const { return nullptr; }
+	virtual const Zenith_PropertyTable* GetPropertyTableVirtual() const { return nullptr; }
+
 	//--------------------------------------------------------------------------
 	// PIN RUNTIME (B-2). A node reads its declared INPUT pins and latches its
 	// declared OUTPUT pins through these, never through the blackboard directly.
@@ -176,6 +185,22 @@ public:
 	// The templates are thin wrappers over NON-template out-of-line members: this
 	// header only forward-declares Zenith_BehaviourGraph and must never name one
 	// of its members.
+	//
+	// ★ LAZY SELF-BINDING (B-6.1), and it is PERMANENT RUNTIME BEHAVIOUR - not a
+	// third transitional path. GetInput*/TryGetInput/SetOutput call
+	// EnsurePinState() first: a node whose pin state no graph ever built, but whose
+	// class DOES declare a pin table, builds it from its own tables once. A
+	// directly-constructed node therefore behaves EXACTLY like an unwired graph
+	// node - var-name fallback with the const as the default, dual-write on
+	// SetOutput - which is what keeps the standalone node tests (a node on the
+	// stack, a bare context, Execute) meaning what they meant before the node
+	// library migrated onto the accessors.
+	//
+	// ORDERING RULE: assign every property BEFORE the first Execute on a
+	// directly-constructed node. Pin state reads property-derived state (var names,
+	// the const property pointer, the instance-resolved slot TYPE) ONCE and is
+	// never refreshed from a later property write - so a test that changes an op
+	// code between fires needs a FRESH node.
 	//--------------------------------------------------------------------------
 
 	// The pin's value as T. Connected -> the producer's slot (pure producers
@@ -277,6 +302,10 @@ public:
 
 private:
 	friend class Zenith_BehaviourGraph;
+	// ApplyNodeParams clears m_bPinStateBuilt on the instance it configures: a
+	// property write changes what the pin state WOULD be, and the graph's own build
+	// always follows it.
+	friend class Zenith_GraphDefinition;
 
 	// One per pin in the class's table, indexed by the pin's TABLE INDEX (chosen
 	// over a pinIndex -> bindingIndex map: the accessors already have to bounds-
@@ -322,6 +351,23 @@ private:
 		u_int m_uOrdinal = 0;
 	};
 
+	// THE ONE BUILDER of per-instance pin state, for BOTH callers:
+	// Zenith_BehaviourGraph::BuildPinState (with the definition, the registry's
+	// property table and the type's variadic-collision flag) and EnsurePinState
+	// (with the virtuals, no definition and no collision). A null definition means
+	// "no declarations are visible", so a from-variable OUTPUT slot stays ANY.
+	//
+	// ★ IT CLEARS the three arrays on entry. It used to only Reserve + PushBack, so
+	// a SECOND build would APPEND and leave pins 0..N-1 addressing stale state.
+	void BuildPinStateFromTables(const Zenith_GraphPinTable& xPins, const Zenith_PropertyTable* pxProperties,
+		const Zenith_GraphDefinition* pxDefinition, bool bVariadicNameCollision);
+
+	// Builds the pin state once if nothing has. Called ONLY from the accessors an
+	// Execute uses (GetInput*/TryGetInput/SetOutput) - never from the test seam or
+	// the const accessors, because the latch reads property-derived state and a
+	// SetInputForTest before an op-code assignment would stamp the wrong slot type.
+	void EnsurePinState();
+
 	// Out-of-line, non-template, defined in Zenith_BehaviourGraph.cpp (the only
 	// TU that may name Zenith_BehaviourGraph's members).
 	// null = "there is no extracted value; use MakePinDefault".
@@ -357,4 +403,7 @@ private:
 	u_int m_uBadAccessWarningCount = 0;
 	bool m_bEvaluating = false;			// pure nodes: re-entry flag (a runtime data cycle)
 	bool m_bMemoValid = false;
+	// "Some build ran." One bool test per accessor call on a graph-resolved node -
+	// the graph path sets it too, so self-binding costs a resolved node nothing.
+	bool m_bPinStateBuilt = false;
 };

@@ -328,6 +328,13 @@ private:
 	// (ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE) resolves its slot type off the
 	// DECLARATION - never off the live blackboard, whose value an
 	// ApplyOverridesFrom override could have retyped.
+	//
+	// The builder CORE lives on the node (Zenith_GraphNode::BuildPinStateFromTables)
+	// so a directly-constructed instance can run it against its own tables - see
+	// Zenith_GraphNode::EnsurePinState. This resolves the three things only the
+	// GRAPH knows and delegates: the registry's property table (an inheriting
+	// family's virtual would answer the pin-table OWNER's), the definition, and the
+	// type's variadic-name-collision flag.
 	void BuildPinState(const Zenith_GraphDefinition& xDefinition, NodeInstance& xInstance);
 	void ResolveDataEdges(const Zenith_GraphDefinition& xDefinition);
 

@@ -645,4 +645,890 @@ ZENITH_TEST(GraphPinTable, MathVector3ResultTypeFollowsOp)
 	}
 }
 
+//==============================================================================
+// PIN RUNTIME for this TU (B-6.1) - the pins are LIVE.
+//
+// Every node above now reads its INPUT descriptors through
+// Zenith_GraphNode::GetInput / GetInputPackedEntityID / TryGetInput and writes its
+// OUTPUT descriptors through SetOutput. The 18 tests ABOVE are the proof that an
+// UNCONNECTED node is unchanged (they construct nodes directly, set var names and
+// consts, and read results off the blackboard - all of which still works because
+// the accessors SELF-BIND, taking the var-name fallback and the dual-write). The
+// tests below are the proof that a WIRE now carries a value.
+//
+// ★ EVERY Wired_* ROW SETS THREE LEGS and asserts the third: the const property
+// (9), the var-name property pointing at a blackboard variable holding a second
+// value (7), and SetInputForTest (5). Only a live wire can produce 5, and a wired
+// pin must log NO census FALLBACK line.
+//
+// ★ ORDERING RULE: pin state is built ONCE, on the first accessor call, from the
+// properties as they read THEN. Assign every property before the first Execute,
+// and use a FRESH node when a test changes one that the binding depends on (an op
+// code that decides an instance-resolved slot TYPE).
+//
+// ★ These fixtures never reach a counted census log: the per-game census parses
+// `zenith test <G> --headless` runs, which pass --skip-unit-tests.
+//==============================================================================
+
+// One row of the index contract: the constant addresses the pin it is named for,
+// with the role the migration assumed.
+static void CheckMathPin(const Zenith_GraphPinTable& xPins, u_int uIndex, const char* szName,
+	Zenith_GraphPinRole eRole, const char* szClass)
+{
+	ZENITH_ASSERT_LT(uIndex, xPins.GetPinCount(), "%s: pin index %u is past the end of the table", szClass, uIndex);
+	if (uIndex >= xPins.GetPinCount())
+	{
+		return;
+	}
+	const Zenith_GraphPinDesc& xDesc = xPins.GetPinAt(uIndex);
+	ZENITH_ASSERT_STREQ(xDesc.m_szName, szName,
+		"%s: pin %u is '%s', not '%s' - the table was REORDERED, so every uPIN_ constant now addresses the wrong pin",
+		szClass, uIndex, xDesc.m_szName != nullptr ? xDesc.m_szName : "(null)", szName);
+	ZENITH_ASSERT_EQ(static_cast<int>(xDesc.m_eRole), static_cast<int>(eRole),
+		"%s: pin '%s' changed ROLE - its runtime accessor would bad-access", szClass, szName);
+}
+
+static void SeedFloat(Zenith_GraphBlackboard& xBB, const char* szName, float fValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(fValue);
+	xBB.SetValue(szName, xValue);
+}
+
+static void SeedInt(Zenith_GraphBlackboard& xBB, const char* szName, int32_t iValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetInt32(iValue);
+	xBB.SetValue(szName, xValue);
+}
+
+static void SeedVec3(Zenith_GraphBlackboard& xBB, const char* szName, const Zenith_Maths::Vector3& xVec)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetVector3(xVec);
+	xBB.SetValue(szName, xValue);
+}
+
+static void SeedEntity(Zenith_GraphBlackboard& xBB, const char* szName, u_int64 ulPacked)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetPackedEntityID(ulPacked);
+	xBB.SetValue(szName, xValue);
+}
+
+static Zenith_PropertyValue WireFloat(float fValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetFloat(fValue);
+	return xValue;
+}
+
+static Zenith_PropertyValue WireInt(int32_t iValue)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetInt32(iValue);
+	return xValue;
+}
+
+static Zenith_PropertyValue WireVec3(const Zenith_Maths::Vector3& xVec)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetVector3(xVec);
+	return xValue;
+}
+
+static Zenith_PropertyValue WireEntity(u_int64 ulPacked)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetPackedEntityID(ulPacked);
+	return xValue;
+}
+
+// Reads a FLOAT output slot, tag-checked (the tagged getters ASSERT, and an
+// assertion failure must read as a test failure rather than a DebugBreak).
+static float SlotFloat(const Zenith_PropertyValue* pxSlot, const char* szWhat)
+{
+	ZENITH_ASSERT_NOT_NULL(pxSlot, "%s: the output slot is UNSET", szWhat);
+	if (pxSlot == nullptr)
+	{
+		return 0.0f;
+	}
+	ZENITH_ASSERT_EQ(static_cast<int>(pxSlot->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT),
+		"%s: the slot holds type %u, not FLOAT", szWhat, static_cast<u_int>(pxSlot->GetType()));
+	return pxSlot->GetType() == PROPERTY_TYPE_FLOAT ? pxSlot->GetFloat() : 0.0f;
+}
+
+static int32_t SlotInt(const Zenith_PropertyValue* pxSlot, const char* szWhat)
+{
+	ZENITH_ASSERT_NOT_NULL(pxSlot, "%s: the output slot is UNSET", szWhat);
+	if (pxSlot == nullptr)
+	{
+		return 0;
+	}
+	ZENITH_ASSERT_EQ(static_cast<int>(pxSlot->GetType()), static_cast<int>(PROPERTY_TYPE_INT32),
+		"%s: the slot holds type %u, not INT32", szWhat, static_cast<u_int>(pxSlot->GetType()));
+	return pxSlot->GetType() == PROPERTY_TYPE_INT32 ? pxSlot->GetInt32() : 0;
+}
+
+// ★ TABLE ORDER IS THE CONTRACT. A pin INDEX is what every accessor addresses, so
+// a reorder - or an inserted pin - silently re-points every uPIN_ constant in this
+// TU at a different descriptor. A static_assert is impossible: the tables are
+// filled at static init, so this is the earliest a check can run.
+ZENITH_TEST(GraphPinTable, MathPinIndicesMatchTables)
+{
+	// --- the list family ----------------------------------------------------
+	const Zenith_GraphPinTable& xCount = Zenith_GraphNode_GetListCount::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xCount.GetPinCount(), 2u, "GetListCount gained or lost a pin");
+	CheckMathPin(xCount, Zenith_GraphNode_GetListCount::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT, "GetListCount");
+
+	const Zenith_GraphPinTable& xElement = Zenith_GraphNode_GetListElement::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xElement.GetPinCount(), 3u, "GetListElement gained or lost a pin");
+	CheckMathPin(xElement, Zenith_GraphNode_GetListElement::uPIN_Index, "Index", GRAPH_PIN_ROLE_INPUT, "GetListElement");
+	CheckMathPin(xElement, Zenith_GraphNode_GetListElement::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT, "GetListElement");
+
+	const Zenith_GraphPinTable& xAdd = Zenith_GraphNode_ListAdd::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xAdd.GetPinCount(), 2u, "ListAdd gained or lost a pin");
+	CheckMathPin(xAdd, Zenith_GraphNode_ListAdd::uPIN_Value, "Value", GRAPH_PIN_ROLE_INPUT, "ListAdd");
+
+	const Zenith_GraphPinTable& xRemove = Zenith_GraphNode_ListRemoveAt::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xRemove.GetPinCount(), 2u, "ListRemoveAt gained or lost a pin");
+	CheckMathPin(xRemove, Zenith_GraphNode_ListRemoveAt::uPIN_Index, "Index", GRAPH_PIN_ROLE_INPUT, "ListRemoveAt");
+
+	// ListClear declares its LIST name and nothing else - no pin of its own is
+	// live, which is exactly what its count asserts.
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_ListClear::GetPinTableStatic().GetPinCount(), 1u,
+		"ListClear gained a pin; nothing in its Execute addresses one");
+
+	// --- logic --------------------------------------------------------------
+	const Zenith_GraphPinTable& xLogic = Zenith_GraphNode_LogicBlackboardBool::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xLogic.GetPinCount(), 1u, "LogicBlackboardBool gained or lost a pin");
+	CheckMathPin(xLogic, Zenith_GraphNode_LogicBlackboardBool::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT,
+		"LogicBlackboardBool");
+
+	// --- arithmetic ---------------------------------------------------------
+	const Zenith_GraphPinTable& xAddI = Zenith_GraphNode_AddBlackboardInt::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xAddI.GetPinCount(), 2u, "AddBlackboardInt gained or lost a pin");
+	CheckMathPin(xAddI, Zenith_GraphNode_AddBlackboardInt::uPIN_Delta, "Delta", GRAPH_PIN_ROLE_INPUT, "AddBlackboardInt");
+
+	const Zenith_GraphPinTable& xAddV = Zenith_GraphNode_AddBlackboardVector3::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xAddV.GetPinCount(), 2u, "AddBlackboardVector3 gained or lost a pin");
+	CheckMathPin(xAddV, Zenith_GraphNode_AddBlackboardVector3::uPIN_Delta, "Delta", GRAPH_PIN_ROLE_INPUT,
+		"AddBlackboardVector3");
+
+	const Zenith_GraphPinTable& xCmpE = Zenith_GraphNode_CompareBlackboardEntity::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xCmpE.GetPinCount(), 3u, "CompareBlackboardEntity gained or lost a pin");
+	CheckMathPin(xCmpE, Zenith_GraphNode_CompareBlackboardEntity::uPIN_A, "A", GRAPH_PIN_ROLE_INPUT,
+		"CompareBlackboardEntity");
+	CheckMathPin(xCmpE, Zenith_GraphNode_CompareBlackboardEntity::uPIN_B, "B", GRAPH_PIN_ROLE_INPUT,
+		"CompareBlackboardEntity");
+	CheckMathPin(xCmpE, Zenith_GraphNode_CompareBlackboardEntity::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT,
+		"CompareBlackboardEntity");
+
+	const Zenith_GraphPinTable& xMathF = Zenith_GraphNode_MathBlackboardFloat::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xMathF.GetPinCount(), 3u, "MathBlackboardFloat gained or lost a pin");
+	CheckMathPin(xMathF, Zenith_GraphNode_MathBlackboardFloat::uPIN_Operand, "Operand", GRAPH_PIN_ROLE_INPUT,
+		"MathBlackboardFloat");
+	CheckMathPin(xMathF, Zenith_GraphNode_MathBlackboardFloat::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT,
+		"MathBlackboardFloat");
+
+	const Zenith_GraphPinTable& xMathV = Zenith_GraphNode_MathBlackboardVector3::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xMathV.GetPinCount(), 4u, "MathBlackboardVector3 gained or lost a pin");
+	CheckMathPin(xMathV, Zenith_GraphNode_MathBlackboardVector3::uPIN_Operand, "Operand", GRAPH_PIN_ROLE_INPUT,
+		"MathBlackboardVector3");
+	CheckMathPin(xMathV, Zenith_GraphNode_MathBlackboardVector3::uPIN_Scalar, "Scalar", GRAPH_PIN_ROLE_INPUT,
+		"MathBlackboardVector3");
+	CheckMathPin(xMathV, Zenith_GraphNode_MathBlackboardVector3::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT,
+		"MathBlackboardVector3");
+
+	const Zenith_GraphPinTable& xLerpF = Zenith_GraphNode_LerpBlackboardFloat::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xLerpF.GetPinCount(), 3u, "LerpBlackboardFloat gained or lost a pin");
+	CheckMathPin(xLerpF, Zenith_GraphNode_LerpBlackboardFloat::uPIN_Target, "Target", GRAPH_PIN_ROLE_INPUT,
+		"LerpBlackboardFloat");
+	CheckMathPin(xLerpF, Zenith_GraphNode_LerpBlackboardFloat::uPIN_T, "T", GRAPH_PIN_ROLE_INPUT,
+		"LerpBlackboardFloat");
+
+	const Zenith_GraphPinTable& xLerpV = Zenith_GraphNode_LerpBlackboardVector3::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xLerpV.GetPinCount(), 3u, "LerpBlackboardVector3 gained or lost a pin");
+	CheckMathPin(xLerpV, Zenith_GraphNode_LerpBlackboardVector3::uPIN_Target, "Target", GRAPH_PIN_ROLE_INPUT,
+		"LerpBlackboardVector3");
+	CheckMathPin(xLerpV, Zenith_GraphNode_LerpBlackboardVector3::uPIN_T, "T", GRAPH_PIN_ROLE_INPUT,
+		"LerpBlackboardVector3");
+
+	const Zenith_GraphPinTable& xClamp = Zenith_GraphNode_ClampBlackboardFloat::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xClamp.GetPinCount(), 3u, "ClampBlackboardFloat gained or lost a pin");
+	CheckMathPin(xClamp, Zenith_GraphNode_ClampBlackboardFloat::uPIN_Min, "Min", GRAPH_PIN_ROLE_INPUT,
+		"ClampBlackboardFloat");
+	CheckMathPin(xClamp, Zenith_GraphNode_ClampBlackboardFloat::uPIN_Max, "Max", GRAPH_PIN_ROLE_INPUT,
+		"ClampBlackboardFloat");
+
+	// --- random -------------------------------------------------------------
+	const Zenith_GraphPinTable& xRandF = Zenith_GraphNode_RandomFloat::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xRandF.GetPinCount(), 1u, "RandomFloat gained or lost a pin");
+	CheckMathPin(xRandF, Zenith_GraphNode_RandomFloat::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT, "RandomFloat");
+
+	const Zenith_GraphPinTable& xRandI = Zenith_GraphNode_RandomInt::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xRandI.GetPinCount(), 1u, "RandomInt gained or lost a pin");
+	CheckMathPin(xRandI, Zenith_GraphNode_RandomInt::uPIN_Result, "Result", GRAPH_PIN_ROLE_OUTPUT, "RandomInt");
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_MathFloatOperandAndResult)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedFloat(xBB, "v", 3.0f);
+	SeedFloat(xBB, "op", 7.0f);		// leg 2: the var-name property's target
+
+	Zenith_GraphNode_MathBlackboardFloat xNode;
+	xNode.m_strVar = "v";
+	xNode.m_iOp = GRAPH_MATH_FLOAT_OP_MULTIPLY;
+	xNode.m_fOperand = 9.0f;			// leg 1: the const
+	xNode.m_strOperandVar = "op";
+	xNode.m_strResultVar = "r";
+	xNode.SetInputForTest(Zenith_GraphNode_MathBlackboardFloat::uPIN_Operand, WireFloat(5.0f));	// leg 3: the wire
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	// 3 x 5: the WIRE, not the blackboard's 7 and not the const 9.
+	ZENITH_ASSERT_EQ_FLOAT(SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_MathBlackboardFloat::uPIN_Result),
+		"MathBlackboardFloat.Result"), 15.0f, 0.0001f);
+	// ...and the TRANSITIONAL dual-write put the same value where today's write put it.
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("r", -1.0f), 15.0f, 0.0001f);
+	// A wired pin never reaches the census fallback.
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_MathBlackboardFloat::uPIN_Operand), 0u);
+	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_MathVector3ResultTypeFollowsOp)
+{
+	// ★ A FRESH NODE PER OP. The Result slot's type is stamped from GetPinType at
+	// BIND time - once - so an op code assigned after the first accessor call does
+	// not re-type the slot. The third row below pins exactly that.
+	const u_int uResult = Zenith_GraphNode_MathBlackboardVector3::uPIN_Result;
+	const u_int uScalar = Zenith_GraphNode_MathBlackboardVector3::uPIN_Scalar;
+
+	// --- op 4 (length): a FLOAT slot ---------------------------------------
+	{
+		Zenith_GraphBlackboard xBB;
+		SeedVec3(xBB, "v", Zenith_Maths::Vector3(3.0f, 0.0f, 4.0f));
+
+		Zenith_GraphNode_MathBlackboardVector3 xNode;
+		xNode.m_strVar = "v";
+		xNode.m_iOp = 4;
+		xNode.m_strResultVar = "len";
+
+		Zenith_GraphContext xCtx;
+		xCtx.m_pxBlackboard = &xBB;
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(uResult)), static_cast<int>(PROPERTY_TYPE_FLOAT),
+			"op 4 collapses the vector to a scalar, so the slot must be stamped FLOAT");
+		ZENITH_ASSERT_EQ_FLOAT(SlotFloat(xNode.GetOutputForTest(uResult), "MathBlackboardVector3.Result op4"),
+			5.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("len", -1.0f), 5.0f, 0.0001f);
+		ZENITH_ASSERT_EQ(xNode.GetOutputMismatchWarningCountForTest(uResult), 0u);
+	}
+
+	// --- op 2 (scale): a VECTOR3 slot, and the Scalar pin comes off the wire --
+	{
+		Zenith_GraphBlackboard xBB;
+		SeedVec3(xBB, "v", Zenith_Maths::Vector3(3.0f, 0.0f, 4.0f));
+		SeedFloat(xBB, "s", 7.0f);		// leg 2
+
+		Zenith_GraphNode_MathBlackboardVector3 xNode;
+		xNode.m_strVar = "v";
+		xNode.m_iOp = 2;
+		xNode.m_fScalar = 9.0f;			// leg 1
+		xNode.m_strScalarVar = "s";
+		xNode.m_strResultVar = "scaled";
+		xNode.SetInputForTest(uScalar, WireFloat(5.0f));	// leg 3
+
+		Zenith_GraphContext xCtx;
+		xCtx.m_pxBlackboard = &xBB;
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(uResult)), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+		const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(uResult);
+		ZENITH_ASSERT_NOT_NULL(pxSlot);
+		ZENITH_ASSERT_NOT_NULL(pxSlot, "the slot must be latched");
+		ZENITH_ASSERT_TRUE(pxSlot != nullptr && pxSlot->GetType() == PROPERTY_TYPE_VECTOR3, "the slot must carry the declared tag - a wrong tag must FAIL, not skip");
+		if (pxSlot != nullptr && pxSlot->GetType() == PROPERTY_TYPE_VECTOR3)
+		{
+			ZENITH_ASSERT_NEAR_VEC3(pxSlot->GetVector3(), Zenith_Maths::Vector3(15.0f, 0.0f, 20.0f), 0.0001f);
+		}
+		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("scaled"), Zenith_Maths::Vector3(15.0f, 0.0f, 20.0f), 0.0001f);
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uScalar), 0u);
+	}
+
+	// --- the CONSTRAINT, stated out loud: a REUSED instance keeps its stamp ---
+	{
+		Zenith_GraphBlackboard xBB;
+		SeedVec3(xBB, "v", Zenith_Maths::Vector3(3.0f, 0.0f, 4.0f));
+
+		Zenith_GraphNode_MathBlackboardVector3 xNode;
+		xNode.m_strVar = "v";
+		xNode.m_iOp = 4;				// binds a FLOAT slot
+		xNode.m_strResultVar = "out";
+
+		Zenith_GraphContext xCtx;
+		xCtx.m_pxBlackboard = &xBB;
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("out", -1.0f), 5.0f, 0.0001f);
+
+		// The op changes on a LIVE instance: the slot is NOT re-stamped, so the
+		// VECTOR3 write is REFUSED with one line and the slot keeps its FLOAT. That
+		// is the ordering rule made observable - not a defect to work around.
+		xNode.m_iOp = 0;
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ(xNode.GetOutputMismatchWarningCountForTest(uResult), 1u,
+			"a VECTOR3 write into a FLOAT-stamped slot must be refused, once, with a line");
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(uResult)), static_cast<int>(PROPERTY_TYPE_FLOAT));
+		ZENITH_ASSERT_EQ_FLOAT(SlotFloat(xNode.GetOutputForTest(uResult), "reused instance"), 5.0f, 0.0001f);
+		// A refused write does not dual-write either.
+		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("out", -1.0f), 5.0f, 0.0001f);
+	}
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_AddIntDelta)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedInt(xBB, "i", 10);
+	SeedInt(xBB, "d", 7);
+
+	Zenith_GraphNode_AddBlackboardInt xNode;
+	xNode.m_strVariable = "i";
+	xNode.m_iDelta = 9;
+	xNode.m_strDeltaVar = "d";
+	xNode.SetInputForTest(Zenith_GraphNode_AddBlackboardInt::uPIN_Delta, WireInt(5));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	// The READWRITE variable is still read AND written DIRECTLY (a selector is
+	// never a wire); only the Delta came off the pin.
+	ZENITH_ASSERT_EQ(xBB.GetInt32("i"), 15);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_AddBlackboardInt::uPIN_Delta), 0u);
+	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_AddVector3Delta)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedVec3(xBB, "av", Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+	SeedVec3(xBB, "d", Zenith_Maths::Vector3(7.0f, 7.0f, 7.0f));
+
+	Zenith_GraphNode_AddBlackboardVector3 xNode;
+	xNode.m_strVariable = "av";
+	xNode.m_xDelta = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
+	xNode.m_strDeltaVar = "d";
+	xNode.m_bScaleByDt = false;
+	xNode.SetInputForTest(Zenith_GraphNode_AddBlackboardVector3::uPIN_Delta,
+		WireVec3(Zenith_Maths::Vector3(5.0f, 5.0f, 5.0f)));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("av"), Zenith_Maths::Vector3(6.0f, 6.0f, 6.0f), 0.0001f);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_AddBlackboardVector3::uPIN_Delta), 0u);
+
+	// The dt scale still applies to whatever the pin produced.
+	Zenith_GraphNode_AddBlackboardVector3 xScaled;
+	xScaled.m_strVariable = "av2";
+	xScaled.m_bScaleByDt = true;
+	xScaled.SetInputForTest(Zenith_GraphNode_AddBlackboardVector3::uPIN_Delta,
+		WireVec3(Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f)));
+	SeedVec3(xBB, "av2", Zenith_Maths::Vector3(0.0f));
+	xCtx.m_fDt = 0.5f;
+	ZENITH_ASSERT_EQ(static_cast<int>(xScaled.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("av2"), Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f), 0.0001f);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_CompareEntityAB)
+{
+	// ★ NO CONST LEG EXISTS on these two pins (an EntityID has no inline-constant
+	// twin), so the three legs here are: the blackboard variable, the wire, and the
+	// OTHER operand left on the fallback as the positive control.
+	const u_int uPinA = Zenith_GraphNode_CompareBlackboardEntity::uPIN_A;
+	const u_int uPinB = Zenith_GraphNode_CompareBlackboardEntity::uPIN_B;
+
+	Zenith_GraphBlackboard xBB;
+	SeedEntity(xBB, "a", 0x00000000000000AAull);
+	SeedEntity(xBB, "b", 0x00000000000000BBull);
+
+	Zenith_GraphNode_CompareBlackboardEntity xNode;
+	xNode.m_strVarA = "a";
+	xNode.m_strVarB = "b";
+	xNode.m_iOp = GRAPH_ENTITY_COMPARE_OP_EQUAL;
+	xNode.m_strResultVar = "same";
+	// The wire makes A equal B; the blackboard's 0xAA would make them differ.
+	xNode.SetInputForTest(uPinA, WireEntity(0x00000000000000BBull));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	ZENITH_ASSERT_TRUE(xBB.GetBool("same", false), "the A pin read the blackboard instead of its wire");
+	const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(
+		Zenith_GraphNode_CompareBlackboardEntity::uPIN_Result);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	ZENITH_ASSERT_NOT_NULL(pxSlot, "the slot must be latched");
+	ZENITH_ASSERT_TRUE(pxSlot != nullptr && pxSlot->GetType() == PROPERTY_TYPE_BOOL, "the slot must carry the declared tag - a wrong tag must FAIL, not skip");
+	if (pxSlot != nullptr && pxSlot->GetType() == PROPERTY_TYPE_BOOL)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetBool());
+	}
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPinA), 0u);	// wired: no census line
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPinB), 1u);	// unwired var-bound: exactly one
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_LerpFloatTargetT)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedFloat(xBB, "l", 0.0f);
+	SeedFloat(xBB, "tv", 7.0f);
+	SeedFloat(xBB, "t", 0.7f);
+
+	Zenith_GraphNode_LerpBlackboardFloat xNode;
+	xNode.m_strVar = "l";
+	xNode.m_fTarget = 9.0f;
+	xNode.m_strTargetVar = "tv";
+	xNode.m_iMode = 0;
+	xNode.m_fT = 0.9f;
+	xNode.m_strTVar = "t";
+	xNode.m_iEasing = 0;
+	xNode.SetInputForTest(Zenith_GraphNode_LerpBlackboardFloat::uPIN_Target, WireFloat(10.0f));
+	xNode.SetInputForTest(Zenith_GraphNode_LerpBlackboardFloat::uPIN_T, WireFloat(0.5f));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	// 0 + (10 - 0) * 0.5, both operands off the wire; the write-back stays direct.
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("l", -1.0f), 5.0f, 0.0001f);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_LerpBlackboardFloat::uPIN_Target), 0u);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_LerpBlackboardFloat::uPIN_T), 0u);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_LerpVector3)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedVec3(xBB, "lv", Zenith_Maths::Vector3(0.0f));
+	SeedVec3(xBB, "tv", Zenith_Maths::Vector3(7.0f, 7.0f, 7.0f));
+	SeedFloat(xBB, "t", 0.7f);
+
+	Zenith_GraphNode_LerpBlackboardVector3 xNode;
+	xNode.m_strVar = "lv";
+	xNode.m_xTarget = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
+	xNode.m_strTargetVar = "tv";
+	xNode.m_iMode = 0;
+	xNode.m_fT = 0.9f;
+	xNode.m_strTVar = "t";
+	xNode.m_iEasing = 0;
+	xNode.SetInputForTest(Zenith_GraphNode_LerpBlackboardVector3::uPIN_Target,
+		WireVec3(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f)));
+	xNode.SetInputForTest(Zenith_GraphNode_LerpBlackboardVector3::uPIN_T, WireFloat(0.5f));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("lv"), Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), 0.0001f);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_LerpBlackboardVector3::uPIN_Target), 0u);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_LerpBlackboardVector3::uPIN_T), 0u);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_ClampMinMax)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedFloat(xBB, "c", 20.0f);
+	SeedFloat(xBB, "mn", 7.0f);
+	SeedFloat(xBB, "mx", 7.0f);
+
+	Zenith_GraphNode_ClampBlackboardFloat xNode;
+	xNode.m_strVar = "c";
+	xNode.m_fMin = 9.0f;
+	xNode.m_strMinVar = "mn";
+	xNode.m_fMax = 9.0f;
+	xNode.m_strMaxVar = "mx";
+	xNode.SetInputForTest(Zenith_GraphNode_ClampBlackboardFloat::uPIN_Min, WireFloat(0.0f));
+	xNode.SetInputForTest(Zenith_GraphNode_ClampBlackboardFloat::uPIN_Max, WireFloat(5.0f));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	// Clamped to the WIRED max, not to 7 and not to 9.
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("c", -1.0f), 5.0f, 0.0001f);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_ClampBlackboardFloat::uPIN_Min), 0u);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_ClampBlackboardFloat::uPIN_Max), 0u);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_GetListElementIndexAndAnyResult)
+{
+	const u_int uIndex = Zenith_GraphNode_GetListElement::uPIN_Index;
+	const u_int uResult = Zenith_GraphNode_GetListElement::uPIN_Result;
+
+	Zenith_GraphBlackboard xBB;
+	AppendInt(xBB, 10);
+	AppendInt(xBB, 20);
+	AppendInt(xBB, 30);
+	SeedInt(xBB, "idx", 7);		// out of range on purpose
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+
+	// (a) an ANY OUTPUT slot starts UNSET, and a FAILED execute leaves it UNSET -
+	//     which is what makes "the producer has not written yet" observable.
+	{
+		Zenith_GraphNode_GetListElement xNode;
+		xNode.m_strListVar = "bag";
+		xNode.m_iIndex = 9;
+		xNode.m_strIndexVar = "idx";
+		xNode.m_strResultVar = "item";
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+		ZENITH_ASSERT_NULL(xNode.GetOutputForTest(uResult), "an ANY slot must start UNSET");
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(uResult)), static_cast<int>(eGRAPH_PIN_TYPE_ANY));
+	}
+
+	// (b) the wired index wins over both the var (7) and the const (9).
+	{
+		Zenith_GraphNode_GetListElement xNode;
+		xNode.m_strListVar = "bag";
+		xNode.m_iIndex = 9;
+		xNode.m_strIndexVar = "idx";
+		xNode.m_strResultVar = "picked";
+		xNode.SetInputForTest(uIndex, WireInt(1));
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ(SlotInt(xNode.GetOutputForTest(uResult), "GetListElement.Result"), 20);
+		ZENITH_ASSERT_EQ(xBB.GetInt32("picked"), 20);	// the dual-write
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uIndex), 0u);
+	}
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_ListAddFromWireAndUnsetIsFailure)
+{
+	const u_int uValue = Zenith_GraphNode_ListAdd::uPIN_Value;
+
+	Zenith_GraphBlackboard xBB;
+	AppendInt(xBB, 10);		// "bag" = [10]
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+
+	// (a) NOTHING there - no wire, no variable - is FAILURE with the list
+	//     UNTOUCHED. That is ListAdd's exact contract, now expressed through the
+	//     PRESENCE-aware accessor.
+	{
+		Zenith_GraphNode_ListAdd xNode;
+		xNode.m_strListVar = "bag";
+		xNode.m_strValueVar = "absent";
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+		ZENITH_ASSERT_EQ(xBB.TryGetList("bag")->GetSize(), 1u, "a failed ListAdd grew the list");
+	}
+
+	// (b) a wired value appends, and WINS over the blackboard variable.
+	{
+		SeedInt(xBB, "src", 7);
+		Zenith_GraphNode_ListAdd xNode;
+		xNode.m_strListVar = "bag";
+		xNode.m_strValueVar = "src";
+		xNode.SetInputForTest(uValue, WireInt(5));
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ(xBB.TryGetList("bag")->GetSize(), 2u);
+		ZENITH_ASSERT_EQ(ListElement(xBB, "bag", 1), 5, "expected the WIRED 5; a 7 means the variable won");
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
+	}
+
+	// (c) a node with NO var name and no wire at all: still FAILURE, still no list
+	//     created (the ANY pin has no const property, so there is nothing to
+	//     default to - which is the whole reason the contract is FAILURE).
+	{
+		Zenith_GraphNode_ListAdd xNode;
+		xNode.m_strListVar = "ghost";
+		xNode.m_strValueVar = "";
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+		ZENITH_ASSERT_NULL(xBB.TryGetList("ghost"), "a failed ListAdd created the list it could not touch");
+	}
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_ListRemoveAtIndex)
+{
+	Zenith_GraphBlackboard xBB;
+	AppendInt(xBB, 10);
+	AppendInt(xBB, 20);
+	AppendInt(xBB, 30);
+	AppendInt(xBB, 40);
+	SeedInt(xBB, "idx", 7);		// out of range
+
+	Zenith_GraphNode_ListRemoveAt xNode;
+	xNode.m_strListVar = "bag";
+	xNode.m_iIndex = 9;
+	xNode.m_strIndexVar = "idx";
+	xNode.SetInputForTest(Zenith_GraphNode_ListRemoveAt::uPIN_Index, WireInt(1));
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	// Order-preserving, at the WIRED index.
+	ZENITH_ASSERT_EQ(xBB.TryGetList("bag")->GetSize(), 3u);
+	ZENITH_ASSERT_EQ(ListElement(xBB, "bag", 0), 10);
+	ZENITH_ASSERT_EQ(ListElement(xBB, "bag", 1), 30);
+	ZENITH_ASSERT_EQ(ListElement(xBB, "bag", 2), 40);
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_ListRemoveAt::uPIN_Index), 0u);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_GetListCountResult)
+{
+	Zenith_GraphBlackboard xBB;
+	AppendInt(xBB, 10);
+	AppendInt(xBB, 20);
+
+	Zenith_GraphNode_GetListCount xNode;
+	xNode.m_strListVar = "bag";
+	xNode.m_strResultVar = "count";
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	const u_int uResult = Zenith_GraphNode_GetListCount::uPIN_Result;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(uResult)), static_cast<int>(PROPERTY_TYPE_INT32));
+	ZENITH_ASSERT_EQ(SlotInt(xNode.GetOutputForTest(uResult), "GetListCount.Result"), 2);
+	ZENITH_ASSERT_EQ(xBB.GetInt32("count"), 2);	// the dual-write
+
+	// An ABSENT list is still 0, and still latched.
+	Zenith_GraphNode_GetListCount xAbsent;
+	xAbsent.m_strListVar = "neverExisted";
+	xAbsent.m_strResultVar = "zero";
+	ZENITH_ASSERT_EQ(static_cast<int>(xAbsent.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ(SlotInt(xAbsent.GetOutputForTest(uResult), "GetListCount.Result absent"), 0);
+	ZENITH_ASSERT_EQ(xBB.GetInt32("zero"), 0);
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_LogicBoolResult)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedBools(xBB, true, true, false);
+
+	Zenith_GraphNode_LogicBlackboardBool xNode;
+	xNode.m_strVars = "a,b";		// the ONE exemption: still a DIRECT read, per operand
+	xNode.m_iOp = GRAPH_LOGIC_BOOL_OP_AND;
+	xNode.m_strResultVar = "r";
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	const u_int uResult = Zenith_GraphNode_LogicBlackboardBool::uPIN_Result;
+	ZENITH_ASSERT_EQ(static_cast<int>(xNode.GetOutputPinType(uResult)), static_cast<int>(PROPERTY_TYPE_BOOL));
+	const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(uResult);
+	ZENITH_ASSERT_NOT_NULL(pxSlot);
+	ZENITH_ASSERT_NOT_NULL(pxSlot, "the slot must be latched");
+	ZENITH_ASSERT_TRUE(pxSlot != nullptr && pxSlot->GetType() == PROPERTY_TYPE_BOOL, "the slot must carry the declared tag - a wrong tag must FAIL, not skip");
+	if (pxSlot != nullptr && pxSlot->GetType() == PROPERTY_TYPE_BOOL)
+	{
+		ZENITH_ASSERT_TRUE(pxSlot->GetBool());
+	}
+	ZENITH_ASSERT_TRUE(xBB.GetBool("r", false));	// the dual-write
+
+	// A FAILING node latches NOTHING - the empty-operand-list contract reaches the
+	// slot as well as the blackboard.
+	Zenith_GraphNode_LogicBlackboardBool xEmpty;
+	xEmpty.m_strVars = "";
+	xEmpty.m_iOp = GRAPH_LOGIC_BOOL_OP_AND;
+	xEmpty.m_strResultVar = "never";
+	ZENITH_ASSERT_EQ(static_cast<int>(xEmpty.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+	ZENITH_ASSERT_NULL(xBB.TryGetValue("never"));
+}
+
+ZENITH_TEST(MathPinRuntime, Wired_RandomResultsLatch)
+{
+	// Both Random nodes stay EXEC (impure): a latched draw must not be re-rolled on
+	// demand by a consumer's pull, so the only thing the migration changed is where
+	// the draw is written.
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+
+	Zenith_GraphNode_RandomFloat xFloat;
+	xFloat.m_fMin = 5.0f;
+	xFloat.m_fMax = 6.0f;
+	xFloat.m_iSeed = 77;
+	xFloat.m_strResultVar = "rf";
+	ZENITH_ASSERT_EQ(static_cast<int>(xFloat.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	const u_int uFloatResult = Zenith_GraphNode_RandomFloat::uPIN_Result;
+	const float fDrawn = SlotFloat(xFloat.GetOutputForTest(uFloatResult), "RandomFloat.Result");
+	ZENITH_ASSERT_TRUE(fDrawn >= 5.0f && fDrawn <= 6.0f, "RandomFloat latched %f, outside [5,6]", fDrawn);
+	// The slot and the dual-write agree - the same draw, not two.
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("rf", -1.0f), fDrawn, 0.0f);
+
+	Zenith_GraphNode_RandomInt xInt;
+	xInt.m_iMin = 2;
+	xInt.m_iMax = 4;
+	xInt.m_iSeed = 77;
+	xInt.m_strResultVar = "ri";
+	ZENITH_ASSERT_EQ(static_cast<int>(xInt.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+
+	const u_int uIntResult = Zenith_GraphNode_RandomInt::uPIN_Result;
+	const int32_t iDrawn = SlotInt(xInt.GetOutputForTest(uIntResult), "RandomInt.Result");
+	ZENITH_ASSERT_TRUE(iDrawn >= 2 && iDrawn <= 4, "RandomInt latched %d, outside [2,4]", iDrawn);
+	ZENITH_ASSERT_EQ(xBB.GetInt32("ri"), iDrawn);
+
+	// min > max still FAILS and latches nothing.
+	Zenith_GraphNode_RandomInt xBad;
+	xBad.m_iMin = 5;
+	xBad.m_iMax = 1;
+	xBad.m_strResultVar = "never";
+	ZENITH_ASSERT_EQ(static_cast<int>(xBad.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+	ZENITH_ASSERT_NULL(xBB.TryGetValue("never"));
+}
+
+// The CENSUS observable. Only a MIGRATED node can reach the transitional var-name
+// fallback, and it logs ONE line per (instance, pin) however hot the chain is -
+// which is what makes "zero FALLBACK lines in a SUITE boot log" C-1's precondition
+// rather than a guess.
+ZENITH_TEST(MathPinRuntime, Fallback_CountsOncePerPin)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedFloat(xBB, "v", 5.0f);
+	SeedFloat(xBB, "op", 3.0f);
+
+	Zenith_GraphNode_MathBlackboardFloat xNode;
+	xNode.m_strVar = "v";
+	xNode.m_iOp = GRAPH_MATH_FLOAT_OP_MULTIPLY;
+	xNode.m_fOperand = 9.0f;
+	xNode.m_strOperandVar = "op";
+	xNode.m_strResultVar = "r";
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+
+	const u_int uOperand = Zenith_GraphNode_MathBlackboardFloat::uPIN_Operand;
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uOperand), 0u);
+
+	for (u_int u = 0; u < 3u; ++u)
+	{
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		// The var wins over the const on EVERY fire, exactly as today's read did.
+		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("r", -1.0f), 15.0f, 0.0001f);
+	}
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uOperand), 1u, "three reads must log ONE census line");
+	// The Result pin is an OUTPUT and has no fallback COUNTER at all.
+	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_MathBlackboardFloat::uPIN_Result), 0u);
+}
+
+// ★ THE ROW NO EXISTING MATH TEST COVERS, and the one ResolveInput implements
+// differently from a naive blackboard read: a var name that is BOUND but whose
+// variable is absent - or present with the wrong tag - takes the CONST, not zero,
+// and warns about neither. A typed blackboard getter has always defaulted on both.
+ZENITH_TEST(MathPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedFloat(xBB, "v", 5.0f);
+	SeedInt(xBB, "wrongType", 42);		// present, but an INT32 where a FLOAT is wanted
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	const u_int uOperand = Zenith_GraphNode_MathBlackboardFloat::uPIN_Operand;
+
+	// (a) ABSENT variable -> the const 3, so 5 x 3.
+	{
+		Zenith_GraphNode_MathBlackboardFloat xNode;
+		xNode.m_strVar = "v";
+		xNode.m_iOp = GRAPH_MATH_FLOAT_OP_MULTIPLY;
+		xNode.m_fOperand = 3.0f;
+		xNode.m_strOperandVar = "missing";
+		xNode.m_strResultVar = "r";
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("r", -1.0f), 15.0f, 0.0001f);
+		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uOperand), 0u);
+	}
+
+	// (b) PRESENT but WRONGLY TYPED -> the const too, and STILL no warning: only a
+	//     WIRE mismatch is worth a line.
+	{
+		Zenith_GraphNode_MathBlackboardFloat xNode;
+		xNode.m_strVar = "v";
+		xNode.m_iOp = GRAPH_MATH_FLOAT_OP_MULTIPLY;
+		xNode.m_fOperand = 3.0f;
+		xNode.m_strOperandVar = "wrongType";
+		xNode.m_strResultVar = "r2";
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("r2", -1.0f), 15.0f, 0.0001f);
+		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uOperand), 0u);
+	}
+}
+
+// ★ EVERY GetInput SITS IN EXACTLY THE BRANCH ITS BLACKBOARD READ OCCUPIED. T is
+// read only inside the mode-0 else, so a RATE-mode node must not touch it: no
+// census line, and (in a graph) no pull of T's producer.
+ZENITH_TEST(MathPinRuntime, Fallback_LerpRateModeDoesNotTouchT)
+{
+	Zenith_GraphBlackboard xBB;
+	SeedFloat(xBB, "r", 0.0f);
+	SeedFloat(xBB, "t", 0.25f);
+
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+	xCtx.m_fDt = 0.5f;
+	const u_int uPinT = Zenith_GraphNode_LerpBlackboardFloat::uPIN_T;
+
+	// RATE mode: 4 units/s * 0.5s = 2, and T is never consulted.
+	Zenith_GraphNode_LerpBlackboardFloat xRate;
+	xRate.m_strVar = "r";
+	xRate.m_fTarget = 10.0f;
+	xRate.m_iMode = 1;
+	xRate.m_fRate = 4.0f;
+	xRate.m_strTVar = "t";		// var-BOUND, so a stray read would log a census line
+	ZENITH_ASSERT_EQ(static_cast<int>(xRate.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("r", -1.0f), 2.0f, 0.0001f);
+	ZENITH_ASSERT_EQ(xRate.GetFallbackUseCountForTest(uPinT), 0u,
+		"rate mode read the T pin - the GetInput call left the mode-0 else");
+
+	// THE POSITIVE CONTROL: the same var-bound T in mode 0 DOES log exactly one.
+	SeedFloat(xBB, "l", 0.0f);
+	Zenith_GraphNode_LerpBlackboardFloat xTMode;
+	xTMode.m_strVar = "l";
+	xTMode.m_fTarget = 10.0f;
+	xTMode.m_iMode = 0;
+	xTMode.m_strTVar = "t";
+	ZENITH_ASSERT_EQ(static_cast<int>(xTMode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("l", -1.0f), 2.5f, 0.0001f);	// 0 + 10 * 0.25
+	ZENITH_ASSERT_EQ(xTMode.GetFallbackUseCountForTest(uPinT), 1u);
+}
+
+// ★ THE ONE DELIBERATE DIVERGENCE from today's behaviour, pinned rather than
+// discovered: an OUTPUT whose var name AND fallback both read EMPTY no longer
+// creates a blackboard variable literally named "". Today's unconditional
+// SetValue(strOut) did. Nothing can have depended on it - a graph cannot declare,
+// wire or read an empty name - but it is a behaviour change and belongs in a test.
+ZENITH_TEST(MathPinRuntime, EmptyOutputVarNameCreatesNoBlackboardEntry)
+{
+	Zenith_GraphBlackboard xBB;
+	Zenith_GraphContext xCtx;
+	xCtx.m_pxBlackboard = &xBB;
+
+	// A plain OUTPUT with no name at all.
+	Zenith_GraphNode_RandomFloat xRandom;
+	xRandom.m_strResultVar = "";
+	ZENITH_ASSERT_EQ(static_cast<int>(xRandom.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	// The SLOT is latched - the value is not lost, it simply has no dual-write.
+	ZENITH_ASSERT_NOT_NULL(xRandom.GetOutputForTest(Zenith_GraphNode_RandomFloat::uPIN_Result));
+	ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "an unnamed OUTPUT created a blackboard variable");
+
+	// The in-place shape: BOTH m_strResultVar and the m_strVar fallback empty.
+	Zenith_GraphNode_MathBlackboardFloat xMath;
+	xMath.m_strVar = "";
+	xMath.m_iOp = GRAPH_MATH_FLOAT_OP_SUBTRACT;
+	xMath.m_fOperand = 1.0f;
+	xMath.m_strResultVar = "";
+	ZENITH_ASSERT_EQ(static_cast<int>(xMath.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ_FLOAT(SlotFloat(xMath.GetOutputForTest(Zenith_GraphNode_MathBlackboardFloat::uPIN_Result),
+		"MathBlackboardFloat.Result unnamed"), -1.0f, 0.0001f);
+	ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
+}
+
 #endif // ZENITH_TESTING

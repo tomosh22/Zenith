@@ -349,6 +349,69 @@ node can reach it: **a boot log with zero `FALLBACK` lines is C-1's
 precondition**, which is why the line exists at all
 (`GetFallbackUseCountForTest` is the unit-visible half).
 
+**★ "Zero FALLBACK lines" means zero in a SUITE BOOT log, not in a unit run.**
+The per-game census parses `zenith test <G> --headless` runs, and those pass
+`--skip-unit-tests` — so the unit batch's own deliberate fallback fixtures never
+reach a counted log, and a non-zero count in one is not a census regression. What
+the census counts is authored content: a binding logs `FALLBACK` only when its
+var-name property reads NON-EMPTY, so the figure is "how many placed node
+instances still name a blackboard variable instead of carrying a wire".
+
+**SELF-BINDING — a directly-constructed node binds its own pins (B-6.1).**
+
+**★ PERMANENT RUNTIME BEHAVIOUR, NOT A THIRD TRANSITIONAL PATH.** Per-instance
+bindings are normally built by `Zenith_BehaviourGraph::BuildPinState` at
+`InitialiseFromDefinition`. A node constructed **directly** — `MyNode xNode;`,
+properties assigned, `Execute(bareContext)`, which is how ~29 standalone node unit
+tests drive the library — has no graph, so before B-6.1 every accessor on one took
+the bad-access path: `GetInput` returned the type's ZERO rather than the const
+property, and `SetOutput` was a no-op.
+
+`GetInput*` / `TryGetInput` / `SetOutput` now call `EnsurePinState()` first. If
+nothing has built the state **and** the class declares a pin table
+(`GetPinTableVirtual()`, emitted by `ZENITH_GRAPH_PINS_BEGIN` alongside
+`GetPropertyTableVirtual()`), the node builds it from its own tables once. It then
+behaves **exactly like an UNWIRED graph node**: the var-name fallback with the
+const as the default, and the dual-write on `SetOutput`.
+
+- **One builder, `Zenith_GraphNode::BuildPinStateFromTables`,** for both callers.
+  It **CLEARS** `m_axInputs` / `m_axOutputs` / `m_axVariadicInputs` on entry — it
+  used to only `Reserve` + `PushBack`, so a second build would APPEND and leave
+  pins `0..N-1` addressing stale bindings.
+- **The graph path always wins,** and cannot lose a race: the graph owns its
+  instances from creation, so self-binding can never have run first there. The
+  graph supplies the three things only it knows — the REGISTRY's property table
+  (an inheriting family's virtual answers the pin-table OWNER's table), the
+  DEFINITION, and the type's `m_bVariadicNameCollision`. Self-binding passes the
+  virtual, **no definition** (so a from-variable OUTPUT slot stays ANY, and
+  therefore UNSET) and no collision flag.
+- **`EnsurePinState` runs ONLY from the three accessors an `Execute` calls.** Not
+  from `SetInputForTest`, `GetOutputForTest`, `GetOutputPinType` or the counter
+  getters: the latch reads property-derived state, and a `SetInputForTest` before
+  an op-code assignment would stamp the wrong slot type. The const accessors answer
+  from an unbuilt state (`ANY` / null) and stay const.
+- **ORDERING RULE (a Don't).** Assign EVERY property before the first `Execute` on
+  a directly-constructed node. Pin state is built once and never refreshed from a
+  later property write, so a test that changes an instance-resolved op code needs a
+  **FRESH node** — a reused one keeps its first stamp and its second write is
+  REFUSED with one `OUTMISMATCH` line. `Zenith_GraphDefinition::ApplyNodeParams`
+  clears the built flag on the instance it configures, which is the one sanctioned
+  way to re-derive.
+- **The BAD-ACCESS path survives for, and only for:** an OPAQUE node (no pin table
+  at all, so the virtual answers null), an out-of-range or wrong-role pin, a
+  CONNECTED pin read through a context with a null `m_pxGraph`, and a var-bound pin
+  read through a context with a null `m_pxBlackboard`.
+- **Temp instances still cost nothing.** The registry's dynamic-pin probe,
+  `GetExecOutputCount`, the validator, the builder, `AddNode` and the editor's
+  param panel never call an accessor, so the zero-capacity invariant holds for all
+  of them. A future caller that DOES touch one pays exactly one build.
+- **What this means for C-1.** After the two transitional paths are deleted, a
+  directly-constructed node reads its const default (or the type zero) and writes
+  only its slot — so the standalone node tests that today depend on the var-name
+  fallback and the dual-write are rewritten onto
+  `SetInputForTest`/`GetOutputForTest` in B-7.6, as planned. Self-binding is what
+  keeps them meaningful in between, and is NOT deleted with them.
+
 **Pure nodes (`m_bPureNode`).** A pure node has NO exec pins: it evaluates on
 demand when a consumer gathers an input wired to one of its OUTPUT pins.
 

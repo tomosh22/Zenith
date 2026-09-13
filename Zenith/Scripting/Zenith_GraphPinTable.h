@@ -2,6 +2,7 @@
 
 #include "Core/Zenith_PropertySystem.h"
 #include "Collections/Zenith_Vector.h"
+#include <concepts>
 
 //------------------------------------------------------------------------------
 // Zenith_GraphPinTable - the per-node-class PIN DESCRIPTOR TABLE.
@@ -290,6 +291,19 @@ private:
 // Registration runs at static init, construct-on-first-use, with distinct
 // alias/prefix names from the property macros so the two never collide in one
 // class body. The usual MSVC dead-strip caveat applies.
+//
+// ★ THE TWO VIRTUALS ARE WHAT MAKES LAZY SELF-BINDING POSSIBLE (B-6.1). A node
+// constructed DIRECTLY - which is how ~29 standalone node unit tests drive
+// Execute - has no graph to resolve its bindings, so Zenith_GraphNode::
+// EnsurePinState() builds them from these two accessors on the first accessor
+// call. The property-table one uses a REQUIRES-EXPRESSION rather than
+// Zenith_GraphNodeRegistry's HasGraphNodeProperties concept - this header sits
+// BELOW the registry header and may not include it - and matches that concept's
+// return type EXACTLY (Zenith_PropertyTable&), so inheritance behaves
+// identically: a derived class with no block of its own resolves to, and shares,
+// its base's table. The requires-expression lives in a member function BODY,
+// which is a complete-class context - the same reason the property macro
+// registers from a static member FUNCTION.
 //------------------------------------------------------------------------------
 
 #define ZENITH_GRAPH_PINS_BEGIN(ClassName) \
@@ -302,7 +316,19 @@ public: \
 		return ls_xPinTable; \
 	} \
 	static const Zenith_GraphPinTable& GetPinTableStatic() { return GetPinTableMutable(); } \
-	const Zenith_GraphPinTable& GetPinTable() const { return GetPinTableStatic(); }
+	const Zenith_GraphPinTable& GetPinTable() const { return GetPinTableStatic(); } \
+	const Zenith_GraphPinTable* GetPinTableVirtual() const override { return &GetPinTableStatic(); } \
+	const Zenith_PropertyTable* GetPropertyTableVirtual() const override \
+	{ \
+		if constexpr (requires { { ZenithGraphPinOwnerType::GetPropertyTableStatic() } -> std::same_as<Zenith_PropertyTable&>; }) \
+		{ \
+			return &ZenithGraphPinOwnerType::GetPropertyTableStatic(); \
+		} \
+		else \
+		{ \
+			return nullptr; \
+		} \
+	}
 
 #define ZENITH_GRAPH_PINS_END \
 private:
