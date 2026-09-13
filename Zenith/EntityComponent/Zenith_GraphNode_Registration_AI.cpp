@@ -35,6 +35,50 @@
 // tick it themselves or opt in via Zenith_AI::SetEngineTickEnabled(true);
 // in a game that ticks nothing, EmitSoundStimulus/awareness are inert.
 // Queries return safe defaults for unregistered agents.
+//
+// ★ THE PINS IN THIS TU ARE LIVE (B-6.5), on the pattern B-6.1 established and
+// _Entity.cpp / _Physics.cpp / _Animation.cpp follow. Every INPUT descriptor is
+// read through Zenith_GraphNode::GetInput and every OUTPUT descriptor is written
+// through SetOutput, so a wire into or out of any of these 13 nodes carries a
+// value. An UNCONNECTED node behaves as it did: the transitional var-name
+// fallback IS the old `var.empty() ? const : bb->GetFloat(var, const)` read, and
+// SetOutput's dual-write IS the old SetValue. Each node whose Execute ADDRESSES a
+// pin declares `static constexpr u_int uPIN_<Name>` immediately before its pin
+// table (the INDEX is the runtime address; table order is the contract, asserted
+// by GraphPinTable.AIPinIndicesMatchTables). SIX of the thirteen declare none:
+// EnsureNavAgent, NavMoveTo, SetNavDestination, StopNav, EmitSoundStimulus and
+// RegisterPerceptionTarget carry only reference pins, which stay DIRECT.
+//
+// Three things specific to THIS TU:
+//
+//  1. SEVEN GUARDED WRITES LOST THEIR `!m_strXVar.empty()` GUARD - ReadNavState's
+//     three, QueryPerceivedTargets.Count, QueryLastHeardSound's three - and so
+//     did the shared Zenith_PropertyValue scratch above them and the computation
+//     INSIDE each guard (GetDistanceToGo(), GetVelocity(), the list size). Those
+//     are PARITY sites: SetOutput's dual-write applies the same non-empty rule,
+//     so the blackboard sees exactly what it saw; what is new is that the SLOT is
+//     always latched, which is the only reason a wire can come off a Remaining or
+//     an Age whose author never named a variable. The three writers that were
+//     ALWAYS unconditional - FindRandomReachablePoint.Result,
+//     QueryPrimaryPerceivedTarget.Result, QueryAwarenessOf.Result - take B-6.1's
+//     `""` divergence instead: an empty var name no longer creates a blackboard
+//     variable literally named "".
+//
+//  2. TWO FAILURE SHAPES, and they are not interchangeable. SHAPE A (the five
+//     query/read nodes): the FAILURE sits ABOVE every accessor, so a failed
+//     directly-constructed instance never even self-bound - GetOutputForTest
+//     reads null, not a stamped zero - and nothing at all was written. SHAPE B
+//     (FindRandomReachablePoint alone): its no-reachable-point FAILURE runs AFTER
+//     the Radius GetInput, so THAT path HAS built pin state and Result holds its
+//     stamped (0,0,0) - the Raycast-miss shape. Its no-mesh and
+//     unresolvable-centre FAILUREs precede the read and build nothing. Either
+//     way a consumer wire off any of these outputs must be gated on SUCCESS.
+//
+//  3. ENTITY_ID OUTPUTS (QueryPrimaryPerceivedTarget.Result,
+//     QueryLastHeardSound.Source) go through the NON-template SetOutput with a
+//     SetPackedEntityID-stamped value - Zenith_PropertyTraits has no u_int64
+//     specialisation. Their stamped zero is packed 0 = {index 0, generation 0},
+//     a LEGAL entity id and NOT INVALID_ENTITY_ID.
 //------------------------------------------------------------------------------
 
 namespace
@@ -85,7 +129,8 @@ namespace
 		// BOTH are ENTITY references: FindNavMeshComponent (below) resolves
 		// m_strNavMeshVar through xContext.ResolveTargetEntity exactly the way the
 		// Execute resolves m_strTargetVar, so an EntityID is the only legal value
-		// for either. "" is the discovery/self path in both cases.
+		// for either. "" is the discovery/self path in both cases. Both being
+		// references, this Execute addresses no pin and declares no uPIN_ constant.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EnsureNavAgent)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(NavMesh, "m_strNavMeshVar")
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -199,7 +244,9 @@ namespace
 
 		// Destination is a POSITION ref, re-resolved every repath - an EntityID
 		// var gives entity-follow, a vec3 var a fixed point. The radii, the
-		// repath interval and the XZ flag are consts with no var partner.
+		// repath interval and the XZ flag are consts with no var partner. Both
+		// pins are references, so this Execute addresses no pin and declares no
+		// uPIN_ constant.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_NavMoveTo)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Destination, "m_strDestinationVar")
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -317,6 +364,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strDestinationVar, "target")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Both pins are references (a position ref and the mover), resolved
+		// directly, so no uPIN_ constant exists.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetNavDestination)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Destination, "m_strDestinationVar")
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -350,6 +399,7 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Target only: no pin is addressed, so no uPIN_ constant exists.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StopNav)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -383,9 +433,22 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// All three are the node's own COMPUTED reads of the agent (SetValue in
-		// the Execute below), typed by the Zenith_PropertyValue::Set* that feeds
-		// each one - State is the 0-3 code this node derives, not a name.
+		// All three are the node's own COMPUTED reads of the agent, written
+		// through SetOutput in the Execute below - State is the 0-3 code this
+		// node derives, not a name.
+		//
+		// ★ THE THREE `!m_strXVar.empty()` GUARDS ARE GONE (B-6.5), and so are the
+		// Zenith_PropertyValue scratch they shared and the GetDistanceToGo() /
+		// GetVelocity() calls that sat INSIDE them. All three slots are latched
+		// unconditionally on the SUCCESS path; SetOutput's dual-write applies the
+		// same non-empty rule, so which of the three reach the BLACKBOARD is
+		// unchanged - navState by default, Remaining and Velocity only when the
+		// author names them. This is PARITY, not a divergence: an empty name
+		// created no blackboard variable before and creates none now.
+		static constexpr u_int uPIN_State = 0u;
+		static constexpr u_int uPIN_Remaining = 1u;
+		static constexpr u_int uPIN_Velocity = 2u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadNavState)
 		ZENITH_GRAPH_PIN_OUTPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PIN_OUTPUT(Remaining, "m_strRemainingVar", PROPERTY_TYPE_FLOAT)
@@ -414,27 +477,14 @@ namespace
 			{
 				iState = 2;
 			}
-			Zenith_PropertyValue xValue;
-			if (!m_strStateVar.empty())
-			{
-				xValue.SetInt32(iState);
-				xContext.m_pxBlackboard->SetValue(m_strStateVar, xValue);
-			}
-			if (!m_strRemainingVar.empty())
-			{
-				// GetDistanceToGo, NOT GetRemainingDistance: the latter is
-				// waypoint-to-waypoint segments only and reads 0 for the whole
-				// final leg -- which on a straight-line path across open ground
-				// is the entire journey. A graph reading a permanently-zero
-				// "remaining distance" is worse than having no node at all.
-				xValue.SetFloat(pxNav->GetDistanceToGo());
-				xContext.m_pxBlackboard->SetValue(m_strRemainingVar, xValue);
-			}
-			if (!m_strVelocityVar.empty())
-			{
-				xValue.SetVector3(pxNav->GetVelocity());
-				xContext.m_pxBlackboard->SetValue(m_strVelocityVar, xValue);
-			}
+			SetOutput<int32_t>(xContext, uPIN_State, iState);
+			// GetDistanceToGo, NOT GetRemainingDistance: the latter is
+			// waypoint-to-waypoint segments only and reads 0 for the whole
+			// final leg -- which on a straight-line path across open ground
+			// is the entire journey. A graph reading a permanently-zero
+			// "remaining distance" is worse than having no node at all.
+			SetOutput<float>(xContext, uPIN_Remaining, pxNav->GetDistanceToGo());
+			SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Velocity, pxNav->GetVelocity());
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadNavState"; }
@@ -451,6 +501,10 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strSpeedVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Speed carries BOTH halves - the var name and the inline constant -
+		// behind one pin. Target is a reference and stays direct.
+		static constexpr u_int uPIN_Speed = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetNavSpeed)
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Speed, "m_strSpeedVar", "m_fSpeed", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -464,8 +518,9 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			pxNav->SetMoveSpeed(m_strSpeedVar.empty()
-				? m_fSpeed : xContext.m_pxBlackboard->GetFloat(m_strSpeedVar, m_fSpeed));
+			// After the nav-agent guard, exactly where the blackboard read sat: a
+			// node that FAILS on a missing agent must not pull its input.
+			pxNav->SetMoveSpeed(GetInput<float>(xContext, uPIN_Speed));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "SetNavSpeed"; }
@@ -485,8 +540,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "wanderPoint")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// Center is a POSITION ref ("" = self); Radius is the const-or-var
-		// ternary; Result is the point this node COMPUTES and writes.
+		// Center is a POSITION ref ("" = self) and stays direct; Radius carries
+		// the var name and the inline constant behind one pin; Result is the
+		// point this node COMPUTES and writes.
+		//
+		// ★ Result's write was ALWAYS unconditional, so this is one of the TU's
+		// three `""` divergence sites: an empty m_strResultVar no longer creates a
+		// blackboard variable literally named "". The slot still carries the point.
+		static constexpr u_int uPIN_Radius = 1u;
+		static constexpr u_int uPIN_Result = 2u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindRandomReachablePoint)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
 		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Radius, "m_strRadiusVar", "m_fRadius", PROPERTY_TYPE_FLOAT)
@@ -508,16 +571,20 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const float fRadius = m_strRadiusVar.empty()
-				? m_fRadius : xContext.m_pxBlackboard->GetFloat(m_strRadiusVar, m_fRadius);
+			// ★ EXACTLY WHERE THE BLACKBOARD READ WAS, which for this node is
+			// after the navmesh and centre-resolve guards but BEFORE the
+			// no-reachable-point FAILURE below - the Raycast.Direction shape from
+			// B-6.3. Moving it down would change which executions read the pin: a
+			// wander that found nothing has ALREADY read Radius (and, in a graph,
+			// already pulled its producer), while a bound-agent or centre failure
+			// has not.
+			const float fRadius = GetInput<float>(xContext, uPIN_Radius);
 			Zenith_Maths::Vector3 xPoint;
 			if (!pxNavMesh->GetRandomReachablePointInRadius(xCenter, fRadius, xPoint))
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_PropertyValue xValue;
-			xValue.SetVector3(xPoint);
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Result, xPoint);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "FindRandomReachablePoint"; }
@@ -544,6 +611,14 @@ namespace
 		// Execute below), which holds no Zenith_PropertyValue and is therefore
 		// never typed. Count is an ordinary computed OUTPUT beside it. The two
 		// filter flags are consts with no var partner.
+		//
+		// ★ The Count write below is UNCONDITIONAL now. It used to sit inside
+		// `if (!m_strCountVar.empty())`; SetOutput's dual-write carries that same
+		// non-empty rule, so the blackboard is unchanged and the slot now always
+		// latches. The LIST name stays a direct GetOrCreateList - a list is not a
+		// Zenith_PropertyValue and can never be a wire.
+		static constexpr u_int uPIN_Count = 1u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryPerceivedTargets)
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
 		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
@@ -577,12 +652,7 @@ namespace
 					axOut.PushBack(xValue);
 				}
 			}
-			if (!m_strCountVar.empty())
-			{
-				Zenith_PropertyValue xCount;
-				xCount.SetInt32(static_cast<int32_t>(axOut.GetSize()));
-				xContext.m_pxBlackboard->SetValue(m_strCountVar, xCount);
-			}
+			SetOutput<int32_t>(xContext, uPIN_Count, static_cast<int32_t>(axOut.GetSize()));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "QueryPerceivedTargets"; }
@@ -601,6 +671,17 @@ namespace
 
 		// Result carries a PACKED EntityID (SetPackedEntityID below), so it is an
 		// ENTITY_ID output - the same type a TARGET_ENTITY pin downstream accepts.
+		// It goes through the NON-template SetOutput: Zenith_PropertyTraits has no
+		// u_int64 specialisation.
+		//
+		// ★ The write was ALWAYS unconditional, so this is a `""` divergence site.
+		// ★ m_strResultVar defaults to "target", which NavMoveTo /
+		// SetNavDestination / QueryAwarenessOf all READ by default - a
+		// QueryPrimaryPerceivedTarget feeding any of them communicates through
+		// that shared default alone today, and must carry a WIRE (or an explicitly
+		// declared variable) once C-1 deletes the dual-write.
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryPrimaryPerceivedTarget)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -621,7 +702,7 @@ namespace
 			}
 			Zenith_PropertyValue xValue;
 			xValue.SetPackedEntityID(xPrimary.GetPacked());
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput(xContext, uPIN_Result, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "QueryPrimaryPerceivedTarget"; }
@@ -641,9 +722,20 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// ★ Position here is an OUTPUT, not a position REF: this node WRITES the
-		// heard position (SetVector3 + SetValue below). Contrast
-		// EmitSoundStimulus, whose identically-named property is a
-		// Zenith_GraphNode_ResolvePositionRef input.
+		// heard position (SetOutput below). Contrast EmitSoundStimulus, whose
+		// identically-named property is a Zenith_GraphNode_ResolvePositionRef
+		// input.
+		//
+		// ★ ALL THREE `!m_strXVar.empty()` GUARDS ARE GONE (B-6.5), along with the
+		// Zenith_PropertyValue scratch they shared. Every slot is latched
+		// unconditionally on the SUCCESS path and SetOutput's dual-write applies
+		// the same non-empty rule, so the blackboard is unchanged - heardPos by
+		// default, Source and Age only when named. PARITY, not a divergence.
+		// Source is an ENTITY_ID and uses the NON-template SetOutput.
+		static constexpr u_int uPIN_Position = 0u;
+		static constexpr u_int uPIN_Source = 1u;
+		static constexpr u_int uPIN_Age = 2u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryLastHeardSound)
 		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_OUTPUT(Source, "m_strSourceVar", PROPERTY_TYPE_ENTITY_ID)
@@ -665,29 +757,21 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_PropertyValue xValue;
-			if (!m_strPositionVar.empty())
-			{
-				xValue.SetVector3(xHeard.m_xPosition);
-				xContext.m_pxBlackboard->SetValue(m_strPositionVar, xValue);
-			}
-			if (!m_strSourceVar.empty())
-			{
-				xValue.SetPackedEntityID(xHeard.m_xSourceEntity.GetPacked());
-				xContext.m_pxBlackboard->SetValue(m_strSourceVar, xValue);
-			}
-			if (!m_strAgeVar.empty())
-			{
-				xValue.SetFloat(xHeard.m_fAge);
-				xContext.m_pxBlackboard->SetValue(m_strAgeVar, xValue);
-			}
+			SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Position, xHeard.m_xPosition);
+			Zenith_PropertyValue xSource;
+			xSource.SetPackedEntityID(xHeard.m_xSourceEntity.GetPacked());
+			SetOutput(xContext, uPIN_Source, xSource);
+			SetOutput<float>(xContext, uPIN_Age, xHeard.m_fAge);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "QueryLastHeardSound"; }
 	};
 
 	// Awareness (0-1) of the entity in m_strOfVar -> float var. 0 = unknown
-	// or fully decayed (the system forgets at 0). Always SUCCESS.
+	// or fully decayed (the system forgets at 0). FAILURE when EITHER reference
+	// fails to resolve - the agent or the entity it is asked about - and in that
+	// case nothing is read and nothing is written. It carries no On Failure exec
+	// pin, so a consumer wire off Result must be gated on SUCCESS some other way.
 	class Zenith_GraphNode_QueryAwarenessOf : public Zenith_GraphNode
 	{
 	public:
@@ -699,7 +783,16 @@ namespace
 
 		// TWO entity references in one node: Target is the agent DOING the
 		// perceiving, Of is the entity it is asked about - both go through
-		// xContext.ResolveTargetEntity, so both accept an EntityID only.
+		// xContext.ResolveTargetEntity, so both accept an EntityID only - both stay
+		// DIRECT, and only Result is addressed as a pin.
+		//
+		// ★ Result's write was ALWAYS unconditional, so this is the third and last
+		// `""` divergence site in this TU.
+		// ★ m_strOfVar defaults to "target", the same name
+		// QueryPrimaryPerceivedTarget.Result writes by default - see the C-1 note
+		// on that node.
+		static constexpr u_int uPIN_Result = 1u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryAwarenessOf)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Of, "m_strOfVar")
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
@@ -715,9 +808,8 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_PropertyValue xValue;
-			xValue.SetFloat(Zenith_PerceptionSystem::GetAwarenessOf(xAgent.GetEntityID(), xOf.GetEntityID()));
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<float>(xContext, uPIN_Result,
+				Zenith_PerceptionSystem::GetAwarenessOf(xAgent.GetEntityID(), xOf.GetEntityID()));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "QueryAwarenessOf"; }
@@ -738,7 +830,9 @@ namespace
 
 		// Position is a POSITION ref here (Zenith_GraphNode_ResolvePositionRef
 		// below; "" = self), unlike QueryLastHeardSound's output of the same name.
-		// Loudness and radius are consts with no var partner.
+		// Loudness and radius are consts with NO var partner, so they are not pins
+		// at all - both of this node's pins are references and its Execute
+		// addresses none, hence no uPIN_ constant.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EmitSoundStimulus)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
@@ -775,6 +869,8 @@ namespace
 		ZENITH_PROPERTY(bool, m_bUnregister, false)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The two flags are consts with no var partner; Target is a reference.
+		// Nothing here is addressed as a pin, so no uPIN_ constant exists.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RegisterPerceptionTarget)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -806,31 +902,39 @@ void Zenith_RegisterEngineGraphNodes_AI()
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
 	// Navigation
-	// On Failure = THE MESH WILL NEVER COME (load FAILED :116, unconfigured ref
-	// :119) or THE AGENT COULD NOT BE ALLOCATED (:132) + misconfiguration guards
-	// (no target :90, no AIAgentComponent :95, no NavMeshComponent :101, no mesh
-	// behind a LOADED component :126). RUNNING (:120) while a CONFIGURED mesh is
-	// still loading is not FAILURE and is unaffected by this pin.
+	//
+	// ★ LINE NUMBERS DELIBERATELY ABSENT. Every citation here named a line this
+	// file has since moved, and three of them were already wrong before B-6.5
+	// touched anything - the guard's CONDITION is what a reader needs and it does
+	// not rot.
+	//
+	// On Failure = THE MESH WILL NEVER COME (the load state is FAILED, or it is
+	// UNLOADED with an EMPTY asset ref - nothing is coming) or THE AGENT COULD NOT
+	// BE ALLOCATED + misconfiguration guards (no target, no AIAgentComponent, no
+	// NavMeshComponent, no mesh behind a LOADED component). RUNNING while a
+	// CONFIGURED mesh is still loading is not FAILURE and is unaffected by this pin.
 	xRegistry.RegisterNodeType<Zenith_GraphNode_EnsureNavAgent>("EnsureNavAgent", GRAPH_EVENT_NONE, 1, false, "AI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_NavMoveTo>("NavMoveTo", GRAPH_EVENT_NONE, 1, false, "AI");
-	// On Failure = NO BOUND AGENT (:306) or NO PATH to the destination (:314) +
-	// a misconfiguration guard (unresolvable destination ref :311).
+	// On Failure = NO BOUND AGENT or NO PATH to the destination (SetDestination
+	// refused) + a misconfiguration guard (unresolvable destination ref).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavDestination>("SetNavDestination", GRAPH_EVENT_NONE, 1, false, "AI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_StopNav>("StopNav", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadNavState>("ReadNavState", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavSpeed>("SetNavSpeed", GRAPH_EVENT_NONE, 1, false, "AI");
-	// On Failure = NO REACHABLE POINT IN THE RADIUS (:459 - the wander fallback)
-	// + misconfiguration guards (no bound agent / no mesh :447, unresolvable
-	// centre ref :452).
+	// On Failure = NO REACHABLE POINT IN THE RADIUS (the wander fallback) +
+	// misconfiguration guards (no bound agent / no mesh, unresolvable centre ref).
+	// ★ Only the FIRST of those runs BELOW the Radius GetInput, which is why a
+	// no-point execution has already logged a census fallback line and the other
+	// two have not.
 	xRegistry.RegisterNodeType<Zenith_GraphNode_FindRandomReachablePoint>("FindRandomReachablePoint", GRAPH_EVENT_NONE, 1, false, "AI", true);
 
 	// Perception
 	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryPerceivedTargets>("QueryPerceivedTargets", GRAPH_EVENT_NONE, 1, false, "AI");
-	// On Failure = NOTHING PERCEIVED (:544, incl. an unregistered agent) + a
-	// misconfiguration guard (invalid target :539).
+	// On Failure = NOTHING PERCEIVED (GetPrimaryTarget answered INVALID_ENTITY_ID,
+	// incl. an unregistered agent) + a misconfiguration guard (invalid target).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryPrimaryPerceivedTarget>("QueryPrimaryPerceivedTarget", GRAPH_EVENT_NONE, 1, false, "AI", true);
-	// On Failure = NOTHING HEARD (:578, incl. an unregistered agent) + a
-	// misconfiguration guard (invalid target :572).
+	// On Failure = NOTHING HEARD (the Zenith_LastHeardSound is not valid, incl. an
+	// unregistered agent) + a misconfiguration guard (invalid target).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryLastHeardSound>("QueryLastHeardSound", GRAPH_EVENT_NONE, 1, false, "AI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_QueryAwarenessOf>("QueryAwarenessOf", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_EmitSoundStimulus>("EmitSoundStimulus", GRAPH_EVENT_NONE, 1, false, "AI");
