@@ -173,7 +173,8 @@ namespace
 	};
 
 	//==========================================================================
-	// Query actions (always SUCCESS; write blackboard)
+	// Query readers (latch an OUTPUT slot; dual-write the blackboard while the var
+	// name is bound; ReadMousePickRay alone can FAIL)
 	//==========================================================================
 
 	// Key state -> bool var. Mode: 0 = held, 1 = pressed this frame.
@@ -187,6 +188,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "key")
 
 		// Key codes and modes are device configuration, never blackboard values.
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadKeyState)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
@@ -197,9 +200,7 @@ namespace
 			const bool bState = (m_iMode == 1)
 				? DeviceInput().WasKeyPressedThisFrame(m_iKeyCode)
 				: DeviceInput().IsKeyDown(m_iKeyCode);
-			Zenith_PropertyValue xValue;
-			xValue.SetBool(bState);
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<bool>(xContext, uPIN_Result, bState);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadKeyState"; }
@@ -220,6 +221,9 @@ namespace
 		ZENITH_PROPERTY(bool, m_bNormalize, true)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "moveDir")
 
+		// The four key codes and the normalize flag are device configuration.
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMovementAxis)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
@@ -237,9 +241,7 @@ namespace
 			{
 				xDirection = glm::normalize(xDirection);
 			}
-			Zenith_PropertyValue xValue;
-			xValue.SetVector3(xDirection);
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Result, xDirection);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadMovementAxis"; }
@@ -255,6 +257,8 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iPositiveKey, ZENITH_KEY_D)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "axis")
 
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadInputAxis)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
@@ -265,9 +269,7 @@ namespace
 			float fAxis = 0.0f;
 			if (DeviceInput().IsKeyDown(m_iPositiveKey)) { fAxis += 1.0f; }
 			if (DeviceInput().IsKeyDown(m_iNegativeKey)) { fAxis -= 1.0f; }
-			Zenith_PropertyValue xValue;
-			xValue.SetFloat(fAxis);
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<float>(xContext, uPIN_Result, fAxis);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadInputAxis"; }
@@ -280,6 +282,8 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strResultVar, "mousePos")
 
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMousePosition)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
 		ZENITH_GRAPH_PINS_END
@@ -289,9 +293,8 @@ namespace
 		{
 			Zenith_Maths::Vector2_64 xPosition;
 			DeviceInput().GetMousePosition(xPosition);
-			Zenith_PropertyValue xValue;
-			xValue.SetVector2(Zenith_Maths::Vector2(static_cast<float>(xPosition.x), static_cast<float>(xPosition.y)));
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<Zenith_Maths::Vector2>(xContext, uPIN_Result,
+				Zenith_Maths::Vector2(static_cast<float>(xPosition.x), static_cast<float>(xPosition.y)));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadMousePosition"; }
@@ -306,6 +309,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "mouseDelta")
 
 		// m_fSensitivity has no var partner: a scale factor, not an input pin.
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseDelta)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
 		ZENITH_GRAPH_PINS_END
@@ -315,11 +320,9 @@ namespace
 		{
 			Zenith_Maths::Vector2_64 xDelta;
 			DeviceInput().GetMouseDelta(xDelta);
-			Zenith_PropertyValue xValue;
-			xValue.SetVector2(Zenith_Maths::Vector2(
+			SetOutput<Zenith_Maths::Vector2>(xContext, uPIN_Result, Zenith_Maths::Vector2(
 				static_cast<float>(xDelta.x) * m_fSensitivity,
 				static_cast<float>(xDelta.y) * m_fSensitivity));
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadMouseDelta"; }
@@ -333,6 +336,8 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iButton, ZENITH_MOUSE_BUTTON_LEFT)
 		ZENITH_PROPERTY(std::string, m_strResultVar, "mouseHeld")
 
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseButtonHeld)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
@@ -340,9 +345,7 @@ namespace
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			Zenith_PropertyValue xValue;
-			xValue.SetBool(DeviceInput().IsMouseButtonHeld(m_iButton));
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<bool>(xContext, uPIN_Result, DeviceInput().IsMouseButtonHeld(m_iButton));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadMouseButtonHeld"; }
@@ -355,6 +358,8 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strResultVar, "wheel")
 
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseWheel)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
@@ -362,9 +367,7 @@ namespace
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			Zenith_PropertyValue xValue;
-			xValue.SetFloat(DeviceInput().GetMouseWheelDelta());
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<float>(xContext, uPIN_Result, DeviceInput().GetMouseWheelDelta());
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadMouseWheel"; }
@@ -391,9 +394,16 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTapVar, "")
 		ZENITH_PROPERTY(std::string, m_strCountVar, "")
 
-		// Four independent computed results; each write is guarded by its own
-		// "is the var named" test, which is what an OUTPUT with an empty var
-		// already means to the validator. m_iPointerIndex is a slot selector.
+		// Four independent computed results. Each SLOT is latched on every
+		// SUCCESS; only the transitional BLACKBOARD write is skipped for a pin
+		// whose var name reads empty, which is SetOutput's own dual-write rule -
+		// and which is what an OUTPUT with an empty var already means to the
+		// validator. m_iPointerIndex is a slot selector, not a pin.
+		static constexpr u_int uPIN_Down = 0u;
+		static constexpr u_int uPIN_Position = 1u;
+		static constexpr u_int uPIN_Tap = 2u;
+		static constexpr u_int uPIN_Count = 3u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadPointer)
 		ZENITH_GRAPH_PIN_OUTPUT(Down, "m_strDownVar", PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR2)
@@ -412,27 +422,16 @@ namespace
 			// where only one finger is down.
 			const Zenith_Pointer* pxPointer = bValidSlot ? &xPointers.GetPointer(static_cast<u_int32>(m_iPointerIndex)) : nullptr;
 
-			Zenith_PropertyValue xValue;
-			if (!m_strDownVar.empty())
-			{
-				xValue.SetBool(pxPointer != nullptr && pxPointer->IsDown());
-				xContext.m_pxBlackboard->SetValue(m_strDownVar, xValue);
-			}
-			if (!m_strPositionVar.empty())
-			{
-				xValue.SetVector2(pxPointer != nullptr ? pxPointer->m_xPosition : Zenith_Maths::Vector2(0.0f, 0.0f));
-				xContext.m_pxBlackboard->SetValue(m_strPositionVar, xValue);
-			}
-			if (!m_strTapVar.empty())
-			{
-				xValue.SetBool(pxPointer != nullptr && pxPointer->m_bTapThisFrame);
-				xContext.m_pxBlackboard->SetValue(m_strTapVar, xValue);
-			}
-			if (!m_strCountVar.empty())
-			{
-				xValue.SetInt32(static_cast<int32_t>(xPointers.GetActivePointerCount()));
-				xContext.m_pxBlackboard->SetValue(m_strCountVar, xValue);
-			}
+			// All four latch unconditionally: the four "is the var named" guards
+			// (and the two computations that lived inside them) are gone, and the
+			// dual-write's own non-empty rule reproduces exactly which of them
+			// reach the blackboard - Down/Position by default, Tap/Count only when
+			// an author names them.
+			SetOutput<bool>(xContext, uPIN_Down, pxPointer != nullptr && pxPointer->IsDown());
+			SetOutput<Zenith_Maths::Vector2>(xContext, uPIN_Position,
+				pxPointer != nullptr ? pxPointer->m_xPosition : Zenith_Maths::Vector2(0.0f, 0.0f));
+			SetOutput<bool>(xContext, uPIN_Tap, pxPointer != nullptr && pxPointer->m_bTapThisFrame);
+			SetOutput<int32_t>(xContext, uPIN_Count, static_cast<int32_t>(xPointers.GetActivePointerCount()));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadPointer"; }
@@ -449,6 +448,9 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strOriginVar, "rayOrigin")
 		ZENITH_PROPERTY(std::string, m_strDirectionVar, "rayDir")
 
+		static constexpr u_int uPIN_Origin = 0u;
+		static constexpr u_int uPIN_Direction = 1u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMousePickRay)
 		ZENITH_GRAPH_PIN_OUTPUT(Origin, "m_strOriginVar", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_OUTPUT(Direction, "m_strDirectionVar", PROPERTY_TYPE_VECTOR3)
@@ -457,23 +459,18 @@ namespace
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
+			// The FAILURE sits ABOVE every accessor, so an unresolvable main camera
+			// builds no pin state at all: there is no slot to read, and a consumer
+			// wire off either output must be gated on SUCCESS (this node has no
+			// routable failure pin).
 			Zenith_CameraComponent* pxCamera = Zenith_GetMainCameraAcrossScenes();
 			if (pxCamera == nullptr)
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 			const Zenith_PhysicsQuery::Ray xRay = Zenith_PhysicsQuery::BuildRayFromMouse(*pxCamera);
-			Zenith_PropertyValue xValue;
-			if (!m_strOriginVar.empty())
-			{
-				xValue.SetVector3(xRay.m_xOrigin);
-				xContext.m_pxBlackboard->SetValue(m_strOriginVar, xValue);
-			}
-			if (!m_strDirectionVar.empty())
-			{
-				xValue.SetVector3(xRay.m_xDirection);
-				xContext.m_pxBlackboard->SetValue(m_strDirectionVar, xValue);
-			}
+			SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Origin, xRay.m_xOrigin);
+			SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Direction, xRay.m_xDirection);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadMousePickRay"; }
@@ -609,6 +606,8 @@ namespace
 
 		// m_strAction names a registered INPUT ACTION, not a blackboard
 		// variable - it is resolved against g_xEngine.Actions() and is not a pin.
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadActionAxis1D)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
@@ -616,14 +615,14 @@ namespace
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
+			// The unresolvable-action FAILURE stays ABOVE the write, so an inert
+			// node builds no pin state and latches nothing.
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
 			if (uAction == uINPUT_ACTION_INVALID)
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			Zenith_PropertyValue xValue;
-			xValue.SetFloat(ActionLayer().GetAxis1D(uAction));
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<float>(xContext, uPIN_Result, ActionLayer().GetAxis1D(uAction));
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadActionAxis1D"; }
@@ -644,6 +643,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strAction, "")
 		ZENITH_PROPERTY(std::string, m_strResultVar, "axis2D")
 
+		static constexpr u_int uPIN_Result = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadActionAxis2D)
 		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
 		ZENITH_GRAPH_PINS_END
@@ -651,6 +652,7 @@ namespace
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
+			// As ReadActionAxis1D: the FAILURE precedes the write.
 			const Zenith_InputActionID uAction = m_xActionRef.Resolve(m_strAction);
 			if (uAction == uINPUT_ACTION_INVALID)
 			{
@@ -658,9 +660,7 @@ namespace
 			}
 			Zenith_Maths::Vector2 xAxis(0.0f, 0.0f);
 			ActionLayer().GetAxis2D(uAction, xAxis);
-			Zenith_PropertyValue xValue;
-			xValue.SetVector2(xAxis);
-			xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+			SetOutput<Zenith_Maths::Vector2>(xContext, uPIN_Result, xAxis);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
 		const char* GetTypeName() const override { return "ReadActionAxis2D"; }
