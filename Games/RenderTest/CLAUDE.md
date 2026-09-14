@@ -224,24 +224,32 @@ are DELETED.
 
 ### Pin tables + validate-clean
 
-RenderTest's own node headers carry **zero** blackboard-variable-name
-properties, so there is no annotation sweep to do here and deliberately NO pin
-totality test (the harness's `uVarNamePropertiesSeen > 0` positive control
-would fail on an empty walk). The `RTTennis*` nodes reach the blackboard
-through the compile-time constants `RenderTest_TennisBB::k_sz*`
-(`Components/RenderTest_TennisAgentComponent.h:47-59`) rather than through a
-name PROPERTY, so no descriptor can bind them: they stay OPAQUE to
-`Zenith_GraphDefinitionValidator` in Epic A and become pins in Epic B.
+The seven blackboard-reading `RTTennis*` nodes now expose 18 var-name
+properties: 15 ordinary INPUTs and three `BallEntity` TARGET_ENTITY references.
+Two `ServeFromDeuce` BOOL const twins preserve its true fallback when its name
+is absent or wrongly tagged. `BallEntity` remains a direct target reference:
+an absent, wrong-tagged, or empty name is `INVALID_ENTITY_ID`, while a present
+packed zero remains a legal value and is never replaced by self. The six nodes
+with no blackboard reads (`RTTennisTickGate`, `RTTennisDecideShot`, and the four
+`RTPlayer*` action verbs) remain intentionally opaque.
+
+`RenderTest_TennisBrain` now declares `BallEntity` as an ENTITY_ID seeded with
+packed `INVALID_ENTITY_ID`, because the bridge writes it and the target
+descriptors make that read validator-visible. `OppEntity` remains undeclared:
+the bridge publishes it but no graph node reads it. The tools boot therefore
+re-authors `RenderTest.zscen` for this declaration; the later wire migration
+re-authors the same scene again when it removes the three obsolete BOOL slots.
+`RenderTest_Tennis.Tests.inl` carries the pin-table totality row and live
+direct-node witnesses; these transitional direct-construction rows are listed
+for conversion to explicit graph wiring in B-7.6 before C-1 deletes fallback.
 
 What DOES exist is `Tests/Test_GraphsValidateClean.cpp` — an automated test
 (`RT_GraphsValidateClean`) that builds BOTH graphs in-process from their own
 builders and fails on any ERROR-severity validation finding — the mechanical
 precondition A-8 then latched into `Build()`'s return. RenderTest reported zero
-before this unit and needed no new `Variable(...)`: in particular
-`k_szOppEntity` and `k_szBallEntity` stay deliberately undeclared
-(`RenderTest.cpp:1726-1727` — the brain shim's `OnStart` seeds both, and
-declaring one would move `RenderTest.zscen` for no validator gain). To make the
-player-actions graph reachable, `BuildGraph_RenderTestPlayerActions` lost its
+before this unit. `k_szBallEntity` is now declared while `k_szOppEntity` remains
+bridge-only, as described above. To make the player-actions graph reachable,
+`BuildGraph_RenderTestPlayerActions` lost its
 `static` and is declared in **`RenderTest_Graphs.h`**, `#ifdef ZENITH_TOOLS`
 because its definition sits in RenderTest.cpp's tools block;
 `BuildGraph_RenderTestTennisBrain` was already declared (unconditionally) in

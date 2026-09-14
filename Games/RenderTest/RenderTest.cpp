@@ -1709,6 +1709,7 @@ void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xBF;    xBF.SetBool(false);
 	Zenith_PropertyValue xBT;    xBT.SetBool(true);
 	Zenith_PropertyValue xV0;    xV0.SetVector3(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	Zenith_PropertyValue xInvalidEntity; xInvalidEntity.SetPackedEntityID(INVALID_ENTITY_ID.GetPacked());
 	xB.Variable("tickAccum", xF0);
 	xB.Variable("tickDue", xBF);
 	xB.Variable("phaseIsServing", xBF);
@@ -1724,8 +1725,10 @@ void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder)
 	xB.Variable(k_szIsMyBall, xBF);
 	xB.Variable(k_szServeBallParked, xBF);
 	xB.Variable(k_szBallSpin, xV0);
-	// BallEntity/OppEntity are runtime handles seeded by the brain shim's
-	// OnStart (SeedGraphBlackboard) - deliberately NOT declared here.
+	// BallEntity is the typed TARGET_REF declaration that makes the bridge's
+	// OnStart packed-id seed validator-visible. OppEntity has no graph reader;
+	// leave that bridge-only publish undeclared.
+	xB.Variable(k_szBallEntity, xInvalidEntity);
 
 	const u_int uSelector = BuildTennisBrain_TickSpine(xB);
 	BuildTennisBrain_Serve(xB, uSelector);

@@ -17,15 +17,13 @@
  * a disk-reading unit would find nothing on a fresh checkout and would have to
  * skip, and a skip counts as a pass.
  *
- * ★ RENDERTEST'S RTTennis* NODES ARE STILL OPAQUE, and that is why this unit
- * can be clean without a single new declaration. They read the blackboard
- * through the compile-time constants RenderTest_TennisBB::k_sz*
- * (RenderTest_TennisAgentComponent.h:47-59) rather than through a name
- * PROPERTY, so no pin descriptor can bind them and the validator sees neither
- * their reads nor their writes (Epic A records this; Epic B turns them into
- * pins). In particular k_szOppEntity and k_szBallEntity stay DELIBERATELY
- * undeclared - RenderTest.cpp:1726-1727 leaves both to the brain shim's OnStart
- * seed, and declaring one would move RenderTest.zscen for no validator gain.
+ * ★ SEVEN RTTennis* NODES ARE ANNOTATED HERE: their 15 data INPUTs and three
+ * BallEntity TARGET_REF descriptors make the validator see every graph read.
+ * BallEntity is consequently declared as an ENTITY_ID with an INVALID packed
+ * seed in BuildGraph_RenderTestTennisBrain; the bridge still overwrites it in
+ * OnStart. OppEntity remains deliberately undeclared because no graph node
+ * reads it. RTTennisTickGate, RTTennisDecideShot, and the four RTPlayer* verbs
+ * have no blackboard read and remain OPAQUE by design.
  *
  * ★ #ifdef ZENITH_TOOLS: BuildGraph_RenderTestPlayerActions lives inside
  * RenderTest.cpp's tools block, so a `_False` config has no definition to call.
