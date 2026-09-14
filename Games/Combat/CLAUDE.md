@@ -212,6 +212,22 @@ block). The `BuildCombatGameFlow_*` sub-builders stay `static`. A sixth builder
 added without a row in the validate-clean table goes unchecked — the row goes in
 with the builder.
 
+**Live pin execution (B-7.4a).** The 18 annotated node classes expose 26
+descriptors: 14 INPUT and 12 OUTPUT.  Every INPUT is read through
+`GetInput<T>` in the branch where its old blackboard read occurred, and every
+OUTPUT is published through `SetOutput` at its old success point.  The eight
+classes with no variable-name property remain intentionally opaque:
+`CombatDeactivateHitbox`, `CombatSetGameState`, `CombatPlayerPostTick`,
+`CombatEnemyIdleTick`, `CombatSetScenePaused`, `CombatResetGame`,
+`CombatReturnToMenu`, and `CombatFocusPlayButton`.  The totality, table-index,
+input/output, runtime-fixture, and guard-contract rows in
+`Combat_Tests_GraphPinTotality.cpp` are ten Combat `ZENITH_TEST`s, so this migration
+moves only Combat's unit-pin row.  They include initialized-slot zero versus
+bare-UNSET guard failures, success-to-failure retention, and the EnemyPreTick
+cooldown-Dt discriminator. The temporary fallback census rises for bound
+legacy INPUT names until B-7.4b replaces them with data edges or
+`GetVariable` producers; OUTPUT names do not consume fallback entries.
+
 **Accepted divergences** (unobservable / precedented): `Combat_GameFlow`'s
 `@60`-graph / `@100`-component split shifts the systems block by one frame on a
 reset / resume frame (runs on fresh/resumed state); and PAUSE/RESTART/
