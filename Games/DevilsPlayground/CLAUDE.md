@@ -519,3 +519,89 @@ The full reference is `C:\dev\Zenith\CLAUDE.md`'s "External agent board"
 section, and `Games/Zenithmon/Docs/Board.md` for how a game's docs and its
 board relate.
 
+## B-7.2a — live game-node pins
+
+`Components/DP_GraphNodes.h` is now a live pin surface: its 25 annotated
+node classes publish 48 descriptors, with 35 INPUT, 9 OUTPUT, and 4
+READWRITE roles. Addressed INPUT and OUTPUT descriptors have public
+`uPIN_*` constants before their tables. Reads use the pin accessor at the
+old read site; OUTPUT writes use `SetOutput` at the old computation site.
+The four READWRITE selectors remain the intentional direct name-based
+accesses.
+
+The former entity-variable helper family remains deliberately distinct from
+ordinary packed-zero reads. Fifteen entity inputs preserve absent or
+wrong-tag `INVALID_ENTITY_ID` semantics through the checked,
+presence-aware helper; a present packed zero stays a legal zero. The three
+old zero-default reads — ItemArmChannel.Villager,
+PriestPickPatrolTarget.HighScentTarget, and
+PriestApprehendChannel.TargetWithDevil — use the typed packed-entity input
+path and retain zero semantics. B-7.2b will seed payload declarations with
+INVALID in Forge, Pentagram, Chest, Door, and DoubleDoor, and will avoid
+adding an unused Villager payload declaration.
+
+The nonzero `INPUT_VAR_OR_CONST` twins are part of the runtime contract:
+Villager footstep `QuietMult = 1`, Forge recipe input/output = Iron/Key,
+and Priest patrol suspicion radius = 15. The 15 radius is also declared in
+the Priest graph, so a graph-wired value is concrete while a direct,
+self-bound node retains its old 15 fallback. The Door and Item literal
+accesses gained their own properties and descriptors without conflating
+independent configurable reads and literal writes. In particular,
+DoorAdvanceAnim's settling Anim output is separate from its Anim input and
+only writes when the old settle condition holds.
+
+Pin state self-binds for directly constructed nodes, which preserves the
+existing compatibility tests while making their fallback legs observable.
+`Tests/Test_DPGraphNodePins.cpp` covers hermetic pin behavior and
+`Tests/Test_DPGraphNodeWorldPins.cpp` covers real Door and Forge component
+effects; `Tests/Test_GraphPinTotality.cpp` checks the registered tables and
+indices through counted failures. The newly exposed
+`specialBehaviour` read removes the prior two DP DECLARED_UNUSED warnings;
+the expected transition is 2 to 0. The header migration also changes
+fallback observations, so census values must be measured after integration,
+not inferred from descriptor counts.
+
+The world registration is DP_GraphNodeWorldPins_Test. Alongside real Door
+and Forge effects, it proves the four scalar input cases directly:
+WinCheckAlreadyCollected.Tag, WinNotifyCollected.Tag,
+DispatchObjectivePlaced.Tag, and AnimateDoorLeaves.IsOpen; each uses an
+override against a contradictory blackboard value and checks zero fallback,
+mismatch, and bad-access counts.
+
+Existing playthroughs remain the end-to-end coverage for nodes whose side
+effects need their authored chains: Test_P2Archetype_ChildCannotCarryTools
+covers ChildRefusal; Test_P2Reagent_BellSoulRingsBell plus
+Test_P2BellSoul_PriestHearsTheBell cover RingBell and hearing;
+Test_Possession plus Test_P1Cooldown_CannotPossessFor1pt5s cover TryPossess
+and its cooldown; Test_DPDoor plus Test_DoubleDoorAndForge cover consume/key
+and door flows; Test_PentagramVictory covers the objective/victory chain.
+
+The WorldPins compatibility ledger has exactly these four named fallback
+uses. They are intentional direct-node witnesses and move to B-7.6's
+direct-corpus rewiring work; they are not authored-gameplay graph residue.
+
+| Test leg | Node | Pin | Variable | Count | B-7.6 disposition |
+|---|---|---:|---|---:|---|
+| Forge missing recipe binding | DPNode_ForgeCraft | 1 | recipeInput | 1 | Wire direct corpus consumer |
+| Forge missing recipe binding | DPNode_ForgeCraft | 2 | recipeOutput | 1 | Wire direct corpus consumer |
+| Forge wrong-type recipe binding | DPNode_ForgeCraft | 1 | recipeInput | 1 | Wire direct corpus consumer |
+| Forge wrong-type recipe binding | DPNode_ForgeCraft | 2 | recipeOutput | 1 | Wire direct corpus consumer |
+
+Pre-B-7.2 recorded baseline: DevilsPlayground has 162 automated tests,
+16 IN_PLACE_ALIASING findings, and 2 DECLARED_UNUSED findings. Observed Null
+unit-test baselines remain Combat 2679, Zenithmon 4538, and RenderTest 2784.
+The prior FALLBACK observation was 16116; it is a baseline for line-set
+comparison, not a post-migration prediction.
+
+Observed B-7.2a validation: both category builds, the T3 gate, and all seven
+fresh-boot census suites passed. DP has 165 registrations (144 ran, 21 headless
+skips); all three new fixtures ran 739 checks with zero failures. Its 19552
+INPUT fallbacks comprise 16116 prior engine uses, 149 new-fixture engine uses,
+and 3287 newly live game-pin uses. Both independent DP runs have the same 125
+exact diagnostic token multiplicities: 16 alias warnings, two deliberate type
+mismatches, zero bad accesses, and zero validator errors or unused declarations.
+The hermetic fixture's final scene survives ordinary last-scene unload until
+the mandatory harness reset; subscriptions and held/tag state are released,
+and every subsequent preexisting test retains its prior engine diagnostics.
+Observed unit pins remain Combat 2679, Zenithmon 4538, and RenderTest 2784.
+B-7.2a is committed directly to master under this program's branch-mode ruling.

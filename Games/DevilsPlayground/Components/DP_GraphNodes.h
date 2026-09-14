@@ -12,6 +12,8 @@
  * blackboard under designer-visible variable names.
  *
  * Registered from Project_RegisterGameComponents via DP_RegisterGraphNodes().
+ * Blackboard-facing properties are live graph pins: Execute reads INPUT pins
+ * through GetInput/TryGetInput and publishes OUTPUT pins through SetOutput.
  * The "Interact" custom event (packed-villager payload) is fired by
  * DPGraphInteractable_Component; "MenuPlay"/"MenuQuit" by
  * DPMenuRelay_Component.
@@ -47,15 +49,20 @@ namespace
 {
 	// Shared: read a packed-EntityID blackboard variable (stored by the
 	// OnCustomEvent source from the interact payload).
-	inline Zenith_EntityID DPGraph_GetEntityVar(Zenith_GraphContext& xContext, const std::string& strVar)
+	inline Zenith_EntityID DPGraph_GetEntityInput(Zenith_GraphNode& xNode, Zenith_GraphContext& xContext, u_int uPin)
 	{
-		const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(strVar);
+		const Zenith_PropertyValue* pxValue = nullptr;
+		if (!xNode.TryGetInput(xContext, uPin, pxValue))
+		{
+			return INVALID_ENTITY_ID;
+		}
 		if (!pxValue || pxValue->GetType() != PROPERTY_TYPE_ENTITY_ID)
 		{
-			return Zenith_EntityID();
+			return INVALID_ENTITY_ID;
 		}
 		return Zenith_EntityID::FromPacked(pxValue->GetPackedEntityID());
 	}
+
 }
 
 //==============================================================================
@@ -93,8 +100,10 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_Tag = 1;
 
-	// The villager is READ straight off the blackboard by DPGraph_GetEntityVar
+	// The villager is read through the presence-aware ENTITY_ID pin helper
 	// (which demands PROPERTY_TYPE_ENTITY_ID and has no ""-means-self rule), so
 	// it is a typed INPUT rather than a TARGET_REF. The tag is this node's own
 	// computed answer, staged for the rest of the deposit chain.
@@ -106,7 +115,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		if (!xVillager.IsValid())
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
@@ -115,7 +124,7 @@ public:
 		if (!DP_IsObjectiveTag(eHeld)) return GRAPH_NODE_STATUS_FAILURE;
 		Zenith_PropertyValue xValue;
 		xValue.SetInt32((int32_t)eHeld);
-		xContext.m_pxBlackboard->SetValue(m_strTagVar, xValue);
+		SetOutput(xContext, uPIN_Tag, xValue);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "DPReadHeldObjective"; }
@@ -130,6 +139,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_WinCheckAlreadyCollected)
 public:
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
+	static constexpr u_int uPIN_Tag = 0;
 
 	// Read-only: the objective tag DPReadHeldObjective staged upstream.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_WinCheckAlreadyCollected)
@@ -139,8 +149,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const DP_ItemTag eHeld =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strTagVar, (int32_t)DP_ItemTag::None);
+		const DP_ItemTag eHeld = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
 		const uint32_t uBit = DP_ObjectiveTagToBit(eHeld);
 		if (DP_Win::GetCollectedObjectivesMask() & uBit) return GRAPH_NODE_STATUS_FAILURE;
 		return GRAPH_NODE_STATUS_SUCCESS;
@@ -157,6 +166,8 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_Tag = 1;
 
 	// Both read-only; the win-state side table is C++, not the blackboard.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_WinNotifyCollected)
@@ -167,9 +178,8 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
-		const DP_ItemTag eHeld =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strTagVar, (int32_t)DP_ItemTag::None);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
+		const DP_ItemTag eHeld = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
 		DP_Win::NotifyObjectiveCollected(eHeld, xVillager, xContext.m_xSelf.GetEntityID());
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
@@ -184,6 +194,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ConsumeHeldItem)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
+	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ConsumeHeldItem)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
@@ -192,7 +203,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		Zenith_EntityID xItem = DP_Player::GetHeldItemEntity(xVillager);
 		DP_Player::RemoveHeldItem(xVillager);
 		if (xItem.IsValid())
@@ -216,6 +227,8 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_Tag = 1;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchObjectivePlaced)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
@@ -225,9 +238,8 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
-		const DP_ItemTag eHeld =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strTagVar, (int32_t)DP_ItemTag::None);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
+		const DP_ItemTag eHeld = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
 		const int iBitIdx = static_cast<int>(eHeld) - static_cast<int>(DP_ItemTag::Objective1);
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnObjectivePlaced{ xVillager, xContext.m_xSelf.GetEntityID(), iBitIdx });
@@ -291,6 +303,7 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(int32_t, m_iKeyTag, (int32_t)DP_ItemTag::Key)
+	static constexpr u_int uPIN_Villager = 0;
 
 	// m_iKeyTag is an inline constant with no var partner (the double door's
 	// hard-coded Key semantics), so it is not a pin of its own.
@@ -301,7 +314,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		if (!xVillager.IsValid()) return GRAPH_NODE_STATUS_FAILURE;
 		return DP_Items::TryConsumeKeyForUnlock(xVillager, (DP_ItemTag)m_iKeyTag)
 			? GRAPH_NODE_STATUS_SUCCESS : GRAPH_NODE_STATUS_FAILURE;
@@ -317,6 +330,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchDoorOpened)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
+	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchDoorOpened)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
@@ -326,7 +340,7 @@ public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_EventDispatcher::Get().Dispatch(
-			DP_OnDoorOpened{ DPGraph_GetEntityVar(xContext, m_strVillagerVar),
+			DP_OnDoorOpened{ DPGraph_GetEntityInput(*this, xContext, uPIN_Villager),
 			                 xContext.m_xSelf.GetEntityID() });
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
@@ -340,6 +354,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchDoorClosed)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
+	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchDoorClosed)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
@@ -349,7 +364,7 @@ public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_EventDispatcher::Get().Dispatch(
-			DP_OnDoorClosed{ DPGraph_GetEntityVar(xContext, m_strVillagerVar),
+			DP_OnDoorClosed{ DPGraph_GetEntityInput(*this, xContext, uPIN_Villager),
 			                 xContext.m_xSelf.GetEntityID() });
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
@@ -367,6 +382,7 @@ public:
 	ZENITH_PROPERTY(std::string, m_strOpenTVar, "openT")
 	ZENITH_PROPERTY(std::string, m_strYawKey, "interactables.double_door_open_yaw_deg")
 	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.double_door_open_duration_s")
+	static constexpr u_int uPIN_IsOpen = 0;
 
 	// openT is read AND written back under the SAME name in one Execute (the
 	// in-place advance below) - a SELECTOR_READWRITE, which by ruling cannot
@@ -380,7 +396,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		if (!xContext.m_pxBlackboard->GetBool(m_strIsOpenVar)) return GRAPH_NODE_STATUS_SUCCESS;
+		if (!GetInput<bool>(xContext, uPIN_IsOpen)) return GRAPH_NODE_STATUS_SUCCESS;
 		float fOpenT = xContext.m_pxBlackboard->GetFloat(m_strOpenTVar);
 		if (fOpenT >= 1.0f) return GRAPH_NODE_STATUS_SUCCESS;
 
@@ -435,6 +451,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchChestOpened)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
+	static constexpr u_int uPIN_Villager = 0;
 
 	// Read-only, and deliberately ungated: an INVALID payload still opens the
 	// chest (quirk preserved) - the read just yields an invalid EntityID.
@@ -446,7 +463,7 @@ public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_EventDispatcher::Get().Dispatch(
-			DP_OnChestOpened{ DPGraph_GetEntityVar(xContext, m_strVillagerVar),
+			DP_OnChestOpened{ DPGraph_GetEntityInput(*this, xContext, uPIN_Villager),
 			                  xContext.m_xSelf.GetEntityID() });
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
@@ -477,6 +494,7 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strRequiredKeyVar, "requiredKey")
+	static constexpr u_int uPIN_Villager = 0;
 
 	// requiredKey is read (which key does this door want?) and, on a successful
 	// unlock, written back to None under the SAME name - the STICKY unlock. That
@@ -490,7 +508,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		if (!xVillager.IsValid()) return GRAPH_NODE_STATUS_FAILURE;
 		DPDoor_Component* pxShim = xContext.m_xSelf.IsValid()
 			? xContext.m_xSelf.TryGetComponent<DPDoor_Component>() : nullptr;
@@ -526,6 +544,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DoorPentagramDeferral)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
+	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorPentagramDeferral)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
@@ -534,7 +553,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		if (!xVillager.IsValid()) return GRAPH_NODE_STATUS_FAILURE;
 		return DP_Win::IsPentagramInRange(xVillager)
 			? GRAPH_NODE_STATUS_FAILURE : GRAPH_NODE_STATUS_SUCCESS;
@@ -595,20 +614,21 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strAnimVar, "anim")
 	ZENITH_PROPERTY(std::string, m_strOpenTVar, "openT")
+	ZENITH_PROPERTY(std::string, m_strSettledAnimVar, "anim")
+	static constexpr u_int uPIN_Anim = 0;
+	static constexpr u_int uPIN_SettledAnim = 2;
 	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.door_open_duration_s")
 
-	// ★ m_strAnimVar is an INPUT, not a READWRITE, and the difference is real:
-	// the settle writes through the private SetAnim helper, which names the
-	// blackboard variable "anim" as a HARD-CODED LITERAL rather than through
-	// this property (see SetAnim below - changing that is an Execute change and
-	// out of this unit's scope). A pin can only describe the property, so the
-	// honest annotation is "this node READS the named anim variable"; the graph
-	// declares anim, and its SetBlackboardInt nodes are its visible writers.
+	// Anim is an input and the settle result has its own output property.  The
+	// properties intentionally begin with the same default name: a graph may
+	// configure their names independently, while the output remains conditional
+	// on an actual Opening/Closing settle.
 	// openT IS read-modify-written through its property (StoreT), so it is a
 	// SELECTOR_READWRITE. m_strDurationKey is a DP_Tuning key, not a pin.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorAdvanceAnim)
 	ZENITH_GRAPH_PIN_INPUT(Anim, "m_strAnimVar", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(OpenT, "m_strOpenTVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(SettledAnim, "m_strSettledAnimVar", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -618,7 +638,7 @@ public:
 			? xContext.m_xSelf.TryGetComponent<DPDoor_Component>() : nullptr;
 		if (pxShim == nullptr) return GRAPH_NODE_STATUS_FAILURE;
 
-		const int32_t iAnim = xContext.m_pxBlackboard->GetInt32(m_strAnimVar, 0);
+		const int32_t iAnim = GetInput<int32_t>(xContext, uPIN_Anim);
 		float fOpenT = xContext.m_pxBlackboard->GetFloat(m_strOpenTVar);
 
 		if (iAnim == static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening))
@@ -654,11 +674,11 @@ public:
 	const char* GetTypeName() const override { return "DPDoorAdvanceAnim"; }
 
 private:
-	static void SetAnim(Zenith_GraphContext& xContext, DPDoor_Component::DoorAnim eAnim)
+	void SetAnim(Zenith_GraphContext& xContext, DPDoor_Component::DoorAnim eAnim)
 	{
 		Zenith_PropertyValue xValue;
 		xValue.SetInt32(static_cast<int32_t>(eAnim));
-		xContext.m_pxBlackboard->SetValue("anim", xValue);
+		SetOutput(xContext, uPIN_SettledAnim, xValue);
 	}
 	void StoreT(Zenith_GraphContext& xContext, float fOpenT)
 	{
@@ -744,6 +764,11 @@ public:
 	ZENITH_PROPERTY(std::string, m_strLoudnessVar, "footstepLoudness")
 	ZENITH_PROPERTY(std::string, m_strRadiusVar, "footstepRadius")
 	ZENITH_PROPERTY(std::string, m_strQuietMultVar, "quietLoudnessMult")
+	ZENITH_PROPERTY(float, m_fQuietMult, 1.0f)
+	static constexpr u_int uPIN_WalkQuiet = 0;
+	static constexpr u_int uPIN_Loudness = 1;
+	static constexpr u_int uPIN_Radius = 2;
+	static constexpr u_int uPIN_QuietMult = 3;
 
 	// Four pure READS: the emission verb computes nothing it stores. Loudness,
 	// radius and the quiet multiplier are the OnAwake-seeded tuning mirror; the
@@ -752,17 +777,17 @@ public:
 	ZENITH_GRAPH_PIN_INPUT(WalkQuiet, "m_strWalkQuietVar", PROPERTY_TYPE_BOOL)
 	ZENITH_GRAPH_PIN_INPUT(Loudness, "m_strLoudnessVar", PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PIN_INPUT(Radius, "m_strRadiusVar", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_INPUT(QuietMult, "m_strQuietMultVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(QuietMult, "m_strQuietMultVar", "m_fQuietMult", PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		float fLoudness = xContext.m_pxBlackboard->GetFloat(m_strLoudnessVar);
-		const float fRadius = xContext.m_pxBlackboard->GetFloat(m_strRadiusVar);
-		if (xContext.m_pxBlackboard->GetBool(m_strWalkQuietVar, false))
+		float fLoudness = GetInput<float>(xContext, uPIN_Loudness);
+		const float fRadius = GetInput<float>(xContext, uPIN_Radius);
+		if (GetInput<bool>(xContext, uPIN_WalkQuiet))
 		{
-			fLoudness *= xContext.m_pxBlackboard->GetFloat(m_strQuietMultVar, 1.0f);
+			fLoudness *= GetInput<float>(xContext, uPIN_QuietMult);
 		}
 
 		Zenith_Maths::Vector3 xPos(0.0f);
@@ -864,6 +889,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_PickVillagerUnderCursor)
 public:
 	ZENITH_PROPERTY(std::string, m_strResultVar, "clicked")
+	static constexpr u_int uPIN_Result = 0;
 
 	// The picked villager is this node's own computed answer - an OUTPUT, and
 	// the in-graph WRITER that satisfies DPTryPossess' read of "clicked".
@@ -912,7 +938,7 @@ public:
 		}
 		Zenith_PropertyValue xValue;
 		xValue.SetPackedEntityID(xCtx.m_xBest.GetPacked());
-		xContext.m_pxBlackboard->SetValue(m_strResultVar, xValue);
+		SetOutput(xContext, uPIN_Result, xValue);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "DPPickVillagerUnderCursor"; }
@@ -929,6 +955,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_TryPossess)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "clicked")
+	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_TryPossess)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
@@ -937,7 +964,7 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		if (!xVillager.IsValid())
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
@@ -1001,6 +1028,11 @@ public:
 	ZENITH_PROPERTY(std::string, m_strRecipeInputVar, "recipeInput")
 	ZENITH_PROPERTY(std::string, m_strRecipeOutputVar, "recipeOutput")
 	ZENITH_PROPERTY(std::string, m_strCraftCountVar, "craftCount")
+	ZENITH_PROPERTY(int32_t, m_iRecipeInput, (int32_t)DP_ItemTag::Iron)
+	ZENITH_PROPERTY(int32_t, m_iRecipeOutput, (int32_t)DP_ItemTag::Key)
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_RecipeInput = 1;
+	static constexpr u_int uPIN_RecipeOutput = 2;
 
 	// The recipe pair is READ (SetRecipe seeds it on the blackboard); the craft
 	// count is read and incremented back under the SAME name in one Execute, so
@@ -1009,8 +1041,8 @@ public:
 	// can name them.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ForgeCraft)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(RecipeInput, "m_strRecipeInputVar", PROPERTY_TYPE_INT32)
-	ZENITH_GRAPH_PIN_INPUT(RecipeOutput, "m_strRecipeOutputVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(RecipeInput, "m_strRecipeInputVar", "m_iRecipeInput", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(RecipeOutput, "m_strRecipeOutputVar", "m_iRecipeOutput", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(CraftCount, "m_strCraftCountVar", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
@@ -1030,10 +1062,10 @@ public:
 		// NOTE: no villager-validity gate - the retired code had none. An
 		// invalid villager reads held tag None, mismatches the recipe and
 		// falls out silently, exactly like before.
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		const DP_ItemTag eHeld = DP_Player::GetHeldItemTag(xVillager);
 		const DP_ItemTag eRecipeInput =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strRecipeInputVar, (int32_t)DP_ItemTag::Iron);
+			(DP_ItemTag)GetInput<int32_t>(xContext, uPIN_RecipeInput);
 		if (eHeld != eRecipeInput)
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
@@ -1051,7 +1083,7 @@ public:
 		// 2. Spawn output at the forge + auto-equip. The name uses the
 		// PRE-increment count; the count bumps even on spawn failure.
 		const DP_ItemTag eRecipeOutput =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strRecipeOutputVar, (int32_t)DP_ItemTag::Key);
+			(DP_ItemTag)GetInput<int32_t>(xContext, uPIN_RecipeOutput);
 		const int32_t iCraftCount = xContext.m_pxBlackboard->GetInt32(m_strCraftCountVar, 0);
 		Zenith_EntityID xOutput = pxShim->SpawnOutputItem(eRecipeOutput, (uint32_t)iCraftCount);
 		if (xOutput.IsValid())
@@ -1096,6 +1128,7 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strKey, "")
 	ZENITH_PROPERTY(std::string, m_strVar, "value")
+	static constexpr u_int uPIN_Result = 0;
 
 	// m_strKey is a DP_Tuning KEY, not a blackboard name - not a pin (and it
 	// escapes the m_str*Var* matcher). The staged float IS this node's computed
@@ -1108,13 +1141,13 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		if (m_strKey.empty() || m_strVar.empty())
+		if (m_strKey.empty())
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
 		}
 		Zenith_PropertyValue xValue;
 		xValue.SetFloat(DP_Tuning::Get<float>(m_strKey.c_str()));
-		xContext.m_pxBlackboard->SetValue(m_strVar, xValue);
+		SetOutput(xContext, uPIN_Result, xValue);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "DPReadTuningFloat"; }
@@ -1136,6 +1169,8 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_Tag = 1;
 
 	// Both READS. possessedVillager is written by the DPItemBase shim each frame
 	// (DPItemBase_Component.h:156), which no pin can express - the graph
@@ -1148,9 +1183,8 @@ public:
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
-		const DP_ItemTag eTag =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strTagVar, (int32_t)DP_ItemTag::None);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
+		const DP_ItemTag eTag = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
 		if (!DP_Player::IsChildVillagerWithToolTag(xVillager, eTag))
 		{
 			return GRAPH_NODE_STATUS_SUCCESS;
@@ -1180,24 +1214,31 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemArmChannel)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
+	ZENITH_PROPERTY(std::string, m_strChannelVillagerVar, "channelVillager")
+	ZENITH_PROPERTY(std::string, m_strChannelDurationVar, "channelDuration")
+	ZENITH_PROPERTY(std::string, m_strChannelRemainingVar, "channelRemaining")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_ChannelVillager = 1;
+	static constexpr u_int uPIN_ChannelDuration = 2;
+	static constexpr u_int uPIN_ChannelRemaining = 3;
 
-	// One pin: the villager READ. The arm also writes "channelVillager" and
-	// "channelRemaining" and reads "channelDuration", but all three are
-	// HARD-CODED LITERALS in Execute rather than properties, so no descriptor
-	// can bind them (the graph declares all three).
+	// Villager and channel duration are inputs.  Arming publishes both the
+	// channel owner and its remaining duration through output pins.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemArmChannel)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, "m_strChannelVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(ChannelDuration, "m_strChannelDurationVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, "m_strChannelRemainingVar", PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		Zenith_PropertyValue xValue;
-		xValue.SetPackedEntityID(
-			xContext.m_pxBlackboard->GetPackedEntityID(m_strVillagerVar, 0));
-		xContext.m_pxBlackboard->SetValue("channelVillager", xValue);
-		xValue.SetFloat(xContext.m_pxBlackboard->GetFloat("channelDuration", 0.0f));
-		xContext.m_pxBlackboard->SetValue("channelRemaining", xValue);
+		xValue.SetPackedEntityID(GetInputPackedEntityID(xContext, uPIN_Villager));
+		SetOutput(xContext, uPIN_ChannelVillager, xValue);
+		xValue.SetFloat(GetInput<float>(xContext, uPIN_ChannelDuration));
+		SetOutput(xContext, uPIN_ChannelRemaining, xValue);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "DPItemArmChannel"; }
@@ -1212,31 +1253,38 @@ public:
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
 	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
+	ZENITH_PROPERTY(std::string, m_strChannelVillagerVar, "channelVillager")
+	ZENITH_PROPERTY(std::string, m_strChannelRemainingVar, "channelRemaining")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_Tag = 1;
+	static constexpr u_int uPIN_ChannelVillager = 2;
+	static constexpr u_int uPIN_ChannelRemaining = 3;
 
-	// Two READS; the channel clears below go to hard-coded literals, not to
-	// these properties.
+	// Villager is read before its validity guard and the ordered channel clears;
+	// Tag is read afterwards, preserving the original pickup event ordering.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemCommitPickup)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, "m_strChannelVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, "m_strChannelRemainingVar", PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		if (!xVillager.IsValid())
 		{
 			return GRAPH_NODE_STATUS_FAILURE;
 		}
 		Zenith_PropertyValue xValue;
 		xValue.SetPackedEntityID(0);
-		xContext.m_pxBlackboard->SetValue("channelVillager", xValue);
+		SetOutput(xContext, uPIN_ChannelVillager, xValue);
 		xValue.SetFloat(0.0f);
-		xContext.m_pxBlackboard->SetValue("channelRemaining", xValue);
+		SetOutput(xContext, uPIN_ChannelRemaining, xValue);
 
 		DP_Player::SetHeldItem(xVillager, xContext.m_xSelf.GetEntityID());
-		const DP_ItemTag eTag =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strTagVar, (int32_t)DP_ItemTag::None);
+		const DP_ItemTag eTag = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnItemPickedUp{ xVillager, xContext.m_xSelf.GetEntityID(), eTag });
 		return GRAPH_NODE_STATUS_SUCCESS;
@@ -1253,21 +1301,25 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemRingBell)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
+	ZENITH_PROPERTY(std::string, m_strSpecialBehaviourVar, "specialBehaviour")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_SpecialBehaviour = 1;
 
-	// The "specialBehaviour" guard below reads a HARD-CODED variable name, not a
-	// property, so it cannot be a pin (the graph declares it).
+	// The special-behaviour guard is an ordinary string input, allowing the
+	// BellSoul configuration mirror to be wired explicitly.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemRingBell)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(SpecialBehaviour, "m_strSpecialBehaviourVar", PROPERTY_TYPE_STRING)
 	ZENITH_GRAPH_PINS_END
 
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		if (xContext.m_pxBlackboard->GetString("specialBehaviour", "") != "rings_bell_on_pickup")
+		if (GetInput<std::string>(xContext, uPIN_SpecialBehaviour) != "rings_bell_on_pickup")
 		{
 			return GRAPH_NODE_STATUS_SUCCESS;	// non-bell items: silent no-op
 		}
-		const Zenith_EntityID xVillager = DPGraph_GetEntityVar(xContext, m_strVillagerVar);
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
 		const Zenith_Maths::Vector3 xMyPos =
 			DP_Items::GetItemWorldPos(xContext.m_xSelf.GetEntityID());
 		DP_OnBellRing xEvt;
@@ -1291,6 +1343,7 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemEvaporate)
 public:
 	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
+	static constexpr u_int uPIN_Tag = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemEvaporate)
 	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
@@ -1306,8 +1359,7 @@ public:
 		}
 		const Zenith_Maths::Vector3 xPos =
 			DP_Items::GetItemWorldPos(xContext.m_xSelf.GetEntityID());
-		const DP_ItemTag eTag =
-			(DP_ItemTag)xContext.m_pxBlackboard->GetInt32(m_strTagVar, (int32_t)DP_ItemTag::None);
+		const DP_ItemTag eTag = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
 		Zenith_EventDispatcher::Get().Dispatch(
 			DP_OnItemEvaporated{ xContext.m_xSelf.GetEntityID(), eTag, xPos });
 		xEnt.Destroy();
@@ -1394,12 +1446,8 @@ public:
 // The perception bridge stays C++ (Priest_Component) and writes THIS graph's
 // blackboard under the same DP_AI::BB_KEY_* names.)
 //
-// ★ NEITHER PRIEST NODE CAN CARRY PINS, and that is a property of the nodes
-// rather than an omission: both declare NO properties at all and reach the
-// blackboard through the compile-time DP_AI::BB_KEY_* constants, so there is no
-// name for a descriptor to bind (the same shape as RenderTest's RTTennis*
-// nodes). They stay opaque to the validator until the keys become properties -
-// Epic B work. DP_Priest.bgraph declares every one of those variables anyway.
+// Both priest leaves expose their graph-facing keys as properties and pins.
+// The C++ perception bridge continues to populate the same declared slots.
 //==============================================================================
 
 // The retired DP_BTAction_FindPosInSuspicionSphere body verbatim: suspicion-
@@ -1410,6 +1458,22 @@ public:
 class DPNode_PriestPickPatrolTarget : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(DPNode_PriestPickPatrolTarget)
+public:
+	ZENITH_PROPERTY(std::string, m_strSuspicionRadiusVar, DP_AI::BB_KEY_SUSPICION_RADIUS)
+	ZENITH_PROPERTY(float, m_fSuspicionRadius, 15.0f)
+	ZENITH_PROPERTY(std::string, m_strHighScentTargetVar, DP_AI::BB_KEY_HIGH_SCENT_TARGET)
+	ZENITH_PROPERTY(std::string, m_strPatrolTargetVar, DP_AI::BB_KEY_PATROL_TARGET)
+	static constexpr u_int uPIN_SuspicionRadius = 0;
+	static constexpr u_int uPIN_HighScentTarget = 1;
+	static constexpr u_int uPIN_PatrolTarget = 2;
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_PriestPickPatrolTarget)
+	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(SuspicionRadius, "m_strSuspicionRadiusVar", "m_fSuspicionRadius", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(HighScentTarget, "m_strHighScentTargetVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(PatrolTarget, "m_strPatrolTargetVar", PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PINS_END
+public:
+
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const Zenith_NavMesh* pxNavMesh = DP_AI::GetOrBuildLevelNavMesh();
@@ -1423,10 +1487,10 @@ public:
 		pxAgentTransform->GetPosition(xAgentPos);
 
 		Zenith_Maths::Vector3 xCenter = xAgentPos;
-		const float fRadius = xContext.m_pxBlackboard->GetFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
+		const float fRadius = GetInput<float>(xContext, uPIN_SuspicionRadius);
 		bool bScentDiversion = false;
 		const Zenith_EntityID xScentTarget = Zenith_EntityID::FromPacked(
-			xContext.m_pxBlackboard->GetPackedEntityID(DP_AI::BB_KEY_HIGH_SCENT_TARGET, 0));
+			GetInputPackedEntityID(xContext, uPIN_HighScentTarget));
 		if (xScentTarget.IsValid())
 		{
 			const float fScent = DP_Player::GetDemonScent(xScentTarget);
@@ -1471,7 +1535,7 @@ public:
 		}
 		Zenith_PropertyValue xValue;
 		xValue.SetVector3(xResult);
-		xContext.m_pxBlackboard->SetValue(DP_AI::BB_KEY_PATROL_TARGET, xValue);
+		SetOutput(xContext, uPIN_PatrolTarget, xValue);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "DPPriestPickPatrolTarget"; }
@@ -1492,6 +1556,15 @@ private:
 class DPNode_PriestApprehendChannel : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(DPNode_PriestApprehendChannel)
+public:
+	ZENITH_PROPERTY(std::string, m_strTargetWithDevilVar, DP_AI::BB_KEY_TARGET_WITH_DEVIL)
+	static constexpr u_int uPIN_TargetWithDevil = 0;
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_PriestApprehendChannel)
+	ZENITH_GRAPH_PIN_INPUT(TargetWithDevil, "m_strTargetWithDevilVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PINS_END
+public:
+
 	void OnEnter(Zenith_GraphContext&) override
 	{
 		m_fAppliedChannelSeconds = DP_Tuning::Get<float>("priest.apprehend_channel_s");
@@ -1513,7 +1586,7 @@ public:
 		if (!xContext.m_xSelf.IsValid()) return GRAPH_NODE_STATUS_FAILURE;
 		const Zenith_EntityID xPriestID = xContext.m_xSelf.GetEntityID();
 		const Zenith_EntityID xTarget = Zenith_EntityID::FromPacked(
-			xContext.m_pxBlackboard->GetPackedEntityID(DP_AI::BB_KEY_TARGET_WITH_DEVIL, 0));
+			GetInputPackedEntityID(xContext, uPIN_TargetWithDevil));
 		if (!xTarget.IsValid())
 		{
 			EmitInterruptedIfRunning(xPriestID, DP_ApprehendInterruptReason::TargetLost);
