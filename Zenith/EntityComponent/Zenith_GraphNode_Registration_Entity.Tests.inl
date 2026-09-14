@@ -233,6 +233,52 @@ inline Zenith_PropertyValue EntityPin_WireVec3(const Zenith_Maths::Vector3& xVec
 	return xValue;
 }
 
+class Zenith_GraphNode_EntityTestCountingVec3Producer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EntityTestCountingVec3Producer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EntityTestCountingVec3Producer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PINS_END
+
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override { ++s_uPullCount; SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Value, s_xValue); return GRAPH_NODE_STATUS_SUCCESS; }
+	const char* GetTypeName() const override { return "Test_EntityCountingVec3Producer"; }
+	inline static u_int s_uPullCount = 0u;
+	inline static Zenith_Maths::Vector3 s_xValue = Zenith_Maths::Vector3(0.0f);
+};
+
+class Zenith_GraphNode_EntityTestCountingFloatProducer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EntityTestCountingFloatProducer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	ZENITH_PROPERTY(float, m_fValue, 0.0f)
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EntityTestCountingFloatProducer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override { ++s_uPullCount; SetOutput<float>(xContext, uPIN_Value, m_fValue); return GRAPH_NODE_STATUS_SUCCESS; }
+	const char* GetTypeName() const override { return "Test_EntityCountingFloatProducer"; }
+	inline static u_int s_uPullCount = 0u;
+};
+
+static void EnsureEntityCountingGuardProducersRegistered()
+{
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	if (xRegistry.Find("Test_EntityCountingVec3Producer") == nullptr)
+		xRegistry.RegisterNodeType<Zenith_GraphNode_EntityTestCountingVec3Producer>("Test_EntityCountingVec3Producer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+	if (xRegistry.Find("Test_EntityCountingFloatProducer") == nullptr)
+		xRegistry.RegisterNodeType<Zenith_GraphNode_EntityTestCountingFloatProducer>("Test_EntityCountingFloatProducer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+}
+
 // Slot readers. The tagged getters ASSERT, so the tag is checked here first - an
 // assertion failure must read as a test failure and not as a DebugBreak.
 inline Zenith_Maths::Vector3 EntityPin_SlotVec3(const Zenith_PropertyValue* pxSlot, const char* szWhat)
@@ -389,11 +435,10 @@ ZENITH_TEST(EntityPinRuntime, Wired_SetEntityScaleFromWire)
 	ZENITH_ASSERT_TRUE(xSelf.IsValid());
 
 	Zenith_GraphBlackboard xBB;
-	EntityPin_SeedVec3(xBB, "sv", Zenith_Maths::Vector3(7.0f, 7.0f, 7.0f));	// leg 2
 
 	Zenith_GraphNode_SetEntityScale xNode;
 	xNode.m_xScale = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);				// leg 1
-	xNode.m_strScaleVar = "sv";
+	xNode.m_strScaleVar = "";
 	xNode.m_strTargetVar = "";												// "" = self
 	// leg 3: THREE DISTINCT COMPONENTS, so a transposed or partially-read vector
 	// fails rather than agreeing by symmetry.
@@ -431,14 +476,12 @@ ZENITH_TEST(EntityPinRuntime, Wired_SetCameraPitchYaw)
 	xCamera.SetYaw(0.0);
 
 	Zenith_GraphBlackboard xBB;
-	EntityPin_SeedFloat(xBB, "pv", 7.0f);	// leg 2
-	EntityPin_SeedFloat(xBB, "yv", 7.0f);
 
 	Zenith_GraphNode_SetCameraPitchYaw xNode;
 	xNode.m_fPitchDegrees = 9.0f;			// leg 1
-	xNode.m_strPitchVar = "pv";
+	xNode.m_strPitchVar = "";
 	xNode.m_fYawDegrees = 9.0f;
-	xNode.m_strYawVar = "yv";
+	xNode.m_strYawVar = "";
 	xNode.m_bAdditive = false;
 	xNode.m_bClampPitch = true;				// 5 and 12 are both well inside +/-89
 	// leg 3: DIFFERENT values per pin, so a swapped Pitch/Yaw index fails.
@@ -467,11 +510,10 @@ ZENITH_TEST(EntityPinRuntime, Wired_RotateTowardDirectionPlainInput)
 	ZENITH_ASSERT_TRUE(xSelf.IsValid());
 
 	Zenith_GraphBlackboard xBB;
-	EntityPin_SeedVec3(xBB, "dir", Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));	// leg 1: +Z
 
 	{
 		Zenith_GraphNode_RotateTowardDirection xNode;
-		xNode.m_strDirectionVar = "dir";
+		xNode.m_strDirectionVar = "";
 		xNode.m_fDegreesPerSecond = 0.0f;	// snap
 		xNode.m_bYawOnly = true;
 		xNode.m_strTargetVar = "";
@@ -505,12 +547,14 @@ ZENITH_TEST(EntityPinRuntime, Wired_RotateTowardDirectionPlainInput)
 			"an unnamed, unwired Direction must read the type zero and FAIL on it");
 	}
 
-	// ...and a var name that names NOTHING takes the same route (the typed getter it
-	// replaced defaulted on a missing name identically).
+	// An explicit wired zero follows the same failure route without retaining a
+	// named blackboard fallback leg.
 	{
 		Zenith_GraphNode_RotateTowardDirection xNode;
-		xNode.m_strDirectionVar = "__no_such_direction__";
+		xNode.m_strDirectionVar = "";
 		xNode.m_strTargetVar = "";
+		xNode.SetInputForTest(Zenith_GraphNode_RotateTowardDirection::uPIN_Direction,
+			EntityPin_WireVec3(Zenith_Maths::Vector3(0.0f)));
 
 		Zenith_GraphContext xCtx;
 		xCtx.m_xSelf = xSelf;
@@ -534,7 +578,7 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityPositionCarriesValueAndDualWrites
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadEntityPosition xNode;
 	xNode.m_strTargetVar = "";
-	xNode.m_strResultVar = "pos";
+	xNode.m_strResultVar = "";
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_xSelf = xSelf;
@@ -546,9 +590,7 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityPositionCarriesValueAndDualWrites
 	ZENITH_ASSERT_NEAR_VEC3(EntityPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadEntityPosition::uPIN_Result), "ReadEntityPosition.Result"),
 		Zenith_Maths::Vector3(3.0f, 4.0f, 5.0f), 0.0001f);
-	// ...and the TRANSITIONAL dual-write put the same value where the old
-	// SetValue(m_strResultVar) put it.
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("pos"), Zenith_Maths::Vector3(3.0f, 4.0f, 5.0f), 0.0001f);
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 }
 
 // ★ THE `""` DIVERGENCE, on an UNGUARDED writer. This write was never inside an
@@ -599,8 +641,8 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadCameraBasisEmptyNamesCarryValuesWithout
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadCameraBasis xNode;
 	xNode.m_bFlattenXZ = false;
-	xNode.m_strForwardVar = "camForward";
-	xNode.m_strRightVar = "camRight";
+	xNode.m_strForwardVar = "";
+	xNode.m_strRightVar = "";
 	xNode.m_strUpVar = "";			// the default - no blackboard write, ever
 	xNode.m_strPositionVar = "";	// likewise
 
@@ -624,12 +666,8 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadCameraBasisEmptyNamesCarryValuesWithout
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadCameraBasis::uPIN_Position), "ReadCameraBasis.Position"),
 		Zenith_Maths::Vector3(11.0f, 12.0f, 13.0f), 0.0001f);
 
-	// PARITY on the blackboard: the two named pins wrote, the two unnamed did not.
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("camForward"), Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f), 0.01f);
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("camRight"), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 0.01f);
 	ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
-	ZENITH_ASSERT_EQ(xBB.GetCount(), 2u,
-		"an empty Up/Position name must write NO blackboard variable - that guard's observable is the contract");
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 }
 
 // The guard most likely to be kept by mistake, because m_strEulerVar's default IS
@@ -645,7 +683,7 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityRotationEulerCarriesValueWithEmpt
 
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadEntityRotation xNode;
-	xNode.m_strForwardVar = "forward";
+	xNode.m_strForwardVar = "";
 	xNode.m_strEulerVar = "";		// the DEFAULT - no blackboard write
 	xNode.m_strTargetVar = "";
 
@@ -663,10 +701,8 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityRotationEulerCarriesValueWithEmpt
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadEntityRotation::uPIN_Euler), "ReadEntityRotation.Euler"),
 		Zenith_Maths::Vector3(0.0f, 45.0f, 0.0f), 0.1f);
 
-	// PARITY: Forward wrote, Euler did not.
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("forward"), Zenith_Maths::Vector3(fRoot2, 0.0f, fRoot2), 0.01f);
 	ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
-	ZENITH_ASSERT_EQ(xBB.GetCount(), 1u, "an empty m_strEulerVar must write no blackboard variable");
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 }
 
 ZENITH_TEST(EntityPinRuntime, Output_FindNearestEntityDistanceCarriesValueWithEmptyName)
@@ -685,7 +721,7 @@ ZENITH_TEST(EntityPinRuntime, Output_FindNearestEntityDistanceCarriesValueWithEm
 	xNode.m_strCenterVar = "";			// "" = self
 	xNode.m_fRadius = 5.0f;
 	xNode.m_strComponentType = "";
-	xNode.m_strResultVar = "nearest";
+	xNode.m_strResultVar = "";
 	xNode.m_strDistanceVar = "";		// the DEFAULT - no blackboard write
 
 	Zenith_GraphContext xCtx;
@@ -701,9 +737,8 @@ ZENITH_TEST(EntityPinRuntime, Output_FindNearestEntityDistanceCarriesValueWithEm
 		xNode.GetOutputForTest(Zenith_GraphNode_FindNearestEntity::uPIN_Distance), "FindNearestEntity.Distance"),
 		2.0f, 0.001f);
 
-	ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("nearest"), xNeighbour.GetEntityID().GetPacked());
 	ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
-	ZENITH_ASSERT_EQ(xBB.GetCount(), 1u, "an empty m_strDistanceVar must write no blackboard variable");
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 }
 
 ZENITH_TEST(EntityPinRuntime, Output_FindEntitiesInRadiusCountWithEmptyCountVar)
@@ -797,54 +832,41 @@ ZENITH_TEST(EntityPinRuntime, Fallback_CountsOncePerPin)
 // Each pin below is var-BOUND, so a stray read would log exactly one line.
 ZENITH_TEST(EntityPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 {
+	EnsureEntityCountingGuardProducersRegistered();
 	Zenith_TempScene xTempScene("EntityPinGuardScene");
+	Zenith_Entity xTarget = xTempScene.CreateEntity("EntityPinGuardTarget");
+	const auto RunVec3 = [](const char* szType, const char* szPin, Zenith_Entity xSelf, bool bInvalid, bool bSnap)
+	{
+		Zenith_GraphDefinition xDef; const u_int uSource=xDef.AddNode("OnUpdate"); const u_int uNode=xDef.AddNode(szType);
+		const u_int uProducer=xDef.AddNode("Test_EntityCountingVec3Producer"); const u_int uSentinel=xDef.AddNode("SetBlackboardBool"); if (bSnap) { Zenith_GraphNode_RotateTowardDirection xParams; xParams.m_fDegreesPerSecond=0.0f; xDef.SetNodeParamsFromInstance(uNode,&xParams); }
+		xDef.AddEdge(uSource,0u,uNode); xDef.AddEdge(uNode,0u,uSentinel); ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer,"Value",uNode,szPin));
+		Zenith_BehaviourGraph xGraph; ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef)); Zenith_GraphContext xCtx; xCtx.m_xSelf=xSelf; xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE,xCtx);
+		ZENITH_ASSERT_EQ(xGraph.GetBlackboard().HasValue("flag"), !bInvalid);
+	};
+	Zenith_GraphNode_EntityTestCountingVec3Producer::s_xValue=Zenith_Maths::Vector3(3.0f,3.0f,3.0f);
+	Zenith_GraphNode_EntityTestCountingVec3Producer::s_uPullCount=0u;
+	RunVec3("SetEntityScale","Scale",Zenith_Entity(),true,false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingVec3Producer::s_uPullCount,0u);
+	RunVec3("SetEntityScale","Scale",xTarget,false,false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingVec3Producer::s_uPullCount,1u);
+	Zenith_Maths::Vector3 xScale; xTarget.GetComponent<Zenith_TransformComponent>().GetScale(xScale); ZENITH_ASSERT_NEAR_VEC3(xScale,Zenith_Maths::Vector3(3.0f,3.0f,3.0f),0.0001f);
+	Zenith_GraphNode_EntityTestCountingVec3Producer::s_xValue=Zenith_Maths::Vector3(0.0f,0.0f,1.0f);
+	Zenith_GraphNode_EntityTestCountingVec3Producer::s_uPullCount=0u;
+	RunVec3("RotateTowardDirection","Direction",Zenith_Entity(),true,true);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingVec3Producer::s_uPullCount,0u);
+	xTarget.GetComponent<Zenith_TransformComponent>().SetRotation(glm::angleAxis(glm::radians(90.0f),Zenith_Maths::Vector3(0.0f,1.0f,0.0f)));
+	RunVec3("RotateTowardDirection","Direction",xTarget,false,true);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingVec3Producer::s_uPullCount,1u);
+	Zenith_Maths::Quat xRotation; xTarget.GetComponent<Zenith_TransformComponent>().GetRotation(xRotation);
+	ZENITH_ASSERT_NEAR_VEC3(xRotation * Zenith_Maths::Vector3(0.0f,0.0f,1.0f),Zenith_Maths::Vector3(0.0f,0.0f,1.0f),0.01f);
 
-	Zenith_GraphBlackboard xBB;
-	EntityPin_SeedVec3(xBB, "sv", Zenith_Maths::Vector3(3.0f, 3.0f, 3.0f));
-	EntityPin_SeedVec3(xBB, "dir", Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
-	EntityPin_SeedFloat(xBB, "pv", 7.0f);
-	EntityPin_SeedFloat(xBB, "yv", 7.0f);
-
-	// An invalid target: m_strTargetVar names a variable that does not exist, so
-	// ResolveTargetEntity comes back invalid and Execute returns before the read.
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-
-	Zenith_GraphNode_SetEntityScale xScaleNode;
-	xScaleNode.m_xScale = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
-	xScaleNode.m_strScaleVar = "sv";
-	xScaleNode.m_strTargetVar = "__nobody__";
-	ZENITH_ASSERT_EQ(static_cast<int>(xScaleNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xScaleNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetEntityScale::uPIN_Scale), 0u,
-		"SetEntityScale read its Scale pin before the target guard");
-
-	Zenith_GraphNode_RotateTowardDirection xRotateNode;
-	xRotateNode.m_strDirectionVar = "dir";
-	xRotateNode.m_strTargetVar = "__nobody__";
-	ZENITH_ASSERT_EQ(static_cast<int>(xRotateNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xRotateNode.GetFallbackUseCountForTest(Zenith_GraphNode_RotateTowardDirection::uPIN_Direction), 0u,
-		"RotateTowardDirection read its Direction pin before the target guard");
-
-	// The camera leg, and it can only be asserted when no OTHER loaded scene leaves a
-	// camera resolvable (the same conditional GraphComponent.EntityNodeFamilyRemainder-
-	// Execution uses for its own no-camera leg). This test creates none.
 	if (Zenith_GetMainCameraAcrossScenes() == nullptr)
 	{
-		Zenith_GraphNode_SetCameraPitchYaw xCameraNode;
-		xCameraNode.m_fPitchDegrees = 9.0f;
-		xCameraNode.m_strPitchVar = "pv";
-		xCameraNode.m_fYawDegrees = 9.0f;
-		xCameraNode.m_strYawVar = "yv";
-		ZENITH_ASSERT_EQ(static_cast<int>(xCameraNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xCameraNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetCameraPitchYaw::uPIN_Pitch), 0u,
-			"SetCameraPitchYaw read its Pitch pin before the no-camera guard");
-		ZENITH_ASSERT_EQ(xCameraNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetCameraPitchYaw::uPIN_Yaw), 0u);
+		Zenith_GraphDefinition xDef; const u_int uSource=xDef.AddNode("OnUpdate"); const u_int uNode=xDef.AddNode("SetCameraPitchYaw"); const u_int uPitch=xDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uYaw=xDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uSentinel=xDef.AddNode("SetBlackboardBool"); xDef.AddEdge(uSource,0u,uNode); xDef.AddEdge(uNode,0u,uSentinel); ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPitch,"Value",uNode,"Pitch")); ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uYaw,"Value",uNode,"Yaw")); Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount=0u; Zenith_BehaviourGraph xGraph; ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef)); Zenith_GraphContext xCtx; xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE,xCtx); ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount,0u); ZENITH_ASSERT_FALSE(xGraph.GetBlackboard().HasValue("flag"));
 	}
-	else
-	{
-		// Visible, never silent: a green run with this leg skipped is not evidence.
-		Zenith_Log(LOG_CATEGORY_CORE, "[UnitTest] Fallback_GuardedFailureDoesNotReadInputs: camera leg SKIPPED - another loaded scene leaves a main camera resolvable");
-	}
+	else Zenith_Log(LOG_CATEGORY_CORE,"[UnitTest] Fallback_GuardedFailureDoesNotReadInputs: camera no-camera leg SKIPPED - another loaded scene leaves a main camera resolvable");
+	Zenith_Entity xCameraEntity=xTempScene.CreateEntity("EntityPinGuardCamera"); Zenith_CameraComponent& xCamera=xCameraEntity.AddComponent<Zenith_CameraComponent>(); Zenith_UnitTests::SetMainCameraForTest(xTempScene.Data(),xCameraEntity.GetEntityID()); ZENITH_ASSERT_TRUE(Zenith_GetMainCameraAcrossScenes()==&xCamera);
+	Zenith_GraphDefinition xCameraDef; const u_int uSource=xCameraDef.AddNode("OnUpdate"); const u_int uNode=xCameraDef.AddNode("SetCameraPitchYaw"); const u_int uPitch=xCameraDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uYaw=xCameraDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uSentinel=xCameraDef.AddNode("SetBlackboardBool"); Zenith_GraphNode_EntityTestCountingFloatProducer xPitchParams; xPitchParams.m_fValue=5.0f; xCameraDef.SetNodeParamsFromInstance(uPitch,&xPitchParams); Zenith_GraphNode_EntityTestCountingFloatProducer xYawParams; xYawParams.m_fValue=12.0f; xCameraDef.SetNodeParamsFromInstance(uYaw,&xYawParams); xCameraDef.AddEdge(uSource,0u,uNode); xCameraDef.AddEdge(uNode,0u,uSentinel); ZENITH_ASSERT_TRUE(xCameraDef.AddDataEdge(uPitch,"Value",uNode,"Pitch")); ZENITH_ASSERT_TRUE(xCameraDef.AddDataEdge(uYaw,"Value",uNode,"Yaw")); Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount=0u; Zenith_BehaviourGraph xCameraGraph; ZENITH_ASSERT_TRUE(xCameraGraph.InitialiseFromDefinition(xCameraDef)); Zenith_GraphContext xCameraCtx; xCameraCtx.m_pxGraph = &xCameraGraph; xCameraCtx.m_pxBlackboard = &xCameraGraph.GetBlackboard(); xCameraGraph.FireEvent(GRAPH_EVENT_ON_UPDATE,xCameraCtx); ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount,2u); ZENITH_ASSERT_TRUE(xCameraGraph.GetBlackboard().HasValue("flag")); ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCamera.GetPitch()),glm::radians(5.0f),0.0001f); ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCamera.GetYaw()),glm::radians(12.0f),0.0001f);
 }
 
 #endif // ZENITH_TESTING

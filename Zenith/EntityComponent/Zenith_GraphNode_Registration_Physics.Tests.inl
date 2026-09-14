@@ -180,6 +180,52 @@ static Zenith_PropertyValue WireVec3(const Zenith_Maths::Vector3& xVec)
 	return xValue;
 }
 
+// A resolved pure producer makes the Raycast ordering assertion observable. A
+// fallback-use counter saturates after one read and therefore cannot prove a pull.
+class Zenith_GraphNode_PhysicsTestCountingDirectionProducer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_PhysicsTestCountingDirectionProducer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_PhysicsTestCountingDirectionProducer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PINS_END
+
+public:
+
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		++s_uPullCount;
+		SetOutput<Zenith_Maths::Vector3>(xContext, uPIN_Value, s_xValue);
+		return GRAPH_NODE_STATUS_SUCCESS;
+	}
+	const char* GetTypeName() const override { return "Test_PhysicsCountingDirectionProducer"; }
+
+	inline static u_int s_uPullCount = 0u;
+	inline static Zenith_Maths::Vector3 s_xValue = Zenith_Maths::Vector3(0.0f);
+};
+
+static void EnsurePhysicsCountingDirectionProducerRegistered()
+{
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	if (xRegistry.Find("Test_PhysicsCountingDirectionProducer") == nullptr)
+	{
+		xRegistry.RegisterNodeType<Zenith_GraphNode_PhysicsTestCountingDirectionProducer>(
+			"Test_PhysicsCountingDirectionProducer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+	}
+}
+
+static void ClearRaycastOutputBindings(Zenith_GraphNode_Raycast& xNode)
+{
+	xNode.m_strHitEntityVar = "";
+	xNode.m_strHitPointVar = "";
+	xNode.m_strHitNormalVar = "";
+	xNode.m_strHitDistanceVar = "";
+}
+
 // The three slot readers are TAG-CHECKED: Zenith_PropertyValue's typed getters
 // Zenith_Assert on a mismatch, and a wrong slot type must read as a test FAILURE
 // rather than a DebugBreak.
@@ -386,11 +432,10 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_ApplyImpulseFromWire)
 	xFixture.ResetVelocities();
 
 	Zenith_GraphBlackboard xBB;
-	SeedVec3(xBB, "imp", Zenith_Maths::Vector3(0.0f, 7.0f, 0.0f));	// leg 2: the var
 
 	Zenith_GraphNode_ApplyImpulse xNode;
 	xNode.m_xImpulse = Zenith_Maths::Vector3(9.0f, 0.0f, 0.0f);		// leg 1: the const
-	xNode.m_strImpulseVar = "imp";
+	xNode.m_strImpulseVar = "";
 	xNode.m_strTargetVar = "";										// self
 	xNode.SetInputForTest(Zenith_GraphNode_ApplyImpulse::uPIN_Impulse,
 		WireVec3(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f)));			// leg 3: the wire
@@ -417,7 +462,6 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_SetVelocityFromWire)
 	const u_int uVelocity = Zenith_GraphNode_SetVelocity::uPIN_Velocity;
 
 	Zenith_GraphBlackboard xBB;
-	SeedVec3(xBB, "vel", Zenith_Maths::Vector3(0.0f, 7.0f, 0.0f));
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
@@ -428,7 +472,7 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_SetVelocityFromWire)
 		xFixture.ResetVelocities();
 		Zenith_GraphNode_SetVelocity xNode;
 		xNode.m_xVelocity = Zenith_Maths::Vector3(9.0f, 0.0f, 0.0f);
-		xNode.m_strVelocityVar = "vel";
+		xNode.m_strVelocityVar = "";
 		xNode.SetInputForTest(uVelocity, WireVec3(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f)));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_NEAR_VEC3(xFixture.LinearVelocity(), Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f), 0.01f);
@@ -444,7 +488,7 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_SetVelocityFromWire)
 		g_xEngine.Physics().SetLinearVelocity(xFixture.BodyID(), Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
 		Zenith_GraphNode_SetVelocity xNode;
 		xNode.m_xVelocity = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
-		xNode.m_strVelocityVar = "vel";
+		xNode.m_strVelocityVar = "";
 		xNode.m_bSetY = false;
 		xNode.SetInputForTest(uVelocity, WireVec3(Zenith_Maths::Vector3(0.0f, 99.0f, 5.0f)));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
@@ -453,21 +497,38 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_SetVelocityFromWire)
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uVelocity), 0u);
 	}
 
-	// (c) EVERY AXIS PRESERVED: the fetch still happens. A var-bound Velocity on an
-	//     instance that preserves x, y AND z logs its census line (count 1) while the
-	//     body keeps the velocity it had - which is what proves the read is not
-	//     folded into the preserve branch.
+	// (c) EVERY AXIS PRESERVED: the wired value is still resolved before the
+	//     preserve branches, while the body keeps the velocity it had.
 	{
 		xFixture.ResetVelocities();
 		g_xEngine.Physics().SetLinearVelocity(xFixture.BodyID(), Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
-		Zenith_GraphNode_SetVelocity xNode;
-		xNode.m_strVelocityVar = "vel";
-		xNode.m_bSetX = false;
-		xNode.m_bSetY = false;
-		xNode.m_bSetZ = false;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		EnsurePhysicsCountingDirectionProducerRegistered();
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uSet = xDef.AddNode("SetVelocity");
+		const u_int uProducer = xDef.AddNode("Test_PhysicsCountingDirectionProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		Zenith_GraphNode_SetVelocity xParams;
+		xParams.m_strVelocityVar = "";
+		xParams.m_bSetX = false;
+		xParams.m_bSetY = false;
+		xParams.m_bSetZ = false;
+		xDef.SetNodeParamsFromInstance(uSet, &xParams);
+		xDef.AddEdge(uSource, 0u, uSet);
+		xDef.AddEdge(uSet, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uSet, "Velocity"));
+		Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_xValue = Zenith_Maths::Vector3(7.0f, 8.0f, 9.0f);
+		Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount = 0u;
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		Zenith_GraphContext xGraphCtx;
+		xGraphCtx.m_xSelf = xFixture.m_xSphere;
+		xGraphCtx.m_pxGraph = &xGraph; xGraphCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphCtx);
+		ZENITH_ASSERT_TRUE(xGraph.GetBlackboard().HasValue("flag"));
 		ZENITH_ASSERT_NEAR_VEC3(xFixture.LinearVelocity(), Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), 0.01f);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uVelocity), 1u, "the read happens before the preserve branch");
+		ZENITH_ASSERT_EQ(Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount, 1u,
+			"all preserve branches must still pull Velocity once");
 	}
 }
 
@@ -481,13 +542,12 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_SetAngularVelocityFromWire)
 	xFixture.ResetVelocities();
 
 	Zenith_GraphBlackboard xBB;
-	SeedVec3(xBB, "spin", Zenith_Maths::Vector3(0.0f, 7.0f, 0.0f));
 
 	// The const half is m_xAngularVelocity, the var half m_strVelocityVar - both
 	// behind ONE pin named Velocity.
 	Zenith_GraphNode_SetAngularVelocity xNode;
 	xNode.m_xAngularVelocity = Zenith_Maths::Vector3(9.0f, 0.0f, 0.0f);
-	xNode.m_strVelocityVar = "spin";
+	xNode.m_strVelocityVar = "";
 	xNode.SetInputForTest(Zenith_GraphNode_SetAngularVelocity::uPIN_Velocity,
 		WireVec3(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f)));
 
@@ -516,11 +576,10 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_ApplyForceFromWire)
 	g_xEngine.Physics().SetGravityEnabled(xFixture.BodyID(), false);
 
 	Zenith_GraphBlackboard xBB;
-	SeedVec3(xBB, "force", Zenith_Maths::Vector3(0.0f, 700.0f, 0.0f));
 
 	Zenith_GraphNode_ApplyForce xNode;
 	xNode.m_xForce = Zenith_Maths::Vector3(900.0f, 0.0f, 0.0f);
-	xNode.m_strForceVar = "force";
+	xNode.m_strForceVar = "";
 	xNode.SetInputForTest(Zenith_GraphNode_ApplyForce::uPIN_Force,
 		WireVec3(Zenith_Maths::Vector3(0.0f, 0.0f, 500.0f)));
 
@@ -555,12 +614,12 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_RaycastDirectionFromWire)
 	{
 		Zenith_GraphBlackboard xBB;
 		SeedVec3(xBB, "castOrigin", Zenith_Maths::Vector3(500.3f, 1000.0f, 7.1f));
-		SeedVec3(xBB, "dir", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
 
 		Zenith_GraphNode_Raycast xNode;
+		ClearRaycastOutputBindings(xNode);
 		xNode.m_strOriginVar = "castOrigin";
 		xNode.m_xDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-		xNode.m_strDirectionVar = "dir";
+		xNode.m_strDirectionVar = "";
 		xNode.m_fMaxDistance = 10.0f;
 		xNode.SetInputForTest(uDirection, WireVec3(Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f)));
 
@@ -585,12 +644,12 @@ ZENITH_TEST(PhysicsPinRuntime, Wired_RaycastDirectionFromWire)
 		}
 		Zenith_GraphBlackboard xBB;
 		SeedVec3(xBB, "castOrigin", xFixture.m_xCastOrigin);
-		SeedVec3(xBB, "dir", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
 
 		Zenith_GraphNode_Raycast xNode;
+		ClearRaycastOutputBindings(xNode);
 		xNode.m_strOriginVar = "castOrigin";
 		xNode.m_xDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-		xNode.m_strDirectionVar = "dir";
+		xNode.m_strDirectionVar = "";
 		xNode.SetInputForTest(uDirection, WireVec3(Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f)));
 
 		Zenith_GraphContext xCtx;
@@ -624,8 +683,10 @@ ZENITH_TEST(PhysicsPinRuntime, Output_RaycastHitCarriesAllFourValues)
 	Zenith_GraphNode_Raycast xNode;
 	xNode.m_strOriginVar = "castOrigin";
 	xNode.m_xDirection = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
-	// The defaults: hitEntity / hitPoint are NAMED (so they dual-write), hitNormal /
-	// hitDistance are EMPTY (slot only) - the 2/2 split is deliberate here.
+	xNode.m_strHitEntityVar = "";
+	xNode.m_strHitPointVar = "";
+	xNode.m_strHitNormalVar = "";
+	xNode.m_strHitDistanceVar = "";
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
@@ -639,12 +700,7 @@ ZENITH_TEST(PhysicsPinRuntime, Output_RaycastHitCarriesAllFourValues)
 	ZENITH_ASSERT_EQ_FLOAT(SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_Raycast::uPIN_HitDistance),
 		"Raycast.HitDistance"), 9.5f, 0.05f);
 
-	// PARITY on the blackboard: exactly the two named outputs, exactly as today.
-	ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("hitEntity"), ulFloor);
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("hitPoint"), xFixture.m_xHitPoint, 0.05f);
-	ZENITH_ASSERT_NULL(xBB.TryGetValue("hitNormal"),
-		"an EMPTY HitNormal var name must still create no blackboard entry - only the slot is latched");
-	ZENITH_ASSERT_NULL(xBB.TryGetValue("hitDistance"));
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 1u, "only the permanent Origin selector is present");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -672,6 +728,10 @@ ZENITH_TEST(PhysicsPinRuntime, Output_RaycastMissKeepsTheHitValuesAndWritesNothi
 	Zenith_GraphNode_Raycast xNode;
 	xNode.m_strOriginVar = "castOrigin";
 	xNode.m_xDirection = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+	xNode.m_strHitEntityVar = "";
+	xNode.m_strHitPointVar = "";
+	xNode.m_strHitNormalVar = "";
+	xNode.m_strHitDistanceVar = "";
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
@@ -705,6 +765,7 @@ ZENITH_TEST(PhysicsPinRuntime, Output_RaycastMissKeepsTheHitValuesAndWritesNothi
 		// MISS and not of an origin that reaches nothing.
 		SeedVec3(xFreshBB, "castOrigin", xFixture.m_xCastOrigin);
 		Zenith_GraphNode_Raycast xFresh;
+		ClearRaycastOutputBindings(xFresh);
 		xFresh.m_strOriginVar = "castOrigin";
 		xFresh.m_xDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 		Zenith_GraphContext xFreshCtx;
@@ -755,9 +816,10 @@ ZENITH_TEST(PhysicsPinRuntime, Output_ReadVelocityEmptyResultVarCreatesNoBlackbo
 	// The NAMED twin, as the positive control: the dual-write lands exactly where
 	// today's SetValue did.
 	Zenith_GraphNode_ReadVelocity xNamed;
-	xNamed.m_strResultVar = "velocity";
+	xNamed.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("velocity"), xVelocity, 0.01f);
+	ZENITH_ASSERT_NEAR_VEC3(SlotVec3(xNamed.GetOutputForTest(Zenith_GraphNode_ReadVelocity::uPIN_Result),
+		"ReadVelocity.Result second execution"), xVelocity, 0.01f);
 }
 
 // ReadVelocity's FAILURE shape, stated once for it and Raycast both: the guard is
@@ -777,9 +839,8 @@ ZENITH_TEST(PhysicsPinRuntime, Output_ReadVelocityFailureWritesNothing)
 	xCtx.m_xSelf = xFixture.m_xNoBody;		// a transform, no collider
 
 	Zenith_GraphNode_ReadVelocity xNode;
-	xNode.m_strResultVar = "velocity";
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_NULL(xBB.TryGetValue("velocity"), "a FAILED ReadVelocity wrote its result var");
 	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 	ZENITH_ASSERT_NULL(xNode.GetOutputForTest(Zenith_GraphNode_ReadVelocity::uPIN_Result),
 		"the FAILURE is above every accessor, so no pin state was ever built - there is no slot to read");
@@ -796,36 +857,37 @@ ZENITH_TEST(PhysicsPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 	{
 		return;
 	}
-	const u_int uImpulse = Zenith_GraphNode_ApplyImpulse::uPIN_Impulse;
-
-	Zenith_GraphBlackboard xBB;
-	SeedVec3(xBB, "imp", Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-
-	// LEG A: a transform but NO collider -> FAILURE, and the var-bound Impulse pin
-	// was never read.
+	EnsurePhysicsCountingDirectionProducerRegistered();
+	const auto Run = [](Zenith_Entity xSelf, bool bExpectSuccess)
 	{
-		Zenith_GraphNode_ApplyImpulse xNode;
-		xNode.m_strImpulseVar = "imp";
-		xCtx.m_xSelf = xFixture.m_xNoBody;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uImpulse), 0u,
-			"the Impulse read moved ABOVE the body guard - a failed node pulled its input");
-	}
-
-	// LEG B, THE POSITIVE CONTROL: the same configuration on the sphere reads the
-	// pin, takes the var-name fallback, and logs exactly one line.
-	{
-		xFixture.ResetVelocities();
-		Zenith_GraphNode_ApplyImpulse xNode;
-		xNode.m_strImpulseVar = "imp";
-		xCtx.m_xSelf = xFixture.m_xSphere;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uImpulse), 1u);
-		ZENITH_ASSERT_NEAR_VEC3(xFixture.LinearVelocity(), Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f), 0.01f);
-	}
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uImpulse = xDef.AddNode("ApplyImpulse");
+		const u_int uProducer = xDef.AddNode("Test_PhysicsCountingDirectionProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		Zenith_GraphNode_ApplyImpulse xParams;
+		xParams.m_strImpulseVar = "";
+		xDef.SetNodeParamsFromInstance(uImpulse, &xParams);
+		xDef.AddEdge(uSource, 0u, uImpulse);
+		xDef.AddEdge(uImpulse, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uImpulse, "Impulse"));
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		Zenith_GraphContext xCtx;
+		xCtx.m_xSelf = xSelf;
+		xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xCtx);
+		ZENITH_ASSERT_EQ(xGraph.GetBlackboard().HasValue("flag"), bExpectSuccess);
+	};
+	Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_xValue = Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f);
+	Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount = 0u;
+	Run(xFixture.m_xNoBody, false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount, 0u,
+		"the body guard must run before Impulse is pulled");
+	xFixture.ResetVelocities();
+	Run(xFixture.m_xSphere, true);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount, 1u);
+	ZENITH_ASSERT_NEAR_VEC3(xFixture.LinearVelocity(), Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f), 0.01f);
 }
 
 // ★ RAYCAST IS THE EXCEPTION, pinned rather than left to be rediscovered. Direction
@@ -835,47 +897,58 @@ ZENITH_TEST(PhysicsPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 // Direction's producer), while an unresolvable ORIGIN has not.
 ZENITH_TEST(PhysicsPinRuntime, Fallback_RaycastReadsDirectionBeforeMissAndZeroDirection)
 {
-	const u_int uDirection = Zenith_GraphNode_Raycast::uPIN_Direction;
-
-	Zenith_GraphBlackboard xBB;
-	SeedVec3(xBB, "castOrigin", Zenith_Maths::Vector3(500.3f, 1000.0f, 7.1f));
-	SeedVec3(xBB, "dir", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-
-	// (a) a MISS: FAILURE, and the pin WAS read.
+	EnsurePhysicsCountingDirectionProducerRegistered();
+	const auto Run = [](const char* szOrigin, const Zenith_Maths::Vector3& xDirection)
 	{
-		Zenith_GraphNode_Raycast xNode;
-		xNode.m_strOriginVar = "castOrigin";
-		xNode.m_strDirectionVar = "dir";
-		xNode.m_fMaxDistance = 10.0f;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uDirection), 1u,
-			"a MISS must have read Direction already - the read sits above the miss exit");
-	}
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uRaycast = xDef.AddNode("Raycast");
+		const u_int uProducer = xDef.AddNode("Test_PhysicsCountingDirectionProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		ZENITH_ASSERT_NE(uRaycast, 0u);
+		ZENITH_ASSERT_NE(uProducer, 0u);
+		ZENITH_ASSERT_NE(uSentinel, 0u);
+		if (uRaycast == 0u || uProducer == 0u || uSentinel == 0u)
+		{
+			return;
+		}
 
-	// (b) a ZERO DIRECTION: FAILURE at the guard immediately BELOW the read, so the
-	//     pin was read too.
-	{
-		SeedVec3(xBB, "zeroDir", Zenith_Maths::Vector3(0.0f));
-		Zenith_GraphNode_Raycast xNode;
-		xNode.m_strOriginVar = "castOrigin";
-		xNode.m_strDirectionVar = "zeroDir";
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uDirection), 1u);
-	}
+		Zenith_GraphNode_Raycast xParams;
+		ClearRaycastOutputBindings(xParams);
+		xParams.m_strOriginVar = szOrigin;
+		xParams.m_strDirectionVar = "";
+		xParams.m_fMaxDistance = 10.0f;
+		xDef.SetNodeParamsFromInstance(uRaycast, &xParams);
+		xDef.AddEdge(uSource, 0u, uRaycast);
+		xDef.AddEdge(uRaycast, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uRaycast, "Direction"));
 
-	// (c) an UNRESOLVABLE ORIGIN: the one Raycast guard ABOVE the read, so the pin
-	//     was NOT read.
-	{
-		Zenith_GraphNode_Raycast xNode;
-		xNode.m_strOriginVar = "noSuchOrigin";
-		xNode.m_strDirectionVar = "dir";
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uDirection), 0u,
-			"the origin guard is above the Direction read, so an unresolvable origin must read no pin");
-	}
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		if (std::string(szOrigin) == "castOrigin")
+		{
+			xGraph.GetBlackboard().SetValue("castOrigin", WireVec3(Zenith_Maths::Vector3(500.3f, 1000.0f, 7.1f)));
+		}
+		Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_xValue = xDirection;
+		Zenith_GraphContext xCtx;
+		xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xCtx);
+		ZENITH_ASSERT_FALSE(xGraph.GetBlackboard().HasValue("flag"),
+			"a Raycast FAILURE must not execute its SUCCESS continuation");
+	};
+
+	Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount = 0u;
+	Run("castOrigin", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount, 1u,
+		"a miss must pull Direction before its miss exit");
+
+	Run("castOrigin", Zenith_Maths::Vector3(0.0f));
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount, 2u,
+		"the zero-direction guard sits below the Direction pull");
+
+	Run("noSuchOrigin", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_PhysicsTestCountingDirectionProducer::s_uPullCount, 2u,
+		"the unresolved Origin guard must prevent a Direction pull");
 }
 
 // The CENSUS observable. Only a MIGRATED node can reach the transitional var-name
@@ -892,6 +965,7 @@ ZENITH_TEST(PhysicsPinRuntime, Fallback_CountsOncePerPin)
 	SeedVec3(xBB, "dir", Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 
 	Zenith_GraphNode_Raycast xNode;
+	ClearRaycastOutputBindings(xNode);
 	xNode.m_strOriginVar = "castOrigin";
 	xNode.m_xDirection = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
 	xNode.m_strDirectionVar = "dir";		// ASSIGNED: no INPUT default here is non-empty

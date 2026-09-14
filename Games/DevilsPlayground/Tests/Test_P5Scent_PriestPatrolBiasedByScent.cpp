@@ -188,24 +188,26 @@ static bool Step_P5ScentBias(int iFrame)
 			Zenith_BehaviourGraph* pxGraph = pxPriest ? pxPriest->FindPriestGraph() : nullptr;
 			if (pxGraph != nullptr)
 			{
-				// W3: the patrol picker is the DPPriestPickPatrolTarget graph
-				// node reading the priest's DECISION blackboard - same
-				// standalone-Execute seam the retired BT node offered.
-				pxPriest->WriteBBEntity(DP_AI::BB_KEY_HIGH_SCENT_TARGET, g_xVillager);
-				// Bump priest patrol radius so the random pick has
-				// generous room even when the navmesh has lots of
-				// occlusion near the villager.
-				pxPriest->WriteBBFloat(DP_AI::BB_KEY_SUSPICION_RADIUS, 15.0f);
 				DPNode_PriestPickPatrolTarget xNode;
+				xNode.m_strSuspicionRadiusVar = "";
+				xNode.m_strHighScentTargetVar = "";
+				xNode.m_strPatrolTargetVar = "";
 				Zenith_GraphContext xCtx;
 				xCtx.m_xSelf = xP;
 				xCtx.m_pxBlackboard = &pxGraph->GetBlackboard();
+				Zenith_PropertyValue xRadius; xRadius.SetFloat(15.0f);
+				Zenith_PropertyValue xScentTarget; xScentTarget.SetPackedEntityID(g_xVillager.GetPacked());
+				xNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius, xRadius);
+				xNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget, xScentTarget);
 				const GraphNodeStatus eStatus = xNode.Execute(xCtx);
-				if (eStatus == GRAPH_NODE_STATUS_SUCCESS)
+				if (eStatus == GRAPH_NODE_STATUS_SUCCESS
+					&& xNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius) == 0u
+					&& xNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == 0u
+					&& xNode.GetBadAccessWarningCountForTest() == 0u)
 				{
-					const Zenith_Maths::Vector3 xPatrol =
-						pxGraph->GetBlackboard().GetVector3(
-							DP_AI::BB_KEY_PATROL_TARGET, Zenith_Maths::Vector3(0.0f));
+					const Zenith_PropertyValue* pxPatrol = xNode.GetOutputForTest(DPNode_PriestPickPatrolTarget::uPIN_PatrolTarget);
+					if (pxPatrol == nullptr || pxPatrol->GetType() != PROPERTY_TYPE_VECTOR3) { g_iPhase = kSP_Done; return false; }
+					const Zenith_Maths::Vector3 xPatrol = pxPatrol->GetVector3();
 					// Check patrol point is within suspicion radius
 					// of the VILLAGER (not the priest). The radius
 					// itself is the test -- bias should center on

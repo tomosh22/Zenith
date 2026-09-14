@@ -151,6 +151,33 @@ Two shapes govern every builder above and are worth knowing before editing one:
   the *old* value — `ST_StateGym_Test` reads after a grace window for exactly this
   reason.
 
+### Typed-output writers and test seams
+
+The 20 builders author typed data edges and use explicit blackboard writers only
+where a later independent chain still needs a durable value. `FindEntityByName`
+results are written as packed `EntityID`s before every `TARGET_REF` consumer;
+PlayerMove persists `moveDir` and `moveVel`; UI persists `cycle`; Dispenser
+persists `notJammed`; and NavWalker persists `preyRef`, `managerRef`, `dest`, and
+`navState`. A writer follows its producer in the exec chain, so a failed producer
+cannot overwrite a prior value. SineBob is deliberately different: it reseeds
+`bobVel` before its math node each tick and has no feedback writer.
+
+The remaining computed values are inspected from their live output slots by the
+test suites: UI `fill01`/`hot`; Flow `canDispense`, `bagCount`, and the
+post-`ListRemoveAt` head; and AI perception, hearing, remaining-distance and
+velocity outputs. `ST_PlayerMoveContract` pins the complete authored execution
+trace: `ReadMovementAxis > SetBlackboardVector3 > MathBlackboardVector3 >
+SetBlackboardVector3 > SetVelocity`. The suite remains 13 automated tests: four
+hermetic contracts and nine gym behaviours.
+
+`ST_UIPlayground` uses the wire `CompareFloat` and `Branch` factories. Its
+contracts-only raw baseline serializes the whole definition and compares every
+byte, covering node IDs, property blobs and data-edge order; `m_strResultVar` is
+explicitly replayed as empty after `CompareFloat`. The remaining raw
+`StateMachine`, `Gate`, `SwitchOnInt`, and `ListAdd` sites retain their form
+because their `GetVariable` producer is authored after its consumer, so the wire
+factory would change node IDs and the complete serialized stream.
+
 ## The nine scenes
 
 The **index** is graph contract: every `LoadSceneByIndex` node names one, and
@@ -164,7 +191,7 @@ The **index** is graph contract: every `LoadSceneByIndex` node names one, and
 | 3 | `Gym_Physics` | A timer-driven prefab spawner (and Space for one on demand) + a static sensor kill volume, with cross-entity UI counters written through a packed `EntityID` in a blackboard var — the *Spawned* readout's text is asserted against the live counter (C10), so that target var is covered end to end |
 | 4 | `Gym_Events` | Targeted custom events — pressure plate → `OpenDoor`/`CloseDoor` at an entity it looked up by name — and a broadcast: one `Bell` pulsing all three independent listeners, each of which then settles back |
 | 5 | `Gym_State` | A `StateMachine` traffic light (Red → Green → Amber) with enter/exit visual events on the three lamps |
-| 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Coverage is uneven and deliberately stated: **text and colour are asserted** (C12b reads the `Counter` element's string back, and `BarFill`'s RGBA on both sides of the hot boundary), **fill only structurally** — via the `fill01`/`hot` vars its chain feeds |
+| 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Text and colour are asserted (C12b reads the `Counter` element and `BarFill` RGBA on both sides of the boundary); `fill01` and `hot` are read from their producing output slots. |
 | 7 | `Gym_Flow` | The **multi-way** flow constructs, which no other scene reaches, themed as a dispenser: `Once`, `Cooldown`, `Gate`, `WaitForCondition`, `SwitchOnInt`, `SwitchOnString`, `Selector`, `Sequence`, `ForEach`, `CallGraph`, the three list mutators and `LogicBlackboardBool` — fifteen chains on one `GameManager`, off twelve sources: the four per-frame chains share **one** `OnUpdate` through a `Sequence(4)`'s pins (pin order *is* the within-frame order four separate anchors used to give), and the other eleven are keys, `OnStart` or a custom event. Plus a `Plate` that arms it from outside its graph and a passive `Nozzle` the int switch rescales so its choice is visible in the world, not only on a blackboard |
 | 8 | `Gym_AI` | **Navigation and perception, with no game C++ anywhere** — which was impossible until `EnsureNavAgent` existed: `SetNavMeshAgent`'s only callers were game components, so every nav node returned FAILURE on a null pointer. A `NavMeshHolder` carries the committed `.znavmesh`, a `Walker` wires itself to it and paths / stops / slows / wanders across it, and a `Prey` registers itself as a perception target, makes a noise, and **unregisters itself in `OnDestroy`**. `ST_NavWalker`'s seven per-frame chains hang off **two** `Sequence`s, not one — `Sequence(2)` for the nav pair and `Sequence(5)` for the sensing five — because `OnKeyPressed` also dispatches under `GRAPH_EVENT_ON_UPDATE`, so its key chains run **between** the two groups in one frame; folding all seven onto a single `Sequence` would move the key chains to one side of the lot, and chain 10's flag-clearing comment depends on the prey-retiring key running *before* the perception chains |
 

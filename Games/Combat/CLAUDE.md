@@ -160,6 +160,11 @@ Demonstrates:
 
 ## Behaviour Graphs (all game DECISION logic — 5 graphs)
 
+The fourteen remaining factory-shaped sites retain raw authoring because their
+node IDs and data-edge positions are serialized: Branch 550/562/570/586/622/624/638,
+Compare 565/617, StateMachine 665/720, and Switch 780/805/826. Each producer is
+authored after its consumer or its edge intentionally follows a barrier.
+
 Every piece of combat DECISION logic lives in behaviour graphs; the C++
 components keep only SYSTEMS (physics, IK, damage math, HUD render, scene
 mgmt, hit overlap) behind small graph-facing shims. Graphs are boot-authored
@@ -228,9 +233,9 @@ cooldown-Dt discriminator. The temporary fallback census rises for bound
 legacy INPUT names until B-7.4b replaces them with data edges or
 `GetVariable` producers; OUTPUT names do not consume fallback entries.
 
-**Builder wiring (B-7.4b).** The five production builders author 32 data
-edges: 14 adjacent producer links and 18 per-consumer `GetVariable` links
-(`Combat_PlayerAttack` 8, `Combat_RoundFlow` 5, `Combat_PlayerState` 10,
+**Builder wiring (B-7.6).** The five production builders author 35 data
+edges: 17 adjacent producer links and 18 per-consumer `GetVariable` links
+(`Combat_PlayerAttack` 11, `Combat_RoundFlow` 5, `Combat_PlayerState` 10,
 `Combat_EnemyBrain` 6, `Combat_GameFlow` 3). The 15 payload-Dt consumers use
 concrete FLOAT `GetVariable(payload)` nodes; PlayerAttack also declares the
 cross-`AttackTick` values `hitFrameReady` BOOL, `isAttacking` BOOL, and
@@ -239,8 +244,10 @@ cross-`AttackTick` values `hitFrameReady` BOOL, `isAttacking` BOOL, and
 PreTick/GetGameState outputs wire directly into their StateMachine/Switch
 inputs. That is the OUTPUT-wired-and-declared shape: the seed supplies tick 0
 and the output retains the blackboard writer required by C-1 consumers.
-`hitFrameReady`, `isAttacking`, and all QueryAttackState outputs retain that
-dual writer for cross-chain and future C-1 audit consumers. The validate-clean
+`CombatQueryAttackState` clears all five output names and, on its
+SUCCESS path before the original first guard, explicitly writes IsAttacking,
+ComboCount, then HitFrame into `isAttacking`, `comboCount`, and
+`hitFrameReady`. A query failure reaches none of those writers. The validate-clean
 table asserts each graph's exact edge/GetVariable count, concrete producer
 types, successful initialization, and zero skipped resolutions; warnings such
 as DECLARED_UNUSED remain intentionally outside its ERROR-only gate. Root

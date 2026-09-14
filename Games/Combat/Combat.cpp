@@ -547,11 +547,28 @@ void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 	// Guard 1: query attack state, then activate the hitbox on attack start.
 	Zenith_GraphChain xEvt1 = xB.OnCustomEvent("AttackTick");
 	const u_int uQuery = xB.Node("CombatQueryAttackState");
+	// QueryAttackState used to dual-write these observations.  The later guards
+	// still consume them on their independently dispatched AttackTick chains, so
+	// publish the same values explicitly before the original first guard.
+	const u_int uSetAttacking = xB.Node("SetBlackboardBool");
+	xB.ParamString(uSetAttacking, "m_strVariable", "isAttacking");
+	const u_int uSetCombo = xB.Node("SetBlackboardInt");
+	xB.ParamString(uSetCombo, "m_strVariable", "comboCount");
+	const u_int uSetHitFrame = xB.Node("SetBlackboardBool");
+	xB.ParamString(uSetHitFrame, "m_strVariable", "hitFrameReady");
 	const u_int uBranchStart = xB.Node("Branch");
 	xB.ParamString(uBranchStart, "m_strConditionVar", "");
 	const u_int uActivate = xB.Node("CombatActivateHitbox");
-	xEvt1.Then(uQuery).Then(uBranchStart).ThenPin(0, uActivate);
+	xEvt1.Then(uQuery).Then(uSetAttacking).Then(uSetCombo).Then(uSetHitFrame).Then(uBranchStart).ThenPin(0, uActivate);
 	xB.Raw().DataEdge(uQuery, "AttackStarted", uBranchStart, "Condition");
+	xB.Raw().DataEdge(uQuery, "IsAttacking", uSetAttacking, "Value");
+	xB.Raw().DataEdge(uQuery, "ComboCount", uSetCombo, "Value");
+	xB.Raw().DataEdge(uQuery, "HitFrame", uSetHitFrame, "Value");
+	xB.ParamString(uQuery, "m_strAttackStartedVar", "");
+	xB.ParamString(uQuery, "m_strIsAttackingVar", "");
+	xB.ParamString(uQuery, "m_strAttackTypeVar", "");
+	xB.ParamString(uQuery, "m_strComboCountVar", "");
+	xB.ParamString(uQuery, "m_strHitFrameVar", "");
 	xB.Raw().DataEdge(uQuery, "AttackType", uActivate, "AttackType");
 	xB.ParamString(uActivate, "m_strAttackTypeVar", "");
 	xB.Raw().DataEdge(uQuery, "ComboCount", uActivate, "ComboCount");

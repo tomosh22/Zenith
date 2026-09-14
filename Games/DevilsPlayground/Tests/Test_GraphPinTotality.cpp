@@ -73,7 +73,7 @@ namespace
 			&DPNode_PickVillagerUnderCursor::GetPinTableStatic(), &DPNode_TryPossess::GetPinTableStatic(),
 			&DPNode_ForgeCraft::GetPinTableStatic(), &DPNode_ReadTuningFloat::GetPinTableStatic(),
 			&DPNode_ItemChildRefusal::GetPinTableStatic(), &DPNode_ItemArmChannel::GetPinTableStatic(),
-			&DPNode_ItemCommitPickup::GetPinTableStatic(), &DPNode_ItemRingBell::GetPinTableStatic(),
+			&DPNode_ItemCommitPickup::GetPinTableStatic(), &DPNode_ItemFinishPickup::GetPinTableStatic(), &DPNode_ItemRingBell::GetPinTableStatic(),
 			&DPNode_ItemEvaporate::GetPinTableStatic(), &DPNode_PriestPickPatrolTarget::GetPinTableStatic(),
 			&DPNode_PriestApprehendChannel::GetPinTableStatic()
 		};
@@ -90,10 +90,10 @@ namespace
 				if (xPin.m_eRole == GRAPH_PIN_ROLE_SELECTOR_READWRITE) ++iReadWrites;
 			}
 		}
-		CheckEqInt(static_cast<int>(sizeof(apxTables) / sizeof(apxTables[0])), 25, "DP has 25 annotated graph-node tables");
-		CheckEqInt(iDescriptors, 48, "DP's 25 tables contain 48 descriptors");
-		CheckEqInt(iInputs, 35, "DP descriptor inventory has 35 INPUT pins");
-		CheckEqInt(iOutputs, 9, "DP descriptor inventory has 9 OUTPUT pins");
+		CheckEqInt(static_cast<int>(sizeof(apxTables) / sizeof(apxTables[0])), 26, "DP has 26 annotated graph-node tables");
+		CheckEqInt(iDescriptors, 50, "DP's 26 tables contain 50 descriptors");
+		CheckEqInt(iInputs, 36, "DP descriptor inventory has 36 INPUT pins");
+		CheckEqInt(iOutputs, 10, "DP descriptor inventory has 10 OUTPUT pins");
 		CheckEqInt(iReadWrites, 4, "DP descriptor inventory has 4 READWRITE pins");
 
 #define DP_CHECK_PIN_INDEX(NodeType, PinName) \
@@ -109,7 +109,8 @@ namespace
 		DP_CHECK_PIN_INDEX(DPNode_ForgeCraft, Villager); DP_CHECK_PIN_INDEX(DPNode_ForgeCraft, RecipeInput); DP_CHECK_PIN_INDEX(DPNode_ForgeCraft, RecipeOutput);
 		DP_CHECK_PIN_INDEX(DPNode_ReadTuningFloat, Result); DP_CHECK_PIN_INDEX(DPNode_ItemChildRefusal, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemChildRefusal, Tag);
 		DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, ChannelVillager); DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, ChannelDuration); DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, ChannelRemaining);
-		DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, Tag); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, ChannelVillager); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, ChannelRemaining);
+		DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, ChannelVillager); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, ChannelRemaining); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, CommittedVillager);
+		DP_CHECK_PIN_INDEX(DPNode_ItemFinishPickup, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemFinishPickup, Tag);
 		DP_CHECK_PIN_INDEX(DPNode_ItemRingBell, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemRingBell, SpecialBehaviour); DP_CHECK_PIN_INDEX(DPNode_ItemEvaporate, Tag);
 		DP_CHECK_PIN_INDEX(DPNode_PriestPickPatrolTarget, SuspicionRadius); DP_CHECK_PIN_INDEX(DPNode_PriestPickPatrolTarget, HighScentTarget); DP_CHECK_PIN_INDEX(DPNode_PriestPickPatrolTarget, PatrolTarget);
 		DP_CHECK_PIN_INDEX(DPNode_PriestApprehendChannel, TargetWithDevil);

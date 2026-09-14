@@ -482,6 +482,19 @@ gated: the builders it names live in DevilsPlayground.cpp's tools block.
 
 ### The gamepad column
 
+### B76 Behaviour Graph inventory
+
+`DP_GraphPinTotality_Test` expects 26 DP node tables and 50 descriptors.
+`DP_GraphsValidateClean_Test` expects Villager 35 data edges, Item 38, Priest
+6, Door 16, and 77 typed `GetVariable` outputs. The first seven-suite census
+passed with zero FALLBACK, IN_PLACE_ALIASING, and validator errors; DP's six
+wrong-tag MISMATCH lines are intentional controls. The final 14-step T3 (with
+builds) and SceneGuard gate passed. The current registered class inventory is
+38. The validator also serializes
+the raw and factory Villager recovery branches and compares every byte before
+accepting the two factory sites; other raw sequences remain when producer
+creation timing or edge order differs.
+
 `DP_SimPad_Test` (`Tests/Test_SimPad.cpp`, `requiresGraphics=false`) is the ONLY
 thing in this suite that publishes a pad event — everything else drives the
 keyboard and the mouse, so every pad row in `DP_Bindings.h` would otherwise

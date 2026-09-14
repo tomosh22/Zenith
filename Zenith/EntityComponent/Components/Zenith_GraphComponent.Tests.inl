@@ -159,6 +159,51 @@ namespace
 		}
 		return pxInfo->m_pfnGetPropertyTable()->FindProperty(szProperty);
 	}
+
+	bool FindOutputPinIndexForTest(const Zenith_GraphNode* pxNode, const char* szPinName, u_int& uOut)
+	{
+		if (pxNode == nullptr || szPinName == nullptr)
+		{
+			return false;
+		}
+		const Zenith_GraphPinTable* pxPins = pxNode->GetPinTableVirtual();
+		if (pxPins == nullptr)
+		{
+			return false;
+		}
+		for (u_int u = 0u; u < pxPins->GetPinCount(); ++u)
+		{
+			const Zenith_GraphPinDesc& xPin = pxPins->GetPinAt(u);
+			if (xPin.m_eRole == GRAPH_PIN_ROLE_OUTPUT && xPin.m_szName != nullptr && std::strcmp(xPin.m_szName, szPinName) == 0)
+			{
+				uOut = u;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// Graph definitions keep node IDs while the behaviour graph owns the live
+	// instances.  Resolve output observations through the pin table so these
+	// tests never depend on a registration-local numeric pin index.
+	const Zenith_PropertyValue* GetNodeOutputForTest(Zenith_BehaviourGraph* pxGraph, u_int uNodeID, const char* szPinName)
+	{
+		Zenith_GraphNode* pxNode = pxGraph ? pxGraph->FindNode(uNodeID) : nullptr;
+		u_int uPin = 0u;
+		return FindOutputPinIndexForTest(pxNode, szPinName, uPin) ? pxNode->GetOutputForTest(uPin) : nullptr;
+	}
+
+	const Zenith_PropertyValue* GetTypedNodeOutputForTest(Zenith_BehaviourGraph* pxGraph, u_int uNodeID,
+		const char* szPinName, int iExpectedType)
+	{
+		const Zenith_PropertyValue* pxValue = GetNodeOutputForTest(pxGraph, uNodeID, szPinName);
+		if (pxValue == nullptr)
+		{
+			return nullptr;
+		}
+		ZENITH_ASSERT_EQ(static_cast<int>(pxValue->GetType()), iExpectedType);
+		return static_cast<int>(pxValue->GetType()) == iExpectedType ? pxValue : nullptr;
+	}
 }
 
 ZENITH_TEST(GraphComponent, AssetRoundTripAndUpdateDispatch)
@@ -289,6 +334,9 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 	// SetBlackboardString / CompareBlackboardInt / StoreSelfEntityID) executing
 	// through the engine registrar in one OnUpdate chain.
 	const std::string strAssetPath = "game:Graphs/UnitTest_BlackboardNodes.bgraph";
+	u_int uCompareConst = 0u;
+	u_int uCompareVar = 0u;
+	u_int uStoreSelf = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -302,22 +350,22 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 			xParams.SetString("m_strVariable", "i");
 			xParams.SetInt("m_iValue", 5);
 		}
-		const u_int uCompareConst = xDef.AddNode("CompareBlackboardInt");
+		uCompareConst = xDef.AddNode("CompareBlackboardInt");
 		{
 			NodeParamWriter xParams(xDef, uCompareConst, "CompareBlackboardInt");
-			xParams.SetString("m_strVar", "i");
+			xParams.SetString("m_strVar", "");
 			xParams.SetInt("m_iCompareTo", 5);
 			xParams.SetInt("m_iOp", 4);	// equal
-			xParams.SetString("m_strResultVar", "eq");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uCompareVar = xDef.AddNode("CompareBlackboardInt");
+		uCompareVar = xDef.AddNode("CompareBlackboardInt");
 		{
 			// var-vs-var: i != i must be false.
 			NodeParamWriter xParams(xDef, uCompareVar, "CompareBlackboardInt");
-			xParams.SetString("m_strVar", "i");
-			xParams.SetString("m_strCompareVar", "i");
+			xParams.SetString("m_strVar", "");
+			xParams.SetString("m_strCompareVar", "");
 			xParams.SetInt("m_iOp", 5);	// notEqual
-			xParams.SetString("m_strResultVar", "neq");
+			xParams.SetString("m_strResultVar", "");
 		}
 		const u_int uSetVec = xDef.AddNode("SetBlackboardVector3");
 		{
@@ -333,10 +381,15 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 			xParams.SetString("m_strVariable", "s");
 			xParams.SetString("m_strValue", "hello");
 		}
-		const u_int uStoreSelf = xDef.AddNode("StoreSelfEntityID");
+		uStoreSelf = xDef.AddNode("StoreSelfEntityID");
 		{
 			NodeParamWriter xParams(xDef, uStoreSelf, "StoreSelfEntityID");
-			xParams.SetString("m_strVariable", "me");
+			xParams.SetString("m_strVariable", "");
+		}
+		const u_int uGetI = xDef.AddNode("GetVariable");
+		{
+			NodeParamWriter xParams(xDef, uGetI, "GetVariable");
+			xParams.SetString("m_strVariable", "i");
 		}
 
 		xDef.AddEdge(uSource, 0, uSetInt);
@@ -345,6 +398,9 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 		xDef.AddEdge(uCompareVar, 0, uSetVec);
 		xDef.AddEdge(uSetVec, 0, uSetStr);
 		xDef.AddEdge(uSetStr, 0, uStoreSelf);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetI, "Value", uCompareConst, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetI, "Value", uCompareVar, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetI, "Value", uCompareVar, "CompareTo"));
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -359,13 +415,20 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
 
-	const Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
+	Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
 	ZENITH_ASSERT_EQ(xBlackboard.GetInt32("i"), 5);
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("eq"));
-	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("neq", true));
+	const Zenith_PropertyValue* pxEq = GetTypedNodeOutputForTest(pxGraph, uCompareConst, "Result", PROPERTY_TYPE_BOOL);
+	const Zenith_PropertyValue* pxNeq = GetTypedNodeOutputForTest(pxGraph, uCompareVar, "Result", PROPERTY_TYPE_BOOL);
+	const Zenith_PropertyValue* pxSelf = GetTypedNodeOutputForTest(pxGraph, uStoreSelf, "Variable", PROPERTY_TYPE_ENTITY_ID);
+	ZENITH_ASSERT_NOT_NULL(pxEq);
+	ZENITH_ASSERT_NOT_NULL(pxNeq);
+	ZENITH_ASSERT_NOT_NULL(pxSelf);
+	if (pxEq == nullptr || pxNeq == nullptr || pxSelf == nullptr) return;
+	ZENITH_ASSERT_TRUE(pxEq->GetBool());
+	ZENITH_ASSERT_FALSE(pxNeq->GetBool());
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("v").y, 2.0f, 0.0001f);
 	ZENITH_ASSERT_STREQ(xBlackboard.GetString("s").c_str(), "hello");
-	ZENITH_ASSERT_EQ(xBlackboard.GetPackedEntityID("me"), xEntity.GetEntityID().GetPacked());
+	ZENITH_ASSERT_EQ(pxSelf->GetPackedEntityID(), xEntity.GetEntityID().GetPacked());
 }
 
 namespace
@@ -499,6 +562,9 @@ ZENITH_TEST(GraphComponent, EntityTargetingActsOnOtherEntity)
 	// P1b: a chain on entity A stores B's ID, then acts on B through the
 	// m_strTargetVar convention (translate) and queries it (position/distance).
 	const std::string strAssetPath = "game:Graphs/UnitTest_EntityTargeting.bgraph";
+	u_int uReadPos = 0u;
+	u_int uDistance = 0u;
+	u_int uValid = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -517,23 +583,23 @@ ZENITH_TEST(GraphComponent, EntityTargetingActsOnOtherEntity)
 			xParams.Set("m_xUnitsPerSecond", xVec);
 			xParams.SetString("m_strTargetVar", "other");
 		}
-		const u_int uReadPos = xDef.AddNode("ReadEntityPosition");
+		uReadPos = xDef.AddNode("ReadEntityPosition");
 		{
 			NodeParamWriter xParams(xDef, uReadPos, "ReadEntityPosition");
 			xParams.SetString("m_strTargetVar", "other");
-			xParams.SetString("m_strResultVar", "otherPos");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uDistance = xDef.AddNode("ComputeDistance");
+		uDistance = xDef.AddNode("ComputeDistance");
 		{
 			NodeParamWriter xParams(xDef, uDistance, "ComputeDistance");
 			xParams.SetString("m_strToVar", "other");
-			xParams.SetString("m_strResultVar", "dist");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uValid = xDef.AddNode("QueryEntityValid");
+		uValid = xDef.AddNode("QueryEntityValid");
 		{
 			NodeParamWriter xParams(xDef, uValid, "QueryEntityValid");
 			xParams.SetString("m_strEntityVar", "other");
-			xParams.SetString("m_strResultVar", "otherAlive");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uSource, 0, uTranslate);
 		xDef.AddEdge(uTranslate, 0, uReadPos);
@@ -565,18 +631,46 @@ ZENITH_TEST(GraphComponent, EntityTargetingActsOnOtherEntity)
 	xOther.GetComponent<Zenith_TransformComponent>().GetPosition(xOtherPosition);
 	ZENITH_ASSERT_EQ_FLOAT(xOtherPosition.y, 2.0f, 0.001f);
 
-	const Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("otherPos").y, 2.0f, 0.001f);
+	Zenith_GraphNode* pxReadPos = pxGraph->FindNode(uReadPos);
+	Zenith_GraphNode* pxDistance = pxGraph->FindNode(uDistance);
+	Zenith_GraphNode* pxValid = pxGraph->FindNode(uValid);
+	ZENITH_ASSERT_NOT_NULL(pxReadPos);
+	ZENITH_ASSERT_NOT_NULL(pxDistance);
+	ZENITH_ASSERT_NOT_NULL(pxValid);
+	if (pxReadPos == nullptr || pxDistance == nullptr || pxValid == nullptr) return;
+	u_int uPositionResult = 0u, uDistanceResult = 0u, uValidResult = 0u;
+	const bool bHaveEntityResultPins = FindOutputPinIndexForTest(pxReadPos, "Result", uPositionResult)
+		&& FindOutputPinIndexForTest(pxDistance, "Result", uDistanceResult)
+		&& FindOutputPinIndexForTest(pxValid, "Result", uValidResult);
+	ZENITH_ASSERT_TRUE(bHaveEntityResultPins);
+	if (!bHaveEntityResultPins) return;
+	const Zenith_PropertyValue* pxPosition = pxReadPos->GetOutputForTest(uPositionResult);
+	const Zenith_PropertyValue* pxDistanceValue = pxDistance->GetOutputForTest(uDistanceResult);
+	const Zenith_PropertyValue* pxValidValue = pxValid->GetOutputForTest(uValidResult);
+	ZENITH_ASSERT_NOT_NULL(pxPosition);
+	ZENITH_ASSERT_NOT_NULL(pxDistanceValue);
+	ZENITH_ASSERT_NOT_NULL(pxValidValue);
+	if (pxPosition == nullptr || pxDistanceValue == nullptr || pxValidValue == nullptr) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxPosition->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxDistanceValue->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxValidValue->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	if (pxPosition->GetType() != PROPERTY_TYPE_VECTOR3 || pxDistanceValue->GetType() != PROPERTY_TYPE_FLOAT || pxValidValue->GetType() != PROPERTY_TYPE_BOOL) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxPosition->GetVector3().y, 2.0f, 0.001f);
 	// |(3, 2, 4)| after the move.
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("dist"), glm::length(Zenith_Maths::Vector3(3.0f, 2.0f, 4.0f)), 0.001f);
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("otherAlive"));
+	ZENITH_ASSERT_EQ_FLOAT(pxDistanceValue->GetFloat(), glm::length(Zenith_Maths::Vector3(3.0f, 2.0f, 4.0f)), 0.001f);
+	ZENITH_ASSERT_TRUE(pxValidValue->GetBool());
 
 	// Destroy B: targeting must fail closed - the chain aborts at the
 	// translate node and the validity query never runs again (stale values
 	// stay; assert via a fresh graph state instead: hasTarget flips false).
 	xOther.DestroyImmediate();
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xHost, 1.0f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("otherPos").y, 2.0f, 0.001f);	// unchanged - chain aborted early
+	const Zenith_PropertyValue* pxPositionRetained = pxReadPos->GetOutputForTest(uPositionResult);
+	ZENITH_ASSERT_NOT_NULL(pxPositionRetained);
+	if (!pxPositionRetained) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxPositionRetained->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	if (pxPositionRetained->GetType() != PROPERTY_TYPE_VECTOR3) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxPositionRetained->GetVector3().y, 2.0f, 0.001f);	// unchanged - chain aborted early
 }
 
 #ifdef ZENITH_INPUT_SIMULATOR
@@ -586,6 +680,7 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 	// stepping (StepFrame re-enters the main loop - forbidden here): state is
 	// staged per "frame" via SetKeyHeld/SimulateKeyDown/ResetAllInputState.
 	const std::string strAssetPath = "game:Graphs/UnitTest_InputNodes.bgraph";
+	u_int uShift = 0u, uMove = 0u, uAxis = 0u, uLmb = 0u, uMousePos = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -621,21 +716,24 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 
 		// Query chain off a plain OnUpdate anchor.
 		const u_int uUpdate = xDef.AddNode("OnUpdate");
-		const u_int uShift = xDef.AddNode("ReadKeyState");
+		uShift = xDef.AddNode("ReadKeyState");
 		{
 			NodeParamWriter xParams(xDef, uShift, "ReadKeyState");
 			xParams.SetInt("m_iKeyCode", ZENITH_KEY_LEFT_SHIFT);
 			xParams.SetInt("m_iMode", 0);
-			xParams.SetString("m_strResultVar", "shift");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uMove = xDef.AddNode("ReadMovementAxis");	// WASD defaults
-		const u_int uAxis = xDef.AddNode("ReadInputAxis");		// A/D defaults
-		const u_int uLmb = xDef.AddNode("ReadMouseButtonHeld");
+		uMove = xDef.AddNode("ReadMovementAxis");
+		{ NodeParamWriter xParams(xDef, uMove, "ReadMovementAxis"); xParams.SetString("m_strResultVar", ""); }
+		uAxis = xDef.AddNode("ReadInputAxis");
+		{ NodeParamWriter xParams(xDef, uAxis, "ReadInputAxis"); xParams.SetString("m_strResultVar", ""); }
+		uLmb = xDef.AddNode("ReadMouseButtonHeld");
 		{
 			NodeParamWriter xParams(xDef, uLmb, "ReadMouseButtonHeld");
-			xParams.SetString("m_strResultVar", "lmb");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uMousePos = xDef.AddNode("ReadMousePosition");
+		uMousePos = xDef.AddNode("ReadMousePosition");
+		{ NodeParamWriter xParams(xDef, uMousePos, "ReadMousePosition"); xParams.SetString("m_strResultVar", ""); }
 		xDef.AddEdge(uUpdate, 0, uShift);
 		xDef.AddEdge(uShift, 0, uMove);
 		xDef.AddEdge(uMove, 0, uAxis);
@@ -652,8 +750,25 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 	ZENITH_ASSERT_NOT_NULL(pxGraph);
 	if (!pxGraph) return;
 	ZENITH_ASSERT_EQ(pxGraph->GetUnresolvedCount(), 0u);
+	Zenith_GraphNode* pxShift = pxGraph->FindNode(uShift);
+	Zenith_GraphNode* pxMove = pxGraph->FindNode(uMove);
+	Zenith_GraphNode* pxAxis = pxGraph->FindNode(uAxis);
+	Zenith_GraphNode* pxLmb = pxGraph->FindNode(uLmb);
+	Zenith_GraphNode* pxMousePos = pxGraph->FindNode(uMousePos);
+	ZENITH_ASSERT_NOT_NULL(pxShift); ZENITH_ASSERT_NOT_NULL(pxMove); ZENITH_ASSERT_NOT_NULL(pxAxis);
+	ZENITH_ASSERT_NOT_NULL(pxLmb); ZENITH_ASSERT_NOT_NULL(pxMousePos);
+	if (!pxShift || !pxMove || !pxAxis || !pxLmb || !pxMousePos) return;
+	u_int uShiftResult = 0u, uMoveResult = 0u, uAxisResult = 0u, uLmbResult = 0u, uMouseResult = 0u;
+	const bool bHaveInputResultPins = FindOutputPinIndexForTest(pxShift, "Result", uShiftResult)
+		&& FindOutputPinIndexForTest(pxMove, "Result", uMoveResult)
+		&& FindOutputPinIndexForTest(pxAxis, "Result", uAxisResult)
+		&& FindOutputPinIndexForTest(pxLmb, "Result", uLmbResult)
+		&& FindOutputPinIndexForTest(pxMousePos, "Result", uMouseResult);
+	ZENITH_ASSERT_TRUE(bHaveInputResultPins);
+	if (!bHaveInputResultPins) return;
 
 	Zenith_InputSimulator::Enable();
+	struct InputSimulatorCleanup { ~InputSimulatorCleanup() { Zenith_InputSimulator::ResetAllInputState(); Zenith_InputSimulator::Disable(); } } xInputCleanup;
 	Zenith_InputSimulator::ResetAllInputState();
 
 	// "Frame 1": W + A + Shift held, SPACE pressed, LMB down, cursor at (100, 200).
@@ -670,13 +785,27 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("pressCount"), 1.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount", 0.0f), 0.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lmbPress"), 1.0f, 0.0001f);
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("shift"));
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("moveDir").x, -0.70710678f, 0.001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("moveDir").z, 0.70710678f, 0.001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("axis"), -1.0f, 0.0001f);
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("lmb"));
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("mousePos").x, 100.0f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("mousePos").y, 200.0f, 0.0001f);
+	const Zenith_PropertyValue* pxShiftValue = pxShift->GetOutputForTest(uShiftResult);
+	const Zenith_PropertyValue* pxMoveValue = pxMove->GetOutputForTest(uMoveResult);
+	const Zenith_PropertyValue* pxAxisValue = pxAxis->GetOutputForTest(uAxisResult);
+	const Zenith_PropertyValue* pxLmbValue = pxLmb->GetOutputForTest(uLmbResult);
+	const Zenith_PropertyValue* pxMouseValue = pxMousePos->GetOutputForTest(uMouseResult);
+	ZENITH_ASSERT_NOT_NULL(pxShiftValue); ZENITH_ASSERT_NOT_NULL(pxMoveValue); ZENITH_ASSERT_NOT_NULL(pxAxisValue);
+	ZENITH_ASSERT_NOT_NULL(pxLmbValue); ZENITH_ASSERT_NOT_NULL(pxMouseValue);
+	if (!pxShiftValue || !pxMoveValue || !pxAxisValue || !pxLmbValue || !pxMouseValue) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxShiftValue->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMoveValue->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxAxisValue->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxLmbValue->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMouseValue->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR2));
+	if (pxShiftValue->GetType() != PROPERTY_TYPE_BOOL || pxMoveValue->GetType() != PROPERTY_TYPE_VECTOR3 || pxAxisValue->GetType() != PROPERTY_TYPE_FLOAT || pxLmbValue->GetType() != PROPERTY_TYPE_BOOL || pxMouseValue->GetType() != PROPERTY_TYPE_VECTOR2) { Zenith_InputSimulator::ResetAllInputState(); Zenith_InputSimulator::Disable(); return; }
+	ZENITH_ASSERT_TRUE(pxShiftValue->GetBool());
+	ZENITH_ASSERT_EQ_FLOAT(pxMoveValue->GetVector3().x, -0.70710678f, 0.001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxMoveValue->GetVector3().z, 0.70710678f, 0.001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxAxisValue->GetFloat(), -1.0f, 0.0001f);
+	ZENITH_ASSERT_TRUE(pxLmbValue->GetBool());
+	ZENITH_ASSERT_EQ_FLOAT(pxMouseValue->GetVector2().x, 100.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxMouseValue->GetVector2().y, 200.0f, 0.0001f);
 
 	// "Frame 2": everything released. BeginTestFrame retires the previous frame's
 	// edges (what a real frame step would do), and the releases are SIMULATED AS
@@ -695,10 +824,22 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("pressCount"), 1.0f, 0.0001f);		// no new press
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount"), 1.0f, 0.0001f);	// SPACE down -> up edge
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lmbPress"), 1.0f, 0.0001f);		// no new press edge
-	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("shift", true));
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("moveDir", Zenith_Maths::Vector3(9.0f)).x, 0.0f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("axis", 9.0f), 0.0f, 0.0001f);
-	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("lmb", true));
+	const Zenith_PropertyValue* pxShiftReleased = pxShift->GetOutputForTest(uShiftResult);
+	const Zenith_PropertyValue* pxMoveReleased = pxMove->GetOutputForTest(uMoveResult);
+	const Zenith_PropertyValue* pxAxisReleased = pxAxis->GetOutputForTest(uAxisResult);
+	const Zenith_PropertyValue* pxLmbReleased = pxLmb->GetOutputForTest(uLmbResult);
+	ZENITH_ASSERT_NOT_NULL(pxShiftReleased); ZENITH_ASSERT_NOT_NULL(pxMoveReleased);
+	ZENITH_ASSERT_NOT_NULL(pxAxisReleased); ZENITH_ASSERT_NOT_NULL(pxLmbReleased);
+	if (!pxShiftReleased || !pxMoveReleased || !pxAxisReleased || !pxLmbReleased) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxShiftReleased->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMoveReleased->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxAxisReleased->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxLmbReleased->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	if (pxShiftReleased->GetType() != PROPERTY_TYPE_BOOL || pxMoveReleased->GetType() != PROPERTY_TYPE_VECTOR3 || pxAxisReleased->GetType() != PROPERTY_TYPE_FLOAT || pxLmbReleased->GetType() != PROPERTY_TYPE_BOOL) { Zenith_InputSimulator::ResetAllInputState(); Zenith_InputSimulator::Disable(); return; }
+	ZENITH_ASSERT_FALSE(pxShiftReleased->GetBool());
+	ZENITH_ASSERT_EQ_FLOAT(pxMoveReleased->GetVector3().x, 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxAxisReleased->GetFloat(), 0.0f, 0.0001f);
+	ZENITH_ASSERT_FALSE(pxLmbReleased->GetBool());
 
 	Zenith_InputSimulator::ResetAllInputState();
 	Zenith_InputSimulator::Disable();
@@ -774,6 +915,7 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 	// property changes.
 	const std::string strAssetPath = "game:Graphs/UnitTest_ActionNodes.bgraph";
 	u_int uLateSourceNodeID = 0;
+	u_int uAxis1D = 0u, uAxis2D = 0u, uMissAxis = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -804,17 +946,17 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 
 		// Axis readers off a plain OnUpdate anchor.
 		const u_int uUpdate = xDef.AddNode("OnUpdate");
-		const u_int uAxis1D = xDef.AddNode("ReadActionAxis1D");
+		uAxis1D = xDef.AddNode("ReadActionAxis1D");
 		{
 			NodeParamWriter xParams(xDef, uAxis1D, "ReadActionAxis1D");
 			xParams.SetString("m_strAction", szACTION_TEST_AXIS1D);
-			xParams.SetString("m_strResultVar", "lean");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uAxis2D = xDef.AddNode("ReadActionAxis2D");
+		uAxis2D = xDef.AddNode("ReadActionAxis2D");
 		{
 			NodeParamWriter xParams(xDef, uAxis2D, "ReadActionAxis2D");
 			xParams.SetString("m_strAction", szACTION_TEST_AXIS2D);
-			xParams.SetString("m_strResultVar", "move");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uUpdate, 0, uAxis1D);
 		xDef.AddEdge(uAxis1D, 0, uAxis2D);
@@ -823,11 +965,11 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 		// NOTHING, and abort its chain (a zero here is indistinguishable from a
 		// centred stick, so writing one would be worse than writing nothing).
 		const u_int uMissUpdate = xDef.AddNode("OnUpdate");
-		const u_int uMissAxis = xDef.AddNode("ReadActionAxis1D");
+		uMissAxis = xDef.AddNode("ReadActionAxis1D");
 		{
 			NodeParamWriter xParams(xDef, uMissAxis, "ReadActionAxis1D");
 			xParams.SetString("m_strAction", "__NoSuchActionAxis");
-			xParams.SetString("m_strResultVar", "missingAxis");
+			xParams.SetString("m_strResultVar", "");
 		}
 		const u_int uAfterMiss = xDef.AddNode("SetBlackboardFloat");
 		{
@@ -866,9 +1008,36 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 	ZENITH_ASSERT_NOT_NULL(pxGraph);
 	if (!pxGraph) return;
 	ZENITH_ASSERT_EQ(pxGraph->GetUnresolvedCount(), 0u);
-	const Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
+	Zenith_GraphNode* pxAxis1D = pxGraph->FindNode(uAxis1D);
+	Zenith_GraphNode* pxAxis2D = pxGraph->FindNode(uAxis2D);
+	Zenith_GraphNode* pxMissAxis = pxGraph->FindNode(uMissAxis);
+	ZENITH_ASSERT_NOT_NULL(pxAxis1D); ZENITH_ASSERT_NOT_NULL(pxAxis2D); ZENITH_ASSERT_NOT_NULL(pxMissAxis);
+	if (!pxAxis1D || !pxAxis2D || !pxMissAxis) return;
+	u_int uAxis1DResult = 0u, uAxis2DResult = 0u, uMissingAxisResult = 0u;
+	const bool bHaveActionResultPins = FindOutputPinIndexForTest(pxAxis1D, "Result", uAxis1DResult)
+		&& FindOutputPinIndexForTest(pxAxis2D, "Result", uAxis2DResult)
+		&& FindOutputPinIndexForTest(pxMissAxis, "Result", uMissingAxisResult);
+	ZENITH_ASSERT_TRUE(bHaveActionResultPins);
+	if (!bHaveActionResultPins) return;
+	Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
+	// Fresh graph slots are typed zero. Seed a distinct value so the missing
+	// action path proves retention rather than merely observing initialization.
+	const Zenith_PropertyValue* pxMissingFresh = pxMissAxis->GetOutputForTest(uMissingAxisResult);
+	ZENITH_ASSERT_NOT_NULL(pxMissingFresh);
+	if (!pxMissingFresh) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMissingFresh->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	if (pxMissingFresh->GetType() != PROPERTY_TYPE_FLOAT) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxMissingFresh->GetFloat(), 0.0f, 0.0001f);
+	Zenith_PropertyValue xMissingSeed;
+	xMissingSeed.SetFloat(9.0f);
+	Zenith_GraphContext xMissingSeedContext;
+	xMissingSeedContext.m_xSelf = xEntity;
+	xMissingSeedContext.m_pxGraph = pxGraph;
+	xMissingSeedContext.m_pxBlackboard = &xBlackboard;
+	pxMissAxis->SetOutput(xMissingSeedContext, uMissingAxisResult, xMissingSeed);
 
 	Zenith_InputSimulator::Enable();
+	struct ActionInputSimulatorCleanup { ~ActionInputSimulatorCleanup() { Zenith_InputSimulator::ResetAllInputState(); Zenith_InputSimulator::Disable(); } } xActionInputCleanup;
 	Zenith_InputSimulator::ResetAllInputState();
 
 	// The keyboard rows only resolve while the ACTIVE profile owns the KEYBOARD
@@ -893,13 +1062,25 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("pressCount"), 1.0f, 0.0001f);
 		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("heldCount"), 1.0f, 0.0001f);
 		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount", 0.0f), 0.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lean"), 1.0f, 0.0001f);
+		const Zenith_PropertyValue* pxLean = pxAxis1D->GetOutputForTest(uAxis1DResult);
+		const Zenith_PropertyValue* pxMove = pxAxis2D->GetOutputForTest(uAxis2DResult);
+		ZENITH_ASSERT_NOT_NULL(pxLean); ZENITH_ASSERT_NOT_NULL(pxMove);
+		if (!pxLean || !pxMove) return;
+		ZENITH_ASSERT_EQ(static_cast<int>(pxLean->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+		ZENITH_ASSERT_EQ(static_cast<int>(pxMove->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR2));
+		if (pxLean->GetType() != PROPERTY_TYPE_FLOAT || pxMove->GetType() != PROPERTY_TYPE_VECTOR2) { Zenith_InputSimulator::ResetAllInputState(); Zenith_InputSimulator::Disable(); return; }
+		ZENITH_ASSERT_EQ_FLOAT(pxLean->GetFloat(), 1.0f, 0.0001f);
 		// UNNORMALISED, +y forward: the composite contract, not a unit vector.
-		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("move").x, 1.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("move").y, 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxMove->GetVector2().x, 1.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxMove->GetVector2().y, 1.0f, 0.0001f);
 	}
 	// Inert path: no write, and the chain behind it never ran.
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("missingAxis", -7.0f), -7.0f, 0.0001f);
+	const Zenith_PropertyValue* pxMissingAxis = pxMissAxis->GetOutputForTest(uMissingAxisResult);
+	ZENITH_ASSERT_NOT_NULL(pxMissingAxis);
+	if (!pxMissingAxis) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMissingAxis->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	if (pxMissingAxis->GetType() != PROPERTY_TYPE_FLOAT) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxMissingAxis->GetFloat(), 9.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("afterMissing", -7.0f), -7.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lateCount", 0.0f), 0.0f, 0.0001f);
 
@@ -926,8 +1107,15 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("releaseCount"), 1.0f, 0.0001f);
 		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("heldCount"), 2.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("lean"), 0.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector2("move").x, 0.0f, 0.0001f);
+		const Zenith_PropertyValue* pxLeanReleased = pxAxis1D->GetOutputForTest(uAxis1DResult);
+		const Zenith_PropertyValue* pxMoveReleased = pxAxis2D->GetOutputForTest(uAxis2DResult);
+		ZENITH_ASSERT_NOT_NULL(pxLeanReleased); ZENITH_ASSERT_NOT_NULL(pxMoveReleased);
+		if (!pxLeanReleased || !pxMoveReleased) return;
+		ZENITH_ASSERT_EQ(static_cast<int>(pxLeanReleased->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+		ZENITH_ASSERT_EQ(static_cast<int>(pxMoveReleased->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR2));
+		if (pxLeanReleased->GetType() != PROPERTY_TYPE_FLOAT || pxMoveReleased->GetType() != PROPERTY_TYPE_VECTOR2) { Zenith_InputSimulator::ResetAllInputState(); Zenith_InputSimulator::Disable(); return; }
+		ZENITH_ASSERT_EQ_FLOAT(pxLeanReleased->GetFloat(), 0.0f, 0.0001f);
+		ZENITH_ASSERT_EQ_FLOAT(pxMoveReleased->GetVector2().x, 0.0f, 0.0001f);
 	}
 
 	// The resolve CACHE re-resolves on a property change, and a name that failed
@@ -1435,8 +1623,10 @@ ZENITH_TEST(GraphComponent, SelectorAbortPreemptedFlagSemantics)
 		const u_int uGate = xDef.AddNode("Gate");
 		{
 			NodeParamWriter xParams(xDef, uGate, "Gate");
-			xParams.SetString("m_strOpenVar", "goHigh");
+			xParams.SetString("m_strOpenVar", "");
 		}
+		const u_int uGoHigh = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGoHigh, "GetVariable"); xParams.SetString("m_strVariable", "goHigh"); }
 		const u_int uHi = xDef.AddNode("SetBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uHi, "SetBlackboardFloat");
@@ -1456,6 +1646,7 @@ ZENITH_TEST(GraphComponent, SelectorAbortPreemptedFlagSemantics)
 		}
 		xDef.AddEdge(uSource, 0, uSelector);
 		xDef.AddEdge(uSelector, 0, uGate);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGoHigh, "Value", uGate, "Open"));
 		xDef.AddEdge(uGate, 0, uHi);
 		xDef.AddEdge(uSelector, 1, uWait);
 		xDef.AddEdge(uWait, 0, uDone);
@@ -1794,6 +1985,15 @@ namespace
 ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 {
 	const std::string strAssetPath = "game:Graphs/UnitTest_MathNodes.bgraph";
+	u_int uSub = 0u;
+	u_int uMul = 0u;
+	u_int uLen = 0u;
+	u_int uScale = 0u;
+	u_int uCmpE = 0u;
+	u_int uCmpNE = 0u;
+	u_int uRandF = 0u;
+	u_int uRandI = 0u;
+	u_int uDivZero = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -1807,19 +2007,25 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetString("m_strVariable", "a");
 			SetFloatParam(xParams, "m_fValue", 10.0f);
 		}
-		const u_int uSub = xDef.AddNode("MathBlackboardFloat");
+		uSub = xDef.AddNode("MathBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uSub, "MathBlackboardFloat");
 			xParams.SetString("m_strVar", "a");
-			xParams.SetInt("m_iOp", 0);	// sub, in place
+			xParams.SetInt("m_iOp", 0);	// sub, then persist through the explicit writer
 			SetFloatParam(xParams, "m_fOperand", 4.0f);
+			xParams.SetString("m_strResultVar", "tmpMathSub");
 		}
-		const u_int uMul = xDef.AddNode("MathBlackboardFloat");
+		const u_int uWriteSub = xDef.AddNode("SetBlackboardFloat");
+		{
+			NodeParamWriter xParams(xDef, uWriteSub, "SetBlackboardFloat");
+			xParams.SetString("m_strVariable", "a");
+		}
+		uMul = xDef.AddNode("MathBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uMul, "MathBlackboardFloat");
 			xParams.SetString("m_strVar", "a");
-			xParams.SetInt("m_iOp", 1);	// mul by var m -> prod
-			xParams.SetString("m_strOperandVar", "m");
+			xParams.SetInt("m_iOp", 1);	// mul by wired m -> prod
+			xParams.SetString("m_strOperandVar", "");
 			xParams.SetString("m_strResultVar", "prod");
 		}
 		const u_int uSetV = xDef.AddNode("SetBlackboardVector3");
@@ -1828,19 +2034,25 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetString("m_strVariable", "v");
 			SetVec3Param(xParams, "m_xValue", Zenith_Maths::Vector3(3.0f, 0.0f, 4.0f));
 		}
-		const u_int uLen = xDef.AddNode("MathBlackboardVector3");
+		uLen = xDef.AddNode("MathBlackboardVector3");
 		{
 			NodeParamWriter xParams(xDef, uLen, "MathBlackboardVector3");
 			xParams.SetString("m_strVar", "v");
 			xParams.SetInt("m_iOp", 4);	// length -> len
 			xParams.SetString("m_strResultVar", "len");
 		}
-		const u_int uScale = xDef.AddNode("MathBlackboardVector3");
+		uScale = xDef.AddNode("MathBlackboardVector3");
 		{
 			NodeParamWriter xParams(xDef, uScale, "MathBlackboardVector3");
 			xParams.SetString("m_strVar", "v");
-			xParams.SetInt("m_iOp", 2);	// scale x2 in place
+			xParams.SetInt("m_iOp", 2);	// scale x2, then persist through the explicit writer
 			SetFloatParam(xParams, "m_fScalar", 2.0f);
+			xParams.SetString("m_strResultVar", "tmpMathScale");
+		}
+		const u_int uWriteScale = xDef.AddNode("SetBlackboardVector3");
+		{
+			NodeParamWriter xParams(xDef, uWriteScale, "SetBlackboardVector3");
+			xParams.SetString("m_strVariable", "v");
 		}
 		const u_int uLerpT = xDef.AddNode("LerpBlackboardFloat");
 		{
@@ -1883,7 +2095,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 		{
 			NodeParamWriter xParams(xDef, uAddI2, "AddBlackboardInt");
 			xParams.SetString("m_strVariable", "i");
-			xParams.SetString("m_strDeltaVar", "di");
+			xParams.SetString("m_strDeltaVar", "");
 		}
 		const u_int uAddV = xDef.AddNode("AddBlackboardVector3");
 		{
@@ -1895,55 +2107,69 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 		const u_int uSelf1 = xDef.AddNode("StoreSelfEntityID");
 		{
 			NodeParamWriter xParams(xDef, uSelf1, "StoreSelfEntityID");
-			xParams.SetString("m_strVariable", "s1");
+			xParams.SetString("m_strVariable", "");
 		}
 		const u_int uSelf2 = xDef.AddNode("StoreSelfEntityID");
 		{
 			NodeParamWriter xParams(xDef, uSelf2, "StoreSelfEntityID");
-			xParams.SetString("m_strVariable", "s2");
+			xParams.SetString("m_strVariable", "");
 		}
-		const u_int uCmpE = xDef.AddNode("CompareBlackboardEntity");
+		uCmpE = xDef.AddNode("CompareBlackboardEntity");
 		{
 			NodeParamWriter xParams(xDef, uCmpE, "CompareBlackboardEntity");
-			xParams.SetString("m_strVarA", "s1");
-			xParams.SetString("m_strVarB", "s2");
+			xParams.SetString("m_strVarA", "");
+			xParams.SetString("m_strVarB", "");
 			xParams.SetInt("m_iOp", 0);	// equal
-			xParams.SetString("m_strResultVar", "same");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uCmpNE = xDef.AddNode("CompareBlackboardEntity");
+		uCmpNE = xDef.AddNode("CompareBlackboardEntity");
 		{
 			// s1 (self) vs eOther (a different entity, pre-staged): notEqual.
 			NodeParamWriter xParams(xDef, uCmpNE, "CompareBlackboardEntity");
-			xParams.SetString("m_strVarA", "s1");
-			xParams.SetString("m_strVarB", "eOther");
+			xParams.SetString("m_strVarA", "");
+			xParams.SetString("m_strVarB", "");
 			xParams.SetInt("m_iOp", 1);	// notEqual
-			xParams.SetString("m_strResultVar", "differ");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uRandF = xDef.AddNode("RandomFloat");
+		uRandF = xDef.AddNode("RandomFloat");
 		{
 			NodeParamWriter xParams(xDef, uRandF, "RandomFloat");
 			SetFloatParam(xParams, "m_fMin", 5.0f);
 			SetFloatParam(xParams, "m_fMax", 6.0f);
 			xParams.SetInt("m_iSeed", 77);
-			xParams.SetString("m_strResultVar", "rf");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uRandI = xDef.AddNode("RandomInt");
+		uRandI = xDef.AddNode("RandomInt");
 		{
 			NodeParamWriter xParams(xDef, uRandI, "RandomInt");
 			xParams.SetInt("m_iMin", 2);
 			xParams.SetInt("m_iMax", 4);
 			xParams.SetInt("m_iSeed", 77);
-			xParams.SetString("m_strResultVar", "ri");
+			xParams.SetString("m_strResultVar", "");
 		}
+		const u_int uGetM = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetM, "GetVariable"); xParams.SetString("m_strVariable", "m"); }
+		const u_int uGetDelta = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetDelta, "GetVariable"); xParams.SetString("m_strVariable", "di"); }
+		const u_int uGetOther = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetOther, "GetVariable"); xParams.SetString("m_strVariable", "eOther"); }
 
 		u_int uPrev = uSource;
-		const u_int auChain[] = { uSetA, uSub, uMul, uSetV, uLen, uScale, uLerpT, uLerpR, uLerpV,
+		const u_int auChain[] = { uSetA, uSub, uWriteSub, uMul, uSetV, uLen, uScale, uWriteScale, uLerpT, uLerpR, uLerpV,
 			uClamp, uAddI, uAddI2, uAddV, uSelf1, uSelf2, uCmpE, uCmpNE, uRandF, uRandI };
 		for (u_int u = 0; u < sizeof(auChain) / sizeof(auChain[0]); ++u)
 		{
 			xDef.AddEdge(uPrev, 0, auChain[u]);
 			uPrev = auChain[u];
 		}
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSub, "Result", uWriteSub, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetM, "Value", uMul, "Operand"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uScale, "Result", uWriteScale, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetDelta, "Value", uAddI2, "Delta"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSelf1, "Variable", uCmpE, "A"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSelf2, "Variable", uCmpE, "B"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uSelf1, "Variable", uCmpNE, "A"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetOther, "Value", uCmpNE, "B"));
 
 		// Fail-loudly contract: division by zero gates the chain (custom
 		// anchor so the abort doesn't take the main chain down with it).
@@ -1952,12 +2178,18 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uBadSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "MathBad");
 		}
-		const u_int uDivZero = xDef.AddNode("MathBlackboardFloat");
+		uDivZero = xDef.AddNode("MathBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uDivZero, "MathBlackboardFloat");
 			xParams.SetString("m_strVar", "a");
 			xParams.SetInt("m_iOp", 2);	// div
 			SetFloatParam(xParams, "m_fOperand", 0.0f);
+			xParams.SetString("m_strResultVar", "tmpMathDiv");
+		}
+		const u_int uWriteDiv = xDef.AddNode("SetBlackboardFloat");
+		{
+			NodeParamWriter xParams(xDef, uWriteDiv, "SetBlackboardFloat");
+			xParams.SetString("m_strVariable", "a");
 		}
 		const u_int uBadFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -1965,7 +2197,9 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetString("m_strVariable", "divRan");
 		}
 		xDef.AddEdge(uBadSource, 0, uDivZero);
-		xDef.AddEdge(uDivZero, 0, uBadFlag);
+		xDef.AddEdge(uDivZero, 0, uWriteDiv);
+		xDef.AddEdge(uWriteDiv, 0, uBadFlag);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uDivZero, "Result", uWriteDiv, "Value"));
 		Zenith_AssetRegistry::Save(&xAsset, strAssetPath);
 	}
 
@@ -1992,8 +2226,6 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.5f);
 
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("a"), 6.0f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("prod"), 12.0f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("len"), 5.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("v").z, 8.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("l"), 5.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("r"), 2.0f, 0.0001f);	// 4 units/s * 0.5s
@@ -2001,16 +2233,69 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("lv").y, 4.0f, 0.0001f);	// t-mode 0.5 toward (0,8,0)
 	ZENITH_ASSERT_EQ(xBlackboard.GetInt32("i"), 5);
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("av").y, 5.0f, 0.0001f);	// dt-scaled
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("same"));
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("differ"));
+	Zenith_GraphNode* pxMul = pxGraph->FindNode(uMul);
+	Zenith_GraphNode* pxLen = pxGraph->FindNode(uLen);
+	Zenith_GraphNode* pxScale = pxGraph->FindNode(uScale);
+	Zenith_GraphNode* pxSame = pxGraph->FindNode(uCmpE);
+	Zenith_GraphNode* pxDiffer = pxGraph->FindNode(uCmpNE);
+	Zenith_GraphNode* pxRandomFloat = pxGraph->FindNode(uRandF);
+	Zenith_GraphNode* pxRandomInt = pxGraph->FindNode(uRandI);
+	Zenith_GraphNode* pxBadDivide = pxGraph->FindNode(uDivZero);
+	ZENITH_ASSERT_NOT_NULL(pxMul); ZENITH_ASSERT_NOT_NULL(pxLen); ZENITH_ASSERT_NOT_NULL(pxScale);
+	ZENITH_ASSERT_NOT_NULL(pxSame); ZENITH_ASSERT_NOT_NULL(pxDiffer);
+	ZENITH_ASSERT_NOT_NULL(pxRandomFloat); ZENITH_ASSERT_NOT_NULL(pxRandomInt); ZENITH_ASSERT_NOT_NULL(pxBadDivide);
+	if (!pxMul || !pxLen || !pxScale || !pxSame || !pxDiffer || !pxRandomFloat || !pxRandomInt || !pxBadDivide) return;
+	u_int uFloatResult = 0u, uVectorResult = 0u, uCompareResult = 0u, uRandomResult = 0u;
+	const bool bHaveMathResultPins = FindOutputPinIndexForTest(pxMul, "Result", uFloatResult)
+		&& FindOutputPinIndexForTest(pxLen, "Result", uVectorResult)
+		&& FindOutputPinIndexForTest(pxSame, "Result", uCompareResult)
+		&& FindOutputPinIndexForTest(pxRandomFloat, "Result", uRandomResult);
+	ZENITH_ASSERT_TRUE(bHaveMathResultPins);
+	if (!bHaveMathResultPins) return;
+	const Zenith_PropertyValue* pxProduct = pxMul->GetOutputForTest(uFloatResult);
+	const Zenith_PropertyValue* pxLength = pxLen->GetOutputForTest(uVectorResult);
+	const Zenith_PropertyValue* pxScaled = pxScale->GetOutputForTest(uVectorResult);
+	const Zenith_PropertyValue* pxSameValue = pxSame->GetOutputForTest(uCompareResult);
+	const Zenith_PropertyValue* pxDifferValue = pxDiffer->GetOutputForTest(uCompareResult);
+	const Zenith_PropertyValue* pxRandomFloatValue = pxRandomFloat->GetOutputForTest(uRandomResult);
+	const Zenith_PropertyValue* pxRandomIntValue = pxRandomInt->GetOutputForTest(uRandomResult);
+	ZENITH_ASSERT_NOT_NULL(pxProduct); ZENITH_ASSERT_NOT_NULL(pxLength); ZENITH_ASSERT_NOT_NULL(pxScaled);
+	ZENITH_ASSERT_NOT_NULL(pxSameValue); ZENITH_ASSERT_NOT_NULL(pxDifferValue);
+	ZENITH_ASSERT_NOT_NULL(pxRandomFloatValue); ZENITH_ASSERT_NOT_NULL(pxRandomIntValue);
+	if (!pxProduct || !pxLength || !pxScaled || !pxSameValue || !pxDifferValue || !pxRandomFloatValue || !pxRandomIntValue) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxProduct->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxLength->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxScaled->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxSameValue->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxDifferValue->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxRandomFloatValue->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxRandomIntValue->GetType()), static_cast<int>(PROPERTY_TYPE_INT32));
+	if (pxProduct->GetType() != PROPERTY_TYPE_FLOAT || pxLength->GetType() != PROPERTY_TYPE_FLOAT || pxScaled->GetType() != PROPERTY_TYPE_VECTOR3 || pxSameValue->GetType() != PROPERTY_TYPE_BOOL || pxDifferValue->GetType() != PROPERTY_TYPE_BOOL || pxRandomFloatValue->GetType() != PROPERTY_TYPE_FLOAT || pxRandomIntValue->GetType() != PROPERTY_TYPE_INT32) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxProduct->GetFloat(), 12.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxLength->GetFloat(), 5.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxScaled->GetVector3().z, 8.0f, 0.0001f);
+	ZENITH_ASSERT_TRUE(pxSameValue->GetBool());
+	ZENITH_ASSERT_TRUE(pxDifferValue->GetBool());
 
 	// div-by-zero FAILURE gates the chain: 'a' untouched, flag never set.
+	const Zenith_PropertyValue* pxBadDivideBefore = pxBadDivide->GetOutputForTest(uFloatResult);
+	ZENITH_ASSERT_NOT_NULL(pxBadDivideBefore);
+	if (!pxBadDivideBefore) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxBadDivideBefore->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	if (pxBadDivideBefore->GetType() != PROPERTY_TYPE_FLOAT) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxBadDivideBefore->GetFloat(), 0.0f, 0.0001f);
 	xEntity.GetComponent<Zenith_GraphComponent>().FireCustomEvent("MathBad");
-	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("divRan", false));
+	ZENITH_ASSERT_NULL(xBlackboard.TryGetValue("divRan"));
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("a"), 6.0f, 0.0001f);
-	const float fRandom = xBlackboard.GetFloat("rf");
+	const Zenith_PropertyValue* pxBadDivideAfter = pxBadDivide->GetOutputForTest(uFloatResult);
+	ZENITH_ASSERT_NOT_NULL(pxBadDivideAfter);
+	if (!pxBadDivideAfter) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxBadDivideAfter->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	if (pxBadDivideAfter->GetType() != PROPERTY_TYPE_FLOAT) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxBadDivideAfter->GetFloat(), 0.0f, 0.0001f);
+	const float fRandom = pxRandomFloatValue->GetFloat();
 	ZENITH_ASSERT_TRUE(fRandom >= 5.0f && fRandom <= 6.0f, "RandomFloat out of range: %f", fRandom);
-	const int32_t iRandom = xBlackboard.GetInt32("ri");
+	const int32_t iRandom = pxRandomIntValue->GetInt32();
 	ZENITH_ASSERT_TRUE(iRandom >= 2 && iRandom <= 4, "RandomInt out of range: %d", iRandom);
 
 	// Determinism: a second instance with the same seed draws the same first
@@ -2021,13 +2306,32 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 	if (!pxTwin) return;
 	StageFloat(pxTwin->GetBlackboard(), "m", 2.0f);
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xTwin, 0.5f);
-	ZENITH_ASSERT_EQ_FLOAT(pxTwin->GetBlackboard().GetFloat("rf"), fRandom, 0.0f);
-	ZENITH_ASSERT_EQ(pxTwin->GetBlackboard().GetInt32("ri"), iRandom);
+	Zenith_GraphNode* pxTwinRandomFloat = pxTwin->FindNode(uRandF);
+	Zenith_GraphNode* pxTwinRandomInt = pxTwin->FindNode(uRandI);
+	ZENITH_ASSERT_NOT_NULL(pxTwinRandomFloat); ZENITH_ASSERT_NOT_NULL(pxTwinRandomInt);
+	if (!pxTwinRandomFloat || !pxTwinRandomInt) return;
+	u_int uTwinRandomResult = 0u;
+	const bool bHaveTwinRandomResult = FindOutputPinIndexForTest(pxTwinRandomFloat, "Result", uTwinRandomResult);
+	ZENITH_ASSERT_TRUE(bHaveTwinRandomResult);
+	if (!bHaveTwinRandomResult) return;
+	const Zenith_PropertyValue* pxTwinRandomFloatValue = pxTwinRandomFloat->GetOutputForTest(uTwinRandomResult);
+	const Zenith_PropertyValue* pxTwinRandomIntValue = pxTwinRandomInt->GetOutputForTest(uTwinRandomResult);
+	ZENITH_ASSERT_NOT_NULL(pxTwinRandomFloatValue); ZENITH_ASSERT_NOT_NULL(pxTwinRandomIntValue);
+	if (!pxTwinRandomFloatValue || !pxTwinRandomIntValue) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxTwinRandomFloatValue->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxTwinRandomIntValue->GetType()), static_cast<int>(PROPERTY_TYPE_INT32));
+	if (pxTwinRandomFloatValue->GetType() != PROPERTY_TYPE_FLOAT || pxTwinRandomIntValue->GetType() != PROPERTY_TYPE_INT32) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxTwinRandomFloatValue->GetFloat(), fRandom, 0.0f);
+	ZENITH_ASSERT_EQ(pxTwinRandomIntValue->GetInt32(), iRandom);
 }
 
 ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 {
 	const std::string strAssetPath = "game:Graphs/UnitTest_RetrofitNodes.bgraph";
+	u_int uCmp = 0u;
+	u_int uTouch = 0u;
+	u_int uDelta = 0u;
+	u_int uWheel = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -2036,19 +2340,19 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 
 		// Chain A (OnUpdate): var-vs-var compare + dt-scaled deltaVar add.
 		const u_int uUpdate = xDef.AddNode("OnUpdate");
-		const u_int uCmp = xDef.AddNode("CompareBlackboardFloat");
+		uCmp = xDef.AddNode("CompareBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uCmp, "CompareBlackboardFloat");
-			xParams.SetString("m_strVar", "x");
-			xParams.SetString("m_strCompareVar", "y");
+			xParams.SetString("m_strVar", "");
+			xParams.SetString("m_strCompareVar", "");
 			xParams.SetInt("m_iOp", 4);	// equal
-			xParams.SetString("m_strResultVar", "feq");
+			xParams.SetString("m_strResultVar", "");
 		}
 		const u_int uAdd = xDef.AddNode("AddBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uAdd, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", "t");
-			xParams.SetString("m_strDeltaVar", "spd");
+			xParams.SetString("m_strDeltaVar", "");
 			SetBoolParam(xParams, "m_bScaleByDt", true);
 		}
 		xDef.AddEdge(uUpdate, 0, uCmp);
@@ -2063,7 +2367,7 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		const u_int uWait = xDef.AddNode("Wait");
 		{
 			NodeParamWriter xParams(xDef, uWait, "Wait");
-			xParams.SetString("m_strSecondsVar", "wsec");
+			xParams.SetString("m_strSecondsVar", "");
 		}
 		const u_int uWaitFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -2082,7 +2386,7 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		const u_int uLoop = xDef.AddNode("Loop");
 		{
 			NodeParamWriter xParams(xDef, uLoop, "Loop");
-			xParams.SetString("m_strCountVar", "n");
+			xParams.SetString("m_strCountVar", "");
 		}
 		const u_int uBody = xDef.AddNode("AddBlackboardInt");
 		{
@@ -2139,25 +2443,42 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			NodeParamWriter xParams(xDef, uTouchSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "TouchGo");
 		}
-		const u_int uTouch = xDef.AddNode("ReadPointer");
+		uTouch = xDef.AddNode("ReadPointer");
 		{
 			NodeParamWriter xParams(xDef, uTouch, "ReadPointer");
-			xParams.SetString("m_strTapVar", "pointerTap");
-			xParams.SetString("m_strCountVar", "pointerCount");
+			xParams.SetString("m_strDownVar", "");
+			xParams.SetString("m_strPositionVar", "");
+			xParams.SetString("m_strTapVar", "");
+			xParams.SetString("m_strCountVar", "");
 		}
-		const u_int uDelta = xDef.AddNode("ReadMouseDelta");
+		uDelta = xDef.AddNode("ReadMouseDelta");
 		{
 			NodeParamWriter xParams(xDef, uDelta, "ReadMouseDelta");
-			xParams.SetString("m_strResultVar", "mDelta");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uWheel = xDef.AddNode("ReadMouseWheel");
+		uWheel = xDef.AddNode("ReadMouseWheel");
 		{
 			NodeParamWriter xParams(xDef, uWheel, "ReadMouseWheel");
-			xParams.SetString("m_strResultVar", "mWheel");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uTouchSource, 0, uTouch);
 		xDef.AddEdge(uTouch, 0, uDelta);
 		xDef.AddEdge(uDelta, 0, uWheel);
+		const u_int uGetX = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetX, "GetVariable"); xParams.SetString("m_strVariable", "x"); }
+		const u_int uGetY = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetY, "GetVariable"); xParams.SetString("m_strVariable", "y"); }
+		const u_int uGetSpeed = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetSpeed, "GetVariable"); xParams.SetString("m_strVariable", "spd"); }
+		const u_int uGetSeconds = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetSeconds, "GetVariable"); xParams.SetString("m_strVariable", "wsec"); }
+		const u_int uGetCount = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uGetCount, "GetVariable"); xParams.SetString("m_strVariable", "n"); }
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetX, "Value", uCmp, "Value"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetY, "Value", uCmp, "CompareTo"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetSpeed, "Value", uAdd, "Delta"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetSeconds, "Value", uWait, "Seconds"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uGetCount, "Value", uLoop, "Count"));
 
 		// Chain F (custom "PickRayGo"): no main camera in this scene - the
 		// pick-ray node must gate the chain.
@@ -2167,6 +2488,7 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			xParams.SetString("m_strEventName", "PickRayGo");
 		}
 		const u_int uRay = xDef.AddNode("ReadMousePickRay");
+		{ NodeParamWriter xParams(xDef, uRay, "ReadMousePickRay"); xParams.SetString("m_strOriginVar", ""); xParams.SetString("m_strDirectionVar", ""); }
 		const u_int uRayFlag = xDef.AddNode("SetBlackboardBool");
 		{
 			NodeParamWriter xParams(xDef, uRayFlag, "SetBlackboardBool");
@@ -2194,7 +2516,19 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 	StageInt(xBlackboard, "n", 3);
 
 	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.25f);
-	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("feq"));
+	Zenith_GraphNode* pxCompare = pxGraph->FindNode(uCmp);
+	ZENITH_ASSERT_NOT_NULL(pxCompare);
+	if (!pxCompare) return;
+	u_int uCompareResult = 0u;
+	const bool bHaveCompareResult = FindOutputPinIndexForTest(pxCompare, "Result", uCompareResult);
+	ZENITH_ASSERT_TRUE(bHaveCompareResult);
+	if (!bHaveCompareResult) return;
+	const Zenith_PropertyValue* pxCompareResult = pxCompare->GetOutputForTest(uCompareResult);
+	ZENITH_ASSERT_NOT_NULL(pxCompareResult);
+	if (!pxCompareResult) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxCompareResult->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	if (pxCompareResult->GetType() != PROPERTY_TYPE_BOOL) return;
+	ZENITH_ASSERT_TRUE(pxCompareResult->GetBool());
 	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("t"), 2.5f, 0.0001f);	// 10/s * 0.25s
 
 	// Wait via secondsVar: suspends, then completes once dispatched dt sums
@@ -2221,14 +2555,62 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("lwDone", false));
 	ZENITH_ASSERT_EQ(xBlackboard.GetInt32("lw"), 2);
 
-	// Pointer/mouse queries write their outputs (headless defaults).
+	// Pointer/mouse queries must overwrite real live slots, not merely leave
+	// their initialized typed zeros in place. Seed deliberately contrary values
+	// before the headless-rest event.
+	Zenith_GraphNode* pxTouch = pxGraph->FindNode(uTouch);
+	Zenith_GraphNode* pxDelta = pxGraph->FindNode(uDelta);
+	Zenith_GraphNode* pxWheel = pxGraph->FindNode(uWheel);
+	ZENITH_ASSERT_NOT_NULL(pxTouch); ZENITH_ASSERT_NOT_NULL(pxDelta); ZENITH_ASSERT_NOT_NULL(pxWheel);
+	if (!pxTouch || !pxDelta || !pxWheel) return;
+	u_int uPointerDown = 0u, uPointerPosition = 0u, uPointerTap = 0u, uPointerCount = 0u, uDeltaResult = 0u, uWheelResult = 0u;
+	const bool bHavePointerOutputs = FindOutputPinIndexForTest(pxTouch, "Down", uPointerDown)
+		&& FindOutputPinIndexForTest(pxTouch, "Position", uPointerPosition)
+		&& FindOutputPinIndexForTest(pxTouch, "Tap", uPointerTap)
+		&& FindOutputPinIndexForTest(pxTouch, "Count", uPointerCount)
+		&& FindOutputPinIndexForTest(pxDelta, "Result", uDeltaResult)
+		&& FindOutputPinIndexForTest(pxWheel, "Result", uWheelResult);
+	ZENITH_ASSERT_TRUE(bHavePointerOutputs);
+	if (!bHavePointerOutputs) return;
+	const Zenith_PropertyValue* pxPointerDown = pxTouch->GetOutputForTest(uPointerDown);
+	const Zenith_PropertyValue* pxPointerPosition = pxTouch->GetOutputForTest(uPointerPosition);
+	const Zenith_PropertyValue* pxPointerTap = pxTouch->GetOutputForTest(uPointerTap);
+	const Zenith_PropertyValue* pxPointerCount = pxTouch->GetOutputForTest(uPointerCount);
+	const Zenith_PropertyValue* pxMouseDelta = pxDelta->GetOutputForTest(uDeltaResult);
+	const Zenith_PropertyValue* pxMouseWheel = pxWheel->GetOutputForTest(uWheelResult);
+	ZENITH_ASSERT_NOT_NULL(pxPointerDown); ZENITH_ASSERT_NOT_NULL(pxPointerPosition); ZENITH_ASSERT_NOT_NULL(pxPointerTap);
+	ZENITH_ASSERT_NOT_NULL(pxPointerCount); ZENITH_ASSERT_NOT_NULL(pxMouseDelta); ZENITH_ASSERT_NOT_NULL(pxMouseWheel);
+	if (!pxPointerDown || !pxPointerPosition || !pxPointerTap || !pxPointerCount || !pxMouseDelta || !pxMouseWheel) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxPointerDown->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxPointerPosition->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR2));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxPointerTap->GetType()), static_cast<int>(PROPERTY_TYPE_BOOL));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxPointerCount->GetType()), static_cast<int>(PROPERTY_TYPE_INT32));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMouseDelta->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR2));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxMouseWheel->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	if (pxPointerDown->GetType() != PROPERTY_TYPE_BOOL || pxPointerPosition->GetType() != PROPERTY_TYPE_VECTOR2
+		|| pxPointerTap->GetType() != PROPERTY_TYPE_BOOL || pxPointerCount->GetType() != PROPERTY_TYPE_INT32
+		|| pxMouseDelta->GetType() != PROPERTY_TYPE_VECTOR2 || pxMouseWheel->GetType() != PROPERTY_TYPE_FLOAT) return;
+	Zenith_GraphContext xPointerSeedContext;
+	xPointerSeedContext.m_xSelf = xEntity;
+	xPointerSeedContext.m_pxGraph = pxGraph;
+	xPointerSeedContext.m_pxBlackboard = &xBlackboard;
+	Zenith_PropertyValue xPointerSeed;
+	xPointerSeed.SetBool(true); pxTouch->SetOutput(xPointerSeedContext, uPointerDown, xPointerSeed);
+	xPointerSeed.SetVector2(Zenith_Maths::Vector2(7.0f, 8.0f)); pxTouch->SetOutput(xPointerSeedContext, uPointerPosition, xPointerSeed);
+	xPointerSeed.SetBool(true); pxTouch->SetOutput(xPointerSeedContext, uPointerTap, xPointerSeed);
+	xPointerSeed.SetInt32(9); pxTouch->SetOutput(xPointerSeedContext, uPointerCount, xPointerSeed);
+	xPointerSeed.SetVector2(Zenith_Maths::Vector2(3.0f, 4.0f)); pxDelta->SetOutput(xPointerSeedContext, uDeltaResult, xPointerSeed);
+	xPointerSeed.SetFloat(7.0f); pxWheel->SetOutput(xPointerSeedContext, uWheelResult, xPointerSeed);
+	g_xEngine.Input().UpdateMouseDeltaFromPosition({0.0, 0.0}, true);
 	xComponent.FireCustomEvent("TouchGo");
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerDown"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerPos"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerTap"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("pointerCount"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("mDelta"));
-	ZENITH_ASSERT_TRUE(xBlackboard.HasValue("mWheel"));
+	ZENITH_ASSERT_FALSE(pxPointerDown->GetBool());
+	ZENITH_ASSERT_EQ_FLOAT(pxPointerPosition->GetVector2().x, 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxPointerPosition->GetVector2().y, 0.0f, 0.0001f);
+	ZENITH_ASSERT_FALSE(pxPointerTap->GetBool());
+	ZENITH_ASSERT_EQ(pxPointerCount->GetInt32(), 0);
+	ZENITH_ASSERT_EQ_FLOAT(pxMouseDelta->GetVector2().x, 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxMouseDelta->GetVector2().y, 0.0f, 0.0001f);
+	ZENITH_ASSERT_EQ_FLOAT(pxMouseWheel->GetFloat(), 0.0f, 0.0001f);
 
 	// Pick ray with no main camera anywhere gates its chain.
 	if (Zenith_GetMainCameraAcrossScenes() == nullptr)
@@ -2241,6 +2623,9 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 {
 	const std::string strAssetPath = "game:Graphs/UnitTest_PhysicsNodes.bgraph";
+	u_int uReadVel = 0u;
+	u_int uReadVel2 = 0u;
+	u_int uCast = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -2258,10 +2643,10 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uImpulse, "ApplyImpulse");
 			SetVec3Param(xParams, "m_xImpulse", Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f));
 		}
-		const u_int uReadVel = xDef.AddNode("ReadVelocity");
+		uReadVel = xDef.AddNode("ReadVelocity");
 		{
 			NodeParamWriter xParams(xDef, uReadVel, "ReadVelocity");
-			xParams.SetString("m_strResultVar", "vel");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uImpulseSource, 0, uImpulse);
 		xDef.AddEdge(uImpulse, 0, uReadVel);
@@ -2278,10 +2663,10 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			SetVec3Param(xParams, "m_xVelocity", Zenith_Maths::Vector3(3.0f, 99.0f, 4.0f));
 			SetBoolParam(xParams, "m_bSetY", false);
 		}
-		const u_int uReadVel2 = xDef.AddNode("ReadVelocity");
+		uReadVel2 = xDef.AddNode("ReadVelocity");
 		{
 			NodeParamWriter xParams(xDef, uReadVel2, "ReadVelocity");
-			xParams.SetString("m_strResultVar", "vel2");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uSetVelSource, 0, uSetVel);
 		xDef.AddEdge(uSetVel, 0, uReadVel2);
@@ -2331,12 +2716,15 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uCastSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Cast");
 		}
-		const u_int uCast = xDef.AddNode("Raycast");
+		uCast = xDef.AddNode("Raycast");
 		{
 			NodeParamWriter xParams(xDef, uCast, "Raycast");
 			SetVec3Param(xParams, "m_xDirection", Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f));
 			SetFloatParam(xParams, "m_fMaxDistance", 100.0f);
-			xParams.SetString("m_strHitDistanceVar", "hitDist");
+			xParams.SetString("m_strHitEntityVar", "");
+			xParams.SetString("m_strHitPointVar", "");
+			xParams.SetString("m_strHitNormalVar", "");
+			xParams.SetString("m_strHitDistanceVar", "");
 		}
 		const u_int uCastFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -2401,10 +2789,30 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 	Zenith_GraphBlackboard& xBlackboard = pxGraph->GetBlackboard();
 
 	xComponent.FireCustomEvent("Impulse");
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("vel").y, 5.0f, 0.01f);
+	Zenith_GraphNode* pxReadVel = pxGraph->FindNode(uReadVel);
+	ZENITH_ASSERT_NOT_NULL(pxReadVel);
+	if (!pxReadVel) return;
+	u_int uVelocityResult = 0u;
+	const bool bHaveVelocityResult = FindOutputPinIndexForTest(pxReadVel, "Result", uVelocityResult);
+	ZENITH_ASSERT_TRUE(bHaveVelocityResult);
+	if (!bHaveVelocityResult) return;
+	const Zenith_PropertyValue* pxVelocityImpulse = pxReadVel->GetOutputForTest(uVelocityResult);
+	ZENITH_ASSERT_NOT_NULL(pxVelocityImpulse);
+	if (!pxVelocityImpulse) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxVelocityImpulse->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	if (pxVelocityImpulse->GetType() != PROPERTY_TYPE_VECTOR3) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxVelocityImpulse->GetVector3().y, 5.0f, 0.01f);
 
 	xComponent.FireCustomEvent("SetVel");
-	const Zenith_Maths::Vector3 xVelocity = xBlackboard.GetVector3("vel2");
+	Zenith_GraphNode* pxReadVel2 = pxGraph->FindNode(uReadVel2);
+	ZENITH_ASSERT_NOT_NULL(pxReadVel2);
+	if (!pxReadVel2) return;
+	const Zenith_PropertyValue* pxVelocitySet = pxReadVel2->GetOutputForTest(uVelocityResult);
+	ZENITH_ASSERT_NOT_NULL(pxVelocitySet);
+	if (!pxVelocitySet) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxVelocitySet->GetType()), static_cast<int>(PROPERTY_TYPE_VECTOR3));
+	if (pxVelocitySet->GetType() != PROPERTY_TYPE_VECTOR3) return;
+	const Zenith_Maths::Vector3 xVelocity = pxVelocitySet->GetVector3();
 	ZENITH_ASSERT_EQ_FLOAT(xVelocity.x, 3.0f, 0.01f);
 	ZENITH_ASSERT_EQ_FLOAT(xVelocity.y, 5.0f, 0.01f);	// preserved, not 99
 	ZENITH_ASSERT_EQ_FLOAT(xVelocity.z, 4.0f, 0.01f);
@@ -2415,8 +2823,23 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 
 	xComponent.FireCustomEvent("Cast");
 	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("castHit"));
-	ZENITH_ASSERT_EQ(xBlackboard.GetPackedEntityID("hitEntity"), xFloor.GetEntityID().GetPacked());
-	ZENITH_ASSERT_TRUE(xBlackboard.GetFloat("hitDist") > 8.0f);
+	Zenith_GraphNode* pxCast = pxGraph->FindNode(uCast);
+	ZENITH_ASSERT_NOT_NULL(pxCast);
+	if (!pxCast) return;
+	u_int uHitEntity = 0u, uHitDistance = 0u;
+	const bool bHaveCastOutputs = FindOutputPinIndexForTest(pxCast, "HitEntity", uHitEntity)
+		&& FindOutputPinIndexForTest(pxCast, "HitDistance", uHitDistance);
+	ZENITH_ASSERT_TRUE(bHaveCastOutputs);
+	if (!bHaveCastOutputs) return;
+	const Zenith_PropertyValue* pxHitEntity = pxCast->GetOutputForTest(uHitEntity);
+	const Zenith_PropertyValue* pxHitDistance = pxCast->GetOutputForTest(uHitDistance);
+	ZENITH_ASSERT_NOT_NULL(pxHitEntity); ZENITH_ASSERT_NOT_NULL(pxHitDistance);
+	if (!pxHitEntity || !pxHitDistance) return;
+	ZENITH_ASSERT_EQ(static_cast<int>(pxHitEntity->GetType()), static_cast<int>(PROPERTY_TYPE_ENTITY_ID));
+	ZENITH_ASSERT_EQ(static_cast<int>(pxHitDistance->GetType()), static_cast<int>(PROPERTY_TYPE_FLOAT));
+	if (pxHitEntity->GetType() != PROPERTY_TYPE_ENTITY_ID || pxHitDistance->GetType() != PROPERTY_TYPE_FLOAT) return;
+	ZENITH_ASSERT_EQ(pxHitEntity->GetPackedEntityID(), xFloor.GetEntityID().GetPacked());
+	ZENITH_ASSERT_TRUE(pxHitDistance->GetFloat() > 8.0f);
 
 	xComponent.FireCustomEvent("CastMiss");
 	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("missFlag", false));	// chain gated at the miss
@@ -2444,6 +2867,7 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 {
 	const std::string strAssetPath = "game:Graphs/UnitTest_AnimNodes.bgraph";
+	u_int uRead = 0u;
 	{
 		std::error_code xEC;
 		std::filesystem::create_directories(Zenith_AssetRegistry::ResolvePath("game:Graphs"), xEC);
@@ -2491,16 +2915,18 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 		xDef.AddEdge(uBool, 0, uTrigger);
 		xDef.AddEdge(uTrigger, 0, uFade);
 
-		// "ReadAnim": state info -> blackboard.
+		// "ReadAnim": state info stays on the live node's typed output slots.
 		const u_int uReadSource = xDef.AddNode("OnCustomEvent");
 		{
 			NodeParamWriter xParams(xDef, uReadSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "ReadAnim");
 		}
-		const u_int uRead = xDef.AddNode("ReadAnimatorState");
+		uRead = xDef.AddNode("ReadAnimatorState");
 		{
 			NodeParamWriter xParams(xDef, uRead, "ReadAnimatorState");
-			xParams.SetString("m_strTransitioningVar", "animTrans");
+			xParams.SetString("m_strStateNameVar", "");
+			xParams.SetString("m_strNormalizedTimeVar", "");
+			xParams.SetString("m_strTransitioningVar", "");
 		}
 		xDef.AddEdge(uReadSource, 0, uRead);
 
@@ -2648,8 +3074,13 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 	pxSM->Update(0.5f, xPose, xSkeleton);
 	pxSM->Update(0.5f, xPose, xSkeleton);
 	xComponent.FireCustomEvent("ReadAnim");
-	ZENITH_ASSERT_STREQ(xBlackboard.GetString("animState").c_str(), "Run");
-	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("animTrans", true));
+	const Zenith_PropertyValue* pxAnimState = GetTypedNodeOutputForTest(pxGraph, uRead, "StateName", PROPERTY_TYPE_STRING);
+	const Zenith_PropertyValue* pxAnimTransitioning = GetTypedNodeOutputForTest(pxGraph, uRead, "Transitioning", PROPERTY_TYPE_BOOL);
+	ZENITH_ASSERT_NOT_NULL(pxAnimState);
+	ZENITH_ASSERT_NOT_NULL(pxAnimTransitioning);
+	if (!pxAnimState || !pxAnimTransitioning) return;
+	ZENITH_ASSERT_STREQ(pxAnimState->GetString().c_str(), "Run");
+	ZENITH_ASSERT_FALSE(pxAnimTransitioning->GetBool());
 
 	// Tween: node adds the component on demand; ticked by hand (headless).
 	xComponent.FireCustomEvent("TweenGo");
@@ -2721,8 +3152,10 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uText, "SetUIText");
 			xParams.SetString("m_strElement", "Title");
 			xParams.SetString("m_strText", "Score: {}");
-			xParams.SetString("m_strValueVar", "score");
+			xParams.SetString("m_strValueVar", "");
 		}
+		const u_int uScore = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uScore, "GetVariable"); xParams.SetString("m_strVariable", "score"); }
 		const u_int uColor = xDef.AddNode("SetUIColor");
 		{
 			NodeParamWriter xParams(xDef, uColor, "SetUIColor");
@@ -2742,6 +3175,7 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 			SetFloatParam(xParams, "m_fAmount", 0.25f);
 		}
 		xDef.AddEdge(uSource, 0, uText);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uScore, "Value", uText, "Value"));
 		xDef.AddEdge(uText, 0, uColor);
 		xDef.AddEdge(uColor, 0, uVisible);
 		xDef.AddEdge(uVisible, 0, uFill);
@@ -2828,6 +3262,7 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 
 ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 {
+	u_int uRead = 0u, uWander = 0u, uList = 0u, uPrimary = 0u, uAware = 0u, uHeard = 0u;
 	// Hand-authored 10x10 navmesh quad (the AI suite fixture).
 	Zenith_NavMesh xNavMesh;
 	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -2889,10 +3324,11 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uReadSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "ReadNav");
 		}
-		const u_int uRead = xDef.AddNode("ReadNavState");
+		uRead = xDef.AddNode("ReadNavState");
 		{
 			NodeParamWriter xParams(xDef, uRead, "ReadNavState");
-			xParams.SetString("m_strRemainingVar", "navLeft");
+			xParams.SetString("m_strStateVar", "");
+			xParams.SetString("m_strRemainingVar", "");
 		}
 		xDef.AddEdge(uReadSource, 0, uRead);
 
@@ -2921,10 +3357,11 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uWanderSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Wander");
 		}
-		const u_int uWander = xDef.AddNode("FindRandomReachablePoint");
+		uWander = xDef.AddNode("FindRandomReachablePoint");
 		{
 			NodeParamWriter xParams(xDef, uWander, "FindRandomReachablePoint");
 			SetFloatParam(xParams, "m_fRadius", 8.0f);
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uWanderSource, 0, uWander);
 
@@ -2946,16 +3383,18 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uQuerySource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Query");
 		}
-		const u_int uList = xDef.AddNode("QueryPerceivedTargets");
-		const u_int uPrimary = xDef.AddNode("QueryPrimaryPerceivedTarget");
+		uList = xDef.AddNode("QueryPerceivedTargets");
+		{ NodeParamWriter xParams(xDef, uList, "QueryPerceivedTargets"); xParams.SetString("m_strCountVar", ""); }
+		uPrimary = xDef.AddNode("QueryPrimaryPerceivedTarget");
 		{
 			NodeParamWriter xParams(xDef, uPrimary, "QueryPrimaryPerceivedTarget");
-			xParams.SetString("m_strResultVar", "ptgt");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uAware = xDef.AddNode("QueryAwarenessOf");
+		uAware = xDef.AddNode("QueryAwarenessOf");
 		{
 			NodeParamWriter xParams(xDef, uAware, "QueryAwarenessOf");
 			xParams.SetString("m_strOfVar", "tgt");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uQuerySource, 0, uList);
 		xDef.AddEdge(uList, 0, uPrimary);
@@ -2980,10 +3419,11 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			NodeParamWriter xParams(xDef, uHeardSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Heard");
 		}
-		const u_int uHeard = xDef.AddNode("QueryLastHeardSound");
+		uHeard = xDef.AddNode("QueryLastHeardSound");
 		{
 			NodeParamWriter xParams(xDef, uHeard, "QueryLastHeardSound");
-			xParams.SetString("m_strSourceVar", "heardSrc");
+			xParams.SetString("m_strPositionVar", "");
+			xParams.SetString("m_strSourceVar", "");
 		}
 		const u_int uHeardFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -3004,9 +3444,11 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 		const u_int uMachine = xDef.AddNode("StateMachine");
 		{
 			NodeParamWriter xParams(xDef, uMachine, "StateMachine");
-			xParams.SetString("m_strStateVar", "st");
+			xParams.SetString("m_strStateVar", "");
 			xParams.SetInt("m_iStateCount", 2);
 		}
+		const u_int uAbortState = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uAbortState, "GetVariable"); xParams.SetString("m_strVariable", "st"); }
 		const u_int uMove = xDef.AddNode("NavMoveTo");
 		{
 			NodeParamWriter xParams(xDef, uMove, "NavMoveTo");
@@ -3018,6 +3460,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			xParams.SetString("m_strVariable", "inIdle");
 		}
 		xDef.AddEdge(uUpdate, 0, uMachine);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uAbortState, "Value", uMachine, "State"));
 		xDef.AddEdge(uMachine, 0, uMove);
 		xDef.AddEdge(uMachine, 1, uIdleFlag);
 		Zenith_AssetRegistry::Save(&xAsset, strAbortPath);
@@ -3055,8 +3498,12 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 	// Success path Stop()s the agent (BT MoveToEntity semantics), so the
 	// post-arrival decode is 0 = idle/none, remaining 0.
 	xComponent.FireCustomEvent("ReadNav");
-	ZENITH_ASSERT_EQ(xBlackboard.GetInt32("navState"), 0);
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("navLeft"), 0.0f, 0.001f);
+	const Zenith_PropertyValue* pxNavState = GetTypedNodeOutputForTest(pxGraph, uRead, "State", PROPERTY_TYPE_INT32);
+	const Zenith_PropertyValue* pxNavRemaining = GetTypedNodeOutputForTest(pxGraph, uRead, "Remaining", PROPERTY_TYPE_FLOAT);
+	ZENITH_ASSERT_NOT_NULL(pxNavState); ZENITH_ASSERT_NOT_NULL(pxNavRemaining);
+	if (!pxNavState || !pxNavRemaining) return;
+	ZENITH_ASSERT_EQ(pxNavState->GetInt32(), 0);
+	ZENITH_ASSERT_EQ_FLOAT(pxNavRemaining->GetFloat(), 0.0f, 0.001f);
 
 	// Fire-and-forget destination issue queues a path request.
 	StageVec3(xBlackboard, "dest", Zenith_Maths::Vector3(2.0f, 0.0f, 2.0f));
@@ -3072,7 +3519,10 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 	Zenith_Maths::Vector3 xAgentPos;
 	xAgent.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
 	xComponent.FireCustomEvent("Wander");
-	const Zenith_Maths::Vector3 xWander = xBlackboard.GetVector3("wanderPoint", Zenith_Maths::Vector3(-100.0f));
+	const Zenith_PropertyValue* pxWander = GetTypedNodeOutputForTest(pxGraph, uWander, "Result", PROPERTY_TYPE_VECTOR3);
+	ZENITH_ASSERT_NOT_NULL(pxWander);
+	if (!pxWander) return;
+	const Zenith_Maths::Vector3 xWander = pxWander->GetVector3();
 	ZENITH_ASSERT_TRUE(xWander.x >= -0.01f && xWander.x <= 10.01f && xWander.z >= -0.01f && xWander.z <= 10.01f,
 		"wander point off-mesh: (%f, %f, %f)", xWander.x, xWander.y, xWander.z);
 	const float fWanderDX = xWander.x - xAgentPos.x;
@@ -3123,21 +3573,34 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 	xSeerComponent.FireCustomEvent("Reg");	// RegisterPerceptionTarget(tgt)
 	Zenith_PerceptionSystem::Update(0.1f);
 	xSeerComponent.FireCustomEvent("Query");
-	ZENITH_ASSERT_TRUE(xSeerBlackboard.GetInt32("perceivedCount") >= 1);
-	ZENITH_ASSERT_EQ(xSeerBlackboard.GetPackedEntityID("ptgt"), xPrey.GetEntityID().GetPacked());
-	ZENITH_ASSERT_TRUE(xSeerBlackboard.GetFloat("awareness") > 0.0f);
+	const Zenith_PropertyValue* pxPerceivedCount = GetTypedNodeOutputForTest(pxSeerGraph, uList, "Count", PROPERTY_TYPE_INT32);
+	ZENITH_ASSERT_NOT_NULL(pxPerceivedCount);
+	if (!pxPerceivedCount) { Zenith_PerceptionSystem::Shutdown(); return; }
+	ZENITH_ASSERT_TRUE(pxPerceivedCount->GetInt32() >= 1);
+	ZENITH_ASSERT_NOT_NULL(xSeerBlackboard.TryGetList("perceived"));
+	const Zenith_PropertyValue* pxPrimary = GetTypedNodeOutputForTest(pxSeerGraph, uPrimary, "Result", PROPERTY_TYPE_ENTITY_ID);
+	const Zenith_PropertyValue* pxAwareness = GetTypedNodeOutputForTest(pxSeerGraph, uAware, "Result", PROPERTY_TYPE_FLOAT);
+	ZENITH_ASSERT_NOT_NULL(pxPrimary); ZENITH_ASSERT_NOT_NULL(pxAwareness);
+	if (!pxPrimary || !pxAwareness) { Zenith_PerceptionSystem::Shutdown(); return; }
+	ZENITH_ASSERT_EQ(pxPrimary->GetPackedEntityID(), xPrey.GetEntityID().GetPacked());
+	ZENITH_ASSERT_TRUE(pxAwareness->GetFloat() > 0.0f);
 
 	xSeerComponent.FireCustomEvent("Noise");	// source = prey, position = seer
 	Zenith_PerceptionSystem::Update(0.1f);
 	xSeerComponent.FireCustomEvent("Heard");
 	ZENITH_ASSERT_TRUE(xSeerBlackboard.GetBool("heardOk", false));
-	ZENITH_ASSERT_EQ(xSeerBlackboard.GetPackedEntityID("heardSrc"), xPrey.GetEntityID().GetPacked());
+	const Zenith_PropertyValue* pxHeardSource = GetTypedNodeOutputForTest(pxSeerGraph, uHeard, "Source", PROPERTY_TYPE_ENTITY_ID);
+	ZENITH_ASSERT_NOT_NULL(pxHeardSource);
+	if (!pxHeardSource) { Zenith_PerceptionSystem::Shutdown(); return; }
+	ZENITH_ASSERT_EQ(pxHeardSource->GetPackedEntityID(), xPrey.GetEntityID().GetPacked());
 
 	Zenith_PerceptionSystem::Shutdown();
 }
 
 ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 {
+	u_int uSpawn = 0u, uFindName = 0u, uNearest = 0u, uReadRot = 0u;
+	u_int uDir = 0u, uRadius = 0u, uBasis = 0u, uRay = 0u;
 	// In-memory prefab fixture (the Test_ShootCharacterization recipe; the
 	// engine lib has no GAME_ASSETS_DIR define - resolve through the registry).
 	Zenith_TempScene xTempScene("TestGraphEntity2Scene");
@@ -3166,12 +3629,13 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uSpawnSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Spawn");
 		}
-		const u_int uSpawn = xDef.AddNode("SpawnPrefab");
+		uSpawn = xDef.AddNode("SpawnPrefab");
 		{
 			NodeParamWriter xParams(xDef, uSpawn, "SpawnPrefab");
 			xParams.SetString("m_strPrefabPath", strPrefabPath.c_str());
 			xParams.SetString("m_strEntityName", "SpawnedByGraph");
 			xParams.SetString("m_strPositionVar", "spawnAt");
+			xParams.SetString("m_strResultVar", "");
 		}
 		xDef.AddEdge(uSpawnSource, 0, uSpawn);
 
@@ -3180,16 +3644,18 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uFindSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Find");
 		}
-		const u_int uFindName = xDef.AddNode("FindEntityByName");
+		uFindName = xDef.AddNode("FindEntityByName");
 		{
 			NodeParamWriter xParams(xDef, uFindName, "FindEntityByName");
 			xParams.SetString("m_strName", "SpawnedByGraph");
+			xParams.SetString("m_strResultVar", "");
 		}
-		const u_int uNearest = xDef.AddNode("FindNearestEntity");
+		uNearest = xDef.AddNode("FindNearestEntity");
 		{
 			NodeParamWriter xParams(xDef, uNearest, "FindNearestEntity");
 			SetFloatParam(xParams, "m_fRadius", 50.0f);
-			xParams.SetString("m_strDistanceVar", "nearDist");
+			xParams.SetString("m_strResultVar", "");
+			xParams.SetString("m_strDistanceVar", "");
 		}
 		xDef.AddEdge(uFindSource, 0, uFindName);
 		xDef.AddEdge(uFindName, 0, uNearest);
@@ -3241,13 +3707,14 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		const u_int uRotate = xDef.AddNode("RotateTowardDirection");
 		{
 			NodeParamWriter xParams(xDef, uRotate, "RotateTowardDirection");
-			xParams.SetString("m_strDirectionVar", "faceDir");
+			xParams.SetString("m_strDirectionVar", "");
 			SetFloatParam(xParams, "m_fDegreesPerSecond", 0.0f);	// snap
 		}
-		const u_int uReadRot = xDef.AddNode("ReadEntityRotation");
+		uReadRot = xDef.AddNode("ReadEntityRotation");
 		{
 			NodeParamWriter xParams(xDef, uReadRot, "ReadEntityRotation");
-			xParams.SetString("m_strEulerVar", "euler");
+			xParams.SetString("m_strForwardVar", "");
+			xParams.SetString("m_strEulerVar", "");
 		}
 		xDef.AddEdge(uRotSource, 0, uRotate);
 		xDef.AddEdge(uRotate, 0, uReadRot);
@@ -3258,16 +3725,23 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		const u_int uTurnGate = xDef.AddNode("Gate");
 		{
 			NodeParamWriter xParams(xDef, uTurnGate, "Gate");
-			xParams.SetString("m_strOpenVar", "turnGate");
+			xParams.SetString("m_strOpenVar", "");
 		}
 		const u_int uTurn = xDef.AddNode("RotateTowardDirection");
 		{
 			NodeParamWriter xParams(xDef, uTurn, "RotateTowardDirection");
-			xParams.SetString("m_strDirectionVar", "faceDir");
+			xParams.SetString("m_strDirectionVar", "");
 			SetFloatParam(xParams, "m_fDegreesPerSecond", 90.0f);	// rate-limited
 		}
+		const u_int uFaceDirection = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uFaceDirection, "GetVariable"); xParams.SetString("m_strVariable", "faceDir"); }
+		const u_int uTurnGateOpen = xDef.AddNode("GetVariable");
+		{ NodeParamWriter xParams(xDef, uTurnGateOpen, "GetVariable"); xParams.SetString("m_strVariable", "turnGate"); }
 		xDef.AddEdge(uTurnSource, 0, uTurnGate);
 		xDef.AddEdge(uTurnGate, 0, uTurn);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uFaceDirection, "Value", uRotate, "Direction"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uFaceDirection, "Value", uTurn, "Direction"));
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uTurnGateOpen, "Value", uTurnGate, "Open"));
 
 		// P1-node coverage riders: direction, scale, radius query.
 		const u_int uDirSource = xDef.AddNode("OnCustomEvent");
@@ -3275,23 +3749,23 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uDirSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Aux");
 		}
-		const u_int uDir = xDef.AddNode("ComputeDirection");
+		uDir = xDef.AddNode("ComputeDirection");
 		{
 			NodeParamWriter xParams(xDef, uDir, "ComputeDirection");
 			xParams.SetString("m_strToVar", "auxTarget");
-			xParams.SetString("m_strResultVar", "auxDir");
+			xParams.SetString("m_strResultVar", "");
 		}
 		const u_int uScale = xDef.AddNode("SetEntityScale");
 		{
 			NodeParamWriter xParams(xDef, uScale, "SetEntityScale");
 			SetVec3Param(xParams, "m_xScale", Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
 		}
-		const u_int uRadius = xDef.AddNode("FindEntitiesInRadius");
+		uRadius = xDef.AddNode("FindEntitiesInRadius");
 		{
 			NodeParamWriter xParams(xDef, uRadius, "FindEntitiesInRadius");
 			SetFloatParam(xParams, "m_fRadius", 50.0f);
 			xParams.SetString("m_strListVar", "inRange");
-			xParams.SetString("m_strCountVar", "inRangeCount");
+			xParams.SetString("m_strCountVar", "");
 		}
 		xDef.AddEdge(uDirSource, 0, uDir);
 		xDef.AddEdge(uDir, 0, uScale);
@@ -3303,7 +3777,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uRaySource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Ray");
 		}
-		const u_int uRay = xDef.AddNode("ReadMousePickRay");
+		uRay = xDef.AddNode("ReadMousePickRay");
 		const u_int uRayFlag = xDef.AddNode("SetBlackboardBool");
 		{
 			NodeParamWriter xParams(xDef, uRayFlag, "SetBlackboardBool");
@@ -3317,7 +3791,8 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uCamSource, "OnCustomEvent");
 			xParams.SetString("m_strEventName", "Cam");
 		}
-		const u_int uBasis = xDef.AddNode("ReadCameraBasis");
+		uBasis = xDef.AddNode("ReadCameraBasis");
+		{ NodeParamWriter xParams(xDef, uBasis, "ReadCameraBasis"); xParams.SetString("m_strForwardVar", ""); xParams.SetString("m_strRightVar", ""); }
 		const u_int uCamFlag = xDef.AddNode("SetBlackboardBool");
 		{
 			NodeParamWriter xParams(xDef, uCamFlag, "SetBlackboardBool");
@@ -3362,7 +3837,10 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 	// than Near, inside the FindNearest radius).
 	StageVec3(xBlackboard, "spawnAt", Zenith_Maths::Vector3(103.0f, 4.0f, 5.0f));
 	xComponent.FireCustomEvent("Spawn");
-	const u_int64 ulSpawned = xBlackboard.GetPackedEntityID("spawned");
+	const Zenith_PropertyValue* pxSpawned = GetTypedNodeOutputForTest(pxGraph, uSpawn, "Result", PROPERTY_TYPE_ENTITY_ID);
+	ZENITH_ASSERT_NOT_NULL(pxSpawned);
+	if (!pxSpawned) return;
+	const u_int64 ulSpawned = pxSpawned->GetPackedEntityID();
 	ZENITH_ASSERT_TRUE(ulSpawned != 0);
 	Zenith_Entity xSpawned = g_xEngine.Scenes().ResolveEntity(Zenith_EntityID::FromPacked(ulSpawned));
 	ZENITH_ASSERT_TRUE(xSpawned.IsValid());
@@ -3376,9 +3854,14 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 	// FindEntityByName + FindNearestEntity (host at origin; Near at 2,0,0 -
 	// but the spawned entity sits at (3,4,5), dist ~7.07, so Near wins).
 	xComponent.FireCustomEvent("Find");
-	ZENITH_ASSERT_EQ(xBlackboard.GetPackedEntityID("found"), ulSpawned);
-	ZENITH_ASSERT_EQ(xBlackboard.GetPackedEntityID("nearest"), xNear.GetEntityID().GetPacked());
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetFloat("nearDist"), 2.0f, 0.01f);
+	const Zenith_PropertyValue* pxFound = GetTypedNodeOutputForTest(pxGraph, uFindName, "Result", PROPERTY_TYPE_ENTITY_ID);
+	const Zenith_PropertyValue* pxNearest = GetTypedNodeOutputForTest(pxGraph, uNearest, "Result", PROPERTY_TYPE_ENTITY_ID);
+	const Zenith_PropertyValue* pxNearestDistance = GetTypedNodeOutputForTest(pxGraph, uNearest, "Distance", PROPERTY_TYPE_FLOAT);
+	ZENITH_ASSERT_NOT_NULL(pxFound); ZENITH_ASSERT_NOT_NULL(pxNearest); ZENITH_ASSERT_NOT_NULL(pxNearestDistance);
+	if (!pxFound || !pxNearest || !pxNearestDistance) return;
+	ZENITH_ASSERT_EQ(pxFound->GetPackedEntityID(), ulSpawned);
+	ZENITH_ASSERT_EQ(pxNearest->GetPackedEntityID(), xNear.GetEntityID().GetPacked());
+	ZENITH_ASSERT_EQ_FLOAT(pxNearestDistance->GetFloat(), 2.0f, 0.01f);
 
 	xComponent.FireCustomEvent("FindMiss");
 	ZENITH_ASSERT_FALSE(xBlackboard.GetBool("foundMissing", false));
@@ -3400,7 +3883,10 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 	// under a real update dt: 90 deg/s * 0.5s = 45 degrees from +X toward -Z.
 	StageVec3(xBlackboard, "faceDir", Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
 	xComponent.FireCustomEvent("Face");
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("forward").x, 1.0f, 0.01f);
+	const Zenith_PropertyValue* pxFacing = GetTypedNodeOutputForTest(pxGraph, uReadRot, "Forward", PROPERTY_TYPE_VECTOR3);
+	ZENITH_ASSERT_NOT_NULL(pxFacing);
+	if (!pxFacing) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxFacing->GetVector3().x, 1.0f, 0.01f);
 
 	StageVec3(xBlackboard, "faceDir", Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f));
 	Zenith_PropertyValue xGateOpen;
@@ -3418,11 +3904,15 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 	// P1-coverage riders: direction to Near, scale, radius query.
 	StageEntity(xBlackboard, "auxTarget", xNear);
 	xComponent.FireCustomEvent("Aux");
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("auxDir").x, 1.0f, 0.01f);	// host -> Near = +X
+	const Zenith_PropertyValue* pxAuxDirection = GetTypedNodeOutputForTest(pxGraph, uDir, "Result", PROPERTY_TYPE_VECTOR3);
+	const Zenith_PropertyValue* pxInRangeCount = GetTypedNodeOutputForTest(pxGraph, uRadius, "Count", PROPERTY_TYPE_INT32);
+	ZENITH_ASSERT_NOT_NULL(pxAuxDirection); ZENITH_ASSERT_NOT_NULL(pxInRangeCount);
+	if (!pxAuxDirection || !pxInRangeCount) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxAuxDirection->GetVector3().x, 1.0f, 0.01f);	// host -> Near = +X
 	Zenith_Maths::Vector3 xHostScale;
 	xHost.GetComponent<Zenith_TransformComponent>().GetScale(xHostScale);
 	ZENITH_ASSERT_EQ_FLOAT(xHostScale.x, 2.0f, 0.001f);
-	ZENITH_ASSERT_TRUE(xBlackboard.GetInt32("inRangeCount") >= 2);	// Near + spawned at least
+	ZENITH_ASSERT_TRUE(pxInRangeCount->GetInt32() >= 2);	// Near + spawned at least
 
 	// Camera nodes: FAILURE without a main camera, success once the test
 	// seam assigns one.
@@ -3440,8 +3930,12 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 	xCameraComponent.SetYaw(0.0);
 	xComponent.FireCustomEvent("Cam");
 	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("camOk", false));
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("camForward").z, 1.0f, 0.01f);	// yaw 0 faces +Z
-	ZENITH_ASSERT_EQ_FLOAT(xBlackboard.GetVector3("camRight").x, 1.0f, 0.01f);
+	const Zenith_PropertyValue* pxCameraForward = GetTypedNodeOutputForTest(pxGraph, uBasis, "Forward", PROPERTY_TYPE_VECTOR3);
+	const Zenith_PropertyValue* pxCameraRight = GetTypedNodeOutputForTest(pxGraph, uBasis, "Right", PROPERTY_TYPE_VECTOR3);
+	ZENITH_ASSERT_NOT_NULL(pxCameraForward); ZENITH_ASSERT_NOT_NULL(pxCameraRight);
+	if (!pxCameraForward || !pxCameraRight) return;
+	ZENITH_ASSERT_EQ_FLOAT(pxCameraForward->GetVector3().z, 1.0f, 0.01f);	// yaw 0 faces +Z
+	ZENITH_ASSERT_EQ_FLOAT(pxCameraRight->GetVector3().x, 1.0f, 0.01f);
 
 	xComponent.FireCustomEvent("Pitch");
 	ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCameraComponent.GetPitch()), glm::radians(-89.0f), 0.001f);	// clamped
@@ -3450,7 +3944,10 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 	// Pick ray success path: a normalized direction lands on the blackboard.
 	xComponent.FireCustomEvent("Ray");
 	ZENITH_ASSERT_TRUE(xBlackboard.GetBool("rayOk", false));
-	ZENITH_ASSERT_EQ_FLOAT(glm::length(xBlackboard.GetVector3("rayDir")), 1.0f, 0.01f);
+	const Zenith_PropertyValue* pxRayDirection = GetTypedNodeOutputForTest(pxGraph, uRay, "Direction", PROPERTY_TYPE_VECTOR3);
+	ZENITH_ASSERT_NOT_NULL(pxRayDirection);
+	if (!pxRayDirection) return;
+	ZENITH_ASSERT_EQ_FLOAT(glm::length(pxRayDirection->GetVector3()), 1.0f, 0.01f);
 }
 
 ZENITH_TEST(GraphComponent, RegistryWideNodeRoundTrip)
@@ -3514,14 +4011,13 @@ ZENITH_TEST(GraphComponent, ActionNodeSerializationRoundTrip)
 	{
 		const char* m_szTypeName;
 		const char* m_szAction;
-		const char* m_szResultVar;	// null = the type has no result var
 	};
 	const ActionNodeCase axCases[] = {
-		{ "OnActionPressed",  "RoundTripPressed",  nullptr },
-		{ "OnActionReleased", "RoundTripReleased", nullptr },
-		{ "OnActionHeld",     "RoundTripHeld",     nullptr },
-		{ "ReadActionAxis1D", "RoundTripAxis1D",   "leanOut" },
-		{ "ReadActionAxis2D", "RoundTripAxis2D",   "moveOut" },
+		{ "OnActionPressed",  "RoundTripPressed" },
+		{ "OnActionReleased", "RoundTripReleased" },
+		{ "OnActionHeld",     "RoundTripHeld" },
+		{ "ReadActionAxis1D", "RoundTripAxis1D" },
+		{ "ReadActionAxis2D", "RoundTripAxis2D" },
 	};
 
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
@@ -3536,10 +4032,6 @@ ZENITH_TEST(GraphComponent, ActionNodeSerializationRoundTrip)
 		auNodeIDs[u] = xDef.AddNode(xCase.m_szTypeName);
 		NodeParamWriter xParams(xDef, auNodeIDs[u], xCase.m_szTypeName);
 		xParams.SetString("m_strAction", xCase.m_szAction);
-		if (xCase.m_szResultVar != nullptr)
-		{
-			xParams.SetString("m_strResultVar", xCase.m_szResultVar);
-		}
 	}
 
 	Zenith_DataStream xStream;
@@ -3573,19 +4065,6 @@ ZENITH_TEST(GraphComponent, ActionNodeSerializationRoundTrip)
 			ZENITH_ASSERT_STREQ(xValue.GetString().c_str(), xCase.m_szAction);
 		}
 
-		const Zenith_ReflectedProperty* pxResult = FindNodeProperty(pxNode, "m_strResultVar");
-		if (xCase.m_szResultVar == nullptr)
-		{
-			ZENITH_ASSERT_NULL(pxResult, "%s unexpectedly grew a result var", xCase.m_szTypeName);
-			continue;
-		}
-		ZENITH_ASSERT_NOT_NULL(pxResult, "%s has no m_strResultVar property", xCase.m_szTypeName);
-		if (pxResult != nullptr)
-		{
-			Zenith_PropertyValue xValue;
-			pxResult->m_pfnGet(pxNode, xValue);
-			ZENITH_ASSERT_STREQ(xValue.GetString().c_str(), xCase.m_szResultVar);
-		}
 	}
 }
 
@@ -3616,14 +4095,12 @@ ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
 		xParams.SetInt("m_iOp", GRAPH_LOGIC_BOOL_OP_XOR);
 		xParams.SetBool("m_bInvert", true);
 		xParams.SetBool("m_bMissingIsTrue", true);
-		xParams.SetString("m_strResultVar", "canFire");
 	}
 
 	const u_int uAdd = xDef.AddNode("ListAdd");
 	{
 		NodeParamWriter xParams(xDef, uAdd, "ListAdd");
 		xParams.SetString("m_strListVar", "bag");
-		xParams.SetString("m_strValueVar", "spawned");
 	}
 
 	const u_int uRemove = xDef.AddNode("ListRemoveAt");
@@ -3631,7 +4108,6 @@ ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
 		NodeParamWriter xParams(xDef, uRemove, "ListRemoveAt");
 		xParams.SetString("m_strListVar", "bag");
 		xParams.SetInt("m_iIndex", 3);
-		xParams.SetString("m_strIndexVar", "cursor");
 	}
 
 	const u_int uClear = xDef.AddNode("ListClear");
@@ -3688,7 +4164,6 @@ ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
 		ZENITH_ASSERT_EQ(ReadParam::Int(pxLogic, "m_iOp"), static_cast<int32_t>(GRAPH_LOGIC_BOOL_OP_XOR));
 		ZENITH_ASSERT_TRUE(ReadParam::Bool(pxLogic, "m_bInvert"));
 		ZENITH_ASSERT_TRUE(ReadParam::Bool(pxLogic, "m_bMissingIsTrue"));
-		ZENITH_ASSERT_STREQ(ReadParam::Str(pxLogic, "m_strResultVar").c_str(), "canFire");
 	}
 
 	Zenith_GraphNode* pxAdd = xGraph.FindNode(uAdd);
@@ -3696,7 +4171,6 @@ ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
 	if (pxAdd != nullptr)
 	{
 		ZENITH_ASSERT_STREQ(ReadParam::Str(pxAdd, "m_strListVar").c_str(), "bag");
-		ZENITH_ASSERT_STREQ(ReadParam::Str(pxAdd, "m_strValueVar").c_str(), "spawned");
 	}
 
 	Zenith_GraphNode* pxRemove = xGraph.FindNode(uRemove);
@@ -3705,7 +4179,6 @@ ZENITH_TEST(GraphComponent, BlackboardLogicAndListNodeSerializationRoundTrip)
 	{
 		ZENITH_ASSERT_STREQ(ReadParam::Str(pxRemove, "m_strListVar").c_str(), "bag");
 		ZENITH_ASSERT_EQ(ReadParam::Int(pxRemove, "m_iIndex"), 3);
-		ZENITH_ASSERT_STREQ(ReadParam::Str(pxRemove, "m_strIndexVar").c_str(), "cursor");
 	}
 
 	Zenith_GraphNode* pxClear = xGraph.FindNode(uClear);

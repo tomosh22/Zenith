@@ -240,8 +240,10 @@ the bridge publishes it but no graph node reads it. The tools boot therefore
 re-authors `RenderTest.zscen` for this declaration; the later wire migration
 re-authors the same scene again when it removes the three obsolete BOOL slots.
 `RenderTest_Tennis.Tests.inl` carries the pin-table totality row and live
-direct-node witnesses; these transitional direct-construction rows are listed
-for conversion to explicit graph wiring in B-7.6 before C-1 deletes fallback.
+direct-node witnesses. Its B-7.6 rows provide each transient INPUT with an
+explicit typed slot value, preserving the spin-before-bad-BallEntity ordering,
+the true/false serve choices, and the arm nodes' conditional epoch reads without
+depending on named-input fallback.
 
 ### B-7.3b builder wiring
 
@@ -254,6 +256,14 @@ the predicted post-migration census has no INPUT fallback lines. `BallEntity`
 remains a TARGET reference name; selector, READWRITE, and result names also
 remain names. `RenderTest_PlayerActions` deliberately authors zero data edges
 and zero `GetVariable` nodes.
+
+The nine remaining factory-shaped tennis sites stay raw: the accumulator's
+`CompareBlackboardFloat` and following `Gate`; the serve-phase comparison and
+its three phase/server/parked gates; and the live-phase comparison with its two
+live/my-ball gates. The comparison `GetVariable` sources follow their consumers,
+while the comparison results feed earlier gates only through deliberately
+delayed data edges after barrier nodes; either wire-factory rewrite changes the
+serialized graph order.
 
 `RT_GraphsValidateClean` builds and initializes both graphs in-process. Its
 structural checks require the tennis graph's exact 24/21 edge/source census,

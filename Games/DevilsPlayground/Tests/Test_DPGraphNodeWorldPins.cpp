@@ -17,9 +17,15 @@
 #include "Components/DPForge_Component.h"
 #include "Components/DPItemManager_Component.h"
 #include "Components/DPPlayerController_Component.h"
+#include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "Source/DP_Knots.h"
 #include "Source/DP_Win.h"
 #include "Source/DPResources.h"
+
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/PhysicsSystem.h>
+#include <Jolt/Physics/Body/Body.h>
+#include <Jolt/Physics/Body/BodyLockInterface.h>
 
 #include <cstring>
 
@@ -112,7 +118,10 @@ namespace
 			Zenith_Entity xDoor = g_xEngine.Scenes().CreateEntity(m_pxScene,
 				"DPGraphNodeWorldPinsDoor");
 			m_xDoor = xDoor.GetEntityID();
+			Zenith_ColliderComponent& xDoorCollider = xDoor.AddComponent<Zenith_ColliderComponent>();
+			xDoorCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 			xDoor.AddComponent<DPDoor_Component>();
+			xDoor.AddComponent<Zenith_GraphComponent>().AddGraphByAssetPath("game:Graphs/DP_Door.bgraph");
 
 			Zenith_Entity xVillager = g_xEngine.Scenes().CreateEntity(m_pxScene,
 				"DPGraphNodeWorldPinsVillager");
@@ -188,7 +197,8 @@ namespace
 		Check(xContext.m_fDt > 0.0f, "DoorAdvanceAnim uses a positive live duration");
 
 		DPNode_DoorAdvanceAnim xNode;
-		xNode.m_strSettledAnimVar = "settledAnim";
+		xNode.m_strAnimVar = "";
+		xNode.m_strSettledAnimVar = "";
 		xNode.SetInputForTest(DPNode_DoorAdvanceAnim::uPIN_Anim,
 			IntValue(static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening)));
 		Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
@@ -197,20 +207,12 @@ namespace
 		Check(pxOpenT && pxOpenT->GetType() == PROPERTY_TYPE_FLOAT && pxOpenT->GetFloat() == 1.0f,
 			"DoorAdvanceAnim advances the real door openT to one");
 		const Zenith_PropertyValue* pxSettled = xNode.GetOutputForTest(DPNode_DoorAdvanceAnim::uPIN_SettledAnim);
-		const Zenith_PropertyValue* pxNamedSettled = xBlackboard.TryGetValue("settledAnim");
 		Check(pxSettled && pxSettled->GetType() == PROPERTY_TYPE_INT32,
 			"DoorAdvanceAnim publishes a typed SettledAnim slot");
-		Check(pxNamedSettled && pxNamedSettled->GetType() == PROPERTY_TYPE_INT32,
-			"DoorAdvanceAnim dual-writes its independently named SettledAnim");
 		if (pxSettled && pxSettled->GetType() == PROPERTY_TYPE_INT32)
 		{
 			CheckEqInt(pxSettled->GetInt32(), static_cast<int32_t>(DPDoor_Component::DoorAnim::Open),
 				"DoorAdvanceAnim slot settles Opening to Open");
-		}
-		if (pxNamedSettled && pxNamedSettled->GetType() == PROPERTY_TYPE_INT32)
-		{
-			CheckEqInt(pxNamedSettled->GetInt32(), static_cast<int32_t>(DPDoor_Component::DoorAnim::Open),
-				"DoorAdvanceAnim independent named output settles to Open");
 		}
 		Check(xBlackboard.GetInt32("anim", -1) == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closed),
 			"DoorAdvanceAnim override wins over the distinct Closed Anim blackboard value");
@@ -294,6 +296,142 @@ namespace
 				"fresh graph-initialized DoorAdvanceAnim failure has no bad pin access");
 		}
 		xGraph.Shutdown();
+
+		// Exercise the authored DP_Door graph, rather than calling the leaf: its
+		// branch after Advance is what prevents an intermediate/stable output slot
+		// from being written back into persistent anim or re-running the shim sync.
+		Zenith_GraphComponent* pxGraphs = xFixture.DoorEntity().TryGetComponent<Zenith_GraphComponent>();
+		Zenith_BehaviourGraph* pxDoorGraph = pxGraphs != nullptr && pxGraphs->GetGraphCount() == 1u
+			? pxGraphs->GetGraphAt(0) : nullptr;
+		Check(pxDoorGraph != nullptr, "Door fixture binds the authored DP_Door graph");
+		if (pxDoorGraph != nullptr)
+		{
+			Check(pxDoorGraph->GetResolutionSkipCountForTest() == 0u,
+				"authored DP_Door graph resolves every data edge");
+			Zenith_GraphBlackboard& xDoorBB = pxDoorGraph->GetBlackboard();
+			Zenith_GraphContext xGraphContext;
+			xGraphContext.m_pxGraph = pxDoorGraph;
+			xGraphContext.m_pxBlackboard = &xDoorBB;
+			xGraphContext.m_xSelf = xFixture.DoorEntity();
+			xGraphContext.m_fDt = DP_Tuning::Get<float>("interactables.door_open_duration_s") * 0.1f;
+			DPDoor_Component* pxDoor = xFixture.DoorEntity().TryGetComponent<DPDoor_Component>();
+			Zenith_ColliderComponent* pxCollider = xFixture.DoorEntity().TryGetComponent<Zenith_ColliderComponent>();
+			Check(pxDoor != nullptr && xGraphContext.m_fDt > 0.0f,
+				"authored DP_Door boundary fixture has a real door and positive dt");
+			Check(pxCollider != nullptr && pxCollider->HasValidBody(),
+				"Door fixture has a lockable STATIC OBB body for solidity inspection");
+			if (pxDoor != nullptr && pxCollider != nullptr && pxCollider->HasValidBody() && xGraphContext.m_fDt > 0.0f)
+			{
+				auto IsSensor = [&]()
+				{
+					JPH::BodyLockRead xLock(g_xEngine.Physics().GetJoltSystem()->GetBodyLockInterface(),
+						JPH::BodyID(pxCollider->GetBodyID().m_uID));
+					Check(xLock.Succeeded(), "Door collider body lock succeeds for sensor inspection");
+					return xLock.Succeeded() && xLock.GetBody().IsSensor();
+				};
+				DPNode_DoorAdvanceAnim* pxAdvance = nullptr;
+				for (u_int uDoorNodeID = 1; uDoorNodeID <= pxDoorGraph->GetNodeCount(); ++uDoorNodeID)
+				{
+					Zenith_GraphNode* pxNode = pxDoorGraph->FindNode(uDoorNodeID);
+					if (pxNode != nullptr && std::strcmp(pxNode->GetTypeName(), "DPDoorAdvanceAnim") == 0)
+					{
+						pxAdvance = static_cast<DPNode_DoorAdvanceAnim*>(pxNode);
+						break;
+					}
+				}
+				Check(pxAdvance != nullptr && pxAdvance->m_strSettledAnimVar.empty(),
+					"authored Advance clears SettledAnim's transitional output name");
+				Zenith_TransformComponent* pxTransform = xFixture.DoorEntity().TryGetComponent<Zenith_TransformComponent>();
+				Check(pxTransform != nullptr, "Door fixture supplies the CreateEntity Transform prerequisite for rotation");
+				if (pxAdvance == nullptr || pxTransform == nullptr) return;
+				Zenith_Maths::Quat xRotationBefore;
+				pxTransform->GetRotation(xRotationBefore);
+				xDoorBB.SetValue("anim", IntValue(static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening)));
+				Zenith_PropertyValue xQuarter; xQuarter.SetFloat(0.25f);
+				xDoorBB.SetValue("openT", xQuarter);
+				pxCollider->SetIsSensor(false); // contrary to Opening's settled state
+				Zenith_PropertyValue xOpposite; xOpposite.SetInt32(static_cast<int32_t>(DPDoor_Component::DoorAnim::Closed));
+				pxAdvance->SetOutput(xGraphContext, DPNode_DoorAdvanceAnim::uPIN_SettledAnim, xOpposite);
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Opening,
+					"intermediate Opening retains persistent anim and skips settle writer");
+				Check(!IsSensor(), "intermediate Opening leaves contrary collider sensor state unchanged (no sync)");
+				const Zenith_PropertyValue* pxIntermediateSlot = pxAdvance->GetOutputForTest(DPNode_DoorAdvanceAnim::uPIN_SettledAnim);
+				Check(pxIntermediateSlot && pxIntermediateSlot->GetType() == PROPERTY_TYPE_INT32 && pxIntermediateSlot->GetInt32() == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closed),
+					"intermediate Opening retains its seeded opposite SettledAnim slot");
+				Zenith_Maths::Quat xRotationIntermediate;
+				pxTransform->GetRotation(xRotationIntermediate);
+				Check(xRotationIntermediate.x != xRotationBefore.x || xRotationIntermediate.y != xRotationBefore.y
+					|| xRotationIntermediate.z != xRotationBefore.z || xRotationIntermediate.w != xRotationBefore.w,
+					"intermediate Opening applies rotation while retaining persistent anim");
+
+				Zenith_PropertyValue xOpenBoundary; xOpenBoundary.SetFloat(0.95f);
+				xDoorBB.SetValue("openT", xOpenBoundary);
+				xGraphContext.m_fDt = DP_Tuning::Get<float>("interactables.door_open_duration_s");
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Open && IsSensor(),
+					"Opening boundary writes Open and makes the collider a sensor in the same graph dispatch");
+				Check(xDoorBB.GetFloat("openT", -1.0f) == 1.0f, "Opening boundary clamps openT to exactly one");
+				Check(!pxDoor->BlocksPath(), "Opening boundary's persisted Open state has the documented unblocked-path meaning");
+				pxCollider->SetIsSensor(false);
+				pxAdvance->SetOutput(xGraphContext, DPNode_DoorAdvanceAnim::uPIN_SettledAnim, xOpposite);
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Open,
+					"stable Open retains persistent anim without a stale settle write");
+				Check(!IsSensor(), "stable Open leaves contrary collider sensor state unchanged (no sync)");
+				const Zenith_PropertyValue* pxStableOpenSlot = pxAdvance->GetOutputForTest(DPNode_DoorAdvanceAnim::uPIN_SettledAnim);
+				Check(pxStableOpenSlot && pxStableOpenSlot->GetType() == PROPERTY_TYPE_INT32 && pxStableOpenSlot->GetInt32() == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closed),
+					"stable Open retains its seeded opposite SettledAnim slot");
+
+				Zenith_PropertyValue xClosing; xClosing.SetFloat(0.75f);
+				xDoorBB.SetValue("anim", IntValue(static_cast<int32_t>(DPDoor_Component::DoorAnim::Closing)));
+				xDoorBB.SetValue("openT", xClosing);
+				pxCollider->SetIsSensor(false); // contrary to Closing's intermediate/stable state
+				Zenith_PropertyValue xOpenSeed; xOpenSeed.SetInt32(static_cast<int32_t>(DPDoor_Component::DoorAnim::Open));
+				pxAdvance->SetOutput(xGraphContext, DPNode_DoorAdvanceAnim::uPIN_SettledAnim, xOpenSeed);
+				xGraphContext.m_fDt = DP_Tuning::Get<float>("interactables.door_open_duration_s") * 0.1f;
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Closing && !IsSensor(),
+					"intermediate Closing retains persistent anim and leaves contrary sensor state unchanged");
+				Check(pxDoor->BlocksPath(), "intermediate Closing has the documented blocked-path meaning");
+				const Zenith_PropertyValue* pxClosingSlot = pxAdvance->GetOutputForTest(DPNode_DoorAdvanceAnim::uPIN_SettledAnim);
+				Check(pxClosingSlot && pxClosingSlot->GetType() == PROPERTY_TYPE_INT32 && pxClosingSlot->GetInt32() == static_cast<int32_t>(DPDoor_Component::DoorAnim::Open),
+					"intermediate Closing retains its seeded SettledAnim slot");
+
+				Zenith_PropertyValue xClosedBoundary; xClosedBoundary.SetFloat(0.05f);
+				xDoorBB.SetValue("openT", xClosedBoundary);
+				xGraphContext.m_fDt = DP_Tuning::Get<float>("interactables.door_open_duration_s");
+				pxCollider->SetIsSensor(true);
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Closed && !IsSensor(),
+					"Closing boundary writes Closed and restores collider solidity in the same graph dispatch");
+				Check(xDoorBB.GetFloat("openT", -1.0f) == 0.0f, "Closing boundary clamps openT to exactly zero");
+				Check(pxDoor->BlocksPath(), "Closing boundary's persisted Closed state has the documented blocked-path meaning");
+				pxCollider->SetIsSensor(true);
+				Zenith_PropertyValue xOpenSlot; xOpenSlot.SetInt32(static_cast<int32_t>(DPDoor_Component::DoorAnim::Open));
+				pxAdvance->SetOutput(xGraphContext, DPNode_DoorAdvanceAnim::uPIN_SettledAnim, xOpenSlot);
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(pxDoor->GetAnim() == DPDoor_Component::DoorAnim::Closed,
+					"stable Closed retains persistent anim without a stale settle write");
+				Check(IsSensor(), "stable Closed leaves contrary collider sensor state unchanged (no sync)");
+				const Zenith_PropertyValue* pxStableClosedSlot = pxAdvance->GetOutputForTest(DPNode_DoorAdvanceAnim::uPIN_SettledAnim);
+				Check(pxStableClosedSlot && pxStableClosedSlot->GetType() == PROPERTY_TYPE_INT32 && pxStableClosedSlot->GetInt32() == static_cast<int32_t>(DPDoor_Component::DoorAnim::Open),
+					"stable Closed retains its seeded opposite SettledAnim slot");
+
+				xDoorBB.SetValue("anim", IntValue(static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening)));
+				xDoorBB.SetValue("openT", xOpenBoundary);
+				xGraphContext.m_xSelf = Zenith_Entity();
+				pxCollider->SetIsSensor(true);
+				pxAdvance->SetOutput(xGraphContext, DPNode_DoorAdvanceAnim::uPIN_SettledAnim, xOpposite);
+				pxDoorGraph->FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphContext);
+				Check(xDoorBB.GetInt32("anim", -1) == static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening),
+					"missing-door Advance failure skips the setter and preserves seeded anim");
+				const Zenith_PropertyValue* pxFailureSlot = pxAdvance->GetOutputForTest(DPNode_DoorAdvanceAnim::uPIN_SettledAnim);
+				Check(pxFailureSlot && pxFailureSlot->GetType() == PROPERTY_TYPE_INT32 && pxFailureSlot->GetInt32() == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closed),
+					"missing-door Advance failure preserves the seeded prior output slot");
+				Check(IsSensor(), "missing-door Advance failure leaves the seeded collider state unchanged");
+			}
+		}
 	}
 
 	void CheckDoorCheckKey()
@@ -311,6 +449,7 @@ namespace
 
 		DP_Player::SetHeldItem(xFixture.m_xVillager, xFixture.m_xKey);
 		DPNode_DoorCheckKey xNode;
+		xNode.m_strVillagerVar = "";
 		xNode.SetInputForTest(DPNode_DoorCheckKey::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 		Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 			"DoorCheckKey accepts the registered held Key from the Villager pin override");
@@ -371,6 +510,9 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(4));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
+				xNode.m_strVillagerVar = "";
+				xNode.m_strRecipeInputVar = "";
+				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_RecipeInput,
 					IntValue(static_cast<int32_t>(DP_ItemTag::Key)));
@@ -415,6 +557,9 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(9));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
+				xNode.m_strVillagerVar = "";
+				xNode.m_strRecipeInputVar = "";
+				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 				Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 					"ForgeCraft missing recipe bindings execute the real Iron-to-Key default effect");
@@ -427,10 +572,10 @@ namespace
 					"ForgeCraft missing recipe bindings defer input destruction");
 				Check(xBlackboard.GetInt32("craftCount", -1) == 10,
 					"ForgeCraft missing recipe bindings increment CraftCount");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 1u,
-					"ForgeCraft missing RecipeInput binding takes exactly one fallback");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 1u,
-					"ForgeCraft missing RecipeOutput binding takes exactly one fallback");
+				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u,
+					"ForgeCraft const RecipeInput has no named fallback");
+				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
+					"ForgeCraft const RecipeOutput has no named fallback");
 				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_Villager) == 0u,
 					"ForgeCraft missing recipe leg still wires Villager");
 				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
@@ -505,7 +650,12 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(20));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
+				xNode.m_strVillagerVar = "";
+				xNode.m_strRecipeInputVar = "";
+				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
+				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_RecipeInput, xWrongInput);
+				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_RecipeOutput, xWrongOutput);
 				Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 					"ForgeCraft wrongly typed recipe values execute the Iron-to-Key defaults");
 				const Zenith_EntityID xOutput = DP_Player::GetHeldItemEntity(xFixture.m_xVillager);
@@ -517,12 +667,12 @@ namespace
 					"ForgeCraft wrongly typed recipe values defer input destruction");
 				Check(xBlackboard.GetInt32("craftCount", -1) == 21,
 					"ForgeCraft wrongly typed recipe values increment CraftCount");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 1u
-					&& xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 1u,
-					"ForgeCraft wrongly typed recipe values take one fallback per recipe pin");
-				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
-					&& xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
-					"ForgeCraft wrongly typed recipe values emit no mismatches");
+				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
+					&& xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
+					"ForgeCraft const recipe values have no named fallback");
+				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 1u
+					&& xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 1u,
+					"ForgeCraft wrongly typed recipe overrides emit one mismatch per accessed pin");
 				Check(xNode.GetBadAccessWarningCountForTest() == 0u,
 					"ForgeCraft wrongly typed recipe leg has no bad pin access");
 				DP_Items::Internal_UnregisterItemTag(xInput);

@@ -687,6 +687,25 @@ FALLBACK and zero IN_PLACE_ALIASING after this builder migration, but the
 unfiltered suite must be reported honestly until B-7.6 removes the named
 compatibility residue and C-1 reaches zero.
 
+### B76 current graph contract
+
+The current B76 inventory is 38 registered DP graph classes, 26 pin tables,
+50 descriptors, 36 INPUTs, 10 OUTPUTs, and 4 READWRITE selectors. Production
+data-edge counts are Villager 35, Item 38, Priest 6, and Door 16; the twelve
+graphs expose 77 typed `GetVariable` outputs. Item uses the conservative
+Commit guard/clear/latch then Finish side-effect chain. Arm values flow through
+graph writers, and Door settlement is conditional graph control flow.
+
+Villager's `uRecDone` CompareFloat and `uRecGate` Gate use factory wire forms.
+`Test_GraphsValidateClean.cpp` builds the old raw branch and the factory branch
+and compares their complete serialized definitions byte-for-byte. Other raw
+builder sites remain raw when producer creation timing or edge order differs;
+parameter-call order alone is not the criterion. The first seven-suite census
+passed with zero FALLBACK, IN_PLACE_ALIASING, and validator errors; DP reported its
+six intentional wrong-tag MISMATCH controls. The final 14-step T3 (with builds)
+and SceneGuard gate passed; the second boot preserved every tracked scene,
+navmesh, and generated-graph hash.
+
 DevilsPlayground's board category is branch mode, but this B-7.2 unit is
 explicitly ledgered as a master commit. Header and builder sections remain
 separate because root integrates the header commit first and the builder

@@ -262,6 +262,85 @@ inline Zenith_PropertyValue UIPin_WireVec4(const Zenith_Maths::Vector4& xVec)
 	return xValue;
 }
 
+class Zenith_GraphNode_UITestCountingStringProducer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_UITestCountingStringProducer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_UITestCountingStringProducer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_STRING)
+	ZENITH_GRAPH_PINS_END
+
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		++s_uPullCount;
+		SetOutput<std::string>(xContext, uPIN_Value, "wired");
+		return GRAPH_NODE_STATUS_SUCCESS;
+	}
+	const char* GetTypeName() const override { return "Test_UICountingStringProducer"; }
+	inline static u_int s_uPullCount = 0u;
+};
+
+class Zenith_GraphNode_UITestCountingFloatProducer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_UITestCountingFloatProducer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_UITestCountingFloatProducer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override { ++s_uPullCount; SetOutput<float>(xContext, uPIN_Value, s_fValue); return GRAPH_NODE_STATUS_SUCCESS; }
+	const char* GetTypeName() const override { return "Test_UICountingFloatProducer"; }
+	inline static u_int s_uPullCount = 0u;
+	inline static float s_fValue = 0.0f;
+};
+
+class Zenith_GraphNode_UITestCountingColorProducer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_UITestCountingColorProducer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_UITestCountingColorProducer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_VECTOR4)
+	ZENITH_GRAPH_PINS_END
+
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override { ++s_uPullCount; SetOutput<Zenith_Maths::Vector4>(xContext, uPIN_Value, s_xValue); return GRAPH_NODE_STATUS_SUCCESS; }
+	const char* GetTypeName() const override { return "Test_UICountingColorProducer"; }
+	inline static u_int s_uPullCount = 0u;
+	inline static Zenith_Maths::Vector4 s_xValue = Zenith_Maths::Vector4(0.0f);
+};
+
+static void EnsureUICountingStringProducerRegistered()
+{
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	if (xRegistry.Find("Test_UICountingStringProducer") == nullptr)
+	{
+		xRegistry.RegisterNodeType<Zenith_GraphNode_UITestCountingStringProducer>(
+			"Test_UICountingStringProducer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+	}
+}
+
+static void EnsureUICountingGuardProducersRegistered()
+{
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	if (xRegistry.Find("Test_UICountingFloatProducer") == nullptr)
+		xRegistry.RegisterNodeType<Zenith_GraphNode_UITestCountingFloatProducer>("Test_UICountingFloatProducer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+	if (xRegistry.Find("Test_UICountingColorProducer") == nullptr)
+		xRegistry.RegisterNodeType<Zenith_GraphNode_UITestCountingColorProducer>("Test_UICountingColorProducer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+}
+
 // All four components, because no VEC4 assertion macro exists and a
 // ZENITH_ASSERT_NEAR_VEC3 would silently drop alpha - which is exactly the
 // component a "did the wire win" question needs.
@@ -373,7 +452,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUIColorFromWire)
 		Zenith_GraphNode_SetUIColor xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_xColor = xConst;
-		xNode.m_strColorVar = "col";
+		xNode.m_strColorVar = "";
 		xNode.SetInputForTest(uColor, UIPin_WireVec4(xWire));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		UIPin_CheckColor(xFixture.m_pxTitle->GetColor(), xWire, "Title colour");
@@ -386,7 +465,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUIColorFromWire)
 		Zenith_GraphNode_SetUIColor xNode;
 		xNode.m_strElement = "Play";
 		xNode.m_xColor = xConst;
-		xNode.m_strColorVar = "col";
+		xNode.m_strColorVar = "";
 		xNode.SetInputForTest(uColor, UIPin_WireVec4(xWire));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		UIPin_CheckColor(xFixture.m_pxPlay->GetNormalColor(), xWire, "Play normal colour");
@@ -414,7 +493,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUIFillAmountFromWire)
 	Zenith_GraphNode_SetUIFillAmount xNode;
 	xNode.m_strElement = "Bar";
 	xNode.m_fAmount = 0.9f;
-	xNode.m_strAmountVar = "amt";
+	xNode.m_strAmountVar = "";
 	xNode.SetInputForTest(uAmount, UIPin_WireFloat(0.5f));
 
 	Zenith_GraphContext xCtx;
@@ -453,7 +532,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUITextValueFromWire)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
 		xNode.SetInputForTest(uValue, UIPin_WireInt(5));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Score: 5");
@@ -466,7 +545,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUITextValueFromWire)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
 		xNode.SetInputForTest(uValue, UIPin_WireString("hello"));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Score: hello");
@@ -480,7 +559,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUITextValueFromWire)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
 		xNode.SetInputForTest(uValue, UIPin_WireVec3(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f)));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Score: (1, 2, 3)");
@@ -494,7 +573,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUITextValueFromWire)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
 		xNode.m_iDecimals = 2;
 		xNode.SetInputForTest(uValue, UIPin_WireFloat(5.0f));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
@@ -508,7 +587,7 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUITextValueFromWire)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Play";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
 		xNode.SetInputForTest(uValue, UIPin_WireInt(5));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxPlay->GetText().c_str(), "Score: 5");
@@ -551,10 +630,9 @@ ZENITH_TEST(UIPinRuntime, Wired_SetUITextWireFormatsWithAnEmptyVarName)
 	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "nothing here may touch the blackboard");
 }
 
-// ★ THE PARITY TABLE. These three outcomes are what the migration must reproduce
-// byte-for-byte, and they are the reason the transitional `|| !m_strValueVar
-// .empty()` half exists at all. A FRESH node per leg: the binding latches the var
-// NAME once, at the first accessor call.
+// ★ THE PERMANENT PRESENCE TABLE. A FRESH node per leg keeps the unbound,
+// explicitly-present-empty, and explicitly-present-value cases separate. The
+// empty-string leg is a PRESENT STRING, never a stand-in for an unset value.
 ZENITH_TEST(UIPinRuntime, Fallback_SetUITextThreeOutcomes)
 {
 	Zenith_UIPinFixture xFixture("TestUIPinTextParityScene");
@@ -565,13 +643,12 @@ ZENITH_TEST(UIPinRuntime, Fallback_SetUITextThreeOutcomes)
 	const u_int uValue = Zenith_GraphNode_SetUIText::uPIN_Value;
 
 	Zenith_GraphBlackboard xBB;
-	UIPin_SeedInt(xBB, "sc", 7);
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 	xCtx.m_xSelf = xFixture.m_xEntity;
 
-	// (a) EMPTY var, nothing wired: the placeholder is left LITERAL, and the
+	// (a) UNSET: the placeholder is left LITERAL, and the
 	//     unbound/unconnected path returns false WITHOUT logging - this pin has no
 	//     const half, so there is no bad access either.
 	{
@@ -586,29 +663,30 @@ ZENITH_TEST(UIPinRuntime, Fallback_SetUITextThreeOutcomes)
 			"an unbound, unconnected ANY pin must not log a bad access - it falls through to 'no value'");
 	}
 
-	// (b) BOUND but ABSENT: the placeholder is CONSUMED with "", exactly as the old
-	//     `pxValue ? ... : ""` did, and the census line is logged once.
+	// (b) PRESENT EMPTY STRING: presence consumes the placeholder while retaining
+	//     the exact empty display text. This is deliberately distinct from (a).
 	{
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "absent";
+		xNode.m_strValueVar = "";
+		xNode.SetInputForTest(uValue, UIPin_WireString(""));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Score: ");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 1u,
-			"a var-BOUND pin logs its FALLBACK line before the blackboard is consulted");
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
-	// (c) BOUND and PRESENT.
+	// (c) PRESENT INT32: ANY preserves the source tag and formats the value.
 	{
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
+		xNode.SetInputForTest(uValue, UIPin_WireInt(7));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Score: 7");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 1u);
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -618,7 +696,8 @@ ZENITH_TEST(UIPinRuntime, Fallback_SetUITextThreeOutcomes)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Total: ";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
+		xNode.SetInputForTest(uValue, UIPin_WireInt(7));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Total: 7");
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
@@ -638,10 +717,40 @@ ZENITH_TEST(UIPinRuntime, Fallback_SetUITextReadsValueBeforeTheTextBearingGate)
 	{
 		return;
 	}
+	EnsureUICountingStringProducerRegistered();
+	const auto RunWired = [&](const char* szElement)
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uText = xDef.AddNode("SetUIText");
+		const u_int uProducer = xDef.AddNode("Test_UICountingStringProducer");
+		ZENITH_ASSERT_NE(uText, 0u);
+		ZENITH_ASSERT_NE(uProducer, 0u);
+		if (uText == 0u || uProducer == 0u) return;
+		Zenith_GraphNode_SetUIText xParams;
+		xParams.m_strElement = szElement;
+		xParams.m_strText = "Score: {}";
+		xParams.m_strValueVar = "";
+		xDef.SetNodeParamsFromInstance(uText, &xParams);
+		xDef.AddEdge(uSource, 0u, uText);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uText, "Value"));
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		Zenith_GraphContext xGraphCtx;
+		xGraphCtx.m_xSelf = xFixture.m_xEntity;
+		xGraphCtx.m_pxGraph = &xGraph; xGraphCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphCtx);
+	};
+	Zenith_GraphNode_UITestCountingStringProducer::s_uPullCount = 0u;
+	RunWired(szFAILPIN_MISSING_ELEMENT);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingStringProducer::s_uPullCount, 0u,
+		"the missing-element guard must run before Value is pulled");
+	RunWired("Bar");
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingStringProducer::s_uPullCount, 1u,
+		"the non-text gate must run after Value is pulled");
 	const u_int uValue = Zenith_GraphNode_SetUIText::uPIN_Value;
 
 	Zenith_GraphBlackboard xBB;
-	UIPin_SeedInt(xBB, "sc", 7);
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
@@ -652,10 +761,10 @@ ZENITH_TEST(UIPinRuntime, Fallback_SetUITextReadsValueBeforeTheTextBearingGate)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Bar";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
+		xNode.SetInputForTest(uValue, UIPin_WireInt(7));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 1u,
-			"the text-bearing gate sits BELOW the hoisted read, so a Rect target must have read the pin");
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -664,10 +773,11 @@ ZENITH_TEST(UIPinRuntime, Fallback_SetUITextReadsValueBeforeTheTextBearingGate)
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = "Title";
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
+		xNode.SetInputForTest(uValue, UIPin_WireInt(7));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xFixture.m_pxTitle->GetText().c_str(), "Score: 7");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 1u);
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -686,6 +796,67 @@ ZENITH_TEST(UIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 	}
 	const u_int uAmount = Zenith_GraphNode_SetUIFillAmount::uPIN_Amount;
 	const u_int uColor = Zenith_GraphNode_SetUIColor::uPIN_Color;
+	EnsureUICountingGuardProducersRegistered();
+	const auto RunFill = [&](const char* szElement, Zenith_Entity xSelf, bool bExpectSuccess)
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uFill = xDef.AddNode("SetUIFillAmount");
+		const u_int uProducer = xDef.AddNode("Test_UICountingFloatProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		Zenith_GraphNode_SetUIFillAmount xParams;
+		xParams.m_strElement = szElement;
+		xParams.m_strAmountVar = "";
+		xDef.SetNodeParamsFromInstance(uFill, &xParams);
+		xDef.AddEdge(uSource, 0u, uFill);
+		xDef.AddEdge(uFill, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uFill, "Amount"));
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		Zenith_GraphContext xGraphCtx;
+		xGraphCtx.m_xSelf = xSelf;
+		xGraphCtx.m_pxGraph = &xGraph; xGraphCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphCtx);
+		ZENITH_ASSERT_EQ(xGraph.GetBlackboard().HasValue("flag"), bExpectSuccess);
+	};
+	const auto RunColor = [&](const char* szElement, bool bExpectSuccess)
+	{
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uColorNode = xDef.AddNode("SetUIColor");
+		const u_int uProducer = xDef.AddNode("Test_UICountingColorProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		Zenith_GraphNode_SetUIColor xParams;
+		xParams.m_strElement = szElement;
+		xParams.m_strColorVar = "";
+		xDef.SetNodeParamsFromInstance(uColorNode, &xParams);
+		xDef.AddEdge(uSource, 0u, uColorNode);
+		xDef.AddEdge(uColorNode, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uColorNode, "Color"));
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		Zenith_GraphContext xGraphCtx;
+		xGraphCtx.m_xSelf = xFixture.m_xEntity;
+		xGraphCtx.m_pxGraph = &xGraph; xGraphCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xGraphCtx);
+		ZENITH_ASSERT_EQ(xGraph.GetBlackboard().HasValue("flag"), bExpectSuccess);
+	};
+	Zenith_GraphNode_UITestCountingFloatProducer::s_fValue = 0.7f;
+	Zenith_GraphNode_UITestCountingFloatProducer::s_uPullCount = 0u;
+	RunFill("Title", xFixture.m_xEntity, false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingFloatProducer::s_uPullCount, 0u);
+	RunFill("Bar", xFixture.m_xNoCanvas, false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingFloatProducer::s_uPullCount, 0u, "a missing UI component must fail before Amount is pulled");
+	RunFill("Bar", xFixture.m_xEntity, true);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingFloatProducer::s_uPullCount, 1u);
+	ZENITH_ASSERT_EQ_FLOAT(xFixture.m_pxBar->GetFillAmount(), 0.7f, 0.001f);
+	Zenith_GraphNode_UITestCountingColorProducer::s_xValue = Zenith_Maths::Vector4(0.2f, 0.3f, 0.4f, 1.0f);
+	Zenith_GraphNode_UITestCountingColorProducer::s_uPullCount = 0u;
+	RunColor(szFAILPIN_MISSING_ELEMENT, false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingColorProducer::s_uPullCount, 0u);
+	RunColor("Title", true);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_UITestCountingColorProducer::s_uPullCount, 1u);
+	UIPin_CheckColor(xFixture.m_pxTitle->GetColor(), Zenith_Maths::Vector4(0.2f, 0.3f, 0.4f, 1.0f), "Title wired guard colour");
 
 	Zenith_GraphBlackboard xBB;
 	UIPin_SeedFloat(xBB, "amt", 0.7f);
@@ -700,7 +871,7 @@ ZENITH_TEST(UIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		xCtx.m_xSelf = xFixture.m_xEntity;
 		Zenith_GraphNode_SetUIFillAmount xNode;
 		xNode.m_strElement = "Title";
-		xNode.m_strAmountVar = "amt";
+		xNode.m_strAmountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uAmount), 0u,
 			"the Amount read moved ABOVE the element-type guard - a failed node pulled its input");
@@ -714,9 +885,10 @@ ZENITH_TEST(UIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		xCtx.m_xSelf = xFixture.m_xEntity;
 		Zenith_GraphNode_SetUIFillAmount xNode;
 		xNode.m_strElement = "Bar";
-		xNode.m_strAmountVar = "amt";
+		xNode.m_strAmountVar = "";
+		xNode.SetInputForTest(uAmount, UIPin_WireFloat(0.7f));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uAmount), 1u);
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uAmount), 0u);
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_pxBar->GetFillAmount(), 0.7f, 0.001f,
 			"the var-name fallback IS the old bb->GetFloat(var, const) read");
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
@@ -728,21 +900,22 @@ ZENITH_TEST(UIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		xCtx.m_xSelf = xFixture.m_xEntity;
 		Zenith_GraphNode_SetUIColor xNode;
 		xNode.m_strElement = szFAILPIN_MISSING_ELEMENT;
-		xNode.m_strColorVar = "col";
+		xNode.m_strColorVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uColor), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
 	// LEG C2: the HOISTED read stays BELOW the element-found guard - a SetUIText
-	// whose element no canvas has FAILS before TryGetInput runs (Shape A), so a
-	// bound var logs nothing. (The Rect leg in the sibling row is the Shape-B twin.)
+	// whose element no canvas has FAILS before TryGetInput runs (Shape A). The
+	// resolved counting-producer graph in the sibling row proves that it is not
+	// pulled. (The Rect leg there is the Shape-B twin.)
 	{
 		xCtx.m_xSelf = xFixture.m_xEntity;
 		Zenith_GraphNode_SetUIText xNode;
 		xNode.m_strElement = szFAILPIN_MISSING_ELEMENT;
 		xNode.m_strText = "Score: {}";
-		xNode.m_strValueVar = "sc";
+		xNode.m_strValueVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetUIText::uPIN_Value), 0u,
 			"the hoisted TryGetInput must sit below the element-found guard");
@@ -755,7 +928,7 @@ ZENITH_TEST(UIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		xCtx.m_xSelf = xFixture.m_xNoCanvas;
 		Zenith_GraphNode_SetUIFillAmount xNode;
 		xNode.m_strElement = "Bar";
-		xNode.m_strAmountVar = "amt";
+		xNode.m_strAmountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uAmount), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
@@ -799,11 +972,9 @@ ZENITH_TEST(UIPinRuntime, Fallback_CountsOncePerPin)
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
-// The row no existing UI test covers, and the one ResolveInput implements
-// differently from a naive read: a var name that is BOUND but resolves to nothing -
-// missing, or present with the wrong tag - falls back to the pin DEFAULT, which is
-// the const property's current value. A FRESH node per leg, because the var name is
-// latched once.
+// The permanent typed-input cases: an UNSET input and a checked wrong-type
+// override both select the pin default, while a correctly typed override wins.
+// A fresh node per leg keeps each resolved input state independent.
 ZENITH_TEST(UIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 {
 	Zenith_UIPinFixture xFixture("TestUIPinVarAbsentScene");
@@ -814,36 +985,49 @@ ZENITH_TEST(UIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 	const u_int uAmount = Zenith_GraphNode_SetUIFillAmount::uPIN_Amount;
 
 	Zenith_GraphBlackboard xBB;
-	UIPin_SeedInt(xBB, "wrongType", 7);		// an INT32 where a FLOAT is expected
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 	xCtx.m_xSelf = xFixture.m_xEntity;
 
-	// (a) the variable does not exist at all.
+	// (a) UNSET: no override or wire is an actual absent input, not a typed zero.
 	{
 		xFixture.m_pxBar->SetFillAmount(0.05f);
 		Zenith_GraphNode_SetUIFillAmount xNode;
 		xNode.m_strElement = "Bar";
 		xNode.m_fAmount = 0.4f;
-		xNode.m_strAmountVar = "missing";
+		xNode.m_strAmountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_pxBar->GetFillAmount(), 0.4f, 0.001f);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
-	// (b) it exists with the WRONG TAG. A typed blackboard getter defaulted on both
-	//     alike and warned about neither - so neither does this.
+	// (b) WRONG TYPE: checked extraction rejects INT32 on FLOAT and retains the
+	//     exact inline default.
 	{
 		xFixture.m_pxBar->SetFillAmount(0.05f);
 		Zenith_GraphNode_SetUIFillAmount xNode;
 		xNode.m_strElement = "Bar";
 		xNode.m_fAmount = 0.4f;
-		xNode.m_strAmountVar = "wrongType";
+		xNode.m_strAmountVar = "";
+		xNode.SetInputForTest(uAmount, UIPin_WireInt(7));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_pxBar->GetFillAmount(), 0.4f, 0.001f);
-		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uAmount), 0u,
-			"the var-name fallback never reaches CheckedExtract, so a wrong tag there is not a MISMATCH");
+		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uAmount), 1u);
+		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
+	}
+
+	// (c) CORRECT TYPE: FLOAT takes precedence over the inline default.
+	{
+		xFixture.m_pxBar->SetFillAmount(0.05f);
+		Zenith_GraphNode_SetUIFillAmount xNode;
+		xNode.m_strElement = "Bar";
+		xNode.m_fAmount = 0.4f;
+		xNode.m_strAmountVar = "";
+		xNode.SetInputForTest(uAmount, UIPin_WireFloat(0.7f));
+		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_pxBar->GetFillAmount(), 0.7f, 0.001f);
+		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uAmount), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }

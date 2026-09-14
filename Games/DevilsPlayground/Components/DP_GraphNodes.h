@@ -605,7 +605,8 @@ public:
 
 // Per-frame door animation: advances openT toward the directional target and
 // applies the swing rotation through the shim; settles Opening -> Open and
-// Closing -> Closed (with the navmesh/collider sync at the Closed settle).
+// Closing -> Closed. The graph inspects the old Anim and updated openT after
+// this node to persist a settle and notify the shim exactly once.
 // Body is the pre-graph DPDoor_Component::OnUpdate animation block verbatim.
 class DPNode_DoorAdvanceAnim : public Zenith_GraphNode
 {
@@ -650,9 +651,6 @@ public:
 			if (fOpenT >= 1.0f)
 			{
 				SetAnim(xContext, DPDoor_Component::DoorAnim::Open);
-				// Steady-state navmesh sync (already unblocked at the
-				// Closed -> Opening transition; idempotent but explicit).
-				pxShim->OnDoorStateChanged();
 			}
 		}
 		else if (iAnim == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closing))
@@ -664,9 +662,6 @@ public:
 			if (fOpenT <= 0.0f)
 			{
 				SetAnim(xContext, DPDoor_Component::DoorAnim::Closed);
-				// Restore navmesh block + physical solidity now the door has
-				// fully closed -- the player capsule bumps into it again.
-				pxShim->OnDoorStateChanged();
 			}
 		}
 		return GRAPH_NODE_STATUS_SUCCESS;
@@ -1244,29 +1239,30 @@ public:
 	const char* GetTypeName() const override { return "DPItemArmChannel"; }
 };
 
-// Pickup commit: clear channel state -> SetHeldItem -> DP_OnItemPickedUp
-// (the retired fall-through order).
+// Pickup commit's guard and channel clear are deliberately separate from the
+// side effect below: successful validation latches the exact entity that was
+// checked, then graph-owned writers persist the clears before Finish runs.
 class DPNode_ItemCommitPickup : public Zenith_GraphNode
 {
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemCommitPickup)
 public:
 	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
-	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 	ZENITH_PROPERTY(std::string, m_strChannelVillagerVar, "channelVillager")
 	ZENITH_PROPERTY(std::string, m_strChannelRemainingVar, "channelRemaining")
+	ZENITH_PROPERTY(std::string, m_strCommittedVillagerVar, "committedVillager")
 	static constexpr u_int uPIN_Villager = 0;
-	static constexpr u_int uPIN_Tag = 1;
-	static constexpr u_int uPIN_ChannelVillager = 2;
-	static constexpr u_int uPIN_ChannelRemaining = 3;
+	static constexpr u_int uPIN_ChannelVillager = 1;
+	static constexpr u_int uPIN_ChannelRemaining = 2;
+	static constexpr u_int uPIN_CommittedVillager = 3;
 
-	// Villager is read before its validity guard and the ordered channel clears;
-	// Tag is read afterwards, preserving the original pickup event ordering.
+	// The output order is the execution order the builder observes: clear owner,
+	// clear remaining, then latch the validated entity for downstream Finish.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemCommitPickup)
 	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, "m_strChannelVillagerVar", PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, "m_strChannelRemainingVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(CommittedVillager, "m_strCommittedVillagerVar", PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1282,14 +1278,39 @@ public:
 		SetOutput(xContext, uPIN_ChannelVillager, xValue);
 		xValue.SetFloat(0.0f);
 		SetOutput(xContext, uPIN_ChannelRemaining, xValue);
-
-		DP_Player::SetHeldItem(xVillager, xContext.m_xSelf.GetEntityID());
-		const DP_ItemTag eTag = (DP_ItemTag)GetInput<int32_t>(xContext, uPIN_Tag);
-		Zenith_EventDispatcher::Get().Dispatch(
-			DP_OnItemPickedUp{ xVillager, xContext.m_xSelf.GetEntityID(), eTag });
+		xValue.SetPackedEntityID(xVillager.GetPacked());
+		SetOutput(xContext, uPIN_CommittedVillager, xValue);
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "DPItemCommitPickup"; }
+};
+
+// Finish is reached only from Commit's validated entity output. It performs
+// the original direct SetHeldItem -> Tag pull -> pickup event order.
+class DPNode_ItemFinishPickup : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(DPNode_ItemFinishPickup)
+public:
+	ZENITH_PROPERTY(std::string, m_strVillagerVar, "committedVillager")
+	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
+	static constexpr u_int uPIN_Villager = 0;
+	static constexpr u_int uPIN_Tag = 1;
+	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemFinishPickup)
+	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		const Zenith_EntityID xVillager = DPGraph_GetEntityInput(*this, xContext, uPIN_Villager);
+		if (!xVillager.IsValid()) return GRAPH_NODE_STATUS_FAILURE;
+		DP_Player::SetHeldItem(xVillager, xContext.m_xSelf.GetEntityID());
+		const DP_ItemTag eTag = static_cast<DP_ItemTag>(GetInput<int32_t>(xContext, uPIN_Tag));
+		Zenith_EventDispatcher::Get().Dispatch(DP_OnItemPickedUp{ xVillager, xContext.m_xSelf.GetEntityID(), eTag });
+		return GRAPH_NODE_STATUS_SUCCESS;
+	}
+	const char* GetTypeName() const override { return "DPItemFinishPickup"; }
 };
 
 // BellSoul special: guarded on specialBehaviour == "rings_bell_on_pickup";
@@ -1709,6 +1730,7 @@ inline void DP_RegisterGraphNodes()
 	xRegistry.RegisterNodeType<DPNode_ItemChildRefusal>("DPItemChildRefusal", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_ItemArmChannel>("DPItemArmChannel", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_ItemCommitPickup>("DPItemCommitPickup", GRAPH_EVENT_NONE, 1, false, "DP");
+	xRegistry.RegisterNodeType<DPNode_ItemFinishPickup>("DPItemFinishPickup", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_ItemRingBell>("DPItemRingBell", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_ItemEvaporate>("DPItemEvaporate", GRAPH_EVENT_NONE, 1, false, "DP");
 	xRegistry.RegisterNodeType<DPNode_PauseCanToggle>("DPPauseCanToggle", GRAPH_EVENT_NONE, 1, false, "DP");

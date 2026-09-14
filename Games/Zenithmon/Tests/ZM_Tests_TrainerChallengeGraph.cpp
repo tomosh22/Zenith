@@ -174,8 +174,8 @@ ZENITH_TEST(ZM_Interaction, TrainerChallengeGraph_BuildsAndResolvesEveryNodeType
 		"type name string does not match anything ZM_RegisterGraphNodes (or the "
 		"engine registry) registered");
 
-	// The one added producer makes the payload read explicit without adding a
-	// decision node: OnCustomEvent -> GetVariable -> ZMPushTrainerChallenge.
+	// The pure GetVariable producer has a blank OUTPUT name. It feeds Push by
+	// the sole data edge; the only execution edge is OnCustomEvent -> Push.
 	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetNodeCount(), 3u,
 		"the trainer challenge graph is a THREE-node payload-wire chain");
 	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetEdgeCount(), 1u,

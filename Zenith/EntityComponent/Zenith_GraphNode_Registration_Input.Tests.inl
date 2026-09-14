@@ -188,19 +188,17 @@ namespace
 			Zenith_InputBinding::KeyAxis2D(ZENITH_KEY_F19, ZENITH_KEY_F20, ZENITH_KEY_F21, ZENITH_KEY_F22));
 	}
 
-	// ONE leg of the ""-divergence row, invoked once per unguarded writer. A
+	// ONE leg of the empty-output-name row, invoked once per unguarded writer. A
 	// function TEMPLATE rather than a table of callbacks because the codebase
 	// forbids std::function and the nine classes share no base beyond
 	// Zenith_GraphNode. The action readers need their action to RESOLVE (their
 	// FAILURE precedes the write), which the requires-expression below supplies
 	// without the device readers having to declare an m_strAction they do not own.
 	template<typename TNode>
-	void InputPin_CheckEmptyResultVarDivergence(u_int uPin, Zenith_PropertyType eType, const char* szClass,
+	void InputPin_CheckEmptyResultVarLatchesSlot(u_int uPin, Zenith_PropertyType eType, const char* szClass,
 		const char* szAction)
 	{
-		Zenith_GraphBlackboard xBB;
 		Zenith_GraphContext xCtx;
-		xCtx.m_pxBlackboard = &xBB;
 
 		TNode xNode;
 		xNode.m_strResultVar = "";
@@ -216,14 +214,12 @@ namespace
 			"%s did not reach its write with an empty result var", szClass);
 
 		const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(uPin);
-		ZENITH_ASSERT_NOT_NULL(pxSlot, "%s: the SLOT must still be latched - only the dual-write is skipped", szClass);
+		ZENITH_ASSERT_NOT_NULL(pxSlot, "%s: the SLOT must still be latched", szClass);
 		if (pxSlot != nullptr)
 		{
 			ZENITH_ASSERT_EQ(static_cast<int>(pxSlot->GetType()), static_cast<int>(eType),
 				"%s: the latched slot carries the wrong tag", szClass);
 		}
-		ZENITH_ASSERT_NULL(xBB.TryGetValue(""), "%s created a blackboard variable literally named \"\"", szClass);
-		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "%s created a blackboard variable with no name to create it under", szClass);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -373,46 +369,40 @@ ZENITH_TEST(InputPinRuntime, NoPinIsAnInputPin)
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 	Zenith_GraphNode_ReadInputAxis xNode;
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_ReadInputAxis::uPIN_Result), 0u,
 		"an OUTPUT pin has no fallback path to count");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
-// ★ THE ONE DELIBERATE DIVERGENCE from today's behaviour, pinned ONCE PER CLASS on
-// each of the NINE unguarded writers: an OUTPUT whose var name reads EMPTY no
-// longer creates a blackboard variable literally named "". Today's unconditional
-// SetValue(m_strResultVar) did. Nothing can have depended on it - a graph cannot
-// declare, wire or read an empty name - and no shipped content moves: every one of
-// these nine defaults to a NON-EMPTY name and the library's only placement
-// (ScriptTest's ReadMovementAxis) leaves that default alone, so no .zscen
-// blackboard changes. ReadPointer's four and ReadMousePickRay's two take NO
-// divergence: their writes were already guarded on a non-empty name, which is
-// exactly what the dual-write rule reproduces.
-ZENITH_TEST(InputPinRuntime, Output_EmptyResultVarCreatesNoBlackboardEntry)
+// Every unguarded writer still latches its typed output slot with an empty output
+// name. The test seam observes the value directly, without depending on the
+// transitional blackboard dual-write.
+ZENITH_TEST(InputPinRuntime, Output_EmptyResultVarStillLatchesTypedSlot)
 {
 	// The two action readers FAIL above their write unless the action resolves, so
 	// their legs need the fixture registered; the seven device readers ignore it.
 	InputPin_RegisterAxisActions();
 
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadKeyState>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadKeyState>(
 		Zenith_GraphNode_ReadKeyState::uPIN_Result, PROPERTY_TYPE_BOOL, "ReadKeyState", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadMovementAxis>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMovementAxis>(
 		Zenith_GraphNode_ReadMovementAxis::uPIN_Result, PROPERTY_TYPE_VECTOR3, "ReadMovementAxis", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadInputAxis>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadInputAxis>(
 		Zenith_GraphNode_ReadInputAxis::uPIN_Result, PROPERTY_TYPE_FLOAT, "ReadInputAxis", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadMousePosition>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMousePosition>(
 		Zenith_GraphNode_ReadMousePosition::uPIN_Result, PROPERTY_TYPE_VECTOR2, "ReadMousePosition", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadMouseDelta>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMouseDelta>(
 		Zenith_GraphNode_ReadMouseDelta::uPIN_Result, PROPERTY_TYPE_VECTOR2, "ReadMouseDelta", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadMouseButtonHeld>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMouseButtonHeld>(
 		Zenith_GraphNode_ReadMouseButtonHeld::uPIN_Result, PROPERTY_TYPE_BOOL, "ReadMouseButtonHeld", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadMouseWheel>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMouseWheel>(
 		Zenith_GraphNode_ReadMouseWheel::uPIN_Result, PROPERTY_TYPE_FLOAT, "ReadMouseWheel", "");
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadActionAxis1D>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadActionAxis1D>(
 		Zenith_GraphNode_ReadActionAxis1D::uPIN_Result, PROPERTY_TYPE_FLOAT, "ReadActionAxis1D",
 		szINPUTPIN_ACTION_AXIS1D);
-	InputPin_CheckEmptyResultVarDivergence<Zenith_GraphNode_ReadActionAxis2D>(
+	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadActionAxis2D>(
 		Zenith_GraphNode_ReadActionAxis2D::uPIN_Result, PROPERTY_TYPE_VECTOR2, "ReadActionAxis2D",
 		szINPUTPIN_ACTION_AXIS2D);
 }
@@ -432,13 +422,11 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxisFailureBuildsNoSlots)
 
 	Zenith_GraphNode_ReadActionAxis1D xNode;
 	xNode.m_strAction = szINPUTPIN_ACTION_AXIS1D;
-	xNode.m_strResultVar = "lean";
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(Zenith_GraphNode_ReadActionAxis1D::uPIN_Result);
 	ZENITH_ASSERT_NOT_NULL(pxSlot, "a resolvable action must latch its Result slot");
 	const float fFirst = InputPin_SlotFloat(pxSlot, "ReadActionAxis1D.Result (resolved)");
-	ZENITH_ASSERT_NOT_NULL(xBB.TryGetValue("lean"), "the named Result must dual-write");
-	const u_int uCount = xBB.GetCount();
 
 	// The SAME instance now names an action nothing registers. The resolve cache
 	// re-resolves because the property string changed.
@@ -446,7 +434,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxisFailureBuildsNoSlots)
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 	ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadActionAxis1D::uPIN_Result),
 		"ReadActionAxis1D.Result (inert)"), fFirst, 0.0001f, "the inert execute overwrote the slot");
-	ZENITH_ASSERT_EQ(xBB.GetCount(), uCount, "the inert execute wrote a blackboard variable");
 
 	// SECONDARY LEG, labelled as such: a FRESH instance that only ever fails has
 	// built no pin state at all, so there is no slot to read.
@@ -456,10 +443,10 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxisFailureBuildsNoSlots)
 		xFreshCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_ReadActionAxis2D xFresh;
 		xFresh.m_strAction = "__NoSuchInputPinAction2D";
+		xFresh.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xFreshCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadActionAxis2D::uPIN_Result),
 			"the FAILURE is above every accessor, so no pin state was ever built");
-		ZENITH_ASSERT_EQ(xFreshBB.GetCount(), 0u);
 	}
 }
 
@@ -531,7 +518,9 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayCarriesValues)
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 
-	Zenith_GraphNode_ReadMousePickRay xNode;		// rayOrigin / rayDir, both named by default
+	Zenith_GraphNode_ReadMousePickRay xNode;
+	xNode.m_strOriginVar = "";
+	xNode.m_strDirectionVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector3 xOrigin = InputPin_SlotVec3(
@@ -548,9 +537,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayCarriesValues)
 		"Origin is not on the near plane directly ahead of the camera");
 	ZENITH_ASSERT_EQ_FLOAT(glm::length(xDirection), 1.0f, 0.01f, "the pick direction is not a unit vector");
 
-	// The dual-write lands exactly where today's guarded SetValue landed.
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("rayOrigin"), xOrigin, 0.0001f);
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("rayDir"), xDirection, 0.0001f);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -610,14 +596,13 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayFailureBuildsNoSlots)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMousePickRay xNode;
+	xNode.m_strOriginVar = "";
+	xNode.m_strDirectionVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const Zenith_Maths::Vector3 xOrigin = InputPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Origin), "ReadMousePickRay.Origin (resolved)");
 	const Zenith_Maths::Vector3 xDirection = InputPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Direction), "ReadMousePickRay.Direction (resolved)");
-	const Zenith_Maths::Vector3 xBlackboardOrigin = xBB.GetVector3("rayOrigin");
-	const Zenith_Maths::Vector3 xBlackboardDirection = xBB.GetVector3("rayDir");
-	const u_int uCount = xBB.GetCount();
 
 	// Take the camera away by pointing the seam at an entity with no camera
 	// component. The SAME instance now fails.
@@ -633,11 +618,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayFailureBuildsNoSlots)
 	ZENITH_ASSERT_NEAR_VEC3(InputPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Direction), "ReadMousePickRay.Direction (failed)"),
 		xDirection, 0.0001f, "the FAILURE overwrote a latched slot");
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("rayOrigin"), xBlackboardOrigin, 0.0001f,
-		"the FAILURE overwrote the named Origin blackboard value");
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("rayDir"), xBlackboardDirection, 0.0001f,
-		"the FAILURE overwrote the named Direction blackboard value");
-	ZENITH_ASSERT_EQ(xBB.GetCount(), uCount, "the FAILURE wrote a blackboard variable");
 
 	// SECONDARY LEG, labelled as such: a FRESH instance that only ever fails built
 	// no pin state, so there is no slot at all.
@@ -646,10 +626,11 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayFailureBuildsNoSlots)
 		Zenith_GraphContext xFreshCtx;
 		xFreshCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_ReadMousePickRay xFresh;
+		xFresh.m_strOriginVar = "";
+		xFresh.m_strDirectionVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xFreshCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Origin));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Direction));
-		ZENITH_ASSERT_EQ(xFreshBB.GetCount(), 0u);
 	}
 }
 
@@ -697,10 +678,10 @@ ZENITH_TEST(InputPinRuntime, Output_ReadKeyStateResultByValue)
 	{
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
 		Zenith_GraphNode_ReadKeyState xNode;
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadKeyState::uPIN_Result),
 			"ReadKeyState.Result (held)"), "the slot did not carry the held key");
-		ZENITH_ASSERT_TRUE(xBB.GetBool("key"), "the default result var must still be dual-written");
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, false);
 	}
 
@@ -710,11 +691,10 @@ ZENITH_TEST(InputPinRuntime, Output_ReadKeyStateResultByValue)
 		Zenith_GraphNode_ReadKeyState xNode;
 		xNode.m_iKeyCode = ZENITH_KEY_SPACE;
 		xNode.m_iMode = 1;
-		xNode.m_strResultVar = "pressed";
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadKeyState::uPIN_Result),
 			"ReadKeyState.Result (pressed)"), "the slot did not carry the press edge");
-		ZENITH_ASSERT_TRUE(xBB.GetBool("pressed"));
 	}
 
 	Zenith_InputSimulator::ResetAllInputState();
@@ -735,13 +715,13 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMovementAxisResultByValue)
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 
-	Zenith_GraphNode_ReadMovementAxis xNode;		// WASD + normalize + "moveDir", all defaults
+	Zenith_GraphNode_ReadMovementAxis xNode;
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector3 xSlot = InputPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMovementAxis::uPIN_Result), "ReadMovementAxis.Result");
 	ZENITH_ASSERT_NEAR_VEC3(xSlot, Zenith_Maths::Vector3(-0.70710678f, 0.0f, 0.70710678f), 0.001f);
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("moveDir"), xSlot, 0.0001f);
 
 	Zenith_InputSimulator::ResetAllInputState();
 	Zenith_InputSimulator::Disable();
@@ -761,19 +741,19 @@ ZENITH_TEST(InputPinRuntime, Output_ReadInputAxisResultByValue)
 	{
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
 		Zenith_GraphNode_ReadInputAxis xNode;
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadInputAxis::uPIN_Result),
 			"ReadInputAxis.Result (+)"), 1.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("axis"), 1.0f, 0.0001f);
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, false);
 	}
 	{
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
 		Zenith_GraphNode_ReadInputAxis xNode;
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadInputAxis::uPIN_Result),
 			"ReadInputAxis.Result (-)"), -1.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("axis"), -1.0f, 0.0001f);
 	}
 
 	Zenith_InputSimulator::ResetAllInputState();
@@ -791,14 +771,13 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePositionResultByValue)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMousePosition xNode;
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector2 xSlot = InputPin_SlotVec2(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMousePosition::uPIN_Result), "ReadMousePosition.Result");
 	ZENITH_ASSERT_EQ_FLOAT(xSlot.x, 100.0f, 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(xSlot.y, 200.0f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("mousePos").x, 100.0f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("mousePos").y, 200.0f, 0.0001f);
 
 	Zenith_InputSimulator::ResetAllInputState();
 	Zenith_InputSimulator::Disable();
@@ -826,14 +805,13 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseDeltaResultByValue)
 
 	Zenith_GraphNode_ReadMouseDelta xNode;
 	xNode.m_fSensitivity = 2.0f;		// so the row also proves the scale is applied
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector2 xSlot = InputPin_SlotVec2(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMouseDelta::uPIN_Result), "ReadMouseDelta.Result");
 	ZENITH_ASSERT_EQ_FLOAT(xSlot.x, 60.0f, 0.001f, "(40-10) * 2.0");
 	ZENITH_ASSERT_EQ_FLOAT(xSlot.y, 80.0f, 0.001f, "(60-20) * 2.0");
-	ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("mouseDelta").x, 60.0f, 0.001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("mouseDelta").y, 80.0f, 0.001f);
 
 	Zenith_InputSimulator::ResetAllInputState();
 	Zenith_InputSimulator::Disable();
@@ -852,18 +830,18 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseButtonHeldResultByValue)
 	// below is the one that carries the value.
 	{
 		Zenith_GraphNode_ReadMouseButtonHeld xNode;
-		xNode.m_strResultVar = "lmbDown";
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(InputPin_SlotBool(xNode.GetOutputForTest(
 			Zenith_GraphNode_ReadMouseButtonHeld::uPIN_Result), "ReadMouseButtonHeld.Result (up)"));
 	}
 	{
 		Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_LEFT);
-		Zenith_GraphNode_ReadMouseButtonHeld xNode;		// default var "mouseHeld"
+		Zenith_GraphNode_ReadMouseButtonHeld xNode;
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(
 			Zenith_GraphNode_ReadMouseButtonHeld::uPIN_Result), "ReadMouseButtonHeld.Result (down)"));
-		ZENITH_ASSERT_TRUE(xBB.GetBool("mouseHeld"));
 	}
 
 	Zenith_InputSimulator::ResetAllInputState();
@@ -885,10 +863,10 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseWheelResultByValue)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMouseWheel xNode;
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadMouseWheel::uPIN_Result),
 		"ReadMouseWheel.Result"), 1.5f, 0.0001f);
-	ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("wheel"), 1.5f, 0.0001f);
 
 	Zenith_InputSimulator::ResetAllInputState();
 	Zenith_InputSimulator::Disable();
@@ -917,7 +895,7 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis1DResultByValue)
 
 	Zenith_GraphNode_ReadActionAxis1D xNode;
 	xNode.m_strAction = szINPUTPIN_ACTION_AXIS1D;
-	xNode.m_strResultVar = "lean";
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const float fSlot = InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadActionAxis1D::uPIN_Result),
@@ -925,14 +903,12 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis1DResultByValue)
 	if (bKeyboardLive)
 	{
 		ZENITH_ASSERT_EQ_FLOAT(fSlot, 1.0f, 0.0001f, "the wired-up key did not reach the axis");
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("lean"), 1.0f, 0.0001f);
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"Output_ReadActionAxis1DResultByValue: the active profile does not own the KEYBOARD scheme, so the "
-			"VALUE leg is not asserted; the slot/dual-write shape still is");
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("lean"), fSlot, 0.0001f);
+			"VALUE leg is not asserted; the typed output slot remains observed");
 	}
 
 	InputPin_BeginActionFrame();
@@ -962,6 +938,7 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis2DResultByValue)
 
 	Zenith_GraphNode_ReadActionAxis2D xNode;
 	xNode.m_strAction = szINPUTPIN_ACTION_AXIS2D;
+	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector2 xSlot = InputPin_SlotVec2(
@@ -972,16 +949,12 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis2DResultByValue)
 		// vector - so (1,1), not (0.707, 0.707).
 		ZENITH_ASSERT_EQ_FLOAT(xSlot.x, 1.0f, 0.0001f);
 		ZENITH_ASSERT_EQ_FLOAT(xSlot.y, 1.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("axis2D").x, 1.0f, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("axis2D").y, 1.0f, 0.0001f);
 	}
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"Output_ReadActionAxis2DResultByValue: the active profile does not own the KEYBOARD scheme, so the "
-			"VALUE leg is not asserted; the slot/dual-write shape still is");
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("axis2D").x, xSlot.x, 0.0001f);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("axis2D").y, xSlot.y, 0.0001f);
+			"VALUE leg is not asserted; the typed output slot remains observed");
 	}
 
 	InputPin_BeginActionFrame();
@@ -1022,7 +995,11 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 
 	// LEG A: the pointer is down.
 	{
-		Zenith_GraphNode_ReadPointer xNode;		// slot 0, pointerDown / pointerPos named by default
+		Zenith_GraphNode_ReadPointer xNode;
+		xNode.m_strDownVar = "";
+		xNode.m_strPositionVar = "";
+		xNode.m_strTapVar = "";
+		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Down),
 			"ReadPointer.Down (down)"), "the pointer slot did not read as down");
@@ -1035,12 +1012,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 		ZENITH_ASSERT_EQ(InputPin_SlotInt32(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Count),
 			"ReadPointer.Count (down)"), 1);
 
-		ZENITH_ASSERT_TRUE(xBB.GetBool("pointerDown"));
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetVector2("pointerPos").x, 321.0f, 0.0001f);
-		// PARITY: Tap and Count default to empty names, so the slots carry them and
-		// the blackboard does not - which is what the deleted guards did.
-		ZENITH_ASSERT_EQ(xBB.GetCount(), 2u, "only the two NAMED outputs may reach the blackboard");
-		ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
 	}
 
 	// LEG B: UP inside the tap window, same frame, same position -> a TAP. The
@@ -1056,7 +1027,10 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 		xTapCtx.m_pxBlackboard = &xTapBB;
 
 		Zenith_GraphNode_ReadPointer xNode;
-		xNode.m_strTapVar = "tap";		// ASSIGNED: the default is empty
+		xNode.m_strDownVar = "";
+		xNode.m_strPositionVar = "";
+		xNode.m_strTapVar = "";
+		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xTapCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Tap),
 			"ReadPointer.Tap (up)"), "a short, still gesture must report a tap");
@@ -1064,7 +1038,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 			"ReadPointer.Down (up)"));
 		ZENITH_ASSERT_EQ(InputPin_SlotInt32(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Count),
 			"ReadPointer.Count (up)"), 0, "a pointer awaiting retirement is not active");
-		ZENITH_ASSERT_TRUE(xTapBB.GetBool("tap"), "a NAMED Tap must dual-write");
 	}
 
 	// LEG C: a slot that does not exist reads as an ABSENT pointer and still
@@ -1077,6 +1050,10 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 
 		Zenith_GraphNode_ReadPointer xNode;
 		xNode.m_iPointerIndex = 99;
+		xNode.m_strDownVar = "";
+		xNode.m_strPositionVar = "";
+		xNode.m_strTapVar = "";
+		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xBadCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Down),
 			"ReadPointer.Down (invalid slot)"));

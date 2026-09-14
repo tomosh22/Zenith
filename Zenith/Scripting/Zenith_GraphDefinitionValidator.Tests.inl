@@ -855,22 +855,18 @@ ZENITH_TEST(GraphPinTable, Definition_ApplyNodeParamsRoundTrip)
 	EnsureValidatorTestNodesRegistered();
 
 	Zenith_GraphDefinition xDef;
-	u_int uReader = 0;
+	u_int uInstance = 0;
 	{
 		Zenith_GraphBuilder xBuilder(xDef);
-		// A POSITIVE fixture, so it DECLARES what it reads: the rule applies to
-		// test authors too, and an undeclared read would fail Build() here for a
-		// reason that has nothing to do with param round-tripping.
-		Zenith_PropertyValue xFloat;
-		xFloat.SetFloat(0.0f);
-		xBuilder.Variable("roundtrip", xFloat);
-		uReader = xBuilder.Node("Test_ValReader");
-		xBuilder.ParamString(uReader, "m_strValueVar", "roundtrip");
+		// Round-trip a permanent parameter, rather than the disposable INPUT
+		// binding property C-1 removes from production node shapes.
+		uInstance = xBuilder.Node("Test_ValInstance");
+		xBuilder.ParamInt(uInstance, "m_iOp", 7);
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 	}
-	ZENITH_ASSERT_NE(uReader, 0u);
+	ZENITH_ASSERT_NE(uInstance, 0u);
 
-	const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find("Test_ValReader");
+	const Zenith_GraphNodeTypeInfo* pxInfo = Zenith_GraphNodeRegistry::Get().Find("Test_ValInstance");
 	ZENITH_ASSERT_NOT_NULL(pxInfo);
 	if (pxInfo == nullptr)
 	{
@@ -878,16 +874,19 @@ ZENITH_TEST(GraphPinTable, Definition_ApplyNodeParamsRoundTrip)
 	}
 
 	Zenith_GraphNode* pxNode = pxInfo->m_pfnCreate();
-	ZENITH_ASSERT_TRUE(xDef.ApplyNodeParams(uReader, pxNode, *pxInfo));
+	ZENITH_ASSERT_TRUE(xDef.ApplyNodeParams(uInstance, pxNode, *pxInfo));
 
-	const Zenith_ReflectedProperty* pxProperty = pxInfo->m_pfnGetPropertyTable()->FindProperty("m_strValueVar");
+	const Zenith_ReflectedProperty* pxProperty = pxInfo->m_pfnGetPropertyTable()->FindProperty("m_iOp");
 	ZENITH_ASSERT_NOT_NULL(pxProperty);
 	if (pxProperty)
 	{
 		Zenith_PropertyValue xValue;
 		pxProperty->m_pfnGet(pxNode, xValue);
-		ZENITH_ASSERT_TRUE(xValue.GetType() == PROPERTY_TYPE_STRING);
-		ZENITH_ASSERT_STREQ(xValue.GetString().c_str(), "roundtrip");
+		ZENITH_ASSERT_TRUE(xValue.GetType() == PROPERTY_TYPE_INT32);
+		if (xValue.GetType() == PROPERTY_TYPE_INT32)
+		{
+			ZENITH_ASSERT_EQ(xValue.GetInt32(), 7);
+		}
 	}
 
 	// A node ID this definition does not contain changes nothing and says so.

@@ -97,12 +97,15 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer, ZM_TRAINER_NONE);
 	ZM_GraphNodeTestCounters::ResetRuntimeStateForTests();
 
-	// Absent and wrong-tag named values use the ordinary NONE const fallback.
+	// The permanent NONE default is independent of blackboard lookup. Keep
+	// contrary absent/wrong-tag blackboards in the fixture, but clear the legacy
+	// name so this remains a C-1-safe default-value proof.
 	Zenith_GraphBlackboard xAbsent;
 	Zenith_GraphContext xAbsentContext; xAbsentContext.m_pxBlackboard = &xAbsent;
 	ZM_GraphNode_PushTrainerChallenge xAbsentNode;
+	xAbsentNode.m_strTrainerIdVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xAbsentNode.Execute(xAbsentContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xAbsentNode.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 1u);
+	ZENITH_ASSERT_EQ(xAbsentNode.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xAbsentNode.GetBadAccessWarningCountForTest(), 0u);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushAttempts, 1u);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer, ZM_TRAINER_NONE);
@@ -111,8 +114,9 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
 	Zenith_PropertyValue xWrongTag; xWrongTag.SetFloat(3.0f);
 	xAbsent.SetValue("zmTrainerId", xWrongTag);
 	ZM_GraphNode_PushTrainerChallenge xWrongNamed;
+	xWrongNamed.m_strTrainerIdVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xWrongNamed.Execute(xAbsentContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xWrongNamed.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 1u);
+	ZENITH_ASSERT_EQ(xWrongNamed.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xWrongNamed.GetMismatchWarningCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xWrongNamed.GetBadAccessWarningCountForTest(), 0u);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushAttempts, 1u);

@@ -357,6 +357,34 @@ the census counts is authored content: a binding logs `FALLBACK` only when its
 var-name property reads NON-EMPTY, so the figure is "how many placed node
 instances still name a blackboard variable instead of carrying a wire".
 
+### B-7.6 corpus readiness
+
+The ordinary `PinRuntime_*` corpus uses resolved data edges, typed slot defaults,
+or `SetInputForTest`; its output observations use `GetOutputForTest`. Resolution
+refusal rows retain their independent value assertion through an explicit test
+wire, and reload coverage seeds persistent blackboard state directly rather than
+using output publication as an implicit write.
+
+The following tests are the intentional transitional witnesses kept until C-1:
+`PinRuntime_UnconnectedReadsVarNameFallbackExactly`,
+`PinRuntime_SetOutputLatchesAndDualWritesWhileVarBound`,
+`PinRuntime_SetOutputDoesNotWriteBlackboardWhenVarEmpty`,
+`PinRuntime_OutputFallbackVarNameBinds`,
+`PinRuntime_TryGetInputTrueForVarPresent`,
+`PinRuntime_TryGetInputFalseForVarAbsent`, and
+`PinRuntime_FallbackUseLoggedOncePerPin` (which covers both `GetInput` and
+`TryGetInput`). The validator keeps
+`Validator_FallbackVarNameBinds` and `Validator_InPlaceAliasingIsWarning` as
+separate negative controls. Lazy self-binding remains permanent behavior and
+uses an unconnected first access followed by a typed test wire; its ordinary
+output assertion is slot-only.
+
+The first seven-suite automated census passed with zero FALLBACK,
+IN_PLACE_ALIASING, and validator errors. Raw Null unit registrations were Combat
+2708, Zenithmon 4561, and RenderTest 2810. This inventory remains a C-1
+readiness record; the final 14-step T3 (with builds), SceneGuard, three D3D
+link proofs, and doc-lint all passed.
+
 **SELF-BINDING — a directly-constructed node binds its own pins (B-6.1).**
 
 **★ PERMANENT RUNTIME BEHAVIOUR, NOT A THIRD TRANSITIONAL PATH.** Per-instance

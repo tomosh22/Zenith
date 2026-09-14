@@ -490,12 +490,15 @@ ZENITH_TEST(GraphPinTable, CombatInitialisedGuardFailuresStampTypedZero)
 	}
 }
 
-ZENITH_TEST(GraphPinTable, CombatGuardReadUsesFallbackOnlyAfterPrerequisites)
+ZENITH_TEST(GraphPinTable, CombatGuardReadUsesPermanentDefaultAfterPrerequisites)
 {
-	// The same named node must not touch Dt while its self guard fails.
+	// One fresh unbound node: no self guard leaves State UNSET; a valid self then
+	// reaches GetInput before the missing-collider guard and stamps typed zero.
 	CombatNode_PlayerPreTick xPreTick;
+	xPreTick.m_strDtVar.clear();
 	Zenith_GraphContext xEmptyContext;
 	ZENITH_ASSERT_EQ(static_cast<int>(xPreTick.Execute(xEmptyContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
+	ZENITH_ASSERT_NULL(xPreTick.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State));
 	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPreTick.GetBadAccessWarningCountForTest(), 0u);
 
@@ -509,8 +512,9 @@ ZENITH_TEST(GraphPinTable, CombatGuardReadUsesFallbackOnlyAfterPrerequisites)
 	xContext.m_xSelf = xPlayer;
 	xContext.m_pxBlackboard = &xBlackboard;
 	ZENITH_ASSERT_EQ(static_cast<int>(xPreTick.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 1u,
-		"the valid player reaches the Dt read before Graph_PreTick rejects the missing collider");
+	ZENITH_ASSERT_EQ(CombatSlotInt(xPreTick.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State),
+		"missing-collider PlayerPreTick.State"), 0);
+	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPreTick.GetBadAccessWarningCountForTest(), 0u);
 	xPlayerComponent.OnDestroy();
 	Combat_GameComponent::RegisterPlayer(xOriginalPlayer);

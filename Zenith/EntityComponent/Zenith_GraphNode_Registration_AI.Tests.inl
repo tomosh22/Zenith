@@ -267,6 +267,60 @@ inline Zenith_PropertyValue AIPin_WireFloat(float fValue)
 	return xValue;
 }
 
+inline Zenith_PropertyValue AIPin_WireVec3(const Zenith_Maths::Vector3& xVec)
+{
+	Zenith_PropertyValue xValue;
+	xValue.SetVector3(xVec);
+	return xValue;
+}
+
+class Zenith_GraphNode_AITestCountingRadiusProducer : public Zenith_GraphNode
+{
+public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_AITestCountingRadiusProducer)
+public:
+	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
+	static constexpr u_int uPIN_Value = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AITestCountingRadiusProducer)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PINS_END
+
+public:
+	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+	{
+		++s_uPullCount;
+		SetOutput<float>(xContext, uPIN_Value, s_fValue);
+		return GRAPH_NODE_STATUS_SUCCESS;
+	}
+	const char* GetTypeName() const override { return "Test_AICountingRadiusProducer"; }
+	inline static u_int s_uPullCount = 0u;
+	inline static float s_fValue = 0.0f;
+};
+
+static void EnsureAICountingRadiusProducerRegistered()
+{
+	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+	xRegistry.EnsureInitialized();
+	if (xRegistry.Find("Test_AICountingRadiusProducer") == nullptr)
+	{
+		xRegistry.RegisterNodeType<Zenith_GraphNode_AITestCountingRadiusProducer>(
+			"Test_AICountingRadiusProducer", GRAPH_EVENT_NONE, 1, false, "Test", false, true);
+	}
+}
+
+static void AIPin_ClearOutputs(Zenith_GraphNode_ReadNavState& xNode)
+{ xNode.m_strStateVar = ""; xNode.m_strRemainingVar = ""; xNode.m_strVelocityVar = ""; }
+static void AIPin_ClearOutputs(Zenith_GraphNode_FindRandomReachablePoint& xNode)
+{ xNode.m_strResultVar = ""; }
+static void AIPin_ClearOutputs(Zenith_GraphNode_QueryPerceivedTargets& xNode)
+{ xNode.m_strCountVar = ""; }
+static void AIPin_ClearOutputs(Zenith_GraphNode_QueryPrimaryPerceivedTarget& xNode)
+{ xNode.m_strResultVar = ""; }
+static void AIPin_ClearOutputs(Zenith_GraphNode_QueryLastHeardSound& xNode)
+{ xNode.m_strPositionVar = ""; xNode.m_strSourceVar = ""; xNode.m_strAgeVar = ""; }
+static void AIPin_ClearOutputs(Zenith_GraphNode_QueryAwarenessOf& xNode)
+{ xNode.m_strResultVar = ""; }
+
 // The slot readers are TAG-CHECKED: Zenith_PropertyValue's typed getters
 // Zenith_Assert on a mismatch, and a wrong slot type must read as a test FAILURE
 // rather than a DebugBreak.
@@ -539,7 +593,7 @@ ZENITH_TEST(AIPinRuntime, Wired_SetNavSpeedFromWire)
 
 	Zenith_GraphNode_SetNavSpeed xNode;
 	xNode.m_fSpeed = 9.0f;
-	xNode.m_strSpeedVar = "speed";
+	xNode.m_strSpeedVar = "";
 	xNode.m_strTargetVar = "";		// self
 	xNode.SetInputForTest(uSpeed, AIPin_WireFloat(5.0f));
 
@@ -583,6 +637,7 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		Zenith_GraphBlackboard xBB;
 		AIPin_SeedVec3(xBB, "centre", xCentre);
 		Zenith_GraphNode_FindRandomReachablePoint xNode;
+		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 6.0f;
 		Zenith_GraphContext xCtx;
@@ -593,24 +648,24 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u, "no var is bound on this leg");
 	}
 
-	// (b) THE VAR BEATS THE CONST: const 6.0 (which just succeeded) against a
-	//     variable holding 0.01 -> FAILURE. The fallback count of 1 also pins that
-	//     the read happens ABOVE the no-point exit.
+	// (b) A resolved wire beats the contrary const: 0.01 must fail even though
+	//     the node's own constant is the successful 6.0.
 	{
 		Zenith_AIPinFixture xFixture("TestAIPinRadiusVarScene");
 		Zenith_GraphBlackboard xBB;
 		AIPin_SeedVec3(xBB, "centre", xCentre);
-		AIPin_SeedFloat(xBB, "radius", 0.01f);
 		Zenith_GraphNode_FindRandomReachablePoint xNode;
+		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 6.0f;
-		xNode.m_strRadiusVar = "radius";
+		xNode.m_strRadiusVar = "";
+		xNode.SetInputForTest(uRadius, AIPin_WireFloat(0.01f));
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
 		xCtx.m_xSelf = xFixture.m_xAgent;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE),
 			"the CONST 6.0 was used instead of the variable's 0.01");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 1u);
+		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u);
 	}
 
 	// (c) THE WIRE BEATS BOTH: const 0.01, var 0.01, wire 6.0 -> SUCCESS, and the
@@ -619,11 +674,11 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		Zenith_AIPinFixture xFixture("TestAIPinRadiusWireScene");
 		Zenith_GraphBlackboard xBB;
 		AIPin_SeedVec3(xBB, "centre", xCentre);
-		AIPin_SeedFloat(xBB, "radius", 0.01f);
 		Zenith_GraphNode_FindRandomReachablePoint xNode;
+		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 0.01f;
-		xNode.m_strRadiusVar = "radius";
+		xNode.m_strRadiusVar = "";
 		xNode.SetInputForTest(uRadius, AIPin_WireFloat(6.0f));
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
@@ -637,9 +692,7 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		const float fDZ = xPoint.z - xCentre.z;
 		ZENITH_ASSERT_TRUE(fDX * fDX + fDZ * fDZ <= 6.0f * 6.0f + 0.01f,
 			"the point (%f, %f, %f) is outside the wired 6.0 XZ radius", xPoint.x, xPoint.y, xPoint.z);
-		// The slot and the dual-write agree: m_strResultVar defaults to
-		// "wanderPoint", so this one is dual-written.
-		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("wanderPoint"), xPoint, 0.0001f);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 1u);
 		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
@@ -669,6 +722,10 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 		Zenith_GraphBlackboard xBB;
 		xCtx.m_pxBlackboard = &xBB;
 		Zenith_GraphNode_ReadNavState xNode;
+		AIPin_ClearOutputs(xNode);
+		xNode.m_strStateVar = "";
+		xNode.m_strRemainingVar = "";
+		xNode.m_strVelocityVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNode.GetOutputForTest(uState), "pre-tick ReadNavState.State"), 1);
 	}
@@ -682,8 +739,9 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 		Zenith_GraphBlackboard xBB;
 		xCtx.m_pxBlackboard = &xBB;
 		Zenith_GraphNode_ReadNavState xNode;
-		xNode.m_strRemainingVar = "left";
-		xNode.m_strVelocityVar = "vel";
+		AIPin_ClearOutputs(xNode);
+		xNode.m_strRemainingVar = "";
+		xNode.m_strVelocityVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 		const int32_t iState = AIPin_SlotInt(xNode.GetOutputForTest(uState), "ReadNavState.State");
@@ -701,9 +759,7 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 		ZENITH_ASSERT_TRUE(glm::dot(xVelocity, xVelocity) > 0.0001f, "the agent is not moving after a tick");
 
 		// The dual-write lands exactly where today's SetValue did.
-		ZENITH_ASSERT_EQ(xBB.GetInt32("navState"), 2);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("left"), fRemaining, 0.0001f);
-		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("vel"), xVelocity, 0.0001f);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 	}
 
 	// (c) THE PARITY LEG, on a FRESH node and a FRESH blackboard: m_strRemainingVar
@@ -715,6 +771,7 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 		Zenith_GraphBlackboard xFreshBB;
 		xCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_ReadNavState xFresh;
+		AIPin_ClearOutputs(xFresh);
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(AIPin_SlotFloat(xFresh.GetOutputForTest(uRemaining), "unnamed Remaining") > 10.0f);
 		const Zenith_Maths::Vector3 xVelocity = AIPin_SlotVec3(xFresh.GetOutputForTest(uVelocity),
@@ -723,7 +780,7 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 			"the unnamed Velocity slot must still latch a moving value");
 		ZENITH_ASSERT_NULL(xFreshBB.TryGetValue("left"), "a fresh node wrote a name it does not carry");
 		ZENITH_ASSERT_NULL(xFreshBB.TryGetValue(""), "an EMPTY output name created a blackboard variable");
-		ZENITH_ASSERT_EQ(xFreshBB.GetCount(), 1u, "only the named State output may reach the blackboard");
+		ZENITH_ASSERT_EQ(xFreshBB.GetCount(), 0u, "cleared output names create no blackboard entries");
 	}
 }
 
@@ -747,11 +804,12 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateFailureBuildsNoSlotsAndWritesNothin
 	// SUCCESS first, on ONE instance, so the FAILURE below has something to fail
 	// to preserve.
 	Zenith_GraphNode_ReadNavState xNode;
+	AIPin_ClearOutputs(xNode);
 	xCtx.m_xSelf = xFixture.m_xAgent;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(AIPin_SlotInt(xNode.GetOutputForTest(uState), "ReadNavState.State"), 1);
 	const u_int uBlackboardCount = xBB.GetCount();
-	ZENITH_ASSERT_EQ(uBlackboardCount, 1u, "navState is the one default-named output");
+	ZENITH_ASSERT_EQ(uBlackboardCount, 0u, "all output names are cleared");
 
 	// The SAME instance, now aimed at an entity with no Zenith_AIAgentComponent.
 	xCtx.m_xSelf = xFixture.m_xNoAgent;
@@ -764,6 +822,7 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateFailureBuildsNoSlotsAndWritesNothin
 	// built NO pin state at all - there is no slot to read, stamped zero or not.
 	{
 		Zenith_GraphNode_ReadNavState xFresh;
+		AIPin_ClearOutputs(xFresh);
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(uState),
 			"the FAILURE is above every accessor, so no pin state was ever built");
@@ -794,6 +853,7 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointEmptyResultVarCreatesNo
 	xCtx.m_xSelf = xFixture.m_xAgent;
 
 	Zenith_GraphNode_FindRandomReachablePoint xNode;
+	AIPin_ClearOutputs(xNode);
 	xNode.m_strCenterVar = "centre";
 	xNode.m_fRadius = 5.0f;
 	xNode.m_strResultVar = "";
@@ -809,16 +869,21 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointEmptyResultVarCreatesNo
 	ZENITH_ASSERT_TRUE(fDX * fDX + fDZ * fDZ <= 5.0f * 5.0f + 0.01f, "the point is outside the 5.0 XZ radius");
 
 	ZENITH_ASSERT_NULL(xBB.TryGetValue(""), "an EMPTY result name created a blackboard variable");
-	ZENITH_ASSERT_EQ(xBB.GetCount(), 1u, "only the seeded centre may be in the blackboard");
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 1u, "only the permanent Centre selector is present");
 
-	// The NAMED twin, as the positive control: the dual-write lands exactly where
-	// today's SetValue did.
+	// A fresh instance independently produces a valid point; random samples need
+	// not match one another.
 	Zenith_GraphNode_FindRandomReachablePoint xNamed;
+	AIPin_ClearOutputs(xNamed);
 	xNamed.m_strCenterVar = "centre";
+	xNamed.m_strResultVar = "";
 	xNamed.m_fRadius = 5.0f;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("wanderPoint"),
-		AIPin_SlotVec3(xNamed.GetOutputForTest(uResult), "named Result"), 0.0001f);
+	const Zenith_Maths::Vector3 xSecondPoint = AIPin_SlotVec3(xNamed.GetOutputForTest(uResult), "second Result");
+	ZENITH_ASSERT_TRUE(xSecondPoint.x * xSecondPoint.x + xSecondPoint.z * xSecondPoint.z > 1.0f);
+	const float fSecondDX = xSecondPoint.x - xCentre.x;
+	const float fSecondDZ = xSecondPoint.z - xCentre.z;
+	ZENITH_ASSERT_TRUE(fSecondDX * fSecondDX + fSecondDZ * fSecondDZ <= 25.0f + 0.01f);
 }
 
 // ★ SHAPE B, and this node is the ONLY place it occurs in the TU. The
@@ -841,9 +906,10 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointFailureShapesDiffer)
 	// for why it is two zeros and not one).
 	{
 		Zenith_GraphNode_FindRandomReachablePoint xNode;
+		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 0.01f;
-		xNode.m_strResultVar = "wander";
+		xNode.m_strResultVar = "";
 		xCtx.m_xSelf = xFixture.m_xAgent;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NEAR_VEC3(AIPin_SlotVec3(xNode.GetOutputForTest(uResult), "no-point Result"),
@@ -856,6 +922,7 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointFailureShapesDiffer)
 	// nothing was built and there is no slot at all.
 	{
 		Zenith_GraphNode_FindRandomReachablePoint xNode;
+		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 5.0f;
 		xCtx.m_xSelf = xFixture.m_xNoAgent;
@@ -886,6 +953,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPerceivedTargetsCountByValue)
 	//     unchanged - the SLOT is what is new.
 	{
 		Zenith_GraphNode_QueryPerceivedTargets xNode;
+		AIPin_ClearOutputs(xNode);
 		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNode.GetOutputForTest(uCount), "QueryPerceivedTargets.Count"), 1);
@@ -899,9 +967,10 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPerceivedTargetsCountByValue)
 	//     dual-writes exactly as today.
 	{
 		Zenith_GraphNode_QueryPerceivedTargets xNamed;
+		AIPin_ClearOutputs(xNamed);
 		ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNamed.GetOutputForTest(uCount), "named Count"), 1);
-		ZENITH_ASSERT_EQ(xBB.GetInt32("perceivedCount"), 1);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 		ZENITH_ASSERT_NOT_NULL(xBB.TryGetList("perceived"));
 		if (xBB.TryGetList("perceived") != nullptr)
 		{
@@ -918,7 +987,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPerceivedTargetsCountByValue)
 		ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNamed.GetOutputForTest(uCount), "post-FAILURE Count"), 1,
 			"the FAILURE overwrote the earlier count");
-		ZENITH_ASSERT_EQ(xBB.GetInt32("perceivedCount"), 1);
+		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNamed.GetOutputForTest(uCount), "retained Count"), 1);
 		ZENITH_ASSERT_EQ(xBB.GetCount(), uBlackboardCount, "the FAILURE wrote a blackboard variable");
 		ZENITH_ASSERT_NOT_NULL(xBB.TryGetList("perceived"));
 		if (xBB.TryGetList("perceived") != nullptr)
@@ -935,6 +1004,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPerceivedTargetsCountByValue)
 		Zenith_GraphBlackboard xFreshBB;
 		xCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_QueryPerceivedTargets xFresh;
+		AIPin_ClearOutputs(xFresh);
 		xFresh.m_strTargetVar = "__missing_target__";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(uCount),
@@ -965,16 +1035,19 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPrimaryPerceivedTargetResultByValue)
 	// (a) the default name "target" -> dual-written.
 	{
 		Zenith_GraphNode_QueryPrimaryPerceivedTarget xNode;
+		AIPin_ClearOutputs(xNode);
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xNode.GetOutputForTest(uResult), "QueryPrimaryPerceivedTarget.Result"),
 			ulPrey);
-		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("target"), ulPrey);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 	}
 
 	// (b) THE `""` DIVERGENCE LEG: this write was always unconditional, so an empty
 	//     name used to create a variable named "". It no longer does.
 	{
 		Zenith_GraphNode_QueryPrimaryPerceivedTarget xEmpty;
+		AIPin_ClearOutputs(xEmpty);
 		xEmpty.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xEmpty.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xEmpty.GetOutputForTest(uResult), "unnamed Result"), ulPrey);
@@ -999,6 +1072,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPrimaryPerceivedTargetFailureBuildsNoSlots
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_QueryPrimaryPerceivedTarget xNode;
+	AIPin_ClearOutputs(xNode);
 	xCtx.m_xSelf = xFixture.m_xSeer;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const u_int uBlackboardCount = xBB.GetCount();
@@ -1013,6 +1087,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPrimaryPerceivedTargetFailureBuildsNoSlots
 
 	{
 		Zenith_GraphNode_QueryPrimaryPerceivedTarget xFresh;
+		AIPin_ClearOutputs(xFresh);
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(uResult),
 			"the no-primary FAILURE is above the write, so no pin state was ever built");
@@ -1055,30 +1130,33 @@ ZENITH_TEST(AIPinRuntime, Output_QueryLastHeardSoundCarriesAllThreeValues)
 	//     EMPTY - the PARITY half, since both writes were guarded before.
 	{
 		Zenith_GraphNode_QueryLastHeardSound xNode;
+		AIPin_ClearOutputs(xNode);
+		xNode.m_strPositionVar = "";
+		xNode.m_strSourceVar = "";
+		xNode.m_strAgeVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS),
 			"the seer heard nothing - the stimulus never reached it");
 		ZENITH_ASSERT_NEAR_VEC3(AIPin_SlotVec3(xNode.GetOutputForTest(uPosition), "QueryLastHeardSound.Position"),
 			xSoundPos, 0.001f);
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xNode.GetOutputForTest(uSource), "QueryLastHeardSound.Source"), ulPrey);
 		ZENITH_ASSERT_EQ_FLOAT(AIPin_SlotFloat(xNode.GetOutputForTest(uAge), "QueryLastHeardSound.Age"), 0.1f, 0.001f);
-		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("heardPos"), xSoundPos, 0.001f);
-		ZENITH_ASSERT_NULL(xBB.TryGetValue(""), "the two EMPTY names created a blackboard variable");
-		ZENITH_ASSERT_EQ(xBB.GetCount(), 1u, "only heardPos may reach the blackboard by default");
+		ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 	}
 
 	// (b) NAMED: giving Source and Age names dual-writes them too - the same
 	//     non-empty rule the deleted guards applied.
 	{
 		Zenith_GraphNode_QueryLastHeardSound xNamed;
-		xNamed.m_strSourceVar = "heardSrc";
-		xNamed.m_strAgeVar = "heardAge";
+		AIPin_ClearOutputs(xNamed);
+		xNamed.m_strPositionVar = "";
+		xNamed.m_strSourceVar = "";
+		xNamed.m_strAgeVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_NEAR_VEC3(AIPin_SlotVec3(xNamed.GetOutputForTest(uPosition), "named Position"), xSoundPos, 0.001f);
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xNamed.GetOutputForTest(uSource), "named Source"), ulPrey);
 		ZENITH_ASSERT_EQ_FLOAT(AIPin_SlotFloat(xNamed.GetOutputForTest(uAge), "named Age"), 0.1f, 0.001f);
-		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("heardPos"), xSoundPos, 0.001f);
-		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("heardSrc"), ulPrey);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("heardAge"), 0.1f, 0.001f);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 
 		const u_int uBlackboardCount = xBB.GetCount();
 		xCtx.m_xSelf = xFixture.m_xPrey;
@@ -1089,9 +1167,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryLastHeardSoundCarriesAllThreeValues)
 			"the FAILURE overwrote the earlier Source");
 		ZENITH_ASSERT_EQ_FLOAT(AIPin_SlotFloat(xNamed.GetOutputForTest(uAge), "post-FAILURE Age"), 0.1f, 0.001f,
 			"the FAILURE overwrote the earlier Age");
-		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("heardPos"), xSoundPos, 0.001f);
-		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("heardSrc"), ulPrey);
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("heardAge"), 0.1f, 0.001f);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), uBlackboardCount);
 		ZENITH_ASSERT_EQ(xBB.GetCount(), uBlackboardCount, "the FAILURE wrote a blackboard variable");
 	}
 
@@ -1100,6 +1176,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryLastHeardSoundCarriesAllThreeValues)
 		Zenith_GraphBlackboard xFreshBB;
 		xCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_QueryLastHeardSound xFresh;
+		AIPin_ClearOutputs(xFresh);
 		xCtx.m_xSelf = xFixture.m_xPrey;
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(uPosition),
@@ -1134,10 +1211,12 @@ ZENITH_TEST(AIPinRuntime, Output_QueryAwarenessOfResultByValue)
 	float fAwareness = 0.0f;
 	{
 		Zenith_GraphNode_QueryAwarenessOf xNode;
+		AIPin_ClearOutputs(xNode);
+		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		fAwareness = AIPin_SlotFloat(xNode.GetOutputForTest(uResult), "QueryAwarenessOf.Result");
 		ZENITH_ASSERT_TRUE(fAwareness > 0.0f, "awareness is 0 - the slot is indistinguishable from unwritten");
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("awareness"), fAwareness, 0.0001f);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 1u);
 
 		// SUCCESS-then-FAILURE on the SAME instance (Shape A): an `Of` reference that
 		// resolves to nothing fails before the write, the earlier Result stays
@@ -1155,18 +1234,20 @@ ZENITH_TEST(AIPinRuntime, Output_QueryAwarenessOfResultByValue)
 	{
 		const u_int uCountBefore = xBB.GetCount();
 		Zenith_GraphNode_QueryAwarenessOf xFresh;
+		AIPin_ClearOutputs(xFresh);
 		xFresh.m_strOfVar = "__nobody__";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(uResult),
 			"the unresolved Of FAILURE is above every accessor, so no pin state was built");
 		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("target"), xFixture.m_xPrey.GetEntityID().GetPacked());
-		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("awareness"), fAwareness, 0.0001f);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), uCountBefore);
 		ZENITH_ASSERT_EQ(xBB.GetCount(), uCountBefore, "a fresh FAILURE wrote a blackboard variable");
 	}
 
 	// THE `""` DIVERGENCE LEG: this write was always unconditional.
 	{
 		Zenith_GraphNode_QueryAwarenessOf xEmpty;
+		AIPin_ClearOutputs(xEmpty);
 		xEmpty.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xEmpty.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(AIPin_SlotFloat(xEmpty.GetOutputForTest(uResult), "unnamed Result") > 0.0f);
@@ -1183,35 +1264,37 @@ ZENITH_TEST(AIPinRuntime, Output_QueryAwarenessOfResultByValue)
 // logs, so every fallback row here ASSIGNS its var name.
 ZENITH_TEST(AIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 {
+	EnsureAICountingRadiusProducerRegistered();
 	Zenith_AIPinFixture xFixture("TestAIPinGuardScene");
-	const u_int uSpeed = Zenith_GraphNode_SetNavSpeed::uPIN_Speed;
-
-	Zenith_GraphBlackboard xBB;
-	AIPin_SeedFloat(xBB, "speed", 7.0f);
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-
-	// LEG A: a transform but NO Zenith_AIAgentComponent -> FAILURE, and the
-	// var-bound Speed pin was never read.
+	const auto Run = [](Zenith_Entity xSelf, bool bExpectSuccess)
 	{
-		Zenith_GraphNode_SetNavSpeed xNode;
-		xNode.m_strSpeedVar = "speed";
-		xCtx.m_xSelf = xFixture.m_xNoAgent;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSpeed), 0u,
-			"the Speed read moved ABOVE the agent guard - a failed node pulled its input");
-	}
-
-	// LEG B, THE POSITIVE CONTROL.
-	{
-		Zenith_GraphNode_SetNavSpeed xNode;
-		xNode.m_strSpeedVar = "speed";
-		xCtx.m_xSelf = xFixture.m_xAgent;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSpeed), 1u);
-		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xNavAgent.GetMoveSpeed(), 7.0f, 0.001f);
-	}
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uSpeed = xDef.AddNode("SetNavSpeed");
+		const u_int uProducer = xDef.AddNode("Test_AICountingRadiusProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		Zenith_GraphNode_SetNavSpeed xParams;
+		xParams.m_strSpeedVar = "";
+		xDef.SetNodeParamsFromInstance(uSpeed, &xParams);
+		xDef.AddEdge(uSource, 0u, uSpeed);
+		xDef.AddEdge(uSpeed, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uSpeed, "Speed"));
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		Zenith_GraphContext xCtx;
+		xCtx.m_xSelf = xSelf;
+		xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xCtx);
+		ZENITH_ASSERT_EQ(xGraph.GetBlackboard().HasValue("flag"), bExpectSuccess);
+	};
+	Zenith_GraphNode_AITestCountingRadiusProducer::s_fValue = 7.0f;
+	Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount = 0u;
+	Run(xFixture.m_xNoAgent, false);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount, 0u,
+		"the missing-agent guard must run before Speed is pulled");
+	Run(xFixture.m_xAgent, true);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount, 1u);
+	ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xNavAgent.GetMoveSpeed(), 7.0f, 0.001f);
 }
 
 // ★ FindRandomReachablePoint IS THE TU'S EXCEPTION to "the read is after every
@@ -1222,62 +1305,47 @@ ZENITH_TEST(AIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 // producer), while a missing agent or an unresolvable centre has not.
 ZENITH_TEST(AIPinRuntime, Fallback_RadiusReadBeforeNoPointFailure)
 {
+	EnsureAICountingRadiusProducerRegistered();
 	Zenith_AIPinFixture xFixture("TestAIPinRadiusOrderScene");
-	const u_int uRadius = Zenith_GraphNode_FindRandomReachablePoint::uPIN_Radius;
-
-	Zenith_GraphBlackboard xBB;
-	AIPin_SeedVec3(xBB, "centre", Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f));
-	AIPin_SeedVec3(xBB, "farCentre", Zenith_Maths::Vector3(500.0f, 0.0f, 500.0f));
-	AIPin_SeedFloat(xBB, "radZero", 0.0f);
-	AIPin_SeedFloat(xBB, "radTwo", 2.0f);
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-
-	// (a) A ZERO RADIUS short-circuits inside GetRandomReachablePointInRadius,
-	//     which is the first thing AFTER the read -> FAILURE, and the pin WAS read.
+	const auto Run = [](Zenith_Entity xSelf, const char* szCenter, const Zenith_Maths::Vector3& xCenter, float fRadius)
 	{
-		Zenith_GraphNode_FindRandomReachablePoint xNode;
-		xNode.m_strCenterVar = "centre";
-		xNode.m_strRadiusVar = "radZero";
-		xCtx.m_xSelf = xFixture.m_xAgent;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 1u,
-			"a zero radius must have read the pin already - the read sits above the sampling call");
-	}
-
-	// (b) A CENTRE FARTHER OFF-MESH THAN radius + 5 fails FindNearestPolygon
-	//     deterministically, also BELOW the read.
-	{
-		Zenith_GraphNode_FindRandomReachablePoint xNode;
-		xNode.m_strCenterVar = "farCentre";
-		xNode.m_strRadiusVar = "radTwo";
-		xCtx.m_xSelf = xFixture.m_xAgent;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 1u);
-	}
-
-	// (c) NO BOUND AGENT, hence no mesh: the one guard ABOVE the read.
-	{
-		Zenith_GraphNode_FindRandomReachablePoint xNode;
-		xNode.m_strCenterVar = "centre";
-		xNode.m_strRadiusVar = "radTwo";
-		xCtx.m_xSelf = xFixture.m_xNoAgent;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u,
-			"the navmesh guard is above the Radius read");
-	}
-
-	// (d) AN UNRESOLVABLE CENTRE: the other guard above the read.
-	{
-		Zenith_GraphNode_FindRandomReachablePoint xNode;
-		xNode.m_strCenterVar = "noSuchCentre";
-		xNode.m_strRadiusVar = "radTwo";
-		xCtx.m_xSelf = xFixture.m_xAgent;
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u,
-			"the centre-resolve guard is above the Radius read");
-	}
+		Zenith_GraphDefinition xDef;
+		const u_int uSource = xDef.AddNode("OnUpdate");
+		const u_int uFind = xDef.AddNode("FindRandomReachablePoint");
+		const u_int uProducer = xDef.AddNode("Test_AICountingRadiusProducer");
+		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
+		ZENITH_ASSERT_NE(uFind, 0u);
+		ZENITH_ASSERT_NE(uProducer, 0u);
+		if (uFind == 0u || uProducer == 0u) return;
+		Zenith_GraphNode_FindRandomReachablePoint xParams;
+		xParams.m_strCenterVar = szCenter;
+		xParams.m_strRadiusVar = "";
+		xParams.m_strResultVar = "";
+		xDef.SetNodeParamsFromInstance(uFind, &xParams);
+		xDef.AddEdge(uSource, 0u, uFind);
+		xDef.AddEdge(uFind, 0u, uSentinel);
+		ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uProducer, "Value", uFind, "Radius"));
+		Zenith_BehaviourGraph xGraph;
+		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
+		ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(), 0u);
+		if (std::string(szCenter) != "noSuchCentre") xGraph.GetBlackboard().SetValue(szCenter, AIPin_WireVec3(xCenter));
+		Zenith_GraphNode_AITestCountingRadiusProducer::s_fValue = fRadius;
+		Zenith_GraphContext xCtx;
+		xCtx.m_xSelf = xSelf;
+		xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE, xCtx);
+		ZENITH_ASSERT_FALSE(xGraph.GetBlackboard().HasValue("flag"), "the radius-order legs are FAILURE paths");
+	};
+	Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount = 0u;
+	Run(xFixture.m_xAgent, "centre", Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f), 0.0f);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount, 1u);
+	Run(xFixture.m_xAgent, "farCentre", Zenith_Maths::Vector3(500.0f, 0.0f, 500.0f), 2.0f);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount, 2u);
+	Run(xFixture.m_xNoAgent, "centre", Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f), 2.0f);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount, 2u,
+		"the missing-agent guard must run before Radius is pulled");
+	Run(xFixture.m_xAgent, "noSuchCentre", Zenith_Maths::Vector3(0.0f), 2.0f);
+	ZENITH_ASSERT_EQ(Zenith_GraphNode_AITestCountingRadiusProducer::s_uPullCount, 2u,
+		"the unresolved Centre guard must run before Radius is pulled");
 }
 
 // The CENSUS observable. Only a MIGRATED node can reach the transitional var-name
@@ -1310,17 +1378,15 @@ ZENITH_TEST(AIPinRuntime, Fallback_CountsOncePerPin)
 	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(1u), 0u);
 }
 
-// The row ResolveInput implements differently from a naive read: a var name that
-// names NOTHING, or names something of the wrong TYPE, falls back to the CONST -
-// it does not fall back to the type's zero. A FRESH node per leg, because pin
-// state (including the var name) is latched on the first accessor call.
+// An unconnected pin takes its const; an actual wire with the wrong type also takes
+// that const, reporting the pin mismatch. A fresh node is used for each leg because
+// input state is latched after its first accessor call.
 ZENITH_TEST(AIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 {
 	Zenith_AIPinFixture xFixture("TestAIPinAbsentVarScene");
 	const u_int uSpeed = Zenith_GraphNode_SetNavSpeed::uPIN_Speed;
 
 	Zenith_GraphBlackboard xBB;
-	AIPin_SeedInt(xBB, "wrongType", 42);
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
@@ -1331,22 +1397,25 @@ ZENITH_TEST(AIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 		xFixture.m_xNavAgent.SetMoveSpeed(0.0f);
 		Zenith_GraphNode_SetNavSpeed xNode;
 		xNode.m_fSpeed = 3.0f;
-		xNode.m_strSpeedVar = "missing";
+		xNode.m_strSpeedVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xNavAgent.GetMoveSpeed(), 3.0f, 0.001f);
 	}
 
-	// (b) the variable exists but holds an INT32 where the pin wants a FLOAT.
+	// (b) an actual INT32 wired into the FLOAT pin must reject the wire and take
+	//     the const, reporting one mismatch.
 	{
 		xFixture.m_xNavAgent.SetMoveSpeed(0.0f);
 		Zenith_GraphNode_SetNavSpeed xNode;
 		xNode.m_fSpeed = 3.0f;
-		xNode.m_strSpeedVar = "wrongType";
+		xNode.m_strSpeedVar = "";
+		Zenith_PropertyValue xWrongType;
+		xWrongType.SetInt32(42);
+		xNode.SetInputForTest(uSpeed, xWrongType);
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xNavAgent.GetMoveSpeed(), 3.0f, 0.001f,
-			"a wrongly-tagged variable must take the CONST, not the type zero and not 42");
-		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uSpeed), 0u,
-			"the var-name fallback is not a wire, so a tag mismatch there is not a MISMATCH warning");
+			"a wrongly-tagged wire must take the CONST, not the type zero and not 42");
+		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uSpeed), 1u);
 	}
 }
 

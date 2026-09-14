@@ -42,6 +42,7 @@
 // ============================================================================
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "DataStream/Zenith_DataStream.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "Scripting/Zenith_GraphDefinitionValidator.h"
@@ -58,6 +59,8 @@
 
 #include <cstdio>
 #include <cstring>
+
+void BuildGraph_DPVillagerRawBaselineForTest(Zenith_GraphBuilder& xBuilder);
 
 namespace
 {
@@ -94,6 +97,19 @@ namespace
 		return g_iFailures == 0 && g_iChecks > 0;
 	}
 
+	bool VillagerDefinitionsSerializeIdentically(Zenith_GraphDefinition& xRaw, Zenith_GraphDefinition& xFactory)
+	{
+		Zenith_DataStream xRawStream, xFactoryStream;
+		xRaw.WriteToDataStream(xRawStream);
+		xFactory.WriteToDataStream(xFactoryStream);
+		if (xRawStream.GetCursor() != xFactoryStream.GetCursor()) return false;
+		const u_int8* pRaw = static_cast<const u_int8*>(xRawStream.GetData());
+		const u_int8* pFactory = static_cast<const u_int8*>(xFactoryStream.GetData());
+		for (uint64_t uByte = 0; uByte < xRawStream.GetCursor(); ++uByte)
+			if (pRaw[uByte] != pFactory[uByte]) return false;
+		return true;
+	}
+
 	struct GraphBuilderRow
 	{
 		const char* m_szAssetPath;
@@ -122,16 +138,16 @@ namespace
 
 	u_int ExpectedDataEdgeCount(const char* szAssetPath)
 	{
-		if (std::strcmp(szAssetPath, DPVillager_Component::kszGraphAsset) == 0) return 31;
-		if (std::strcmp(szAssetPath, DPItemBase_Component::kszGraphAsset) == 0) return 33;
+		if (std::strcmp(szAssetPath, DPVillager_Component::kszGraphAsset) == 0) return 35;
+		if (std::strcmp(szAssetPath, DPItemBase_Component::kszGraphAsset) == 0) return 38;
 		if (std::strcmp(szAssetPath, DPForge_Component::kszGraphAsset) == 0) return 3;
 		if (std::strcmp(szAssetPath, DPPlayerController_Component::kszGraphAsset) == 0) return 3;
 		if (std::strcmp(szAssetPath, DPPauseMenuController_Component::kszGraphAsset) == 0) return 6;
-		if (std::strcmp(szAssetPath, Priest_Component::kszGraphAsset) == 0) return 5;
+		if (std::strcmp(szAssetPath, Priest_Component::kszGraphAsset) == 0) return 6;
 		if (std::strcmp(szAssetPath, "game:Graphs/DP_Pentagram.bgraph") == 0) return 7;
 		if (std::strcmp(szAssetPath, "game:Graphs/DP_Chest.bgraph") == 0) return 9;
 		if (std::strcmp(szAssetPath, "game:Graphs/DP_DoubleDoor.bgraph") == 0) return 5;
-		if (std::strcmp(szAssetPath, "game:Graphs/DP_Door.bgraph") == 0) return 7;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Door.bgraph") == 0) return 16;
 		return 0;
 	}
 
@@ -146,7 +162,7 @@ namespace
 		if (std::strcmp(szAssetPath, "game:Graphs/DP_Pentagram.bgraph") == 0) return 4;
 		if (std::strcmp(szAssetPath, "game:Graphs/DP_Chest.bgraph") == 0) return 4;
 		if (std::strcmp(szAssetPath, "game:Graphs/DP_DoubleDoor.bgraph") == 0) return 4;
-		if (std::strcmp(szAssetPath, "game:Graphs/DP_Door.bgraph") == 0) return 6;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Door.bgraph") == 0) return 10;
 		return 0;	// DP_MainMenu and DP_NoiseMachine intentionally have none.
 	}
 
@@ -274,6 +290,22 @@ namespace
 		CheckEqInt(static_cast<int>(uGRAPH_BUILDER_ROWS), 12,
 			"the builder table still lists all twelve graphs DevilsPlayground authors");
 		u_int uTotalGetVariables = 0;
+		Zenith_GraphDefinition xVillagerRawDefinition;
+		Zenith_GraphDefinition xVillagerFactoryDefinition;
+		bool bVillagerRawBuilt = false;
+		bool bVillagerFactoryBuilt = false;
+		{
+			Zenith_GraphBuilder xRawBuilder(xVillagerRawDefinition);
+			BuildGraph_DPVillagerRawBaselineForTest(xRawBuilder);
+			bVillagerRawBuilt = xRawBuilder.Build();
+			Zenith_GraphBuilder xFactoryBuilder(xVillagerFactoryDefinition);
+			BuildGraph_DPVillager(xFactoryBuilder);
+			bVillagerFactoryBuilt = xFactoryBuilder.Build();
+		}
+		CheckTrue(bVillagerRawBuilt && bVillagerFactoryBuilt, "Villager raw and factory definitions both build");
+		if (bVillagerRawBuilt && bVillagerFactoryBuilt)
+			CheckTrue(VillagerDefinitionsSerializeIdentically(xVillagerRawDefinition, xVillagerFactoryDefinition),
+				"Villager raw and factory definitions serialize byte-identically");
 
 		for (u_int uRow = 0; uRow < uGRAPH_BUILDER_ROWS; ++uRow)
 		{
@@ -345,7 +377,7 @@ namespace
 			CheckEqInt(static_cast<int>(xGraph.GetResolutionSkipCountForTest()), 0, acWhat);
 			xGraph.Shutdown();
 		}
-		CheckEqInt(static_cast<int>(uTotalGetVariables), 73,
+		CheckEqInt(static_cast<int>(uTotalGetVariables), 77,
 			"all twelve graphs author the required total GetVariable count");
 
 		g_bValidateRan = true;

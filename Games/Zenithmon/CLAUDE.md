@@ -224,13 +224,14 @@ to a roster row, never anything `ResolveTargetEntity` sees. The graph declares
 `zmTrainerId` as `ZM_TRAINER_NONE`, then wires one `GetVariable` producer into
 the push node and clears its legacy input name. The const fallback is also
 `ZM_TRAINER_NONE`; trainer zero remains the valid Rival Vesper id. A wrong-tag
-checked override reports a mismatch and takes that fallback, while a missing or
-wrong-tag named blackboard value uses the ordinary fallback path.
+checked override reports a mismatch and takes that fallback. Direct-node
+default coverage clears the legacy name and proves the permanent NONE value even
+with absent or wrong-tag blackboard entries.
 The runtime-attached graph moves no Zenithmon scene bytes.
 
 `Tests/ZM_Tests_GraphPinTotality.cpp` holds five `ZENITH_TEST`s. Three were
-added here, so they add three Zenithmon baseline rows when root observes the
-pin:
+added here; the observed raw Null unit run is 4561 registrations (4559 passed,
+two skipped):
 `ZenithmonNodesTotality` fails if a var-name property is ever added without a
 descriptor, and `ZenithmonTrainerChallengeValidatesClean` builds the production
 definition in-process and fails on any ERROR-severity validation finding (A-8

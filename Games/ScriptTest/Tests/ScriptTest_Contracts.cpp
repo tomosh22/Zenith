@@ -48,6 +48,7 @@
 // ============================================================================
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "DataStream/Zenith_DataStream.h"
 #include "Core/Zenith_Engine.h"
 #include "Collections/Zenith_Vector.h"
 #include "Input/Zenith_Input.h"
@@ -68,6 +69,10 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+
+// Kept out of ScriptTest_Graphs.h because this is a contracts-only reference
+// baseline, never a production graph builder entry point.
+void BuildGraph_ST_UIPlayground_RawBaselineForTest(Zenith_GraphBuilder& xBuilder);
 
 namespace
 {
@@ -282,14 +287,38 @@ namespace
 	u_int ExpectedDataEdgeCount(const char* szAssetPath)
 	{
 		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szSINE_BOB) == 0) return 2;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szPLAYER_MOVE) == 0) return 1;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szBALL_SPAWNER) == 0) return 2;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szKILL_VOLUME) == 0) return 1;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szTRAFFIC_LIGHT) == 0) return 1;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szUI_PLAYGROUND) == 0) return 7;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szDISPENSER) == 0) return 6;
-		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szNAV_WALKER) == 0) return 2;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szPLAYER_MOVE) == 0) return 3;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szBALL_SPAWNER) == 0) return 3;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szKILL_VOLUME) == 0) return 2;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szPRESSURE_PLATE) == 0) return 2;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szTRAFFIC_LIGHT) == 0) return 7;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szUI_PLAYGROUND) == 0) return 8;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szDISPENSER) == 0) return 11;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szFLOW_PLATE) == 0) return 1;
+		if (std::strcmp(szAssetPath, ScriptTest::Graphs::szNAV_WALKER) == 0) return 6;
 		return 0;
+	}
+
+	bool GraphDefinitionsSerializeIdentically(Zenith_GraphDefinition& xA, Zenith_GraphDefinition& xB)
+	{
+		Zenith_DataStream xStreamA;
+		Zenith_DataStream xStreamB;
+		xA.WriteToDataStream(xStreamA);
+		xB.WriteToDataStream(xStreamB);
+		if (xStreamA.GetCursor() != xStreamB.GetCursor())
+		{
+			return false;
+		}
+		const u_int8* pA = static_cast<const u_int8*>(xStreamA.GetData());
+		const u_int8* pB = static_cast<const u_int8*>(xStreamB.GetData());
+		for (uint64_t uByte = 0; uByte < xStreamA.GetCursor(); ++uByte)
+		{
+			if (pA[uByte] != pB[uByte])
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	bool ExpectedGetVariableType(const char* szVariable, Zenith_PropertyType& eOut)
@@ -618,6 +647,21 @@ namespace
 			if (!bBuilt)
 			{
 				continue; // the Build() failure above is the actionable finding.
+			}
+
+			if (std::strcmp(xRow.m_szAssetPath, ScriptTest::Graphs::szUI_PLAYGROUND) == 0)
+			{
+				Zenith_GraphDefinition xRawBaseline;
+				bool bRawBuilt = false;
+				{
+					Zenith_GraphBuilder xRawBuilder(xRawBaseline);
+					BuildGraph_ST_UIPlayground_RawBaselineForTest(xRawBuilder);
+					bRawBuilt = xRawBuilder.Build();
+				}
+				CheckTrue(bRawBuilt,
+					"ST_UIPlayground raw factory baseline builds with no authoring error");
+				CheckTrue(bRawBuilt && GraphDefinitionsSerializeIdentically(xRawBaseline, xDefinition),
+					"ST_UIPlayground CompareFloat/Branch factories preserve the whole serialized definition");
 			}
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
@@ -977,7 +1021,7 @@ namespace
 	constexpr float k_fPlayerMoveDt = 1.0f / 60.0f;
 	constexpr float k_fMoveSpeed = 6.0f;			// the graph's MathBlackboardVector3 scalar
 	constexpr float k_fVectorTolerance = 1e-5f;
-	constexpr const char* k_szPlayerMoveTrace = "ReadMovementAxis>MathBlackboardVector3>SetVelocity";
+	constexpr const char* k_szPlayerMoveTrace = "ReadMovementAxis>SetBlackboardVector3>MathBlackboardVector3>SetBlackboardVector3>SetVelocity";
 
 	bool g_bPlayerMoveRan = false;
 
@@ -1028,7 +1072,7 @@ namespace
 		char acTrace[256];
 		xRig.FormatTrace(acTrace, sizeof(acTrace));
 		CheckEqStr(acTrace, k_szPlayerMoveTrace,
-			"the OnUpdate chain is read -> scale -> drive, in that order");
+			"the OnUpdate chain is read -> persist direction -> scale -> persist velocity -> drive, in that order");
 
 		// ---- nothing held: the read is LIVE, not a constant ------------------
 		// Without this the whole test would pass against a node that ignored

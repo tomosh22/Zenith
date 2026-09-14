@@ -194,7 +194,7 @@ every tools boot by `AuthorBehaviourGraphs()` in DevilsPlayground.cpp through
 | `DPDoorAdvanceAnim` | single-leaf door per-frame animation (systems body) |
 | `DPVillagerKill` / `DPVillagerEmitFootstep` / `DPVillagerTutorialPing` | villager death sequence (atomic on the shim), footstep emission, first-encounter pings |
 | `DPPickVillagerUnderCursor` / `DPTryPossess` / `DPDropHeldItem` | player input dispatch (screen-space pick, voluntary switch entry, drop verb) |
-| `DPItemChildRefusal` / `DPItemArmChannel` / `DPItemCommitPickup` / `DPItemRingBell` / `DPItemEvaporate` | the decomposed item pickup chain |
+| `DPItemChildRefusal` / `DPItemArmChannel` / `DPItemCommitPickup` / `DPItemFinishPickup` / `DPItemRingBell` / `DPItemEvaporate` | the decomposed item pickup chain; Commit validates and clears channel state, then Finish performs the held-item/event side effect from Commit's latched entity |
 | `DPForgeCraft` | the forge craft transaction |
 | `DPPauseCanToggle` / `DPPauseApplyToggle` / `DPPauseRestart` / `DPPauseQuit` | pause overlay quirk gate, toggle application, R/Q flows (shim bodies) |
 | `DPPriestApprehendChannel` / `DPPriestPickPatrolTarget` | the priest's apprehend channel + scent-biased patrol picker (retired BT leaves, verbatim) |
@@ -226,6 +226,17 @@ groups is instead DECLARED by the reading graph. `Tests/Test_GraphPinTotality.cp
 fails if a node with a var-name property ever loses its table.
 
 Registered via `DP_RegisterGraphNodes()` from `Project_RegisterGameComponents`.
+
+### B76 graph inventory
+
+The registered DP class inventory is 38 classes; the pin-table inventory is 26 tables, 50 descriptors, 36 inputs,
+10 outputs, and 4 read-write selectors. `DPItemCommitPickup` validates and
+latches its entity after publishing channel clears; `DPItemFinishPickup` owns
+SetHeldItem, Tag pull, and the pickup event. Persistent `openT`, `requiredKey`,
+and `craftCount` remain read-write selectors.
+`Tests/Test_GraphsValidateClean.cpp` byte-compares complete serialized raw and
+factory Villager recovery definitions for the two approved factory sites; raw
+sequences remain where producer creation timing or edge order differs.
 The wave-1 deleted components (DPPentagram / DPChest / DPDoubleDoor /
 DummyNoiseMachine / DPMainMenuController) have NO C++ remnants; equivalence
 at every wave is proven by characterization tests passing identically

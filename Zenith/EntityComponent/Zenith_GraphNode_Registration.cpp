@@ -30,8 +30,8 @@
 // IS the old SetValue. Each node that addresses a pin declares
 // `static constexpr u_int uPIN_<Name>` immediately before its pin table (the
 // INDEX is the runtime address; table order is the contract, asserted by
-// GraphPinTable.RegistrationPinIndicesMatchTables). 34 node types register here;
-// 23 carry a pin table (the three collision sources by INHERITANCE from the
+// GraphPinTable.RegistrationPinIndicesMatchTables). 35 node types register here;
+// 24 carry a pin table (the three collision sources by INHERITANCE from the
 // unregistered base) and 11 carry none.
 //
 // What went live, by role:
@@ -44,6 +44,8 @@
 //   - INPUT_CONST (the repo's first WIRE-ABLE constants): the five
 //     SetBlackboard*.Value. They carry NO var-name property, so they can never
 //     log a [GraphPin] FALLBACK line; unconnected, GetInput returns the const.
+//     SetBlackboardEntityID.Value is intentionally different: it is a normal
+//     ENTITY_ID INPUT with no literal-value property, and defaults to packed 0.
 //   - OUTPUT: Compare{Float,Int}.Result and StoreSelfEntityID.Variable.
 //   - UNTOUCHED: GetVariable (migrated in B-3) and every SELECTOR pin -
 //     SetBlackboard*.Variable and AddBlackboardFloat.Variable (READWRITE: read
@@ -590,6 +592,37 @@ namespace
 		const char* GetTypeName() const override { return "SetBlackboardVector3"; }
 	};
 
+	// Entity IDs deliberately have no literal-value property. A graph obtains
+	// one from an ENTITY_ID producer and routes it here; the destination remains
+	// a configured blackboard selector, just like the other typed setters.
+	class Zenith_GraphNode_SetBlackboardEntityID : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SetBlackboardEntityID)
+	public:
+		ZENITH_PROPERTY(std::string, m_strVariable, "value")
+
+		// Value is a normal INPUT rather than INPUT_CONST: ENTITY_ID has no
+		// authorable literal form here. An unconnected input stamps typed packed
+		// zero through MakePinDefault.
+		static constexpr u_int uPIN_Value = 1u;
+
+		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardEntityID)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_INPUT(Value, "", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PINS_END
+
+	public:
+		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
+		{
+			Zenith_PropertyValue xValue;
+			xValue.SetPackedEntityID(GetInputPackedEntityID(xContext, uPIN_Value));
+			xContext.m_pxBlackboard->SetValue(m_strVariable, xValue);
+			return GRAPH_NODE_STATUS_SUCCESS;
+		}
+		const char* GetTypeName() const override { return "SetBlackboardEntityID"; }
+	};
+
 	class Zenith_GraphNode_SetBlackboardString : public Zenith_GraphNode
 	{
 	public:
@@ -1124,6 +1157,7 @@ void Zenith_RegisterEngineGraphNodes()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_AddBlackboardFloat>("AddBlackboardFloat", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetBlackboardInt>("SetBlackboardInt", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetBlackboardVector3>("SetBlackboardVector3", GRAPH_EVENT_NONE, 1, false, "Blackboard");
+	xRegistry.RegisterNodeType<Zenith_GraphNode_SetBlackboardEntityID>("SetBlackboardEntityID", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetBlackboardString>("SetBlackboardString", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_CompareBlackboardInt>("CompareBlackboardInt", GRAPH_EVENT_NONE, 1, false, "Blackboard");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_StoreSelfEntityID>("StoreSelfEntityID", GRAPH_EVENT_NONE, 1, false, "Entity");
