@@ -1629,6 +1629,12 @@ static u_int BuildTennisBrain_TickSpine(Zenith_EngineGraphBuilder& xB)
 	xB.ParamBool(uAccum, "m_bScaleByDt", true);
 	const u_int uDue = xB.CompareFloat("tickAccum", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL, 0.08f, "tickDue");
 	const u_int uGateDue = xB.Gate("tickDue");
+	const u_int uTickAccumValue = xB.Node("GetVariable");
+	xB.ParamString(uTickAccumValue, "m_strVariable", "tickAccum");
+	xB.Raw().DataEdge(uTickAccumValue, "Value", uDue, "Value");
+	xB.ParamString(uDue, "m_strVar", "");
+	xB.Raw().DataEdge(uDue, "Result", uGateDue, "Open");
+	xB.ParamString(uGateDue, "m_strOpenVar", "");
 	const u_int uReset = xB.Node("SetBlackboardFloat");	// reset-to-zero (m_fValue left at default 0)
 	xB.ParamString(uReset, "m_strVariable", "tickAccum");
 	const u_int uSelector = xB.Node("Selector");
@@ -1655,6 +1661,40 @@ static void BuildTennisBrain_Serve(Zenith_EngineGraphBuilder& xB, u_int uSelecto
 	const u_int uDecideServe = xB.Node("RTTennisDecideServe");
 	const u_int uPositionServe = xB.Node("RTTennisPositionForServe");
 	const u_int uArmServe = xB.Node("RTTennisArmServe");
+	const u_int uServePhaseValue = xB.Node("GetVariable");
+	xB.ParamString(uServePhaseValue, "m_strVariable", k_szPhase);
+	xB.Raw().DataEdge(uServePhaseValue, "Value", uPhaseServe, "Value");
+	xB.ParamString(uPhaseServe, "m_strVar", "");
+	xB.Raw().DataEdge(uPhaseServe, "Result", uGateServing, "Open");
+	xB.ParamString(uGateServing, "m_strOpenVar", "");
+	const u_int uIsServerValue = xB.Node("GetVariable");
+	xB.ParamString(uIsServerValue, "m_strVariable", k_szIsServer);
+	xB.Raw().DataEdge(uIsServerValue, "Value", uGateServer, "Open");
+	xB.ParamString(uGateServer, "m_strOpenVar", "");
+	const u_int uParkedValue = xB.Node("GetVariable");
+	xB.ParamString(uParkedValue, "m_strVariable", k_szServeBallParked);
+	xB.Raw().DataEdge(uParkedValue, "Value", uGateParked, "Open");
+	xB.ParamString(uGateParked, "m_strOpenVar", "");
+	const u_int uServeDeuceValue = xB.Node("GetVariable");
+	xB.ParamString(uServeDeuceValue, "m_strVariable", k_szServeFromDeuce);
+	xB.Raw().DataEdge(uServeDeuceValue, "Value", uDecideServe, "ServeFromDeuce");
+	xB.ParamString(uDecideServe, "m_strServeFromDeuceVar", "");
+	const u_int uSecondServeValue = xB.Node("GetVariable");
+	xB.ParamString(uSecondServeValue, "m_strVariable", k_szIsSecondServe);
+	xB.Raw().DataEdge(uSecondServeValue, "Value", uDecideServe, "IsSecondServe");
+	xB.ParamString(uDecideServe, "m_strIsSecondServeVar", "");
+	const u_int uPositionSideValue = xB.Node("GetVariable");
+	xB.ParamString(uPositionSideValue, "m_strVariable", k_szMySide);
+	xB.Raw().DataEdge(uPositionSideValue, "Value", uPositionServe, "MySide");
+	xB.ParamString(uPositionServe, "m_strMySideVar", "");
+	const u_int uPositionDeuceValue = xB.Node("GetVariable");
+	xB.ParamString(uPositionDeuceValue, "m_strVariable", k_szServeFromDeuce);
+	xB.Raw().DataEdge(uPositionDeuceValue, "Value", uPositionServe, "ServeFromDeuce");
+	xB.ParamString(uPositionServe, "m_strServeFromDeuceVar", "");
+	const u_int uServeEpochValue = xB.Node("GetVariable");
+	xB.ParamString(uServeEpochValue, "m_strVariable", k_szBallEpoch);
+	xB.Raw().DataEdge(uServeEpochValue, "Value", uArmServe, "BallEpoch");
+	xB.ParamString(uArmServe, "m_strBallEpochVar", "");
 	xB.Edge(uSelector, 0, uPhaseServe);
 	xB.Chain(uPhaseServe, uGateServing).Chain(uGateServing, uGateServer)
 		.Chain(uGateServer, uGateParked).Chain(uGateParked, uDecideServe)
@@ -1677,6 +1717,44 @@ static void BuildTennisBrain_Rally(Zenith_EngineGraphBuilder& xB, u_int uSelecto
 	const u_int uMove = xB.Node("RTTennisMoveToIntercept");
 	const u_int uDecideShot = xB.Node("RTTennisDecideShot");
 	const u_int uArmSwing = xB.Node("RTTennisArmSwing");
+	const u_int uLivePhaseValue = xB.Node("GetVariable");
+	xB.ParamString(uLivePhaseValue, "m_strVariable", k_szPhase);
+	xB.Raw().DataEdge(uLivePhaseValue, "Value", uPhaseLive, "Value");
+	xB.ParamString(uPhaseLive, "m_strVar", "");
+	xB.Raw().DataEdge(uPhaseLive, "Result", uGateLive, "Open");
+	xB.ParamString(uGateLive, "m_strOpenVar", "");
+	const u_int uMyBallValue = xB.Node("GetVariable");
+	xB.ParamString(uMyBallValue, "m_strVariable", k_szIsMyBall);
+	xB.Raw().DataEdge(uMyBallValue, "Value", uGateMyBall, "Open");
+	xB.ParamString(uGateMyBall, "m_strOpenVar", "");
+	const u_int uReachableSpinValue = xB.Node("GetVariable");
+	xB.ParamString(uReachableSpinValue, "m_strVariable", k_szBallSpin);
+	xB.Raw().DataEdge(uReachableSpinValue, "Value", uReachable, "BallSpin");
+	xB.ParamString(uReachable, "m_strBallSpinVar", "");
+	const u_int uReachableSideValue = xB.Node("GetVariable");
+	xB.ParamString(uReachableSideValue, "m_strVariable", k_szMySide);
+	xB.Raw().DataEdge(uReachableSideValue, "Value", uReachable, "MySide");
+	xB.ParamString(uReachable, "m_strMySideVar", "");
+	const u_int uMoveSpinValue = xB.Node("GetVariable");
+	xB.ParamString(uMoveSpinValue, "m_strVariable", k_szBallSpin);
+	xB.Raw().DataEdge(uMoveSpinValue, "Value", uMove, "BallSpin");
+	xB.ParamString(uMove, "m_strBallSpinVar", "");
+	const u_int uMoveSideValue = xB.Node("GetVariable");
+	xB.ParamString(uMoveSideValue, "m_strVariable", k_szMySide);
+	xB.Raw().DataEdge(uMoveSideValue, "Value", uMove, "MySide");
+	xB.ParamString(uMove, "m_strMySideVar", "");
+	const u_int uSwingSpinValue = xB.Node("GetVariable");
+	xB.ParamString(uSwingSpinValue, "m_strVariable", k_szBallSpin);
+	xB.Raw().DataEdge(uSwingSpinValue, "Value", uArmSwing, "BallSpin");
+	xB.ParamString(uArmSwing, "m_strBallSpinVar", "");
+	const u_int uSwingSideValue = xB.Node("GetVariable");
+	xB.ParamString(uSwingSideValue, "m_strVariable", k_szMySide);
+	xB.Raw().DataEdge(uSwingSideValue, "Value", uArmSwing, "MySide");
+	xB.ParamString(uArmSwing, "m_strMySideVar", "");
+	const u_int uSwingEpochValue = xB.Node("GetVariable");
+	xB.ParamString(uSwingEpochValue, "m_strVariable", k_szBallEpoch);
+	xB.Raw().DataEdge(uSwingEpochValue, "Value", uArmSwing, "BallEpoch");
+	xB.ParamString(uArmSwing, "m_strBallEpochVar", "");
 	xB.Edge(uSelector, 1, uPhaseLive);
 	xB.Chain(uPhaseLive, uGateLive).Chain(uGateLive, uGateMyBall)
 		.Chain(uGateMyBall, uReachable).Chain(uReachable, uMove)
@@ -1686,7 +1764,20 @@ static void BuildTennisBrain_Rally(Zenith_EngineGraphBuilder& xB, u_int uSelecto
 // Pin 2 - recover fallback (always succeeds).
 static void BuildTennisBrain_Recover(Zenith_EngineGraphBuilder& xB, u_int uSelector)
 {
+	using namespace RenderTest_TennisBB;
 	const u_int uRecover = xB.Node("RTTennisRecoverToReady");
+	const u_int uRecoverSideValue = xB.Node("GetVariable");
+	xB.ParamString(uRecoverSideValue, "m_strVariable", k_szMySide);
+	xB.Raw().DataEdge(uRecoverSideValue, "Value", uRecover, "MySide");
+	xB.ParamString(uRecover, "m_strMySideVar", "");
+	const u_int uRecoverPhaseValue = xB.Node("GetVariable");
+	xB.ParamString(uRecoverPhaseValue, "m_strVariable", k_szPhase);
+	xB.Raw().DataEdge(uRecoverPhaseValue, "Value", uRecover, "Phase");
+	xB.ParamString(uRecover, "m_strPhaseVar", "");
+	const u_int uRecoverServerValue = xB.Node("GetVariable");
+	xB.ParamString(uRecoverServerValue, "m_strVariable", k_szIsServer);
+	xB.Raw().DataEdge(uRecoverServerValue, "Value", uRecover, "IsServer");
+	xB.ParamString(uRecover, "m_strIsServerVar", "");
 	xB.Edge(uSelector, 2, uRecover);
 }
 
@@ -1711,9 +1802,6 @@ void BuildGraph_RenderTestTennisBrain(Zenith_GraphBuilder& xBuilder)
 	Zenith_PropertyValue xV0;    xV0.SetVector3(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	Zenith_PropertyValue xInvalidEntity; xInvalidEntity.SetPackedEntityID(INVALID_ENTITY_ID.GetPacked());
 	xB.Variable("tickAccum", xF0);
-	xB.Variable("tickDue", xBF);
-	xB.Variable("phaseIsServing", xBF);
-	xB.Variable("phaseIsLive", xBF);
 	xB.Variable(k_szPhase, xI0);           // POINT_PHASE_WARMUP
 	xB.Variable(k_szBallEpoch, xI0);
 	xB.Variable(k_szMySide, xI0);

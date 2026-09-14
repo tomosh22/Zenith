@@ -243,6 +243,26 @@ re-authors the same scene again when it removes the three obsolete BOOL slots.
 direct-node witnesses; these transitional direct-construction rows are listed
 for conversion to explicit graph wiring in B-7.6 before C-1 deletes fallback.
 
+### B-7.3b builder wiring
+
+`BuildGraph_RenderTestTennisBrain` has exactly 24 data edges: the three
+same-chain comparison-to-gate edges, plus 21 typed `GetVariable` sources (six
+engine inputs and the 15 annotated RTTennis INPUTs). The three old result-name
+BOOL declarations (`tickDue`, `phaseIsServing`, `phaseIsLive`) are gone.
+Every wired INPUT clears its var-name default after the edge is authored, so
+the predicted post-migration census has no INPUT fallback lines. `BallEntity`
+remains a TARGET reference name; selector, READWRITE, and result names also
+remain names. `RenderTest_PlayerActions` deliberately authors zero data edges
+and zero `GetVariable` nodes.
+
+`RT_GraphsValidateClean` builds and initializes both graphs in-process. Its
+structural checks require the tennis graph's exact 24/21 edge/source census,
+the PlayerActions 0/0 census, concrete resolved types for each tennis
+`GetVariable`, the pre-initialization ENTITY_ID/INVALID seed for `BallEntity`,
+and zero resolution skips. The structural executed-chain
+strings in `Test_TennisBrainContract.cpp` stay unchanged because pure sources
+and data edges do not change execution topology.
+
 What DOES exist is `Tests/Test_GraphsValidateClean.cpp` — an automated test
 (`RT_GraphsValidateClean`) that builds BOTH graphs in-process from their own
 builders and fails on any ERROR-severity validation finding — the mechanical

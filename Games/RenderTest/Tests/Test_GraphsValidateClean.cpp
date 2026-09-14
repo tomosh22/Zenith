@@ -44,6 +44,7 @@
 #include "RenderTest/Components/RenderTest_TennisAgentComponent.h"   // kszGraphAsset
 
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -100,6 +101,88 @@ namespace
 	constexpr u_int uGRAPH_BUILDER_ROWS =
 		static_cast<u_int>(sizeof(g_axGraphBuilders) / sizeof(g_axGraphBuilders[0]));
 
+	u_int ExpectedDataEdgeCount(const char* szAssetPath)
+	{
+		return std::strcmp(szAssetPath, RenderTest_TennisAgentComponent::kszGraphAsset) == 0 ? 24u : 0u;
+	}
+
+	u_int ExpectedGetVariableCount(const char* szAssetPath)
+	{
+		return std::strcmp(szAssetPath, RenderTest_TennisAgentComponent::kszGraphAsset) == 0 ? 21u : 0u;
+	}
+
+	bool ExpectedGetVariableType(const char* szVariable, Zenith_PropertyType& eOut)
+	{
+		using namespace RenderTest_TennisBB;
+		if (std::strcmp(szVariable, "tickAccum") == 0) { eOut = PROPERTY_TYPE_FLOAT; return true; }
+		if (std::strcmp(szVariable, k_szPhase) == 0 || std::strcmp(szVariable, k_szBallEpoch) == 0
+			|| std::strcmp(szVariable, k_szMySide) == 0) { eOut = PROPERTY_TYPE_INT32; return true; }
+		if (std::strcmp(szVariable, k_szIsServer) == 0 || std::strcmp(szVariable, k_szIsSecondServe) == 0
+			|| std::strcmp(szVariable, k_szIsMyBall) == 0 || std::strcmp(szVariable, k_szServeBallParked) == 0
+			|| std::strcmp(szVariable, k_szServeFromDeuce) == 0) { eOut = PROPERTY_TYPE_BOOL; return true; }
+		if (std::strcmp(szVariable, k_szBallSpin) == 0) { eOut = PROPERTY_TYPE_VECTOR3; return true; }
+		return false;
+	}
+
+	u_int CheckGetVariableTypes(const Zenith_GraphDefinition& xDefinition, const char* szAssetPath)
+	{
+		const Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		u_int uCount = 0;
+		for (u_int uNode = 0; uNode < xDefinition.GetNodeCount(); ++uNode)
+		{
+			const Zenith_GraphNodeDef& xNodeDef = xDefinition.GetNodeAt(uNode);
+			if (xNodeDef.m_strTypeName != "GetVariable") continue;
+			++uCount;
+			const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find("GetVariable");
+			Zenith_GraphNode* pxNode = pxInfo ? pxInfo->m_pfnCreate() : nullptr;
+			CheckTrue(pxNode != nullptr, "GetVariable is registered for RenderTest type-resolution checks");
+			if (pxNode == nullptr) continue;
+			xDefinition.ApplyNodeParams(xNodeDef.m_uNodeID, pxNode, *pxInfo);
+			const Zenith_PropertyTable* pxProperties = pxInfo->m_pfnGetPropertyTable ? pxInfo->m_pfnGetPropertyTable() : nullptr;
+			const Zenith_ReflectedProperty* pxVariable = pxProperties ? pxProperties->FindProperty("m_strVariable") : nullptr;
+			Zenith_PropertyValue xVariable;
+			if (pxVariable != nullptr) pxVariable->m_pfnGet(pxNode, xVariable);
+			Zenith_PropertyType eExpected = eGRAPH_PIN_TYPE_ANY;
+			const bool bExpected = pxVariable != nullptr && xVariable.GetType() == PROPERTY_TYPE_STRING
+				&& ExpectedGetVariableType(xVariable.GetString().c_str(), eExpected);
+			const Zenith_GraphPinTable* pxPins = pxInfo->m_pfnGetPinTable ? pxInfo->m_pfnGetPinTable() : nullptr;
+			const u_int uValuePin = pxPins ? pxPins->FindPinIndex("Value") : 0u;
+			Zenith_PropertyType eActual = eGRAPH_PIN_TYPE_ANY;
+			const bool bResolved = pxPins != nullptr && uValuePin < pxPins->GetPinCount()
+				&& Zenith_GraphDefinitionValidator::ResolvePinType(xDefinition, xRegistry,
+					xNodeDef.m_uNodeID, uValuePin, eActual);
+			char acWhat[256];
+			std::snprintf(acWhat, sizeof(acWhat), "%s GetVariable(%s) resolves its concrete Value type",
+				szAssetPath, pxVariable && xVariable.GetType() == PROPERTY_TYPE_STRING
+					? xVariable.GetString().c_str() : "<missing or non-string>");
+			CheckTrue(bExpected && bResolved && eActual == eExpected && eActual != eGRAPH_PIN_TYPE_ANY, acWhat);
+			delete pxNode;
+		}
+		return uCount;
+	}
+
+	void CheckTennisBallEntityDeclaration(const Zenith_GraphDefinition& xDefinition, const char* szAssetPath)
+	{
+		if (std::strcmp(szAssetPath, RenderTest_TennisAgentComponent::kszGraphAsset) != 0) return;
+		const Zenith_GraphVariableDecl* pxBallEntity = nullptr;
+		for (u_int uVariable = 0; uVariable < xDefinition.GetVariableCount(); ++uVariable)
+		{
+			const Zenith_GraphVariableDecl& xVariable = xDefinition.GetVariableAt(uVariable);
+			if (xVariable.m_strName == RenderTest_TennisBB::k_szBallEntity)
+			{
+				pxBallEntity = &xVariable;
+				break;
+			}
+		}
+		CheckTrue(pxBallEntity != nullptr, "tennis graph declares BallEntity before graph initialization");
+		if (pxBallEntity == nullptr) return;
+		CheckEqInt(static_cast<int>(pxBallEntity->m_xDefault.GetType()), static_cast<int>(PROPERTY_TYPE_ENTITY_ID),
+			"tennis BallEntity declaration has ENTITY_ID type");
+		if (pxBallEntity->m_xDefault.GetType() != PROPERTY_TYPE_ENTITY_ID) return;
+		CheckTrue(pxBallEntity->m_xDefault.GetPackedEntityID() == INVALID_ENTITY_ID.GetPacked(),
+			"tennis BallEntity declaration seeds exactly INVALID_ENTITY_ID before attachment");
+	}
+
 	bool g_bRan = false;
 
 	void RunOneRow(const GraphBuilderRow& xRow)
@@ -115,9 +198,29 @@ namespace
 		const bool bBuilt = xBuilder.Build();
 		std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", xRow.m_szAssetPath);
 		CheckTrue(bBuilt, acWhat);
+		if (bBuilt)
+		{
+			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
+			CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its exact data-edge count", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(xDefinition.GetDataEdgeCount()),
+				static_cast<int>(ExpectedDataEdgeCount(xRow.m_szAssetPath)), acWhat);
+			const u_int uGetVariables = CheckGetVariableTypes(xDefinition, xRow.m_szAssetPath);
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its exact GetVariable count", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(uGetVariables), static_cast<int>(ExpectedGetVariableCount(xRow.m_szAssetPath)), acWhat);
+			CheckTennisBallEntityDeclaration(xDefinition, xRow.m_szAssetPath);
 
-		std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
-		CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
+			Zenith_BehaviourGraph xGraph;
+			const bool bInstanced = xGraph.InitialiseFromDefinition(xDefinition);
+			std::snprintf(acWhat, sizeof(acWhat), "%s instantiates its authored graph", xRow.m_szAssetPath);
+			CheckTrue(bInstanced, acWhat);
+			if (bInstanced)
+			{
+				std::snprintf(acWhat, sizeof(acWhat), "%s resolves ZERO skipped data edges", xRow.m_szAssetPath);
+				CheckEqInt(static_cast<int>(xGraph.GetResolutionSkipCountForTest()), 0, acWhat);
+			}
+			xGraph.Shutdown();
+		}
 
 		int iErrors = 0;
 		for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
