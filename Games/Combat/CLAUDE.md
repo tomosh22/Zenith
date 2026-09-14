@@ -228,6 +228,25 @@ cooldown-Dt discriminator. The temporary fallback census rises for bound
 legacy INPUT names until B-7.4b replaces them with data edges or
 `GetVariable` producers; OUTPUT names do not consume fallback entries.
 
+**Builder wiring (B-7.4b).** The five production builders author 32 data
+edges: 14 adjacent producer links and 18 per-consumer `GetVariable` links
+(`Combat_PlayerAttack` 8, `Combat_RoundFlow` 5, `Combat_PlayerState` 10,
+`Combat_EnemyBrain` 6, `Combat_GameFlow` 3). The 15 payload-Dt consumers use
+concrete FLOAT `GetVariable(payload)` nodes; PlayerAttack also declares the
+cross-`AttackTick` values `hitFrameReady` BOOL, `isAttacking` BOOL, and
+`comboCount` INT32. RoundFlow, PlayerState, and EnemyBrain declare FLOAT
+`payload`; the player/enemy/game state seeds remain declared while their
+PreTick/GetGameState outputs wire directly into their StateMachine/Switch
+inputs. That is the OUTPUT-wired-and-declared shape: the seed supplies tick 0
+and the output retains the blackboard writer required by C-1 consumers.
+`hitFrameReady`, `isAttacking`, and all QueryAttackState outputs retain that
+dual writer for cross-chain and future C-1 audit consumers. The validate-clean
+table asserts each graph's exact edge/GetVariable count, concrete producer
+types, successful initialization, and zero skipped resolutions; warnings such
+as DECLARED_UNUSED remain intentionally outside its ERROR-only gate. Root
+re-authors only `Arena.zscen` for the new RoundFlow declaration; runtime graphs
+move no scene bytes and GameFlow adds no declaration.
+
 **Accepted divergences** (unobservable / precedented): `Combat_GameFlow`'s
 `@60`-graph / `@100`-component split shifts the systems block by one frame on a
 reset / resume frame (runs on fresh/resumed state); and PAUSE/RESTART/

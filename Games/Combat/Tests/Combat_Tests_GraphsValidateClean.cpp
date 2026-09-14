@@ -36,9 +36,11 @@
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "Scripting/Zenith_GraphDefinitionValidator.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
+#include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "Combat/Combat_Graphs.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -88,17 +90,19 @@ namespace
 	{
 		const char* m_szAssetPath;
 		void (*m_pfnBuild)(Zenith_GraphBuilder&);
+		u_int m_uDataEdges;
+		u_int m_uGetVariables;
 	};
 
 	// Keyed by ASSET PATH, spelled exactly as Project_RegisterEditorAutomationSteps
 	// spells it in its AddStep_GraphBuild calls (Combat.cpp:790-803).
 	const GraphBuilderRow g_axGraphBuilders[] =
 	{
-		{ "game:Graphs/Combat_PlayerAttack.bgraph", &BuildGraph_CombatPlayerAttack },
-		{ "game:Graphs/Combat_RoundFlow.bgraph",    &BuildGraph_CombatRoundFlow },
-		{ "game:Graphs/Combat_PlayerState.bgraph",  &BuildGraph_CombatPlayerState },
-		{ "game:Graphs/Combat_EnemyBrain.bgraph",   &BuildGraph_CombatEnemyBrain },
-		{ "game:Graphs/Combat_GameFlow.bgraph",     &BuildGraph_CombatGameFlow },
+		{ "game:Graphs/Combat_PlayerAttack.bgraph", &BuildGraph_CombatPlayerAttack, 8u, 3u },
+		{ "game:Graphs/Combat_RoundFlow.bgraph",    &BuildGraph_CombatRoundFlow,    5u, 1u },
+		{ "game:Graphs/Combat_PlayerState.bgraph",  &BuildGraph_CombatPlayerState, 10u, 9u },
+		{ "game:Graphs/Combat_EnemyBrain.bgraph",   &BuildGraph_CombatEnemyBrain,   6u, 5u },
+		{ "game:Graphs/Combat_GameFlow.bgraph",     &BuildGraph_CombatGameFlow,     3u, 0u },
 	};
 
 	constexpr u_int uGRAPH_BUILDER_ROWS =
@@ -106,7 +110,62 @@ namespace
 
 	bool g_bRan = false;
 
-	void RunOneRow(const GraphBuilderRow& xRow)
+	bool ExpectedGetVariableType(const char* szVariable, Zenith_PropertyType& eOut)
+	{
+		if (std::strcmp(szVariable, "hitFrameReady") == 0 || std::strcmp(szVariable, "isAttacking") == 0)
+		{
+			eOut = PROPERTY_TYPE_BOOL;
+			return true;
+		}
+		if (std::strcmp(szVariable, "comboCount") == 0)
+		{
+			eOut = PROPERTY_TYPE_INT32;
+			return true;
+		}
+		if (std::strcmp(szVariable, "payload") == 0)
+		{
+			eOut = PROPERTY_TYPE_FLOAT;
+			return true;
+		}
+		return false;
+	}
+
+	u_int CheckGetVariableTypes(const Zenith_GraphDefinition& xDefinition, const char* szAssetPath)
+	{
+		const Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find("GetVariable");
+		u_int uCount = 0u;
+		for (u_int uNode = 0u; uNode < xDefinition.GetNodeCount(); ++uNode)
+		{
+			const Zenith_GraphNodeDef& xNodeDef = xDefinition.GetNodeAt(uNode);
+			if (xNodeDef.m_strTypeName != "GetVariable") continue;
+			++uCount;
+			Zenith_GraphNode* pxNode = pxInfo ? pxInfo->m_pfnCreate() : nullptr;
+			CheckTrue(pxNode != nullptr, "GetVariable is registered for Combat type-resolution checks");
+			if (pxNode == nullptr) continue;
+			xDefinition.ApplyNodeParams(xNodeDef.m_uNodeID, pxNode, *pxInfo);
+			const Zenith_PropertyTable* pxProperties = pxInfo->m_pfnGetPropertyTable ? pxInfo->m_pfnGetPropertyTable() : nullptr;
+			const Zenith_ReflectedProperty* pxVariable = pxProperties ? pxProperties->FindProperty("m_strVariable") : nullptr;
+			Zenith_PropertyValue xVariable;
+			if (pxVariable != nullptr) pxVariable->m_pfnGet(pxNode, xVariable);
+			Zenith_PropertyType eExpected = eGRAPH_PIN_TYPE_ANY;
+			const bool bExpected = pxVariable != nullptr && xVariable.GetType() == PROPERTY_TYPE_STRING
+				&& ExpectedGetVariableType(xVariable.GetString().c_str(), eExpected);
+			const Zenith_GraphPinTable* pxPins = pxInfo->m_pfnGetPinTable ? pxInfo->m_pfnGetPinTable() : nullptr;
+			const u_int uValuePin = pxPins ? pxPins->FindPinIndex("Value") : 0u;
+			Zenith_PropertyType eActual = eGRAPH_PIN_TYPE_ANY;
+			const bool bResolved = pxPins != nullptr && uValuePin < pxPins->GetPinCount()
+				&& Zenith_GraphDefinitionValidator::ResolvePinType(xDefinition, xRegistry, xNodeDef.m_uNodeID, uValuePin, eActual);
+			char acWhat[256];
+			std::snprintf(acWhat, sizeof(acWhat), "%s GetVariable(%s) resolves a declared concrete Value type",
+				szAssetPath, pxVariable && xVariable.GetType() == PROPERTY_TYPE_STRING ? xVariable.GetString().c_str() : "<missing>");
+			CheckTrue(bExpected && bResolved && eActual == eExpected && eActual != eGRAPH_PIN_TYPE_ANY, acWhat);
+			delete pxNode;
+		}
+		return uCount;
+	}
+
+	void RunOneRow(const GraphBuilderRow& xRow, u_int& uTotalDataEdges, u_int& uTotalGetVariables)
 	{
 		char acWhat[256];
 
@@ -121,9 +180,29 @@ namespace
 		const bool bBuilt = xBuilder.Build();
 		std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", xRow.m_szAssetPath);
 		CheckTrue(bBuilt, acWhat);
+		if (bBuilt)
+		{
+			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
+			CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
 
-		std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
-		CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its exact data-edge count", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(xDefinition.GetDataEdgeCount()), static_cast<int>(xRow.m_uDataEdges), acWhat);
+			uTotalDataEdges += xDefinition.GetDataEdgeCount();
+			const u_int uGetVariables = CheckGetVariableTypes(xDefinition, xRow.m_szAssetPath);
+			uTotalGetVariables += uGetVariables;
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its exact GetVariable count", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(uGetVariables), static_cast<int>(xRow.m_uGetVariables), acWhat);
+			Zenith_BehaviourGraph xGraph;
+			const bool bInitialised = xGraph.InitialiseFromDefinition(xDefinition);
+			std::snprintf(acWhat, sizeof(acWhat), "%s instantiates", xRow.m_szAssetPath);
+			CheckTrue(bInitialised, acWhat);
+			if (bInitialised)
+			{
+				std::snprintf(acWhat, sizeof(acWhat), "%s resolves ZERO skipped data edges", xRow.m_szAssetPath);
+				CheckEqInt(static_cast<int>(xGraph.GetResolutionSkipCountForTest()), 0, acWhat);
+			}
+			xGraph.Shutdown();
+		}
 
 		int iErrors = 0;
 		for (u_int uFinding = 0; uFinding < xBuilder.GetValidationFindingCount(); ++uFinding)
@@ -161,10 +240,16 @@ namespace
 		CheckEqInt(static_cast<int>(uGRAPH_BUILDER_ROWS), 5,
 			"the builder table still lists all five graphs Combat authors");
 
+		u_int uTotalDataEdges = 0u;
+		u_int uTotalGetVariables = 0u;
 		for (u_int uRow = 0; uRow < uGRAPH_BUILDER_ROWS; ++uRow)
 		{
-			RunOneRow(g_axGraphBuilders[uRow]);
+			RunOneRow(g_axGraphBuilders[uRow], uTotalDataEdges, uTotalGetVariables);
 		}
+		CheckEqInt(static_cast<int>(uTotalDataEdges), 32,
+			"all five Combat builders author the required 32 data edges");
+		CheckEqInt(static_cast<int>(uTotalGetVariables), 18,
+			"all five Combat builders author the required 18 GetVariable nodes");
 		g_bRan = true;
 		return false;	// entirely synchronous - one frame is all this needs
 	}
