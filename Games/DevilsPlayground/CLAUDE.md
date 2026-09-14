@@ -536,9 +536,9 @@ presence-aware helper; a present packed zero stays a legal zero. The three
 old zero-default reads — ItemArmChannel.Villager,
 PriestPickPatrolTarget.HighScentTarget, and
 PriestApprehendChannel.TargetWithDevil — use the typed packed-entity input
-path and retain zero semantics. B-7.2b will seed payload declarations with
-INVALID in Forge, Pentagram, Chest, Door, and DoubleDoor, and will avoid
-adding an unused Villager payload declaration.
+path and retain zero semantics. Payload declarations used by the reader
+graphs are INVALID-seeded in Forge, Pentagram, Chest, Door, and DoubleDoor;
+there is no unused Villager payload declaration.
 
 The nonzero `INPUT_VAR_OR_CONST` twins are part of the runtime contract:
 Villager footstep `QuietMult = 1`, Forge recipe input/output = Iron/Key,
@@ -605,3 +605,89 @@ the mandatory harness reset; subscriptions and held/tag state are released,
 and every subsequent preexisting test retains its prior engine diagnostics.
 Observed unit pins remain Combat 2679, Zenithmon 4538, and RenderTest 2784.
 B-7.2a is committed directly to master under this program's branch-mode ruling.
+
+## B-7.2b — graph builders author data edges
+
+`DevilsPlayground.cpp` now authors 109 explicit graph data edges:
+73 fresh `GetVariable` producers, 28 existing-producer wires, and 8
+Math-result-to-permanent-setter wires. Builder sites stay inline rather than
+being folded into an engine or shared factory helper, so each producer,
+consumer, cleared default, and original chain position remains reviewable.
+The graph inventory is exact:
+
+| Graph | GetVariable | Existing producer | Math setter | Total |
+|---|---:|---:|---:|---:|
+| DPVillager | 20 | 8 | 3 | 31 |
+| DPItem | 20 | 10 | 3 | 33 |
+| DPForge | 3 | 0 | 0 | 3 |
+| DPPlayerControl | 2 | 1 | 0 | 3 |
+| DPPauseMenu | 6 | 0 | 0 | 6 |
+| DPPriest | 4 | 1 | 0 | 5 |
+| DPMainMenu | 0 | 0 | 0 | 0 |
+| DPPentagram | 4 | 3 | 0 | 7 |
+| DPChest | 4 | 3 | 2 | 9 |
+| DPNoiseMachine | 0 | 0 | 0 | 0 |
+| DPDoubleDoor | 4 | 1 | 0 | 5 |
+| DPDoor | 6 | 1 | 0 | 7 |
+
+The site form records every consumer pin and producer form without hiding
+the 109 edges behind graph totals. `GV` means a fresh `GetVariable`;
+`direct` means an existing earlier producer in that execution chain; `setter`
+means the permanent write immediately following an in-place Math node.
+
+| Graph/site | Consumer pins and source form | Direct/setter continuation |
+|---|---|---|
+| Villager possession | `state→Switch`, `possessedNow→three Gates/Branch`, `dt→recovery Math.Operand` (GV) | `recovery Math.Result→CompareValue→Gate.Open` (direct); `faintRecovery` setter |
+| Villager movement | `state→CompareInt`, `moving/sprintHeld/quietHeld→their Branches` (GV) | `CompareInt.Result→possession Branch` (direct) |
+| Villager life drain | `stateIsPossessed→Gate`, `sprinting→Branch`, `sprintCostExtra→extra Math.Operand`, `drain→apply Math.Operand` (GV) | `extra Math.Result→AddFloatDelta`, `apply Math.Result→depleted Compare→Gate.Open` (direct); `remainingLife` setter |
+| Villager footsteps | `stateIsPossessed→Gate`, `moving→Branch`, `dt→countdown Math.Operand`, `walkQuiet/footstepLoudness/footstepRadius/quietLoudnessMult→EmitFootstep` (GV) | `countdown Math.Result→CompareValue→Gate.Open` (direct); `footstepCountdown` setter |
+| Item evaporation | `evaporateRemaining→armed Compare`, `dt→Math.Operand`, `tag→Evaporate.Tag` (GV) | `armed Compare.Result→Branch`, `Math.Result→done Compare→Branch` (direct); `evaporateRemaining` setter |
+| Item cooldown | `postDropCooldown→armed Compare`, `dt→Math.Operand` (GV) | `armed Compare.Result→Branch`, `Math.Result→under Compare→Gate.Open` (direct); `postDropCooldown` setter |
+| Item gates/channel | `possessedValid/handsEmpty/inRange→three Gates`, `possessedVillager/tag→ChildRefusal`, `channelDuration→hasChannel Compare`, `channelVillager/possessedVillager→CompareEntity A/B`, `possessedVillager/channelDuration→ArmChannel`, `dt→countdown Math.Operand` (GV) | `hasChannel Compare.Result→Branch`, `CompareEntity.Result→Branch`, `countdown Math.Result→Compare→Gate.Open` (direct); `channelRemaining` setter |
+| Item commit | `possessedVillager/tag→CommitPickup`, `possessedVillager/specialBehaviour→RingBell` (GV) | — |
+| Forge / PlayerControl | Forge: `payload/recipeInput/recipeOutput→Forge pins` (GV). PlayerControl: `clickPressed/dropPressed→Gates` (GV) | `Pick.Result→TryPossess.Villager` (direct) |
+| PauseMenu / Priest | Pause: `shown→two Branches`, `runOver/rPressed/qPressed→Branches`, `escPressed→Gate` (GV). Priest: `targetWithDevil→Apprehend`, `radius/highScent→Pick`, `investigate→Gate` (GV) | Priest `QueryEntityValid.Result→target Gate` (direct) |
+| Pentagram / Chest | Pentagram: four `payload→Read/Notify/Consume/Placed.Villager` (GV); `Read.Tag→Check/Notify/Placed.Tag` (direct). Chest: `isOpen→Branch/Gate`, `openT→lid Compare`, `payload→Dispatch` (GV) | Chest `lid Compare.Result→Branch`, `tuning.Result→division Operand`, `division.Result→advance Delta` (direct); `lidStep` and `openT` setters |
+| DoubleDoor / Door | DoubleDoor: `isOpen→Branch/AnimateDoorLeaves.IsOpen`, `payload→ConsumeKey/DispatchOpened.Villager` (GV). Door: `anim→Switch/AdvanceAnim.Anim`, four `payload→CheckKey/PentagramDeferral/DispatchOpened/Closed.Villager` (GV) | each `QueryEntityValid.Result→Gate.Open` (direct) |
+
+These forms include the initial Item and Priest wires; they are not an
+additional allowance.
+
+Every wire replaces one input-name fallback, including class-default
+consumer inputs and the initially authored Item and Priest wires. Its
+nonempty input-name property is cleared immediately after wiring. Fresh
+`GetVariable` nodes are one per consumer except where an earlier output in
+the same execution chain is the producer. Villager and Item declare `dt`
+as FLOAT zero, Villager also declares `drain` as FLOAT zero, and the five
+new payload declarations use INVALID entity values where a helper-backed
+reader needs absence semantics.
+
+The eight in-place math rewrites retain their old execution order while
+making the result flow explicit. Each has a unique, nonempty temporary result
+name and an immediately following permanent `SetBlackboardFloat` consumer:
+`faintRecoveryResult`, `remainingLifeResult`,
+`footstepCountdownResult`, `evaporateRemainingResult`,
+`postDropCooldownResult`, `channelRemainingResult`,
+`lidStepResult`, and `openTClampResult`. Seven results also feed a real
+downstream value consumer; Chest's terminal clamp has only its setter and no
+invented downstream wire.
+
+`Tests/Test_GraphsValidateClean.cpp` builds and initializes all twelve
+graphs, requires zero skipped edge resolutions, checks the exact edge
+inventory above, and verifies all 73 `GetVariable.Value` outputs resolve
+to the declared concrete type through the public reflection and validator
+APIs. These are counted automated-test checks, not assertions that can be
+compiled without a reporting path.
+
+B-7.2 deliberately leaves OUTPUT-to-reference and selector restructuring for
+B-7.6: Priest patrol target, conditional Door animation settlement, Item
+channel outputs, and the remaining OUTPUT names remain deferred. Direct
+compatibility witnesses also still exercise fallback behaviour. The observed compatibility residue is exactly 81 INPUT fallbacks: 67 main-pin, 8 priest-pin, 4 world-pin, and 2 existing P5 standalone witnesses. Both independent DP runs match every one of the 24 node/pin/variable multiplicities in the compatibility ledger. Gameplay-authored graphs target zero
+FALLBACK and zero IN_PLACE_ALIASING after this builder migration, but the
+unfiltered suite must be reported honestly until B-7.6 removes the named
+compatibility residue and C-1 reaches zero.
+
+DevilsPlayground's board category is branch mode, but this B-7.2 unit is
+explicitly ledgered as a master commit. Header and builder sections remain
+separate because root integrates the header commit first and the builder
+commit afterwards. Observed B-7.2b validation passed both category builds, the full T3 gate, and all seven fresh-boot census suites. DP has 165 registrations (144 ran, 21 headless skips), zero failed tests, 81 INPUT fallbacks, two deliberate mismatches, and zero alias warnings, bad accesses, or validator findings. Builder validation ran 233 counted checks. Combat 2679, Zenithmon 4538, and RenderTest 2784 were observed unchanged.

@@ -42,8 +42,11 @@
 // ============================================================================
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "Scripting/Zenith_GraphDefinitionValidator.h"
+#include "Scripting/Zenith_GraphNode.h"
+#include "Scripting/Zenith_GraphNodeRegistry.h"
 
 #include "DP_Graphs.h"
 #include "Components/DPVillager_Component.h"
@@ -54,6 +57,7 @@
 #include "Components/Priest_Component.h"
 
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -116,6 +120,148 @@ namespace
 	};
 	constexpr u_int uGRAPH_BUILDER_ROWS = static_cast<u_int>(COUNT_OF(g_axGraphBuilders));
 
+	u_int ExpectedDataEdgeCount(const char* szAssetPath)
+	{
+		if (std::strcmp(szAssetPath, DPVillager_Component::kszGraphAsset) == 0) return 31;
+		if (std::strcmp(szAssetPath, DPItemBase_Component::kszGraphAsset) == 0) return 33;
+		if (std::strcmp(szAssetPath, DPForge_Component::kszGraphAsset) == 0) return 3;
+		if (std::strcmp(szAssetPath, DPPlayerController_Component::kszGraphAsset) == 0) return 3;
+		if (std::strcmp(szAssetPath, DPPauseMenuController_Component::kszGraphAsset) == 0) return 6;
+		if (std::strcmp(szAssetPath, Priest_Component::kszGraphAsset) == 0) return 5;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Pentagram.bgraph") == 0) return 7;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Chest.bgraph") == 0) return 9;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_DoubleDoor.bgraph") == 0) return 5;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Door.bgraph") == 0) return 7;
+		return 0;
+	}
+
+	u_int ExpectedGetVariableCount(const char* szAssetPath)
+	{
+		if (std::strcmp(szAssetPath, DPVillager_Component::kszGraphAsset) == 0) return 20;
+		if (std::strcmp(szAssetPath, DPItemBase_Component::kszGraphAsset) == 0) return 20;
+		if (std::strcmp(szAssetPath, DPForge_Component::kszGraphAsset) == 0) return 3;
+		if (std::strcmp(szAssetPath, DPPlayerController_Component::kszGraphAsset) == 0) return 2;
+		if (std::strcmp(szAssetPath, DPPauseMenuController_Component::kszGraphAsset) == 0) return 6;
+		if (std::strcmp(szAssetPath, Priest_Component::kszGraphAsset) == 0) return 4;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Pentagram.bgraph") == 0) return 4;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Chest.bgraph") == 0) return 4;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_DoubleDoor.bgraph") == 0) return 4;
+		if (std::strcmp(szAssetPath, "game:Graphs/DP_Door.bgraph") == 0) return 6;
+		return 0;	// DP_MainMenu and DP_NoiseMachine intentionally have none.
+	}
+
+	bool ExpectedGetVariableType(const char* szVariable, Zenith_PropertyType& eOut)
+	{
+		if (std::strcmp(szVariable, "clickPressed") == 0
+			|| std::strcmp(szVariable, "dropPressed") == 0
+			|| std::strcmp(szVariable, "escPressed") == 0
+			|| std::strcmp(szVariable, "handsEmpty") == 0
+			|| std::strcmp(szVariable, "inRange") == 0
+			|| std::strcmp(szVariable, "isOpen") == 0
+			|| std::strcmp(szVariable, "moving") == 0
+			|| std::strcmp(szVariable, "possessedNow") == 0
+			|| std::strcmp(szVariable, "possessedValid") == 0
+			|| std::strcmp(szVariable, "qPressed") == 0
+			|| std::strcmp(szVariable, "quietHeld") == 0
+			|| std::strcmp(szVariable, "rPressed") == 0
+			|| std::strcmp(szVariable, "runOver") == 0
+			|| std::strcmp(szVariable, "shown") == 0
+			|| std::strcmp(szVariable, "sprintHeld") == 0
+			|| std::strcmp(szVariable, "sprinting") == 0
+			|| std::strcmp(szVariable, "stateIsPossessed") == 0
+			|| std::strcmp(szVariable, "walkQuiet") == 0
+			|| std::strcmp(szVariable, DP_AI::BB_KEY_HAS_INVESTIGATE_POS) == 0)
+		{
+			eOut = PROPERTY_TYPE_BOOL;
+			return true;
+		}
+		if (std::strcmp(szVariable, "anim") == 0
+			|| std::strcmp(szVariable, "recipeInput") == 0
+			|| std::strcmp(szVariable, "recipeOutput") == 0
+			|| std::strcmp(szVariable, "state") == 0
+			|| std::strcmp(szVariable, "tag") == 0)
+		{
+			eOut = PROPERTY_TYPE_INT32;
+			return true;
+		}
+		if (std::strcmp(szVariable, "channelDuration") == 0
+			|| std::strcmp(szVariable, "drain") == 0
+			|| std::strcmp(szVariable, "dt") == 0
+			|| std::strcmp(szVariable, "evaporateRemaining") == 0
+			|| std::strcmp(szVariable, "footstepLoudness") == 0
+			|| std::strcmp(szVariable, "footstepRadius") == 0
+			|| std::strcmp(szVariable, "openT") == 0
+			|| std::strcmp(szVariable, "postDropCooldown") == 0
+			|| std::strcmp(szVariable, "quietLoudnessMult") == 0
+			|| std::strcmp(szVariable, "sprintCostExtra") == 0
+			|| std::strcmp(szVariable, DP_AI::BB_KEY_SUSPICION_RADIUS) == 0)
+		{
+			eOut = PROPERTY_TYPE_FLOAT;
+			return true;
+		}
+		if (std::strcmp(szVariable, "specialBehaviour") == 0)
+		{
+			eOut = PROPERTY_TYPE_STRING;
+			return true;
+		}
+		if (std::strcmp(szVariable, "channelVillager") == 0
+			|| std::strcmp(szVariable, "payload") == 0
+			|| std::strcmp(szVariable, "possessedVillager") == 0
+			|| std::strcmp(szVariable, DP_AI::BB_KEY_HIGH_SCENT_TARGET) == 0
+			|| std::strcmp(szVariable, DP_AI::BB_KEY_TARGET_WITH_DEVIL) == 0)
+		{
+			eOut = PROPERTY_TYPE_ENTITY_ID;
+			return true;
+		}
+		return false;
+	}
+
+	u_int CheckGetVariableTypes(const Zenith_GraphDefinition& xDefinition, const char* szAssetPath)
+	{
+		const Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
+		u_int uGetVariableCount = 0;
+		for (u_int uNode = 0; uNode < xDefinition.GetNodeCount(); ++uNode)
+		{
+			const Zenith_GraphNodeDef& xNodeDef = xDefinition.GetNodeAt(uNode);
+			if (xNodeDef.m_strTypeName != "GetVariable")
+			{
+				continue;
+			}
+			++uGetVariableCount;
+			const Zenith_GraphNodeTypeInfo* pxInfo = xRegistry.Find("GetVariable");
+			Zenith_GraphNode* pxNode = pxInfo ? pxInfo->m_pfnCreate() : nullptr;
+			CheckTrue(pxNode != nullptr, "GetVariable is registered for DP type-resolution checks");
+			if (pxNode == nullptr)
+			{
+				continue;
+			}
+			xDefinition.ApplyNodeParams(xNodeDef.m_uNodeID, pxNode, *pxInfo);
+			Zenith_PropertyValue xVariable;
+			const Zenith_PropertyTable* pxProperties = pxInfo->m_pfnGetPropertyTable ? pxInfo->m_pfnGetPropertyTable() : nullptr;
+			const Zenith_ReflectedProperty* pxVariable = pxProperties ? pxProperties->FindProperty("m_strVariable") : nullptr;
+			if (pxVariable != nullptr)
+			{
+				pxVariable->m_pfnGet(pxNode, xVariable);
+			}
+			Zenith_PropertyType eExpected = eGRAPH_PIN_TYPE_ANY;
+			const bool bExpected = pxVariable != nullptr && xVariable.GetType() == PROPERTY_TYPE_STRING
+				&& ExpectedGetVariableType(xVariable.GetString().c_str(), eExpected);
+			const Zenith_GraphPinTable* pxPins = pxInfo->m_pfnGetPinTable ? pxInfo->m_pfnGetPinTable() : nullptr;
+			const u_int uValuePin = pxPins ? pxPins->FindPinIndex("Value") : 0;
+			Zenith_PropertyType eActual = eGRAPH_PIN_TYPE_ANY;
+			const bool bResolved = pxPins != nullptr && uValuePin < pxPins->GetPinCount()
+				&& Zenith_GraphDefinitionValidator::ResolvePinType(
+					xDefinition, xRegistry, xNodeDef.m_uNodeID, uValuePin, eActual);
+			char acWhat[256];
+			std::snprintf(acWhat, sizeof(acWhat), "%s GetVariable(%s) resolves its declared concrete Value type",
+				szAssetPath, pxVariable && xVariable.GetType() == PROPERTY_TYPE_STRING
+					? xVariable.GetString().c_str() : "<missing or non-string>");
+			CheckTrue(bExpected && bResolved && eActual == eExpected && eActual != eGRAPH_PIN_TYPE_ANY, acWhat);
+			delete pxNode;
+		}
+		return uGetVariableCount;
+	}
+
 	void Setup_GraphsValidateClean()
 	{
 		g_iChecks = 0;
@@ -127,6 +273,7 @@ namespace
 	{
 		CheckEqInt(static_cast<int>(uGRAPH_BUILDER_ROWS), 12,
 			"the builder table still lists all twelve graphs DevilsPlayground authors");
+		u_int uTotalGetVariables = 0;
 
 		for (u_int uRow = 0; uRow < uGRAPH_BUILDER_ROWS; ++uRow)
 		{
@@ -135,12 +282,13 @@ namespace
 
 			Zenith_GraphDefinition xDefinition;
 			int iErrors = 0;
+			bool bBuilt = false;
 			{
 				Zenith_GraphBuilder xBuilder(xDefinition);
 				xBuilder.SetGraphName(xRow.m_szAssetPath);
 				xRow.m_pfnBuild(xBuilder);
 
-				const bool bBuilt = xBuilder.Build();
+				bBuilt = xBuilder.Build();
 				std::snprintf(acWhat, sizeof(acWhat), "%s builds with no authoring error", xRow.m_szAssetPath);
 				CheckTrue(bBuilt, acWhat);
 
@@ -165,13 +313,40 @@ namespace
 						xFinding.m_strWhat.c_str());
 				}
 			}
+			if (!bBuilt)
+			{
+				continue;
+			}
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s reports ZERO error-severity findings", xRow.m_szAssetPath);
 			CheckEqInt(iErrors, 0, acWhat);
 
 			std::snprintf(acWhat, sizeof(acWhat), "%s authored at least one node", xRow.m_szAssetPath);
 			CheckTrue(xDefinition.GetNodeCount() > 0, acWhat);
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its required data-edge count", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(xDefinition.GetDataEdgeCount()),
+				static_cast<int>(ExpectedDataEdgeCount(xRow.m_szAssetPath)), acWhat);
+			const u_int uGetVariables = CheckGetVariableTypes(xDefinition, xRow.m_szAssetPath);
+			uTotalGetVariables += uGetVariables;
+			std::snprintf(acWhat, sizeof(acWhat), "%s authors its required GetVariable count", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(uGetVariables),
+				static_cast<int>(ExpectedGetVariableCount(xRow.m_szAssetPath)), acWhat);
+
+			Zenith_BehaviourGraph xGraph;
+			const bool bInstanced = xGraph.InitialiseFromDefinition(xDefinition);
+			std::snprintf(acWhat, sizeof(acWhat), "%s instantiates", xRow.m_szAssetPath);
+			CheckTrue(bInstanced, acWhat);
+			if (!bInstanced)
+			{
+				xGraph.Shutdown();
+				continue;
+			}
+			std::snprintf(acWhat, sizeof(acWhat), "%s resolves ZERO skipped data edges", xRow.m_szAssetPath);
+			CheckEqInt(static_cast<int>(xGraph.GetResolutionSkipCountForTest()), 0, acWhat);
+			xGraph.Shutdown();
 		}
+		CheckEqInt(static_cast<int>(uTotalGetVariables), 73,
+			"all twelve graphs author the required total GetVariable count");
 
 		g_bValidateRan = true;
 		return false;	// entirely synchronous - one frame is all this needs
