@@ -46,6 +46,7 @@
 #include "Zenithmon/Source/Gen/ZM_PropGen.h"                      // prop asset refs + palette + ZM_EnsurePropBaked (ZM-67)
 #include "Zenithmon/Source/Gen/ZM_BuildingGen.h"                  // building asset refs + ZM_EnsureBuildingBaked -- the Dawnmere facades
 #include "Zenithmon/Source/World/ZM_DawnmereFacades.h"            // facade entity names + the total name -> building mapping
+#include "Zenithmon/Source/World/ZM_DawnmereDressing.h"         // the scenery layer + the town keep-out (ZM-D-217)
 #include "Zenithmon/Source/Gen/ZM_InteriorGen.h"                  // room-shell asset refs + ZM_EnsureInteriorBaked
 #include "Zenithmon/Source/World/ZM_InteriorDressing.h"           // shell names, prop + light tables
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"             // the challenge graph's asset path + builder (S7 SC7)
@@ -96,7 +97,6 @@
 #include "UI/Zenith_UIVirtualStick.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"                 // build indices + spawn tags READ, never spelled (SC-E)
-#include "Zenithmon/Source/World/ZM_DawnmereDressing.h"         // the scenery layer + the town keep-out (ZM-D-217)
 #include "Zenithmon/Source/World/ZM_DawnmerePlacement.h"        // the shared authored coordinates (S7 item 3 SC8)
 #include "Zenithmon/Source/World/ZM_ProfLabPlacement.h"         // the shared ProfLab interior coordinates (S8 SC1)
 #include "Zenithmon/Source/World/ZM_Route1Placement.h"          // the shared Route 1 anchors (S8 item 2, R1-1/R1-2)

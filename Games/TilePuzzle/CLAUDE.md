@@ -186,6 +186,14 @@ The component keeps the systems as public graph-facing methods
 (`GateCleared`/`GateFailed`/`RespawnBallFromGraph`, plus queries
 `IsGateActive`/`GetGateMaxBalls`/`GetBallsRemaining`/`IsGateObjectiveMet`).
 
+`PinballHandleBallLost` is intentionally opaque: it has no reflected
+properties, graph pins, blackboard reads, or data wires. The editor automation
+therefore remains the two-node `OnCustomEvent("BallLost")` → handler exec flow.
+`Tests/TilePuzzle_Tests_PinballBallLostGraph.cpp` owns a fresh automation queue,
+then validates the saved asset's identity, two nodes, one exec edge, zero data
+edges, zero validation errors, successful initialization, and zero resolution
+skips. TilePuzzle has no unit-test baseline change from this automated test.
+
 **Equivalence proof:** `Tests/Test_PinballCharacterization.cpp` —
 `Pinball_RespawnFlow_Test` requests gate 5 (3-ball gate) via
 `TilePuzzle::g_uPinballRequestedGate`, drives the REAL plunger mouse-drag

@@ -174,16 +174,14 @@ ZENITH_TEST(ZM_Interaction, TrainerChallengeGraph_BuildsAndResolvesEveryNodeType
 		"type name string does not match anything ZM_RegisterGraphNodes (or the "
 		"engine registry) registered");
 
-	// TWO nodes, deliberately: a three-node Query -> Branch -> Bark shape was
-	// REJECTED because the only branchable condition ("does this trainer have
-	// lines?") is already decided in C++, where the FSM needs the same answer to
-	// skip its confirm window. This pins the count so a third node cannot drift in
-	// without the ruling being revisited.
-	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetNodeCount(), 2u,
-		"the trainer challenge graph is a TWO-node chain "
-		"(OnCustomEvent -> ZMPushTrainerChallenge)");
+	// The one added producer makes the payload read explicit without adding a
+	// decision node: OnCustomEvent -> GetVariable -> ZMPushTrainerChallenge.
+	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetNodeCount(), 3u,
+		"the trainer challenge graph is a THREE-node payload-wire chain");
 	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetEdgeCount(), 1u,
 		"the trainer challenge graph has exactly ONE exec edge");
+	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetDataEdgeCount(), 1u,
+		"the trainer challenge graph has exactly ONE data edge");
 }
 
 // ---- The beat: firing the real event reaches the push node with the right id ----

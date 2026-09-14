@@ -216,24 +216,27 @@ Zenithmon's node library is ONE class,
 one graph the game authors (`BuildGraph_ZM_TrainerChallenge`,
 `Source/Graph/ZM_GraphAuthoring.h`). Its single blackboard-variable-name
 property `m_strTrainerIdVar` now carries a pin descriptor —
-`ZENITH_GRAPH_PIN_INPUT(TrainerId, "m_strTrainerIdVar", PROPERTY_TYPE_INT32)` —
+`ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(TrainerId, "m_strTrainerIdVar", "m_iTrainerId", PROPERTY_TYPE_INT32)` —
 so the node is no longer OPAQUE to `Zenith_GraphDefinitionValidator` (see
-`Zenith/Scripting/CLAUDE.md` § Validation). It is a plain `INPUT`, not a
-`TARGET_REF`: the id is a data value the node maps to a roster row, never
-anything `ResolveTargetEntity` sees. **No `Variable(...)` declaration was
-needed and none was added** — the `OnCustomEvent` source's
-`m_strStorePayloadVar` is a `SELECTOR_WRITE` of the same name, so the read has
-an in-graph writer, and the graph's blackboard (and therefore no `.zscen`)
-is unchanged.
+`Zenith/Scripting/CLAUDE.md` § Validation). It is an INT32
+`INPUT_VAR_OR_CONST`, not a `TARGET_REF`: the id is a data value the node maps
+to a roster row, never anything `ResolveTargetEntity` sees. The graph declares
+`zmTrainerId` as `ZM_TRAINER_NONE`, then wires one `GetVariable` producer into
+the push node and clears its legacy input name. The const fallback is also
+`ZM_TRAINER_NONE`; trainer zero remains the valid Rival Vesper id. A wrong-tag
+checked override reports a mismatch and takes that fallback, while a missing or
+wrong-tag named blackboard value uses the ordinary fallback path.
+The runtime-attached graph moves no Zenithmon scene bytes.
 
-`Tests/ZM_Tests_GraphPinTotality.cpp` holds both halves as `ZENITH_TEST`s (they
-run in ZM's unit gate, so they move Zenithmon's pinned baseline by two):
+`Tests/ZM_Tests_GraphPinTotality.cpp` holds five `ZENITH_TEST`s. Three were
+added here, so they add three Zenithmon baseline rows when root observes the
+pin:
 `ZenithmonNodesTotality` fails if a var-name property is ever added without a
 descriptor, and `ZenithmonTrainerChallengeValidatesClean` builds the production
 definition in-process and fails on any ERROR-severity validation finding (A-8
 latched the validator, so such a finding also fails `Build()`). The
 behavioural units for the same graph stay in
-`Tests/ZM_Tests_TrainerChallengeGraph.cpp` — they drive the BEAT; these two
+`Tests/ZM_Tests_TrainerChallengeGraph.cpp` — they drive the BEAT; these tests
 gate the descriptor table and the report.
 
 ## Testing
