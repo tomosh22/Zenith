@@ -214,27 +214,33 @@ never per widget**.
 Zenithmon's node library is ONE class,
 `ZM_GraphNode_PushTrainerChallenge` (`Components/ZM_GraphNodes.h`), driving the
 one graph the game authors (`BuildGraph_ZM_TrainerChallenge`,
-`Source/Graph/ZM_GraphAuthoring.h`). Its single blackboard-variable-name
-property `m_strTrainerIdVar` now carries a pin descriptor —
-`ZENITH_GRAPH_PIN_INPUT(TrainerId, "m_strTrainerIdVar", PROPERTY_TYPE_INT32)` —
-so the node is no longer OPAQUE to `Zenith_GraphDefinitionValidator` (see
-`Zenith/Scripting/CLAUDE.md` § Validation). It is a plain `INPUT`, not a
-`TARGET_REF`: the id is a data value the node maps to a roster row, never
-anything `ResolveTargetEntity` sees. **No `Variable(...)` declaration was
-needed and none was added** — the `OnCustomEvent` source's
-`m_strStorePayloadVar` is a `SELECTOR_WRITE` of the same name, so the read has
-an in-graph writer, and the graph's blackboard (and therefore no `.zscen`)
-is unchanged.
+`Source/Graph/ZM_GraphAuthoring.h`). `TrainerId` is an INT32 `INPUT_CONST`
+backed by the permanent `m_iTrainerId` property; it has no legacy variable-name
+property. The graph declares `zmTrainerId` as `ZM_TRAINER_NONE` and wires a
+`GetVariable` producer into `TrainerId`. The direct-node default is also
+`ZM_TRAINER_NONE`; trainer zero remains the valid Rival Vesper id. Packed zero,
+wrong tags, and mismatch handling retain their existing typed semantics.
+The runtime-attached graph moves no Zenithmon scene bytes.
 
-`Tests/ZM_Tests_GraphPinTotality.cpp` holds both halves as `ZENITH_TEST`s (they
-run in ZM's unit gate, so they move Zenithmon's pinned baseline by two):
+`Tests/ZM_Tests_GraphPinTotality.cpp` holds five `ZENITH_TEST`s. Three were
+added here; the observed raw Null unit run is 4561 registrations (4559 passed,
+two skipped):
 `ZenithmonNodesTotality` fails if a var-name property is ever added without a
 descriptor, and `ZenithmonTrainerChallengeValidatesClean` builds the production
 definition in-process and fails on any ERROR-severity validation finding (A-8
 latched the validator, so such a finding also fails `Build()`). The
 behavioural units for the same graph stay in
-`Tests/ZM_Tests_TrainerChallengeGraph.cpp` — they drive the BEAT; these two
+`Tests/ZM_Tests_TrainerChallengeGraph.cpp` — they drive the BEAT; these tests
 gate the descriptor table and the report.
+
+The C1 wire-only contract preserves the typed default of an unconnected input
+and the current permanent value of an unconnected `INPUT_CONST`; it removes only
+INPUT/OUTPUT name fallback and implicit output-to-blackboard publication. T3-final2,
+SceneGuard, and all nine builds are green with pins Combat 2695, Zenithmon 4548,
+and RenderTest 2798; all seven fresh census legs are green with zero FALLBACK,
+aliasing, and validator errors. The final asset audit found 164 graphs, 881
+obsolete parameters removed from 102 graphs, no unexpected removal or topology
+issue, and a 192-asset second boot with no path or byte changes.
 
 ## Testing
 

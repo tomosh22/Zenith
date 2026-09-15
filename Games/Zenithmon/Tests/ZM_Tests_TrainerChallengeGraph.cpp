@@ -174,16 +174,14 @@ ZENITH_TEST(ZM_Interaction, TrainerChallengeGraph_BuildsAndResolvesEveryNodeType
 		"type name string does not match anything ZM_RegisterGraphNodes (or the "
 		"engine registry) registered");
 
-	// TWO nodes, deliberately: a three-node Query -> Branch -> Bark shape was
-	// REJECTED because the only branchable condition ("does this trainer have
-	// lines?") is already decided in C++, where the FSM needs the same answer to
-	// skip its confirm window. This pins the count so a third node cannot drift in
-	// without the ruling being revisited.
-	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetNodeCount(), 2u,
-		"the trainer challenge graph is a TWO-node chain "
-		"(OnCustomEvent -> ZMPushTrainerChallenge)");
+	// The pure GetVariable producer has a blank OUTPUT name. It feeds Push by
+	// the sole data edge; the only execution edge is OnCustomEvent -> Push.
+	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetNodeCount(), 3u,
+		"the trainer challenge graph is a THREE-node payload-wire chain");
 	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetEdgeCount(), 1u,
 		"the trainer challenge graph has exactly ONE exec edge");
+	ZENITH_ASSERT_EQ(xRig.m_xDefinition.GetDataEdgeCount(), 1u,
+		"the trainer challenge graph has exactly ONE data edge");
 }
 
 // ---- The beat: firing the real event reaches the push node with the right id ----
@@ -214,12 +212,10 @@ ZENITH_TEST(ZM_Interaction, TrainerChallengeGraph_FiringTheEventReachesThePushNo
 		"firing \"%s\" did not reach ZMPushTrainerChallenge -- the .bgraph is "
 		"decoration rather than the owner of the beat",
 		szZM_GRAPH_EVENT_TRAINER_SPOTTED);
-	// ...and it arrived carrying the RIGHT trainer. A mis-named store-payload var
-	// leaves this at ZM_TRAINER_NONE while the attempt count still moves.
+	// ...and it arrived carrying the RIGHT trainer through the authored data edge.
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer,
 		ZM_TRAINER_RIVAL_VESPER,
-		"the push node did not resolve the fired trainer id -- the source's "
-		"store-payload variable and the node's m_strTrainerIdVar must both be \"%s\"",
+		"the push node did not receive the fired trainer id through its data edge \"%s\"",
 		szZM_GRAPH_VAR_TRAINER_ID);
 
 	// How far this unit reaches, stated explicitly: there is no ZM_MenuRoot

@@ -12,6 +12,10 @@
 //   - palette (registered node types by category; click to place),
 //   - canvas (drag nodes, drag output pin -> input pin to connect, right-click
 //     an output pin to disconnect, Delete to remove the selected node),
+//   - typed DATA pins (B-4): labelled, coloured by the resolved pin type, wired
+//     by dragging an output data pin onto an input data pin. Exec edges
+//     disconnect on the SOURCE output pin; data edges disconnect on the
+//     DESTINATION input pin, because a data wire is KEYED by its destination.
 //   - blackboard variables (add/remove/edit defaults),
 //   - selected-node parameters (the Phase 0 reflected-property auto panel),
 //   - Save (writes the asset + queues live hot reload via Zenith_GraphReload),
@@ -115,13 +119,44 @@ public:
 	static bool GetPaletteEntryScreenPos(const char* szTypeName, Zenith_Maths::Vector2& xOut);
 	static bool GetNodeScreenPos(u_int uNodeID, Zenith_Maths::Vector2& xOut);
 	static bool GetPinScreenPos(u_int uNodeID, u_int uPin, bool bInputPin, Zenith_Maths::Vector2& xOut);
+	// DATA pins are addressed by NAME, never by index: the drawn index of a
+	// variadic member moves with the member count, and a wire stores the name.
+	// False for a pin the last frame did not draw (unknown name, no pin table,
+	// off-screen) - the same fail-closed contract GetPinScreenPos has.
+	static bool GetDataPinScreenPos(u_int uNodeID, const char* szPinName, bool bInputPin, Zenith_Maths::Vector2& xOut);
+	// Full node box, min/max - the layout proof compares two shapes' heights
+	// rather than recomputing the formula in a test (which would assert the
+	// formula against itself).
+	static bool GetNodeScreenRect(u_int uNodeID, Zenith_Maths::Vector2& xOutMin, Zenith_Maths::Vector2& xOutMax);
 	static bool GetToolbarButtonScreenPos(const char* szLabel, Zenith_Maths::Vector2& xOut);
 	static bool GetPropertyRowScreenPos(const char* szPropertyName, Zenith_Maths::Vector2& xOut);
 	// Full rect (min/max) - sliders are set by clicking at a fraction of their width.
 	static bool GetPropertyRowScreenRect(const char* szPropertyName, Zenith_Maths::Vector2& xOutMin, Zenith_Maths::Vector2& xOutMax);
+	// The data-pin drag-drop completion handler, resolved by (type, occurrence)
+	// like Action_Connect: runs the SAME TryConnectData funnel the canvas drop
+	// does, refusals and re-validation included.
+	static bool Action_ConnectData(const char* szSrcTypeName, u_int uSrcOccurrence, const char* szSrcPin,
+	                               const char* szDstTypeName, u_int uDstOccurrence, const char* szDstPin);
+	// The right-click-an-input-data-pin handler. Keyed by DESTINATION, because
+	// that is what the one-wire-per-input invariant makes unique.
+	static bool Action_DisconnectData(const char* szDstTypeName, u_int uDstOccurrence, const char* szDstPin);
+
 	static u_int GetNodeCount();
 	static u_int GetEdgeCount();
+	static u_int GetDataEdgeCount();
 	static u_int GetSelectedNodeID();
+	// How many per-node pin caches have been BUILT since the panel opened. The
+	// resolver allocates a temp instance per instance-resolved query, so the
+	// panel must not call it per pin per frame: a test asserts DELTAS (two
+	// frames add zero; a committed param edit adds at least one).
+	static u_int GetPinTypeCacheFillCountForTest();
+	// How many edges the last rendered frame drew with the dashed-red FALLBACK
+	// (an endpoint pin it could not locate). A wire nobody can see is worse than
+	// an ugly one, so this is an observable rather than a cosmetic.
+	static u_int GetUnresolvableEdgeDrawCountForTest();
+	// The live-highlight answer for one node, through the SAME live-graph lookup
+	// and recently-executed scan the canvas outline uses.
+	static bool IsNodeHighlightedForTest(u_int uNodeID);
 	static u_int FindNodeIDByType(const char* szTypeName, u_int uOccurrence = 0);
 	static bool IsDirty();
 	// Reads a float param off the panel's live param-edit instance (selected node).

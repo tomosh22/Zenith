@@ -893,9 +893,132 @@ is `Zenith/Scripting/` — see its CLAUDE.md):
   `Panels/Zenith_EditorPanel_GraphEditor.Tests.inl` (headless, a real ImGui
   frame — the rect assertions are INSIDE the open frame because `IsOnScreen`
   re-reads `DisplaySize` at query time).
+- **★ TYPED DATA PINS (B-4).** Every node whose class declares a pin table
+  (`Scripting/Zenith_GraphPinTable.h`) draws its **INPUT** pins down the left
+  side and its **OUTPUT** pins down the right, each with its **name** as a label
+  and a filled circle coloured by its **resolved type** (`PinTypeColour`: FLOAT
+  green, INT32 cyan, UINT32 teal, BOOL red, VECTOR2/3/4 three shades of yellow,
+  STRING magenta, ENTITY_ID blue, GUID orange, **ANY *and every unresolvable
+  pin* grey**). `SELECTOR_*`, `TARGET_REF` and `LIST` roles are never drawn —
+  they are configured strings, not wires, and stay in the param panel. A
+  variadic INPUT family expands to one drawn pin per configured member
+  (`In0`, `In1`, …); a family with no members drawn draws nothing, exactly as a
+  wire naming it would resolve to nothing. A node with **no pin table draws
+  precisely what it drew before B-4**.
+  - **Layout.** Left column: row 0 is the exec input, then one row per data
+    input. Right column: rows `0..E-1` are the exec outputs, then one row per
+    data output. The exec input keeps row 0 unconditionally, so every
+    pre-existing exec position is where it was. The box height comes from
+    `max(leftRows, rightRows)` **inside `BuildPinPositions`** — the pass that
+    laid the rows out — because a second copy of that arithmetic in
+    `RenderCanvasNode` is exactly how a node ends up shorter than its own pins.
+    The `rows > 0 ? rows - 1 : 0` guard is load-bearing: a **pure** node has
+    ZERO exec outputs.
+  - **★ Pure nodes look different because they behave differently.** A
+    `m_bPureNode` type draws **no exec pins at all** (it is evaluated on demand
+    by whoever pulls it) and gets a **purple** header in `NodeHeaderColour`.
+    `GetPinScreenPos(pure, 0, true)` therefore answers *false* — which is why
+    the unit pairs that refusal with a positive `GetDataPinScreenPos` on the
+    same node in the same frame.
+  - **The pin key carries a KIND BIT**:
+    `MakePinKey(node, pin, bInput, bData) = (node << 10) | (bData ? 1<<9 : 0) | ((pin & 0xFF) << 1) | bInput`.
+    The node shift moved 9 → 10 to make room. Without the bit an exec pin and a
+    data pin at the same ordinal collide in `m_xPinRects` and one silently
+    overwrites the other. `pin & 0xFF` is a **hard ceiling of 255 drawn pins**
+    per side per kind — documented, nowhere near reached, and already the exec
+    limit (the chain-cursor key packs the pin into a byte).
+  - **A data pin is addressed by NAME, never by index.** A variadic member's
+    drawn index moves with the member count while the wire stores the name, so
+    `GetDataPinScreenPos(node, pinName, bInput, out)` looks the name up in the
+    per-frame drawn-name lists `BuildPinPositions` records and then reads the
+    rect. Held drag state is by name too (`m_strLinkSrcDataPin`; empty = an
+    exec link), which is what lets `RenderPendingLink` draw the rubber band
+    from the right pin.
+- **★ TWO CONNECT FUNNELS AND ONE DISCONNECT FUNNEL, all ImGui-free.**
+  `TryConnect(src, srcPin, dst)` for exec, `TryConnectData(src, srcPin, dst,
+  dstPin)` for data, `TryDisconnectData(dst, dstPin)` for removal. Each is run
+  by BOTH the canvas handler and the atomic verb (`Action_Connect`,
+  `Action_ConnectData`, `Action_DisconnectData`), because the exec pair once
+  WERE divergent copies and only one of them checked its pin range. Starting and
+  completing a drag are funnels too (`BeginPendingLink`,
+  `CompletePendingLinkOnExecInput`, `CompletePendingLinkOnDataInput`): the
+  **cross-kind refusals** — a data link dropped on an exec pin, an exec link
+  dropped on a data pin — live there rather than in the ImGui handler, because a
+  refusal only a mouse can reach is one no headless unit can prove.
+  `TryConnect` also **refuses a PURE destination**: B-3 makes `EXEC_INTO_PURE`
+  an author-time error and the runtime DROPS such an edge, so the wire would be
+  a lie. A pure node draws no exec input, so only `Action_Connect` can reach
+  that case — which is exactly why the check is in the funnel.
+- **★ A DATA WIRE IS REFUSED BY AN ERROR-SET DIFFERENCE, NEVER BY ATTRIBUTION.**
+  `TryConnectData` validates, snapshots the **ERROR** findings (rule + node +
+  pin + text), calls `AddDataEdge`, runs the FULL validator again, and reverts
+  (`RemoveDataEdge` + **re-validate again**, so the displayed report describes
+  the definition without the reverted wire) if and only if an error appeared
+  that was not in the snapshot — *whatever node it names*. The refusal text
+  quotes that finding's **rule name** and `m_strWhat`.
+  - Matching "an error on the pin I dropped on" would be wrong twice over: a
+    `DATA_CYCLE` is attributed to the DFS entry node (so a cycle would be let
+    through), and a pre-existing unrelated error on the destination would revert
+    every good wire into that node — precisely when an author most needs to wire
+    it. Units: `GraphEditor_DataWireRefusedOnSourceSideError`,
+    `GraphEditor_DataWireClosingCycleRefused`,
+    `GraphEditor_DataWireLandsDespitePreexistingErrorOnDestination`.
+  - **Warnings never revert anything** (`DOMINANCE`, `PURE_UNCONSUMED`): they are
+    advice about ORDER, not about this wire's legality.
+- **★ THE DISCONNECT GESTURE IS ASYMMETRIC, and the data model says so.** An
+  exec edge is keyed by its SOURCE `(node, pin)` — one outgoing edge per pin —
+  so it is removed by right-clicking the **output**. A data edge is keyed by its
+  DESTINATION `(node, pin name)` — one incoming wire per input, unbounded
+  fan-out — so it is removed by right-clicking the **input**. Right-clicking a
+  data output is deliberately inert: "which of my N wires" has no answer.
+- **★ AN UNRESOLVABLE EDGE IS DRAWN ANYWAY**, dashed and red, between the two
+  node headers, and **counted**
+  (`GetUnresolvableEdgeDrawCountForTest`) — a data wire whose endpoint pin
+  name no table declares, or an exec edge into a pure node's absent input, both
+  from a loaded asset. Hiding it would leave the canvas disagreeing with the
+  file while the findings panel names a pin the author cannot see.
+- **Windowed persistence proof (B5).** `Test_GraphEditorLiveAuthoring` uses
+  frame-separated simulated mouse down/move/up to draw
+  `ReadKeyState.Result -> Branch.Condition`; the atomic test action is not a
+  substitute. After each Save it loads the serialized asset independently and
+  checks exact endpoints, then a normal close/reopen waits for named data-pin
+  rects and zero unresolvable rendered wires. `OpenAssetFresh` is only the
+  per-run initial authoring reset, never the reload assertion.
+- **★ THE PIN CACHE, AND WHY IT MUST EXIST.**
+  `Zenith_GraphDefinitionValidator::ResolvePinType` is a QUERY that **allocates
+  a temp instance** per instance-resolved or from-variable pin, and the variadic
+  member count needs a param-applied instance too — so a per-pin-per-frame call
+  is an allocation per pin per frame. The panel keeps a per-node cache of the
+  whole drawn pin list (input names, output names, resolved types, pure flag),
+  filled lazily and **cleared WHOLE** by `InvalidateNodePinCache()` on:
+  `OpenAsset` / `OpenAssetFresh` / `Close`, every **committed** param edit, node
+  **add** and **remove**, variable **add** and **remove**, and `Save` (the
+  EDITOR-initiated reload: it queues a hot reload and can swap the definition
+  object). ★ A reload the FileWatcher drives from an externally edited `.bgraph`
+  while the panel holds it open reaches NO invalidation today — the drawn pin
+  list can then describe the pre-reload definition until the next edit; giving
+  `Zenith_GraphReload`'s drain a panel hook is a recorded follow-up. Whole rather than
+  per-node because a variable retype moves the resolved type of every
+  from-variable pin in the graph. A **failed** `ResolvePinType` answer is never
+  cached — a per-game type registered after this frame would otherwise stay
+  pin-less forever. Observable: `GetPinTypeCacheFillCountForTest()`, asserted in
+  DELTAS by `GraphEditor_PinTypeCacheFilledOncePerInvalidation` (two frames add
+  zero; a committed param edit adds at least one). `ResolvePinType` is indexed by
+  **table** index and takes no ordinal — every member of a variadic family
+  shares the family's one type — so the drawn index maps back to its family's
+  table index.
 - **Live execution highlighting** — while Playing, recently-executed nodes of
   the selected entity's matching graph slot glow (fed by
-  `Zenith_BehaviourGraph::GetRecentlyExecuted`).
+  `Zenith_BehaviourGraph::GetRecentlyExecuted`). **★ A PULLED PURE NODE NOW
+  GLOWS TOO (B-4):** `PullSlot` pushes the pure source it evaluated (and on a
+  memo hit), deduplicated, under the same cap of 64 — see
+  `Scripting/CLAUDE.md`. Before that, a pure node was the one kind that really
+  did run every frame and never lit up, so "my producer is not reached" and "my
+  producer ran and wrote the wrong value" looked identical. Read through
+  `IsNodeHighlightedForTest(nodeID)`, which makes the same two calls the canvas
+  outline does. **A pulled producer lands AFTER its consumer in the trace** (the
+  pull happens inside the consumer's `Execute`); the trace is "what ran", never
+  a topological order.
 - **★ A REFUSED CONNECTION SAYS SO, and there is exactly ONE connect body.**
   The canvas drop handler and `Action_Connect` used to be divergent copies — the
   drop called `AddEdge` inline with no `else` at all, so a rejected drag changed
@@ -940,9 +1063,16 @@ property field names (`"m_fDegreesPerSecond"`, not `"DegreesPerSecond"`).
 
 **ZENITH_TESTING accessors** record live screen rects each Render so simulated
 input can click real coordinates: `GetPaletteEntryScreenPos`,
-`GetNodeScreenPos`, `GetPinScreenPos`, `GetToolbarButtonScreenPos`,
+`GetNodeScreenPos`, `GetNodeScreenRect`, `GetPinScreenPos`,
+`GetDataPinScreenPos` (by pin NAME), `GetToolbarButtonScreenPos`,
 `GetPropertyRowScreenPos/Rect`, plus state probes (`GetNodeCount`,
-`GetEdgeCount`, `GetSelectedNodeID`, `FindNodeIDByType`, `IsDirty`).
+`GetEdgeCount`, `GetDataEdgeCount`, `GetSelectedNodeID`, `FindNodeIDByType`,
+`IsDirty`, `GetPinTypeCacheFillCountForTest`,
+`GetUnresolvableEdgeDrawCountForTest`, `IsNodeHighlightedForTest`) and the
+data-wire verbs `Action_ConnectData` / `Action_DisconnectData`. The data verbs are
+ZENITH_TESTING-only deliberately: there is **no** `AddStep_GraphDataEdge`
+automation step, because boot-time authoring writes data edges through
+`Zenith_GraphBuilder::DataEdge()`.
 
 **★ EVERY position accessor returns FALSE for an OFF-SCREEN rect, and the
 palette must be scrolled before it is clicked.** The palette lists every

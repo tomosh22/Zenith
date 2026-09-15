@@ -248,7 +248,7 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
 	u_int uTypesWalked = 0;
-	u_int uVarNamePropertiesSeen = 0;
+	u_int uDescriptorsWalked = 0;
 	for (u_int uType = 0; uType < xRegistry.GetTypeCount(); ++uType)
 	{
 		const Zenith_GraphNodeTypeInfo& xInfo = xRegistry.GetTypeAt(uType);
@@ -263,7 +263,8 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 		const Zenith_GraphPinTable* pxPins = xInfo.m_pfnGetPinTable != nullptr
 			? xInfo.m_pfnGetPinTable() : nullptr;
 
-		// (i) every blackboard-variable-NAME property is covered by a descriptor.
+		// (i) every permanent blackboard-variable-NAME property is covered by a
+		// selector, target or list descriptor. DATA pins are slot-only.
 		if (pxProperties != nullptr)
 		{
 			for (u_int uProp = 0; uProp < pxProperties->GetPropertyCount(); ++uProp)
@@ -277,7 +278,6 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 				{
 					continue;
 				}
-				++uVarNamePropertiesSeen;
 
 				bool bCovered = false;
 				if (pxPins != nullptr)
@@ -285,8 +285,10 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 					for (u_int uPin = 0; uPin < pxPins->GetPinCount() && !bCovered; ++uPin)
 					{
 						const Zenith_GraphPinDesc& xDesc = pxPins->GetPinAt(uPin);
-						bCovered = (xDesc.m_szVarNameProperty != nullptr && std::strcmp(xDesc.m_szVarNameProperty, szProperty) == 0)
-							|| (xDesc.m_szFallbackVarNameProperty != nullptr && std::strcmp(xDesc.m_szFallbackVarNameProperty, szProperty) == 0);
+						bCovered = xDesc.m_eRole != GRAPH_PIN_ROLE_INPUT
+							&& xDesc.m_eRole != GRAPH_PIN_ROLE_OUTPUT
+							&& xDesc.m_szVarNameProperty != nullptr
+							&& std::strcmp(xDesc.m_szVarNameProperty, szProperty) == 0;
 					}
 				}
 				if (!bCovered)
@@ -303,10 +305,28 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 		// (ii) every property a descriptor names really exists.
 		if (pxPins != nullptr)
 		{
+			uDescriptorsWalked += pxPins->GetPinCount();
 			for (u_int uPin = 0; uPin < pxPins->GetPinCount(); ++uPin)
 			{
 				const Zenith_GraphPinDesc& xDesc = pxPins->GetPinAt(uPin);
-				const char* aszNamed[3] = { xDesc.m_szVarNameProperty, xDesc.m_szConstProperty, xDesc.m_szFallbackVarNameProperty };
+				if ((xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT || xDesc.m_eRole == GRAPH_PIN_ROLE_OUTPUT)
+					&& xDesc.m_szVarNameProperty != nullptr && xDesc.m_szVarNameProperty[0] != '\0')
+				{
+					++uFailures;
+					Zenith_Error(LOG_CATEGORY_UNITTEST,
+						"%s: node type '%s' pin '%s' is INPUT/OUTPUT but carries forbidden blackboard binding metadata '%s'",
+						szTuName, xInfo.m_strTypeName.c_str(),
+						xDesc.m_szName != nullptr ? xDesc.m_szName : "(null)", xDesc.m_szVarNameProperty);
+				}
+				// ★ Three slots: m_szTypeFromVarNameProperty (B-3) names
+				// a property like the other two, and a typo in it resolves the
+				// pin to ANY SILENTLY - the from-variable form has no other symptom.
+				const char* aszNamed[3] =
+				{
+					xDesc.m_szVarNameProperty,
+					xDesc.m_szConstProperty,
+					xDesc.m_szTypeFromVarNameProperty,
+				};
 				for (u_int uSlot = 0; uSlot < 3u; ++uSlot)
 				{
 					if (aszNamed[uSlot] == nullptr || aszNamed[uSlot][0] == '\0')
@@ -337,11 +357,11 @@ inline u_int Zenith_CountPinTableTotalityFailuresEx(Zenith_GraphNodeRegistrarFn 
 		++uFailures;
 		Zenith_Error(LOG_CATEGORY_UNITTEST, "%s: the registrar swap yielded NO node types for this TU", szTuName);
 	}
-	if (uVarNamePropertiesSeen == 0u)
+	if (uDescriptorsWalked == 0u)
 	{
 		++uFailures;
 		Zenith_Error(LOG_CATEGORY_UNITTEST,
-			"%s: not one m_str*Var* property was found across this TU - the walk proved nothing", szTuName);
+			"%s: not one pin descriptor was found across this TU - the walk proved nothing", szTuName);
 	}
 	return uFailures;
 }

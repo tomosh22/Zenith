@@ -77,6 +77,8 @@
 #include "Physics/Zenith_Physics.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphBlackboard.h"
+#include "Scripting/Zenith_GraphBuilder.h"
+#include "Scripting/Zenith_GraphNode.h"
 #include "ZenithECS/Zenith_Scene.h"
 #include "ZenithECS/Zenith_SceneData.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
@@ -203,6 +205,103 @@ namespace
 			return nullptr;
 		}
 		return &pxGraph->GetBlackboard();
+	}
+
+	// Resolve a live producer through the same deterministic definition the scene
+	// recipe built. The optional selector guards the two MathBlackboardFloat
+	// instances in ST_UIPlayground; never accept the first matching type.
+	Zenith_GraphNode* ST_FindOutputNode(
+		const char* szEntity, u_int uSlot, void (*pfnBuild)(Zenith_GraphBuilder&),
+		const char* szType, const char* szSelector = nullptr, const char* szSelectorValue = nullptr,
+		const char* szExecPredecessor = nullptr)
+	{
+		Zenith_Entity xEntity = ST_FindEntity(szEntity);
+		Zenith_GraphComponent* pxGraphs = xEntity.IsValid() ? xEntity.TryGetComponent<Zenith_GraphComponent>() : nullptr;
+		Zenith_BehaviourGraph* pxGraph = pxGraphs != nullptr && uSlot < pxGraphs->GetGraphCount()
+			? pxGraphs->GetGraphAt(uSlot) : nullptr;
+		if (pxGraph == nullptr)
+		{
+			return nullptr;
+		}
+
+		Zenith_GraphDefinition xDefinition;
+		Zenith_GraphBuilder xBuilder(xDefinition);
+		pfnBuild(xBuilder);
+		if (!xBuilder.Build())
+		{
+			return nullptr;
+		}
+		Zenith_GraphNode* pxMatch = nullptr;
+		int iMatches = 0;
+		for (u_int u = 0; u < xDefinition.GetNodeCount(); ++u)
+		{
+			const Zenith_GraphNodeDef& xDef = xDefinition.GetNodeAt(u);
+			Zenith_GraphNode* pxNode = pxGraph->FindNode(xDef.m_uNodeID);
+			if (pxNode == nullptr || std::strcmp(pxNode->GetTypeName(), szType) != 0)
+			{
+				continue;
+			}
+			if (szSelector != nullptr)
+			{
+				const Zenith_PropertyTable* pxTable = pxNode->GetPropertyTableVirtual();
+				const Zenith_ReflectedProperty* pxProperty = pxTable ? pxTable->FindProperty(szSelector) : nullptr;
+				Zenith_PropertyValue xValue;
+				if (pxProperty == nullptr || pxProperty->m_pfnGet == nullptr)
+				{
+					continue;
+				}
+				pxProperty->m_pfnGet(pxNode, xValue);
+				if (xValue.GetType() != PROPERTY_TYPE_STRING || xValue.GetString() != szSelectorValue)
+				{
+					continue;
+				}
+			}
+			if (szExecPredecessor != nullptr)
+			{
+				bool bHasPredecessor = false;
+				for (u_int uEdge = 0; uEdge < xDefinition.GetEdgeCount(); ++uEdge)
+				{
+					const Zenith_GraphEdge& xEdge = xDefinition.GetEdgeAt(uEdge);
+					const Zenith_GraphNodeDef* pxSource = xDefinition.FindNodeDef(xEdge.m_uSrcNodeID);
+					if (xEdge.m_uDstNodeID == xDef.m_uNodeID && xEdge.m_uSrcPin == 0u
+						&& pxSource != nullptr && pxSource->m_strTypeName == szExecPredecessor)
+					{
+						bHasPredecessor = true;
+						break;
+					}
+				}
+				if (!bHasPredecessor)
+				{
+					continue;
+				}
+			}
+			pxMatch = pxNode;
+			++iMatches;
+		}
+		if (iMatches != 1)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[ScriptTestGym] expected one %s output producer, found %d", szType, iMatches);
+			return nullptr;
+		}
+		return pxMatch;
+	}
+
+	const Zenith_PropertyValue* ST_Output(
+		const char* szEntity, u_int uSlot, void (*pfnBuild)(Zenith_GraphBuilder&),
+		const char* szType, const char* szOutput, Zenith_PropertyType eType,
+		const char* szSelector = nullptr, const char* szSelectorValue = nullptr,
+		const char* szExecPredecessor = nullptr)
+	{
+		Zenith_GraphNode* pxNode = ST_FindOutputNode(
+			szEntity, uSlot, pfnBuild, szType, szSelector, szSelectorValue, szExecPredecessor);
+		const Zenith_GraphPinTable* pxPins = pxNode ? pxNode->GetPinTableVirtual() : nullptr;
+		const u_int uPin = pxPins ? pxPins->FindPinIndex(szOutput) : 0u;
+		if (pxNode == nullptr || pxPins == nullptr || uPin >= pxPins->GetPinCount())
+		{
+			return nullptr;
+		}
+		const Zenith_PropertyValue* pxValue = pxNode->GetOutputForTest(uPin);
+		return pxValue != nullptr && pxValue->GetType() == eType ? pxValue : nullptr;
 	}
 
 	int32_t ST_ReadInt(const char* szEntity, u_int uSlot, const char* szVar, int32_t iDefault)
@@ -1319,10 +1418,13 @@ namespace
 	int          g_iLiveBallPeak   = 0;
 	std::string  g_strSpawnedText;
 	std::string  g_strSpawnedExpected;
+	std::string  g_strKilledText;
+	std::string  g_strKilledExpected;
 	bool         g_bPhysicsReady   = false;
 	bool         g_bTimerSpawnSeen = false;
 	bool         g_bManualSpawned  = false;
 	bool         g_bSpawnedTextRead = false;
+	bool         g_bKilledTextRead = false;
 	bool         g_bPhysicsDone    = false;
 
 	// Names are not unique and SpawnPrefab stamps the prefab root with the one
@@ -1376,10 +1478,13 @@ static void Setup_PhysicsGym()
 	g_iLiveBallPeak = 0;
 	g_strSpawnedText.clear();
 	g_strSpawnedExpected.clear();
+	g_strKilledText.clear();
+	g_strKilledExpected.clear();
 	g_bPhysicsReady = false;
 	g_bTimerSpawnSeen = false;
 	g_bManualSpawned = false;
 	g_bSpawnedTextRead = false;
+	g_bKilledTextRead = false;
 	g_bPhysicsDone = false;
 }
 
@@ -1458,6 +1563,8 @@ static bool Step_PhysicsGym(int iFrame)
 			// constant. The prefix mirrors the builder's "Spawned: {}" (an int32
 			// renders through "%d", so no decimals appear).
 			g_strSpawnedExpected = std::string("Spawned: ") + std::to_string(g_iSpawnAfterKey);
+			g_bKilledTextRead = ST_ReadUIText(ScriptTest::UINames::szKILLED, g_strKilledText);
+			g_strKilledExpected = std::string("Killed: ") + std::to_string(g_iKillCount);
 			g_bPhysicsDone = true;
 			g_ePhysicsPhase = PhysicsPhase::Done;
 			return false;
@@ -1498,6 +1605,13 @@ static bool Verify_PhysicsGym()
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[PhysicsGym] killCount %d, expected >= %d (spawnCount %d)",
 			g_iKillCount, iST_PHYSICS_MIN_COUNT, g_iSpawnCount);
+		return false;
+	}
+	if (!g_bKilledTextRead || g_strKilledText != g_strKilledExpected)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[PhysicsGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szKILLED, g_strKilledText.c_str(), g_strKilledExpected.c_str(),
+			ScriptTest::Vars::szKILL_COUNT);
 		return false;
 	}
 	// Reported before the key clause: without a synchronising timer spawn the key
@@ -1942,7 +2056,9 @@ namespace
 	float   g_fUIClockSample   = -1.0f;
 	float   g_fUIFillSample    = -1.0f;
 	std::string g_strUICounterText;
+	std::string g_strUIClockText;
 	bool    g_bUICounterTextRead = false;
+	bool    g_bUIClockTextRead = false;
 	bool    g_bUIReady      = false;
 	bool    g_bUIClickFailed = false;
 	bool    g_bHotAtCool    = true;
@@ -1978,7 +2094,9 @@ static void Setup_UIGym()
 	g_fUIClockSample = -1.0f;
 	g_fUIFillSample = -1.0f;
 	g_strUICounterText.clear();
+	g_strUIClockText.clear();
 	g_bUICounterTextRead = false;
+	g_bUIClockTextRead = false;
 	g_bUIReady = false;
 	g_bUIClickFailed = false;
 	g_bHotAtCool = true;
@@ -2070,23 +2188,30 @@ static bool Step_UIGym(int iFrame)
 	}
 
 	case UIPhase::Sample:
+	{
 		if (++g_iUIFrame < iST_UI_SAMPLE_FRAMES)
 		{
 			return true;
 		}
 		g_fUIClockSample = ST_ReadUIClock();
-		g_fUIFillSample = ST_ReadFloat(
-			ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT, ScriptTest::Vars::szFILL01, -1.0f);
+		g_bUIClockTextRead = ST_ReadUIText(ScriptTest::UINames::szCLOCK, g_strUIClockText);
+		const Zenith_PropertyValue* pxFill = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT,
+			&BuildGraph_ST_UIPlayground, "MathBlackboardFloat", "Result", PROPERTY_TYPE_FLOAT,
+			"m_strVar", ScriptTest::Vars::szCYCLE);
+		g_fUIFillSample = pxFill != nullptr ? pxFill->GetFloat() : -1.0f;
 		g_iUIFrame = 0;
 		g_eUIPhase = UIPhase::AwaitCool;
 		return true;
+
+	}
 
 	case UIPhase::AwaitCool:
 		if (ST_ReadUIClock() >= fST_UI_COOL_CLOCK)
 		{
 			g_bSawCool = true;
-			g_bHotAtCool = ST_ReadBool(
-				ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT, ScriptTest::Vars::szHOT, true);
+			const Zenith_PropertyValue* pxHot = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT,
+				&BuildGraph_ST_UIPlayground, "CompareBlackboardFloat", "Result", PROPERTY_TYPE_BOOL);
+			g_bHotAtCool = pxHot != nullptr ? pxHot->GetBool() : true;
 			// Same frame as the flag, deliberately: advance -> modulo -> divide ->
 			// compare -> Branch -> SetUIColor is ONE OnUpdate chain, so the colour on
 			// the element and the 'hot' bool that selected it are always consistent
@@ -2107,8 +2232,9 @@ static bool Step_UIGym(int iFrame)
 		if (ST_ReadUIClock() >= fST_UI_HOT_CLOCK)
 		{
 			g_bSawHot = true;
-			g_bHotAtHot = ST_ReadBool(
-				ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT, ScriptTest::Vars::szHOT, false);
+			const Zenith_PropertyValue* pxHot = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_UI_PLAYGROUND_SLOT,
+				&BuildGraph_ST_UIPlayground, "CompareBlackboardFloat", "Result", PROPERTY_TYPE_BOOL);
+			g_bHotAtHot = pxHot != nullptr ? pxHot->GetBool() : false;
 			g_bBarColourReadHot = ST_ReadUIColor(ScriptTest::UINames::szBAR_FILL, g_xBarColourAtHot);
 			g_eUIPhase = UIPhase::Done;
 			return false;
@@ -2180,6 +2306,14 @@ static bool Verify_UIGym()
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[UIGym] '%s' never advanced (%.4f)",
 			ScriptTest::Vars::szCLOCK, g_fUIClockSample);
+		return false;
+	}
+	char acClockText[64];
+	std::snprintf(acClockText, sizeof(acClockText), "t = %.1fs", g_fUIClockSample);
+	if (!g_bUIClockTextRead || g_strUIClockText != acClockText)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[UIGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szCLOCK, g_strUIClockText.c_str(), acClockText, ScriptTest::Vars::szCLOCK);
 		return false;
 	}
 	if (!(g_fUIFillSample > 0.0f) || g_fUIFillSample > 1.0f)
@@ -2362,6 +2496,8 @@ namespace
 	int32_t g_iFlowDispensedDouble  = -1;
 	int32_t g_iFlowDispensedSecond  = -1;
 	int32_t g_iFlowDispensedThird   = -1;
+	std::string g_strFlowDispensedText;
+	bool g_bFlowDispensedTextRead = false;
 	int32_t g_iFlowBagAfterFill     = -1;
 	int32_t g_iFlowScoreAfterFill   = -1;
 	int32_t g_iFlowVisited          = -1;
@@ -2420,7 +2556,10 @@ namespace
 	{
 		g_iFlowBonusEarly = ST_FlowInt(ScriptTest::Vars::szBONUS, -1);
 		g_bFlowArmedBeforePlate = ST_FlowBool(ScriptTest::Vars::szARMED, true);
-		g_abFlowCanDispense[0] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, true);
+		const Zenith_PropertyValue* pxCanDispense = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "LogicBlackboardBool", "Result", PROPERTY_TYPE_BOOL,
+			"m_strVars", "armed,notJammed");
+		g_abFlowCanDispense[0] = pxCanDispense != nullptr ? pxCanDispense->GetBool() : true;
 		g_iFlowNormalA = ST_FlowInt(ScriptTest::Vars::szNORMAL_RUNS, -1);
 		g_iFlowAlarmA = ST_FlowInt(ScriptTest::Vars::szALARM_RUNS, -1);
 		ST_FlowSampleMode(0);
@@ -2434,7 +2573,10 @@ namespace
 	void ST_FlowSampleArmed()
 	{
 		g_bFlowArmedAfterPlate = ST_FlowBool(ScriptTest::Vars::szARMED, false);
-		g_abFlowCanDispense[1] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, false);
+		const Zenith_PropertyValue* pxCanDispense = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "LogicBlackboardBool", "Result", PROPERTY_TYPE_BOOL,
+			"m_strVars", "armed,notJammed");
+		g_abFlowCanDispense[1] = pxCanDispense != nullptr ? pxCanDispense->GetBool() : false;
 	}
 
 	void ST_FlowSampleDouble()  { g_iFlowDispensedDouble = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1); }
@@ -2443,7 +2585,11 @@ namespace
 	void ST_FlowSampleThird()
 	{
 		g_iFlowDispensedThird = ST_FlowInt(ScriptTest::Vars::szDISPENSED, -1);
-		g_iFlowBagAfterFill = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
+		g_bFlowDispensedTextRead = ST_ReadUIText(ScriptTest::UINames::szDISPENSED, g_strFlowDispensedText);
+		const Zenith_PropertyValue* pxBagCount = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "GetListCount", "Result", PROPERTY_TYPE_INT32,
+			"m_strListVar", ScriptTest::Vars::szBAG);
+		g_iFlowBagAfterFill = pxBagCount != nullptr ? pxBagCount->GetInt32() : -1;
 		g_iFlowScoreAfterFill = ST_FlowInt(ScriptTest::Vars::szSCORE, -1);
 	}
 
@@ -2455,13 +2601,22 @@ namespace
 
 	void ST_FlowSampleDrop()
 	{
-		g_iFlowBagAfterDrop = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
-		g_iFlowHeadAfterDrop = ST_FlowInt(ScriptTest::Vars::szHEAD, -99);
+		const Zenith_PropertyValue* pxBagCount = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "GetListCount", "Result", PROPERTY_TYPE_INT32,
+			"m_strListVar", ScriptTest::Vars::szBAG);
+		g_iFlowBagAfterDrop = pxBagCount != nullptr ? pxBagCount->GetInt32() : -1;
+		const Zenith_PropertyValue* pxHead = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "GetListElement", "Result", PROPERTY_TYPE_INT32,
+			"m_strListVar", ScriptTest::Vars::szBAG, "ListRemoveAt");
+		g_iFlowHeadAfterDrop = pxHead != nullptr ? pxHead->GetInt32() : -99;
 	}
 
 	void ST_FlowSampleClear()
 	{
-		g_iFlowBagAfterClear = ST_FlowInt(ScriptTest::Vars::szBAG_COUNT, -1);
+		const Zenith_PropertyValue* pxBagCount = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "GetListCount", "Result", PROPERTY_TYPE_INT32,
+			"m_strListVar", ScriptTest::Vars::szBAG);
+		g_iFlowBagAfterClear = pxBagCount != nullptr ? pxBagCount->GetInt32() : -1;
 		g_iFlowSentinel = ST_FlowInt(ScriptTest::Vars::szSENTINEL, -99);
 	}
 
@@ -2481,11 +2636,20 @@ namespace
 		g_iFlowAlarmC = ST_FlowInt(ScriptTest::Vars::szALARM_RUNS, -1);
 	}
 
-	void ST_FlowSampleJammed()  { g_abFlowCanDispense[2] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, true); }
+	void ST_FlowSampleJammed()
+	{
+		const Zenith_PropertyValue* pxCanDispense = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "LogicBlackboardBool", "Result", PROPERTY_TYPE_BOOL,
+			"m_strVars", "armed,notJammed");
+		g_abFlowCanDispense[2] = pxCanDispense != nullptr ? pxCanDispense->GetBool() : true;
+	}
 
 	void ST_FlowSampleUnarmed()
 	{
-		g_abFlowCanDispense[3] = ST_FlowBool(ScriptTest::Vars::szCAN_DISPENSE, true);
+		const Zenith_PropertyValue* pxCanDispense = ST_Output(ScriptTest::Entities::szGAME_MANAGER, iST_FLOW_DISPENSER_SLOT,
+			&BuildGraph_ST_Dispenser, "LogicBlackboardBool", "Result", PROPERTY_TYPE_BOOL,
+			"m_strVars", "armed,notJammed");
+		g_abFlowCanDispense[3] = pxCanDispense != nullptr ? pxCanDispense->GetBool() : true;
 		g_iFlowBonusLate = ST_FlowInt(ScriptTest::Vars::szBONUS, -1);
 	}
 
@@ -2554,6 +2718,8 @@ static void Setup_FlowGym()
 	g_iFlowDispensedDouble = -1;
 	g_iFlowDispensedSecond = -1;
 	g_iFlowDispensedThird = -1;
+	g_strFlowDispensedText.clear();
+	g_bFlowDispensedTextRead = false;
 	g_iFlowBagAfterFill = -1;
 	g_iFlowScoreAfterFill = -1;
 	g_iFlowVisited = -1;
@@ -2707,6 +2873,14 @@ static bool Verify_FlowGym()
 			"[FlowGym] '%s' = %d then %d after two further presses a window apart, expected 2 then 3 -- "
 			"the Cooldown never re-opened",
 			ScriptTest::Vars::szDISPENSED, g_iFlowDispensedSecond, g_iFlowDispensedThird);
+		return false;
+	}
+	const std::string strExpectedDispensed = std::string("Dispensed: ") + std::to_string(g_iFlowDispensedThird);
+	if (!g_bFlowDispensedTextRead || g_strFlowDispensedText != strExpectedDispensed)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[FlowGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szDISPENSED, g_strFlowDispensedText.c_str(), strExpectedDispensed.c_str(),
+			ScriptTest::Vars::szDISPENSED);
 		return false;
 	}
 
@@ -2954,6 +3128,8 @@ namespace
 	Zenith_Maths::Vector3 g_xAIHalfB    = Zenith_Maths::Vector3(0.0f);
 
 	int32_t g_iAINavStateMoving   = -99;
+	std::string g_strAINavStateText;
+	bool g_bAINavStateTextRead = false;
 	int32_t g_iAINavStateStopped  = -99;
 	float   g_fAINavLeftEarly     = -1.0f;
 	float   g_fAINavLeftLate      = -1.0f;
@@ -3006,17 +3182,32 @@ namespace
 		g_ulAIPreyPacked = xPrey.IsValid() ? xPrey.GetEntityID().GetPacked() : 0;
 		ST_GetPosition(ScriptTest::Entities::szPREY, g_xAIPreyPos);
 
-		g_iAIPerceivedCount = ST_AIInt(ScriptTest::Vars::szPERCEIVED_N);
-		g_ulAIFirstTarget = ST_AIPacked(ScriptTest::Vars::szFIRST_TARGET);
+		const Zenith_PropertyValue* pxCount = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "QueryPerceivedTargets", "Count", PROPERTY_TYPE_INT32,
+			"m_strListVar", ScriptTest::Vars::szPERCEIVED);
+		g_iAIPerceivedCount = pxCount != nullptr ? pxCount->GetInt32() : -1;
+		const Zenith_PropertyValue* pxFirst = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "GetListElement", "Result", PROPERTY_TYPE_ENTITY_ID,
+			"m_strListVar", ScriptTest::Vars::szPERCEIVED);
+		g_ulAIFirstTarget = pxFirst != nullptr ? pxFirst->GetPackedEntityID() : 0;
 		g_bAIPrimarySeen = ST_AIBool(ScriptTest::Vars::szPRIMARY_SEEN);
-		g_ulAIPrimary = ST_AIPacked(ScriptTest::Vars::szPRIMARY);
-		g_fAIAwareness = ST_AIFloat(ScriptTest::Vars::szAWARENESS);
+		const Zenith_PropertyValue* pxPrimary = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "QueryPrimaryPerceivedTarget", "Result", PROPERTY_TYPE_ENTITY_ID);
+		g_ulAIPrimary = pxPrimary != nullptr ? pxPrimary->GetPackedEntityID() : 0;
+		const Zenith_PropertyValue* pxAwareness = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "QueryAwarenessOf", "Result", PROPERTY_TYPE_FLOAT,
+			"m_strOfVar", ScriptTest::Vars::szPREY_REF);
+		g_fAIAwareness = pxAwareness != nullptr ? pxAwareness->GetFloat() : -1.0f;
 	}
 
 	void ST_AISampleHeard()
 	{
-		g_ulAIHeardSource = ST_AIPacked(ScriptTest::Vars::szHEARD_SOURCE);
-		g_xAIHeardPos = ST_AIVec3(ScriptTest::Vars::szHEARD_POS);
+		const Zenith_PropertyValue* pxSource = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "QueryLastHeardSound", "Source", PROPERTY_TYPE_ENTITY_ID);
+		g_ulAIHeardSource = pxSource != nullptr ? pxSource->GetPackedEntityID() : 0;
+		const Zenith_PropertyValue* pxPosition = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "QueryLastHeardSound", "Position", PROPERTY_TYPE_VECTOR3);
+		g_xAIHeardPos = pxPosition != nullptr ? pxPosition->GetVector3() : Zenith_Maths::Vector3(0.0f);
 	}
 
 	void ST_AIStartRun()
@@ -3032,8 +3223,13 @@ namespace
 	{
 		g_xAIFullB = ST_AIWalkerPos();
 		g_iAINavStateMoving = ST_AIInt(ScriptTest::Vars::szNAV_STATE);
-		g_fAINavLeftEarly = ST_AIFloat(ScriptTest::Vars::szNAV_LEFT);
-		const Zenith_Maths::Vector3 xVel = ST_AIVec3(ScriptTest::Vars::szNAV_VEL);
+		g_bAINavStateTextRead = ST_ReadUIText(ScriptTest::UINames::szNAV_STATE, g_strAINavStateText);
+		const Zenith_PropertyValue* pxRemaining = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "ReadNavState", "Remaining", PROPERTY_TYPE_FLOAT);
+		g_fAINavLeftEarly = pxRemaining != nullptr ? pxRemaining->GetFloat() : -1.0f;
+		const Zenith_PropertyValue* pxVelocity = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "ReadNavState", "Velocity", PROPERTY_TYPE_VECTOR3);
+		const Zenith_Maths::Vector3 xVel = pxVelocity != nullptr ? pxVelocity->GetVector3() : Zenith_Maths::Vector3(0.0f);
 		g_fAINavSpeedSample = std::sqrt(xVel.x * xVel.x + xVel.y * xVel.y + xVel.z * xVel.z);
 	}
 
@@ -3060,7 +3256,9 @@ namespace
 	void ST_AISampleHalfB()
 	{
 		g_xAIHalfB = ST_AIWalkerPos();
-		g_fAINavLeftLate = ST_AIFloat(ScriptTest::Vars::szNAV_LEFT);
+		const Zenith_PropertyValue* pxRemaining = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "ReadNavState", "Remaining", PROPERTY_TYPE_FLOAT);
+		g_fAINavLeftLate = pxRemaining != nullptr ? pxRemaining->GetFloat() : -1.0f;
 	}
 
 	void ST_AISampleArrived()
@@ -3091,7 +3289,10 @@ namespace
 
 	void ST_AISampleRetired()
 	{
-		g_iAICountAfterRetire = ST_AIInt(ScriptTest::Vars::szPERCEIVED_N);
+		const Zenith_PropertyValue* pxCount = ST_Output(ScriptTest::Entities::szWALKER, iST_AI_WALKER_SLOT,
+			&BuildGraph_ST_NavWalker, "QueryPerceivedTargets", "Count", PROPERTY_TYPE_INT32,
+			"m_strListVar", ScriptTest::Vars::szPERCEIVED);
+		g_iAICountAfterRetire = pxCount != nullptr ? pxCount->GetInt32() : -1;
 		g_bAIPrimaryAfterRetire = ST_AIBool(ScriptTest::Vars::szPRIMARY_SEEN);
 		g_bAIPreyGone = !ST_EntityExists(ScriptTest::Entities::szPREY);
 	}
@@ -3160,6 +3361,8 @@ static void Setup_AIGym()
 	g_xAIHalfB = Zenith_Maths::Vector3(0.0f);
 
 	g_iAINavStateMoving = -99;
+	g_strAINavStateText.clear();
+	g_bAINavStateTextRead = false;
 	g_iAINavStateStopped = -99;
 	g_fAINavLeftEarly = -1.0f;
 	g_fAINavLeftLate = -1.0f;
@@ -3348,6 +3551,14 @@ static bool Verify_AIGym()
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
 			"[AIGym] '%s' = %d while en route, expected 2 (moving)",
 			ScriptTest::Vars::szNAV_STATE, g_iAINavStateMoving);
+		return false;
+	}
+	const std::string strExpectedNavState = std::string("Nav: ") + std::to_string(g_iAINavStateMoving);
+	if (!g_bAINavStateTextRead || g_strAINavStateText != strExpectedNavState)
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AIGym] '%s' reads \"%s\", expected \"%s\" from live '%s'",
+			ScriptTest::UINames::szNAV_STATE, g_strAINavStateText.c_str(), strExpectedNavState.c_str(),
+			ScriptTest::Vars::szNAV_STATE);
 		return false;
 	}
 	if (!(g_fAINavSpeedSample > 0.1f))

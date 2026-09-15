@@ -224,24 +224,56 @@ are DELETED.
 
 ### Pin tables + validate-clean
 
-RenderTest's own node headers carry **zero** blackboard-variable-name
-properties, so there is no annotation sweep to do here and deliberately NO pin
-totality test (the harness's `uVarNamePropertiesSeen > 0` positive control
-would fail on an empty walk). The `RTTennis*` nodes reach the blackboard
-through the compile-time constants `RenderTest_TennisBB::k_sz*`
-(`Components/RenderTest_TennisAgentComponent.h:47-59`) rather than through a
-name PROPERTY, so no descriptor can bind them: they stay OPAQUE to
-`Zenith_GraphDefinitionValidator` in Epic A and become pins in Epic B.
+The seven `RTTennis*` tables expose 18 descriptors: 15 INPUT values and three
+`BallEntity` TARGET_ENTITY references. INPUT values have no name properties;
+the `ServeFromDeuce` BOOL const twins retain their current-constant default.
+`BallEntity` is the only remaining target-name role: an absent, wrong-tagged, or
+empty target is `INVALID_ENTITY_ID`, while packed zero remains legal and is never
+replaced by self. The six nodes with no blackboard reads remain intentionally
+opaque.
+
+`RenderTest_TennisBrain` now declares `BallEntity` as an ENTITY_ID seeded with
+packed `INVALID_ENTITY_ID`, because the bridge writes it and the target
+descriptors make that read validator-visible. `OppEntity` remains undeclared:
+the bridge publishes it but no graph node reads it. The tools boot therefore
+re-authors `RenderTest.zscen` for this declaration; the later wire migration
+re-authors the same scene again when it removes the three obsolete BOOL slots.
+`RenderTest_Tennis.Tests.inl` carries the pin-table totality row and live
+direct-node witnesses. Its rows provide transient INPUTs through typed slots,
+preserving the spin-before-bad-BallEntity ordering, true/false serve choices, and
+the arm nodes' conditional epoch reads.
+
+### B-7.3b builder wiring
+
+`BuildGraph_RenderTestTennisBrain` has exactly 24 data edges: the three
+same-chain comparison-to-gate edges and 21 typed `GetVariable` sources (six
+engine values and 15 RTTennis INPUTs). `BallEntity` remains a TARGET reference;
+there are no INPUT/OUTPUT name defaults to clear. `RenderTest_PlayerActions`
+deliberately authors zero data edges and zero `GetVariable` nodes.
+
+The nine remaining factory-shaped tennis sites stay raw: the accumulator's
+`CompareBlackboardFloat` and following `Gate`; the serve-phase comparison and
+its three phase/server/parked gates; and the live-phase comparison with its two
+live/my-ball gates. The comparison `GetVariable` sources follow their consumers,
+while the comparison results feed earlier gates only through deliberately
+delayed data edges after barrier nodes; either wire-factory rewrite changes the
+serialized graph order.
+
+`RT_GraphsValidateClean` builds and initializes both graphs in-process. Its
+structural checks require the tennis graph's exact 24/21 edge/source census,
+the PlayerActions 0/0 census, concrete resolved types for each tennis
+`GetVariable`, the pre-initialization ENTITY_ID/INVALID seed for `BallEntity`,
+and zero resolution skips. The structural executed-chain
+strings in `Test_TennisBrainContract.cpp` stay unchanged because pure sources
+and data edges do not change execution topology.
 
 What DOES exist is `Tests/Test_GraphsValidateClean.cpp` — an automated test
 (`RT_GraphsValidateClean`) that builds BOTH graphs in-process from their own
 builders and fails on any ERROR-severity validation finding — the mechanical
 precondition A-8 then latched into `Build()`'s return. RenderTest reported zero
-before this unit and needed no new `Variable(...)`: in particular
-`k_szOppEntity` and `k_szBallEntity` stay deliberately undeclared
-(`RenderTest.cpp:1726-1727` — the brain shim's `OnStart` seeds both, and
-declaring one would move `RenderTest.zscen` for no validator gain). To make the
-player-actions graph reachable, `BuildGraph_RenderTestPlayerActions` lost its
+before this unit. `k_szBallEntity` is now declared while `k_szOppEntity` remains
+bridge-only, as described above. To make the player-actions graph reachable,
+`BuildGraph_RenderTestPlayerActions` lost its
 `static` and is declared in **`RenderTest_Graphs.h`**, `#ifdef ZENITH_TOOLS`
 because its definition sits in RenderTest.cpp's tools block;
 `BuildGraph_RenderTestTennisBrain` was already declared (unconditionally) in
@@ -669,3 +701,27 @@ only in the tools build that actually writes the `.ztxtr`.
 `--rendertest-tennis-telemetry[=<base>]` (recorder gated on scene name
 "RenderTest"). T cycles the spectator camera at runtime (via the PlayerActions
 graph). Match telemetry + analytics: `Components/RenderTest_TennisTelemetry.h`.
+
+## C1 graph-pin contract
+
+Graph INPUT and OUTPUT values are wire-only. Author a `GetVariable` producer only
+where a graph intentionally reads a blackboard value, then connect its `Value` pin
+to the consumer; consume produced values through their output pins. INPUT and
+OUTPUT descriptors carry no property-name binding metadata, and graph execution
+does not fall back to blackboard names or dual-write output values.
+
+Unconnected inputs retain their typed defaults, and an unconnected `INPUT_CONST`
+continues to read its current permanent property value.
+
+String properties that remain on graph nodes identify permanent roles such as
+selectors, targets, lists, type sources, event stashes, and configuration. They
+are not substitutes for data-pin bindings. Existing serialized unknown properties
+continue through normal property loading's unknown-property handling. Tennis
+keeps only the `BallEntity` target-name role; raw factory-shaped sites preserve
+their final parameter and delayed-edge order. C1 validation evidence records
+T3-final2, SceneGuard, and all nine builds green
+with pins Combat 2695, Zenithmon 4548, and RenderTest 2798; all seven fresh
+census legs are green with zero FALLBACK, aliasing, and validator errors. The final
+asset audit found 164 graphs, 881 obsolete parameters removed from 102 graphs, no
+unexpected removal or topology issue, and a 192-asset second boot with no path or
+byte changes.

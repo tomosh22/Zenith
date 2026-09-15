@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-14
 
 **Board:** `ZM` on the agent board. **The work items live there** — epics, stories,
 tasks, bugs, blockers, sprints and releases — and [Board.md](Board.md) explains the
@@ -17,8 +17,8 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-10):
-ZM boot `4191`; engine boot (Null Combat) `2333`; Null RenderTest `2439`; registry **73**.**
+**★ LIVE PIN (UPDATED 2026-09-14):
+ZM boot `4548`; engine boot (Null Combat) `2695`; Null RenderTest `2798`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.

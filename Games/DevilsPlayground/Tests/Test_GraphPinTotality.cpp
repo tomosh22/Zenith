@@ -54,6 +54,68 @@ namespace
 	int g_iChecks = 0;
 	int g_iFailures = 0;
 	bool g_bTotalityRan = false;
+	void CheckEqInt(int iActual, int iExpected, const char* szWhat);
+
+	void CheckPinInventory()
+	{
+		// This is deliberately a second, concrete contract beside the reflective
+		// totality walk below.  It catches a table that remains internally valid
+		// while a DP pin is inserted, removed, or re-ordered without updating the
+		// public uPIN_ address used by Execute().
+		const Zenith_GraphPinTable* apxTables[] = {
+			&DPNode_ReadHeldObjective::GetPinTableStatic(), &DPNode_WinCheckAlreadyCollected::GetPinTableStatic(),
+			&DPNode_WinNotifyCollected::GetPinTableStatic(), &DPNode_ConsumeHeldItem::GetPinTableStatic(),
+			&DPNode_DispatchObjectivePlaced::GetPinTableStatic(), &DPNode_ConsumeKeyForUnlock::GetPinTableStatic(),
+			&DPNode_DispatchDoorOpened::GetPinTableStatic(), &DPNode_DispatchDoorClosed::GetPinTableStatic(),
+			&DPNode_AnimateDoorLeaves::GetPinTableStatic(), &DPNode_DispatchChestOpened::GetPinTableStatic(),
+			&DPNode_DoorCheckKey::GetPinTableStatic(), &DPNode_DoorPentagramDeferral::GetPinTableStatic(),
+			&DPNode_DoorAdvanceAnim::GetPinTableStatic(), &DPNode_VillagerEmitFootstep::GetPinTableStatic(),
+			&DPNode_PickVillagerUnderCursor::GetPinTableStatic(), &DPNode_TryPossess::GetPinTableStatic(),
+			&DPNode_ForgeCraft::GetPinTableStatic(), &DPNode_ReadTuningFloat::GetPinTableStatic(),
+			&DPNode_ItemChildRefusal::GetPinTableStatic(), &DPNode_ItemArmChannel::GetPinTableStatic(),
+			&DPNode_ItemCommitPickup::GetPinTableStatic(), &DPNode_ItemFinishPickup::GetPinTableStatic(), &DPNode_ItemRingBell::GetPinTableStatic(),
+			&DPNode_ItemEvaporate::GetPinTableStatic(), &DPNode_PriestPickPatrolTarget::GetPinTableStatic(),
+			&DPNode_PriestApprehendChannel::GetPinTableStatic()
+		};
+
+		int iDescriptors = 0, iInputs = 0, iOutputs = 0, iReadWrites = 0;
+		for (const Zenith_GraphPinTable* pxTable : apxTables)
+		{
+			for (u_int u = 0; pxTable && u < pxTable->GetPinCount(); ++u)
+			{
+				const Zenith_GraphPinDesc& xPin = pxTable->GetPinAt(u);
+				++iDescriptors;
+				if (xPin.m_eRole == GRAPH_PIN_ROLE_INPUT) ++iInputs;
+				if (xPin.m_eRole == GRAPH_PIN_ROLE_OUTPUT) ++iOutputs;
+				if (xPin.m_eRole == GRAPH_PIN_ROLE_SELECTOR_READWRITE) ++iReadWrites;
+			}
+		}
+		CheckEqInt(static_cast<int>(sizeof(apxTables) / sizeof(apxTables[0])), 26, "DP has 26 annotated graph-node tables");
+		CheckEqInt(iDescriptors, 50, "DP's 26 tables contain 50 descriptors");
+		CheckEqInt(iInputs, 36, "DP descriptor inventory has 36 INPUT pins");
+		CheckEqInt(iOutputs, 10, "DP descriptor inventory has 10 OUTPUT pins");
+		CheckEqInt(iReadWrites, 4, "DP descriptor inventory has 4 READWRITE pins");
+
+#define DP_CHECK_PIN_INDEX(NodeType, PinName) \
+		CheckEqInt(static_cast<int>(NodeType::GetPinTableStatic().FindPinIndex(#PinName)), static_cast<int>(NodeType::uPIN_##PinName), #NodeType "." #PinName " uPIN matches its table index")
+		DP_CHECK_PIN_INDEX(DPNode_ReadHeldObjective, Villager); DP_CHECK_PIN_INDEX(DPNode_ReadHeldObjective, Tag);
+		DP_CHECK_PIN_INDEX(DPNode_WinCheckAlreadyCollected, Tag); DP_CHECK_PIN_INDEX(DPNode_WinNotifyCollected, Villager); DP_CHECK_PIN_INDEX(DPNode_WinNotifyCollected, Tag);
+		DP_CHECK_PIN_INDEX(DPNode_ConsumeHeldItem, Villager); DP_CHECK_PIN_INDEX(DPNode_DispatchObjectivePlaced, Villager); DP_CHECK_PIN_INDEX(DPNode_DispatchObjectivePlaced, Tag);
+		DP_CHECK_PIN_INDEX(DPNode_ConsumeKeyForUnlock, Villager); DP_CHECK_PIN_INDEX(DPNode_DispatchDoorOpened, Villager); DP_CHECK_PIN_INDEX(DPNode_DispatchDoorClosed, Villager);
+		DP_CHECK_PIN_INDEX(DPNode_AnimateDoorLeaves, IsOpen); DP_CHECK_PIN_INDEX(DPNode_DispatchChestOpened, Villager);
+		DP_CHECK_PIN_INDEX(DPNode_DoorCheckKey, Villager); DP_CHECK_PIN_INDEX(DPNode_DoorPentagramDeferral, Villager); DP_CHECK_PIN_INDEX(DPNode_DoorAdvanceAnim, Anim); DP_CHECK_PIN_INDEX(DPNode_DoorAdvanceAnim, SettledAnim);
+		DP_CHECK_PIN_INDEX(DPNode_VillagerEmitFootstep, WalkQuiet); DP_CHECK_PIN_INDEX(DPNode_VillagerEmitFootstep, Loudness); DP_CHECK_PIN_INDEX(DPNode_VillagerEmitFootstep, Radius); DP_CHECK_PIN_INDEX(DPNode_VillagerEmitFootstep, QuietMult);
+		DP_CHECK_PIN_INDEX(DPNode_PickVillagerUnderCursor, Result); DP_CHECK_PIN_INDEX(DPNode_TryPossess, Villager);
+		DP_CHECK_PIN_INDEX(DPNode_ForgeCraft, Villager); DP_CHECK_PIN_INDEX(DPNode_ForgeCraft, RecipeInput); DP_CHECK_PIN_INDEX(DPNode_ForgeCraft, RecipeOutput);
+		DP_CHECK_PIN_INDEX(DPNode_ReadTuningFloat, Result); DP_CHECK_PIN_INDEX(DPNode_ItemChildRefusal, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemChildRefusal, Tag);
+		DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, ChannelVillager); DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, ChannelDuration); DP_CHECK_PIN_INDEX(DPNode_ItemArmChannel, ChannelRemaining);
+		DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, ChannelVillager); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, ChannelRemaining); DP_CHECK_PIN_INDEX(DPNode_ItemCommitPickup, CommittedVillager);
+		DP_CHECK_PIN_INDEX(DPNode_ItemFinishPickup, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemFinishPickup, Tag);
+		DP_CHECK_PIN_INDEX(DPNode_ItemRingBell, Villager); DP_CHECK_PIN_INDEX(DPNode_ItemRingBell, SpecialBehaviour); DP_CHECK_PIN_INDEX(DPNode_ItemEvaporate, Tag);
+		DP_CHECK_PIN_INDEX(DPNode_PriestPickPatrolTarget, SuspicionRadius); DP_CHECK_PIN_INDEX(DPNode_PriestPickPatrolTarget, HighScentTarget); DP_CHECK_PIN_INDEX(DPNode_PriestPickPatrolTarget, PatrolTarget);
+		DP_CHECK_PIN_INDEX(DPNode_PriestApprehendChannel, TargetWithDevil);
+#undef DP_CHECK_PIN_INDEX
+	}
 
 	void CheckEqInt(int iActual, int iExpected, const char* szWhat)
 	{
@@ -93,6 +155,13 @@ namespace
 		CheckEqInt(static_cast<int>(uFailures), 0,
 			"every DP node type's blackboard-variable-name property is covered by a pin descriptor, "
 			"and every property a descriptor names exists (see the Zenith_Error lines for each hit)");
+		{
+			Zenith_GraphPinTotalityRegistryGuard xGuard;
+			Zenith_GraphPinTotality_SwapToRegistrar(&DP_RegisterGraphNodes);
+			CheckEqInt(static_cast<int>(Zenith_GraphNodeRegistry::Get().GetTypeCount()), 38,
+				"DP isolated registrar produces exactly 38 node types");
+		}
+		CheckPinInventory();
 
 		g_bTotalityRan = true;
 		return false;	// entirely synchronous - one frame is all this needs

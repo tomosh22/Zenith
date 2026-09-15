@@ -33,6 +33,41 @@
 //     both abort a RUNNING lower-priority/old-state body via AbortChain, which
 //     cascades OnAbort through suspended nodes (per-run state resets, nav
 //     stops, ...).
+//
+// ★ THE PINS IN THIS TU ARE LIVE (B-6.10), and EXACTLY THREE OF THEM ARE. The
+// scalar dispatch keys - SwitchOnInt.Value, SwitchOnString.Value and
+// StateMachine.State - are read through Zenith_GraphNode::GetInput, so a wire
+// into any of the three carries the value the node dispatches on. Everything
+// else in this TU stays a DIRECT blackboard access, by ROLE and not by
+// oversight: WaitForCondition.Condition is SELECTOR_READWRITE (read every tick
+// AND written back under m_bResetOnPass - the consume-a-flag primitive),
+// ForEach.Element / ForEach.Index are SELECTOR_WRITE destinations the node
+// publishes into, ForEach.List names the blackboard's parallel LIST store (which
+// holds no Zenith_PropertyValue at all), and CallGraph's m_strGraphAssetPath is
+// an ASSET PATH, not a pin. There is NO OUTPUT pin anywhere in this TU, so this
+// unit takes NONE of the `""` output-name divergence its siblings did.
+//
+// ★ WHEN EACH KEY IS READ, which is the whole contract of a dispatcher. The two
+// SwitchOn* nodes read ONCE PER ACTIVATION, inside `m_iActivePin < 0`: a taken
+// case that suspends keeps re-driving THAT pin without re-reading the key and,
+// in a graph, without re-pulling the key's producer. StateMachine reads on EVERY
+// fire, at the top of Execute, because the state variable is the machine's
+// single source of truth and a transition is something ELSE writing it - so a
+// WIRED State pulls its producer every fire. Reactive by design, both of them.
+//
+// defaults are NON-EMPTY (m_strVar "value", m_strVar "state", m_strStateVar
+// "state"), so every placed SwitchOnInt / SwitchOnString / StateMachine logs one
+// not the author named the variable. Expected, once per (instance, pin), and
+//
+// ★ STATED DIVERGENCE, unpinned: all three reads used to dereference
+// m_pxBlackboard unconditionally, so a context with a NULL blackboard and a
+// bound var crashed. It now yields ONE [GraphPin] BADACCESS line and the type
+// zero (case 0 - base / state 0). Nothing in the engine builds such a context
+// for a flow node - a flow node needs m_pxGraph for RunChainFromPin anyway.
+//
+// Each migrated class declares `static constexpr u_int uPIN_<Name>` immediately
+// before its pin table: the INDEX is the runtime address, table order is the
+// contract, and GraphPinTable.FlowPinIndicesMatchTables is what asserts it.
 //------------------------------------------------------------------------------
 
 namespace
@@ -51,24 +86,30 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SwitchOnInt)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(int32_t, m_iCaseBase, 0)
 		ZENITH_PROPERTY_RANGED(int32_t, m_iCaseCount, 4, 1, 254)
 
 		// The case BASE and COUNT are pin-layout numbers, not blackboard values,
 		// so neither is a pin.
+		//
+		// ★ m_strVar DEFAULTS TO "value", which is NOT empty, so every placed
+		static constexpr u_int uPIN_Value = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SwitchOnInt)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			// While a taken case is suspended, keep re-driving THAT pin (the
-			// Branch pattern).
+			// Branch pattern). ★ THE READ STAYS INSIDE THIS BRANCH: Value is read
+			// ONCE PER ACTIVATION, so a suspended taken case neither re-reads the
+			// variable nor (in a graph) re-pulls its producer. Hoisting it would
+			// change both.
 			if (m_iActivePin < 0)
 			{
-				const int32_t iValue = xContext.m_pxBlackboard->GetInt32(m_strVar);
+				const int32_t iValue = GetInput<int32_t>(xContext, uPIN_Value);
 				const int32_t iCase = iValue - m_iCaseBase;
 				m_iActivePin = (iCase >= 0 && iCase < m_iCaseCount) ? iCase : m_iCaseCount;
 			}
@@ -103,24 +144,30 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SwitchOnString)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "state")
 		ZENITH_PROPERTY(std::string, m_strCases, "")
 
 		// m_strCases is a COMMA-SEPARATED LIST of case labels, not a blackboard
 		// name (and it escapes the m_str*Var* matcher by not containing "Var"),
 		// so it is deliberately not a pin: a descriptor would make the validator
 		// check the literal "a,b,c" as one variable name.
+		//
+		// ★ m_strVar DEFAULTS TO "state" - non-empty, and the SAME default
+		// StateMachine's m_strStateVar carries. Two placed nodes therefore
+		static constexpr u_int uPIN_Value = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SwitchOnString)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_STRING)
 		ZENITH_GRAPH_PINS_END
 
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
 			EnsureCasesParsed();
+			// ★ THE READ STAYS INSIDE THIS BRANCH, and BELOW EnsureCasesParsed:
+			// once per activation, after the case list exists.
 			if (m_iActivePin < 0)
 			{
-				const std::string strValue = xContext.m_pxBlackboard->GetString(m_strVar);
+				const std::string strValue = GetInput<std::string>(xContext, uPIN_Value);
 				int32_t iPin = static_cast<int32_t>(m_axCases.GetSize());	// default
 				for (u_int u = 0; u < m_axCases.GetSize(); ++u)
 				{
@@ -183,7 +230,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_StateMachine)
 	public:
-		ZENITH_PROPERTY(std::string, m_strStateVar, "state")
 		ZENITH_PROPERTY_RANGED(int32_t, m_iStateCount, 4, 1, 255)
 		ZENITH_PROPERTY(std::string, m_strStateNames, "")
 		ZENITH_PROPERTY(std::string, m_strEventPrefix, "")
@@ -191,14 +237,23 @@ namespace
 		// READ-ONLY: the machine never writes its own state var (a transition is
 		// caused by SOMETHING ELSE writing it). m_strStateNames is a comma list
 		// and m_strEventPrefix an event-name fragment - neither is a pin.
+		//
+		static constexpr u_int uPIN_State = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StateMachine)
-		ZENITH_GRAPH_PIN_INPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT(State, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			int32_t iState = xContext.m_pxBlackboard->GetInt32(m_strStateVar, 0);
+			// ★ READ ON EVERY FIRE, at the top, exactly where the blackboard read
+			// was: the state variable is this machine's single source of truth, so
+			// a WIRED State pulls its producer every fire and a transition caused
+			// by that producer is seen on the very next one. The clamp is
+			// unchanged, and the type zero the pin falls back to (0) is the same
+			// default today's GetInt32(var, 0) carried.
+			int32_t iState = GetInput<int32_t>(xContext, uPIN_State);
 			iState = iState < 0 ? 0 : (iState >= m_iStateCount ? m_iStateCount - 1 : iState);
 
 			if (iState != m_iCurrentState)

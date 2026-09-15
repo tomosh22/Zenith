@@ -151,6 +151,33 @@ Two shapes govern every builder above and are worth knowing before editing one:
   the *old* value — `ST_StateGym_Test` reads after a grace window for exactly this
   reason.
 
+### Typed-output writers and test seams
+
+The 20 builders author typed data edges and use explicit blackboard writers only
+where a later independent chain still needs a durable value. `FindEntityByName`
+results are written as packed `EntityID`s before every `TARGET_REF` consumer;
+PlayerMove persists `moveDir` and `moveVel`; UI persists `cycle`; Dispenser
+persists `notJammed`; and NavWalker persists `preyRef`, `managerRef`, `dest`, and
+`navState`. A writer follows its producer in the exec chain, so a failed producer
+cannot overwrite a prior value. SineBob is deliberately different: it reseeds
+`bobVel` before its math node each tick and has no feedback writer.
+
+The remaining computed values are inspected from their live output slots by the
+test suites: UI `fill01`/`hot`; Flow `canDispense`, `bagCount`, and the
+post-`ListRemoveAt` head; and AI perception, hearing, remaining-distance and
+velocity outputs. `ST_PlayerMoveContract` pins the complete authored execution
+trace: `ReadMovementAxis > SetBlackboardVector3 > MathBlackboardVector3 >
+SetBlackboardVector3 > SetVelocity`. The suite remains 13 automated tests: four
+hermetic contracts and nine gym behaviours.
+
+`ST_UIPlayground` uses the wire `CompareFloat` and `Branch` factories. Its
+contracts-only raw baseline serializes the whole definition and compares every
+byte, covering node IDs, permanent property blobs, and data-edge order. The
+remaining raw `StateMachine`, `Gate`, `SwitchOnInt`, and `ListAdd` sites retain
+their final C1 form because their `GetVariable` producer is authored after its
+consumer, so a factory rewrite would change node IDs and the complete serialized
+stream.
+
 ## The nine scenes
 
 The **index** is graph contract: every `LoadSceneByIndex` node names one, and
@@ -164,7 +191,7 @@ The **index** is graph contract: every `LoadSceneByIndex` node names one, and
 | 3 | `Gym_Physics` | A timer-driven prefab spawner (and Space for one on demand) + a static sensor kill volume, with cross-entity UI counters written through a packed `EntityID` in a blackboard var — the *Spawned* readout's text is asserted against the live counter (C10), so that target var is covered end to end |
 | 4 | `Gym_Events` | Targeted custom events — pressure plate → `OpenDoor`/`CloseDoor` at an entity it looked up by name — and a broadcast: one `Bell` pulsing all three independent listeners, each of which then settles back |
 | 5 | `Gym_State` | A `StateMachine` traffic light (Red → Green → Amber) with enter/exit visual events on the three lamps |
-| 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Coverage is uneven and deliberately stated: **text and colour are asserted** (C12b reads the `Counter` element's string back, and `BarFill`'s RGBA on both sides of the hot boundary), **fill only structurally** — via the `fill01`/`hot` vars its chain feeds |
+| 6 | `Gym_UI` | Buttons and keys → blackboard → text, fill and colour binding: a formatted clock, a 5 s sawtooth fill bar, a colour that flips past 80%. Text and colour are asserted (C12b reads the `Counter` element and `BarFill` RGBA on both sides of the boundary); `fill01` and `hot` are read from their producing output slots. |
 | 7 | `Gym_Flow` | The **multi-way** flow constructs, which no other scene reaches, themed as a dispenser: `Once`, `Cooldown`, `Gate`, `WaitForCondition`, `SwitchOnInt`, `SwitchOnString`, `Selector`, `Sequence`, `ForEach`, `CallGraph`, the three list mutators and `LogicBlackboardBool` — fifteen chains on one `GameManager`, off twelve sources: the four per-frame chains share **one** `OnUpdate` through a `Sequence(4)`'s pins (pin order *is* the within-frame order four separate anchors used to give), and the other eleven are keys, `OnStart` or a custom event. Plus a `Plate` that arms it from outside its graph and a passive `Nozzle` the int switch rescales so its choice is visible in the world, not only on a blackboard |
 | 8 | `Gym_AI` | **Navigation and perception, with no game C++ anywhere** — which was impossible until `EnsureNavAgent` existed: `SetNavMeshAgent`'s only callers were game components, so every nav node returned FAILURE on a null pointer. A `NavMeshHolder` carries the committed `.znavmesh`, a `Walker` wires itself to it and paths / stops / slows / wanders across it, and a `Prey` registers itself as a perception target, makes a noise, and **unregisters itself in `OnDestroy`**. `ST_NavWalker`'s seven per-frame chains hang off **two** `Sequence`s, not one — `Sequence(2)` for the nav pair and `Sequence(5)` for the sensing five — because `OnKeyPressed` also dispatches under `GRAPH_EVENT_ON_UPDATE`, so its key chains run **between** the two groups in one frame; folding all seven onto a single `Sequence` would move the key chains to one side of the lot, and chain 10's flag-clearing comment depends on the prey-retiring key running *before* the perception chains |
 
@@ -312,6 +339,31 @@ There is **no unit-gate line and no `Tools/unit_baselines.json` row**: this game
 adds no boot units, and `Test_UnitBaselineManifest.ps1` requires every row there
 to be gated or declared advisory, so an ungated pin cannot be added silently.
 
+## Historical B-7.1 wire-authoring record (superseded for authoring)
+
+The B-7.1 fallback census and compatibility notes below record the B76 starting
+point. The final C1 contract at the end of this file governs current work.
+
+The eight migrated builders author 22 `Raw().DataEdge` wires: six adjacent
+producer-to-consumer edges and sixteen one-consumer `GetVariable` producers.
+`ST_SineBob` has 2, `ST_PlayerMove` 1, `ST_BallSpawner` 2, `ST_KillVolume` 1,
+`ST_TrafficLight` 1, `ST_UIPlayground` 7, `ST_Dispenser` 6 and `ST_NavWalker` 2.
+Each `GetVariable` is private to its consumer so it is pulled at that consumer's
+execution point. The two new declared seeds are `spawnCount` as INT32 zero and
+`label` as STRING empty; the tools boot re-authors exactly `Gym_Physics` and
+`Gym_Flow` for those attached graphs.
+The B-6.10/B71 ScriptTest fallback census was 69 lines, all mapped by this unit;
+this is historical B6.10/B71 evidence, not B76 or a C1 result. The 27 LIST_NAME
+warnings are historical B71 evidence. C1 retains 103 LIST_NAME permanent-list
+diagnostics; only DevilsPlayground's six MISMATCH cases are deliberate controls.
+
+The retained raw sites preserve final permanent parameters and delayed data-edge
+order; they do not serialize removed input/output names. `ReadMovementAxis ->
+MathBlackboardVector3` is OUTPUT-to-SELECTOR_READ, `bobVel` is reseeded before
+its math operation every tick with no feedback dependency, and the cycle
+OUTPUT-to-SELECTOR_READ pair remains outside wire form. Targets, selectors,
+lists, and event stashes remain permanent string roles.
+
 ## The manual demo (what a person should see)
 
 ```
@@ -384,3 +436,28 @@ Setup and every Step, so their frame counts are 60 Hz and they do not call
 Win64 only (`"android": false`). To add an Android build: copy an existing game's
 `Android/` Gradle tree (e.g. `Games/Combat/Android`), retarget its package/name,
 set `"android": true` in the descriptor, and run `zenith regen`.
+
+## C1 graph-pin contract
+
+Graph INPUT and OUTPUT values are wire-only. Author a `GetVariable` producer only
+where a graph intentionally reads a blackboard value, then connect its `Value` pin
+to the consumer; consume produced values through their output pins. INPUT and
+OUTPUT descriptors carry no property-name binding metadata, and graph execution
+does not fall back to blackboard names or dual-write output values.
+
+Unconnected inputs retain their typed defaults, and an unconnected `INPUT_CONST`
+continues to read its current permanent property value.
+
+String properties that remain on graph nodes identify permanent roles such as
+selectors, targets, lists, type sources, event stashes, and configuration. They
+are not substitutes for data-pin bindings. Existing serialized unknown properties
+continue through normal property loading's unknown-property handling. Use final
+wire factory forms or raw nodes with only permanent parameters; preserve raw node
+and delayed-edge order where the serialized definition requires it. C1 validation
+evidence records T3-final2, SceneGuard, and all nine builds green with pins Combat
+2695, Zenithmon 4548, and RenderTest 2798, and
+fresh all-seven census is green with zero FALLBACK, aliasing, and validator errors;
+ScriptTest retains 103 LIST_NAME permanent-list diagnostics. The final asset audit
+found 164 graphs, 881 obsolete parameters removed from 102 graphs, no unexpected
+removal or topology issue, and a 192-asset second boot with no path or byte
+changes.

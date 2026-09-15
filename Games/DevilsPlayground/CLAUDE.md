@@ -519,3 +519,243 @@ The full reference is `C:\dev\Zenith\CLAUDE.md`'s "External agent board"
 section, and `Games/Zenithmon/Docs/Board.md` for how a game's docs and its
 board relate.
 
+## Historical B-7.2 migration record (superseded for authoring)
+
+The B-7.2a/b narrative and its fallback counts below are a B76 preparation
+record. They do not describe current C1 APIs or authoring requirements.
+
+### B-7.2a — live game-node pins
+
+`Components/DP_GraphNodes.h` is now a live pin surface: its 25 annotated
+node classes publish 48 descriptors, with 35 INPUT, 9 OUTPUT, and 4
+READWRITE roles. Addressed INPUT and OUTPUT descriptors have public
+`uPIN_*` constants before their tables. Reads use the pin accessor at the
+old read site; OUTPUT writes use `SetOutput` at the old computation site.
+The four READWRITE selectors remain the intentional direct name-based
+accesses.
+
+The former entity-variable helper family remains deliberately distinct from
+ordinary packed-zero reads. Fifteen entity inputs preserve absent or
+wrong-tag `INVALID_ENTITY_ID` semantics through the checked,
+presence-aware helper; a present packed zero stays a legal zero. The three
+old zero-default reads — ItemArmChannel.Villager,
+PriestPickPatrolTarget.HighScentTarget, and
+PriestApprehendChannel.TargetWithDevil — use the typed packed-entity input
+path and retain zero semantics. Payload declarations used by the reader
+graphs are INVALID-seeded in Forge, Pentagram, Chest, Door, and DoubleDoor;
+there is no unused Villager payload declaration.
+
+The nonzero `INPUT_VAR_OR_CONST` twins are part of the runtime contract:
+Villager footstep `QuietMult = 1`, Forge recipe input/output = Iron/Key,
+and Priest patrol suspicion radius = 15. The 15 radius is also declared in
+the Priest graph, so a graph-wired value is concrete while a direct,
+self-bound node retains its old 15 fallback. The Door and Item literal
+accesses gained their own properties and descriptors without conflating
+independent configurable reads and literal writes. In particular,
+DoorAdvanceAnim's settling Anim output is separate from its Anim input and
+only writes when the old settle condition holds.
+
+Pin state self-binds for directly constructed nodes, which preserves the
+existing compatibility tests while making their fallback legs observable.
+`Tests/Test_DPGraphNodePins.cpp` covers hermetic pin behavior and
+`Tests/Test_DPGraphNodeWorldPins.cpp` covers real Door and Forge component
+effects; `Tests/Test_GraphPinTotality.cpp` checks the registered tables and
+indices through counted failures. The newly exposed
+`specialBehaviour` read removes the prior two DP DECLARED_UNUSED warnings;
+the expected transition is 2 to 0. The header migration also changes
+fallback observations, so census values must be measured after integration,
+not inferred from descriptor counts.
+
+The world registration is DP_GraphNodeWorldPins_Test. Alongside real Door
+and Forge effects, it proves the four scalar input cases directly:
+WinCheckAlreadyCollected.Tag, WinNotifyCollected.Tag,
+DispatchObjectivePlaced.Tag, and AnimateDoorLeaves.IsOpen; each uses an
+override against a contradictory blackboard value and checks zero fallback,
+mismatch, and bad-access counts.
+
+Existing playthroughs remain the end-to-end coverage for nodes whose side
+effects need their authored chains: Test_P2Archetype_ChildCannotCarryTools
+covers ChildRefusal; Test_P2Reagent_BellSoulRingsBell plus
+Test_P2BellSoul_PriestHearsTheBell cover RingBell and hearing;
+Test_Possession plus Test_P1Cooldown_CannotPossessFor1pt5s cover TryPossess
+and its cooldown; Test_DPDoor plus Test_DoubleDoorAndForge cover consume/key
+and door flows; Test_PentagramVictory covers the objective/victory chain.
+
+The WorldPins compatibility ledger has exactly these four named fallback
+uses. They are intentional direct-node witnesses and move to B-7.6's
+direct-corpus rewiring work; they are not authored-gameplay graph residue.
+
+| Test leg | Node | Pin | Variable | Count | B-7.6 disposition |
+|---|---|---:|---|---:|---|
+| Forge missing recipe binding | DPNode_ForgeCraft | 1 | recipeInput | 1 | Wire direct corpus consumer |
+| Forge missing recipe binding | DPNode_ForgeCraft | 2 | recipeOutput | 1 | Wire direct corpus consumer |
+| Forge wrong-type recipe binding | DPNode_ForgeCraft | 1 | recipeInput | 1 | Wire direct corpus consumer |
+| Forge wrong-type recipe binding | DPNode_ForgeCraft | 2 | recipeOutput | 1 | Wire direct corpus consumer |
+
+Pre-B-7.2 recorded baseline: DevilsPlayground has 162 automated tests,
+16 IN_PLACE_ALIASING findings, and 2 DECLARED_UNUSED findings. Observed Null
+unit-test baselines remain Combat 2679, Zenithmon 4538, and RenderTest 2784.
+The prior FALLBACK observation was 16116; it is a baseline for line-set
+comparison, not a post-migration prediction.
+
+Observed B-7.2a validation: both category builds, the T3 gate, and all seven
+fresh-boot census suites passed. DP has 165 registrations (144 ran, 21 headless
+skips); all three new fixtures ran 739 checks with zero failures. Its 19552
+INPUT fallbacks comprise 16116 prior engine uses, 149 new-fixture engine uses,
+and 3287 newly live game-pin uses. Both independent DP runs have the same 125
+exact diagnostic token multiplicities: 16 alias warnings, two deliberate type
+mismatches, zero bad accesses, and zero validator errors or unused declarations.
+The hermetic fixture's final scene survives ordinary last-scene unload until
+the mandatory harness reset; subscriptions and held/tag state are released,
+and every subsequent preexisting test retains its prior engine diagnostics.
+Observed unit pins remain Combat 2679, Zenithmon 4538, and RenderTest 2784.
+B-7.2a is committed directly to master under this program's branch-mode ruling.
+
+## B-7.2b — graph builders author data edges
+
+`DevilsPlayground.cpp` now authors 109 explicit graph data edges:
+73 fresh `GetVariable` producers, 28 existing-producer wires, and 8
+Math-result-to-permanent-setter wires. Builder sites stay inline rather than
+being folded into an engine or shared factory helper, so each producer,
+consumer, cleared default, and original chain position remains reviewable.
+The graph inventory is exact:
+
+| Graph | GetVariable | Existing producer | Math setter | Total |
+|---|---:|---:|---:|---:|
+| DPVillager | 20 | 8 | 3 | 31 |
+| DPItem | 20 | 10 | 3 | 33 |
+| DPForge | 3 | 0 | 0 | 3 |
+| DPPlayerControl | 2 | 1 | 0 | 3 |
+| DPPauseMenu | 6 | 0 | 0 | 6 |
+| DPPriest | 4 | 1 | 0 | 5 |
+| DPMainMenu | 0 | 0 | 0 | 0 |
+| DPPentagram | 4 | 3 | 0 | 7 |
+| DPChest | 4 | 3 | 2 | 9 |
+| DPNoiseMachine | 0 | 0 | 0 | 0 |
+| DPDoubleDoor | 4 | 1 | 0 | 5 |
+| DPDoor | 6 | 1 | 0 | 7 |
+
+The site form records every consumer pin and producer form without hiding
+the 109 edges behind graph totals. `GV` means a fresh `GetVariable`;
+`direct` means an existing earlier producer in that execution chain; `setter`
+means the permanent write immediately following an in-place Math node.
+
+| Graph/site | Consumer pins and source form | Direct/setter continuation |
+|---|---|---|
+| Villager possession | `state→Switch`, `possessedNow→three Gates/Branch`, `dt→recovery Math.Operand` (GV) | `recovery Math.Result→CompareValue→Gate.Open` (direct); `faintRecovery` setter |
+| Villager movement | `state→CompareInt`, `moving/sprintHeld/quietHeld→their Branches` (GV) | `CompareInt.Result→possession Branch` (direct) |
+| Villager life drain | `stateIsPossessed→Gate`, `sprinting→Branch`, `sprintCostExtra→extra Math.Operand`, `drain→apply Math.Operand` (GV) | `extra Math.Result→AddFloatDelta`, `apply Math.Result→depleted Compare→Gate.Open` (direct); `remainingLife` setter |
+| Villager footsteps | `stateIsPossessed→Gate`, `moving→Branch`, `dt→countdown Math.Operand`, `walkQuiet/footstepLoudness/footstepRadius/quietLoudnessMult→EmitFootstep` (GV) | `countdown Math.Result→CompareValue→Gate.Open` (direct); `footstepCountdown` setter |
+| Item evaporation | `evaporateRemaining→armed Compare`, `dt→Math.Operand`, `tag→Evaporate.Tag` (GV) | `armed Compare.Result→Branch`, `Math.Result→done Compare→Branch` (direct); `evaporateRemaining` setter |
+| Item cooldown | `postDropCooldown→armed Compare`, `dt→Math.Operand` (GV) | `armed Compare.Result→Branch`, `Math.Result→under Compare→Gate.Open` (direct); `postDropCooldown` setter |
+| Item gates/channel | `possessedValid/handsEmpty/inRange→three Gates`, `possessedVillager/tag→ChildRefusal`, `channelDuration→hasChannel Compare`, `channelVillager/possessedVillager→CompareEntity A/B`, `possessedVillager/channelDuration→ArmChannel`, `dt→countdown Math.Operand` (GV) | `hasChannel Compare.Result→Branch`, `CompareEntity.Result→Branch`, `countdown Math.Result→Compare→Gate.Open` (direct); `channelRemaining` setter |
+| Item commit | `possessedVillager/tag→CommitPickup`, `possessedVillager/specialBehaviour→RingBell` (GV) | — |
+| Forge / PlayerControl | Forge: `payload/recipeInput/recipeOutput→Forge pins` (GV). PlayerControl: `clickPressed/dropPressed→Gates` (GV) | `Pick.Result→TryPossess.Villager` (direct) |
+| PauseMenu / Priest | Pause: `shown→two Branches`, `runOver/rPressed/qPressed→Branches`, `escPressed→Gate` (GV). Priest: `targetWithDevil→Apprehend`, `radius/highScent→Pick`, `investigate→Gate` (GV) | Priest `QueryEntityValid.Result→target Gate` (direct) |
+| Pentagram / Chest | Pentagram: four `payload→Read/Notify/Consume/Placed.Villager` (GV); `Read.Tag→Check/Notify/Placed.Tag` (direct). Chest: `isOpen→Branch/Gate`, `openT→lid Compare`, `payload→Dispatch` (GV) | Chest `lid Compare.Result→Branch`, `tuning.Result→division Operand`, `division.Result→advance Delta` (direct); `lidStep` and `openT` setters |
+| DoubleDoor / Door | DoubleDoor: `isOpen→Branch/AnimateDoorLeaves.IsOpen`, `payload→ConsumeKey/DispatchOpened.Villager` (GV). Door: `anim→Switch/AdvanceAnim.Anim`, four `payload→CheckKey/PentagramDeferral/DispatchOpened/Closed.Villager` (GV) | each `QueryEntityValid.Result→Gate.Open` (direct) |
+
+These forms include the initial Item and Priest wires; they are not an
+additional allowance.
+
+Every wire replaces one input-name fallback, including class-default
+consumer inputs and the initially authored Item and Priest wires. Its
+nonempty input-name property is cleared immediately after wiring. Fresh
+`GetVariable` nodes are one per consumer except where an earlier output in
+the same execution chain is the producer. Villager and Item declare `dt`
+as FLOAT zero, Villager also declares `drain` as FLOAT zero, and the five
+new payload declarations use INVALID entity values where a helper-backed
+reader needs absence semantics.
+
+The eight in-place math rewrites retain their old execution order while
+making the result flow explicit. Each has a unique, nonempty temporary result
+name and an immediately following permanent `SetBlackboardFloat` consumer:
+`faintRecoveryResult`, `remainingLifeResult`,
+`footstepCountdownResult`, `evaporateRemainingResult`,
+`postDropCooldownResult`, `channelRemainingResult`,
+`lidStepResult`, and `openTClampResult`. Seven results also feed a real
+downstream value consumer; Chest's terminal clamp has only its setter and no
+invented downstream wire.
+
+`Tests/Test_GraphsValidateClean.cpp` builds and initializes all twelve
+graphs, requires zero skipped edge resolutions, checks the exact edge
+inventory above, and verifies all 73 `GetVariable.Value` outputs resolve
+to the declared concrete type through the public reflection and validator
+APIs. These are counted automated-test checks, not assertions that can be
+compiled without a reporting path.
+
+B-7.2 deliberately leaves OUTPUT-to-reference and selector restructuring for
+B-7.6: Priest patrol target, conditional Door animation settlement, Item
+channel outputs, and the remaining OUTPUT names remain deferred. Direct
+compatibility witnesses also still exercise fallback behaviour. The observed compatibility residue is exactly 81 INPUT fallbacks: 67 main-pin, 8 priest-pin, 4 world-pin, and 2 existing P5 standalone witnesses. Both independent DP runs match every one of the 24 node/pin/variable multiplicities in the compatibility ledger. Gameplay-authored graphs target zero
+FALLBACK and zero IN_PLACE_ALIASING after this builder migration, but the
+unfiltered suite must be reported honestly until B-7.6 removes the named
+compatibility residue and C-1 reaches zero.
+
+### Historical B76 graph contract
+
+The current B76 inventory is 38 registered DP graph classes, 26 pin tables,
+50 descriptors, 36 INPUTs, 10 OUTPUTs, and 4 READWRITE selectors. Production
+data-edge counts are Villager 35, Item 38, Priest 6, and Door 16; the twelve
+graphs expose 77 typed `GetVariable` outputs. Item uses the conservative
+Commit guard/clear/latch then Finish side-effect chain. Arm values flow through
+graph writers, and Door settlement is conditional graph control flow.
+
+Villager's `uRecDone` CompareFloat and `uRecGate` Gate use factory wire forms.
+`Test_GraphsValidateClean.cpp` builds the old raw branch and the factory branch
+and compares their complete serialized definitions byte-for-byte. Other raw
+builder sites remain raw when producer creation timing or edge order differs;
+parameter-call order alone is not the criterion. The first seven-suite census
+passed with zero FALLBACK, IN_PLACE_ALIASING, and validator errors; DP reported its
+six intentional wrong-tag MISMATCH controls. The final 14-step T3 (with builds)
+and SceneGuard gate passed; the second boot preserved every tracked scene,
+navmesh, and generated-graph hash.
+
+DevilsPlayground's board category is branch mode, but this B-7.2 unit is
+explicitly ledgered as a master commit. Header and builder sections remain
+separate because root integrates the header commit first and the builder
+commit afterwards. Observed B-7.2b validation passed both category builds, the full T3 gate, and all seven fresh-boot census suites. DP has 165 registrations (144 ran, 21 headless skips), zero failed tests, 81 INPUT fallbacks, two deliberate mismatches, and zero alias warnings, bad accesses, or validator findings. Builder validation ran 233 counted checks. Combat 2679, Zenithmon 4538, and RenderTest 2784 were observed unchanged.
+
+## C1 graph-pin contract
+
+DP has 26 pin tables with 50 descriptors: 36 INPUT, 10 OUTPUT, and four
+READWRITE selectors. INPUT and OUTPUT values are wire-only; an unconnected
+`INPUT_CONST` reads its current constant value, and other unconnected inputs keep
+their typed defaults. Only `OpenT`, `RequiredKey`, and
+`CraftCount` retain permanent READWRITE selector names. Do not restore an
+`INPUT_VAR_OR_CONST` descriptor, an INPUT/OUTPUT name property, a clear-after-wire
+step, or a fallback/dual-write path.
+
+Use `GetVariable` only for a deliberate blackboard read and connect its `Value`
+to the consuming data pin. Targets, lists, selectors, type sources, event stashes,
+and configuration remain direct permanent names. Preserve each raw builder where
+its node IDs or delayed data-edge order are serialized; factory and raw
+alternatives compare final C1 definitions, not pre-C1 bytes. Existing serialized
+unknown properties retain their normal loader behavior.
+
+C1 adds the approved success-only `stateIsPossessed` and `drain` writers to
+DP_Villager (85 nodes, 60 exec edges, 37 data edges). DP retains 38 registered
+classes and 26 pin tables; `DP_GraphsValidateClean_Test` retains 243 structural
+checks, while `Test_P1Sprint_DrainsLifeFaster` covers successive
+sprint/plain/burnout publication and ordering. The initial C1 census
+completed all seven suite legs; the later post-writer rerun was deliberately
+interrupted after DP and Combat when its stale 35-edge expectation failed. That
+fixture now expects 37 and its 243 checks pass. T3-final2 and the DP D3D extra
+are green, and fresh final2 DP is 165 registrations (144 executed passes, 21
+skips, zero failures). The all-seven final2 census is green with zero FALLBACK,
+aliasing, and validator errors; DP retains six deliberate MISMATCH controls. The final asset audit found
+164 graphs, 881 obsolete parameters removed from 102 graphs, no unexpected removal
+or topology issue, and a 192-asset second boot with no path or byte changes.
+
+## B5 windowed graph-editor proof
+
+`Test_GraphEditorLiveAuthoring` is a graphics-required editor interaction
+contract. It palette-creates `OnUpdate`, `RotateEntity`, `ReadKeyState`, and
+`Branch`; draws the original exec edge and a real mouse drag from
+`ReadKeyState.Result` to `Branch.Condition`; then saves twice. The added BOOL
+pair is deliberately unreachable, so it proves authoring, persistence, and
+rendering without changing the established rotation proof. Each save is loaded
+independently from disk and checked for the exact four-node, one-exec,
+one-data-edge topology and rate. A normal close/reopen waits for rendered named
+endpoints and rejects an unresolvable wire; it never substitutes a cached asset
+for the independent disk proof, or `OpenAssetFresh` for reload proof.

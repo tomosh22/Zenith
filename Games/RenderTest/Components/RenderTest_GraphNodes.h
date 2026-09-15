@@ -81,15 +81,12 @@ namespace RenderTest_TennisNodes
 	// Resolve the live ball pose + velocity (spin comes from the blackboard the
 	// referee publishes). Returns false if the ball can't be resolved. The
 	// entity key defaults to the INVALID sentinel when unpublished, matching
-	// the BT blackboard's GetEntityID miss semantics (packed 0 is never
-	// written - seed and publish both skip invalid handles).
-	inline bool BallState(Zenith_GraphContext& xContext, Zenith_Maths::Vector3& xPos,
-		Zenith_Maths::Vector3& xVel, Zenith_Maths::Vector3& xSpin)
+	// the BT blackboard's GetEntityID miss semantics. Packed zero remains a
+	// present value when an author or bridge supplies it.
+	inline bool BallState(Zenith_GraphContext&, const Zenith_EntityID xBall,
+		const Zenith_Maths::Vector3&, Zenith_Maths::Vector3& xPos,
+		Zenith_Maths::Vector3& xVel)
 	{
-		xSpin = xContext.m_pxBlackboard->GetVector3(RenderTest_TennisBB::k_szBallSpin, Zenith_Maths::Vector3(0.0f));
-		const Zenith_EntityID xBall = Zenith_EntityID::FromPacked(
-			xContext.m_pxBlackboard->GetPackedEntityID(RenderTest_TennisBB::k_szBallEntity,
-				INVALID_ENTITY_ID.GetPacked()));
 		if (xBall == INVALID_ENTITY_ID)
 			return false;
 		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xBall);
@@ -104,6 +101,18 @@ namespace RenderTest_TennisNodes
 				xVel = g_xEngine.Physics().GetLinearVelocity(pxCol->GetBodyID());
 		}
 		return true;
+	}
+
+	// TARGET_REF pins name an entity reference rather than a data input.  Keep
+	// the old packed-ID miss semantics: an absent, wrongly tagged, or empty
+	// name is INVALID; packed zero is an authored, legal value and is not
+	// substituted with self.
+	inline Zenith_EntityID BallEntityRef(Zenith_GraphContext& xContext, const std::string& strVar)
+	{
+		if (strVar.empty())
+			return INVALID_ENTITY_ID;
+		return Zenith_EntityID::FromPacked(
+			xContext.m_pxBlackboard->GetPackedEntityID(strVar, INVALID_ENTITY_ID.GetPacked()));
 	}
 
 	// The X-stance for a serve from the parity-selected court (deuce/ad).
@@ -166,6 +175,17 @@ public:
 class RTNode_TennisDecideServe : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisDecideServe)
+public:
+	ZENITH_PROPERTY(bool, m_bServeFromDeuce, true)
+	static constexpr u_int uPIN_ServeFromDeuce = 0u;
+	static constexpr u_int uPIN_IsSecondServe = 1u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisDecideServe)
+	ZENITH_GRAPH_PIN_INPUT_CONST(ServeFromDeuce, "m_bServeFromDeuce", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(IsSecondServe, PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		RenderTest_TennisAgentComponent* pxBrain = RenderTest_TennisNodes::Brain(xContext);
@@ -173,8 +193,8 @@ public:
 			return GRAPH_NODE_STATUS_FAILURE;
 		if (pxBrain->IsArmed())
 			return GRAPH_NODE_STATUS_SUCCESS;   // keep the committed decision (don't unarm mid-swing)
-		const bool bDeuce = xContext.m_pxBlackboard->GetBool(RenderTest_TennisBB::k_szServeFromDeuce, true);
-		const bool bSecond = xContext.m_pxBlackboard->GetBool(RenderTest_TennisBB::k_szIsSecondServe, false);
+		const bool bDeuce = GetInput<bool>(xContext, uPIN_ServeFromDeuce);
+		const bool bSecond = GetInput<bool>(xContext, uPIN_IsSecondServe);
 		const RenderTest_Tennis::TennisShotDecision xDec = RenderTest_Tennis::SelectServe(
 			RenderTest_TennisNodes::Court(), pxBrain->GetPlayerState(),
 			RenderTest_Tennis::SERVE_RESULT_GOOD, bDeuce, bSecond, pxBrain->Rng());
@@ -187,11 +207,22 @@ public:
 class RTNode_TennisPositionForServe : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisPositionForServe)
+public:
+	ZENITH_PROPERTY(bool, m_bServeFromDeuce, true)
+	static constexpr u_int uPIN_MySide = 0u;
+	static constexpr u_int uPIN_ServeFromDeuce = 1u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisPositionForServe)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_CONST(ServeFromDeuce, "m_bServeFromDeuce", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const RenderTest_Tennis::TennisCourt xCourt = RenderTest_TennisNodes::Court();
-		const int iSide = xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szMySide, 0);
-		const bool bDeuce = xContext.m_pxBlackboard->GetBool(RenderTest_TennisBB::k_szServeFromDeuce, true);
+		const int iSide = GetInput<int32_t>(xContext, uPIN_MySide);
+		const bool bDeuce = GetInput<bool>(xContext, uPIN_ServeFromDeuce);
 		const float fStanceX = RenderTest_TennisNodes::ServeStanceX(xCourt, iSide, bDeuce);
 		const Zenith_Maths::Vector3 xDest = RenderTest_Tennis::ProjectToSlab(xCourt,
 			Zenith_Maths::Vector3(fStanceX, xCourt.m_fSurfaceY, xCourt.BaselineZ(
@@ -208,6 +239,14 @@ public:
 class RTNode_TennisArmServe : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisArmServe)
+public:
+	static constexpr u_int uPIN_BallEpoch = 0u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisArmServe)
+	ZENITH_GRAPH_PIN_INPUT(BallEpoch, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		RenderTest_TennisAgentComponent* pxBrain = RenderTest_TennisNodes::Brain(xContext);
@@ -221,7 +260,7 @@ public:
 		// Arm only if the body confirms the stroke actually started.
 		if (pxBody->RequestServe(pxBrain->GetDecidedShot().m_xAim))
 			pxBrain->ArmDecidedShot(static_cast<u_int>(
-				xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szBallEpoch, 0)));
+				GetInput<int32_t>(xContext, uPIN_BallEpoch)));
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
 	const char* GetTypeName() const override { return "RTTennisArmServe"; }
@@ -236,20 +275,31 @@ public:
 class RTNode_TennisBallReachable : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisBallReachable)
+public:
+	ZENITH_PROPERTY(std::string, m_strBallEntityVar, RenderTest_TennisBB::k_szBallEntity)
+	static constexpr u_int uPIN_BallSpin = 1u;
+	static constexpr u_int uPIN_MySide = 2u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisBallReachable)
+	ZENITH_GRAPH_PIN_TARGET_ENTITY(BallEntity, "m_strBallEntityVar")
+	ZENITH_GRAPH_PIN_INPUT(BallSpin, PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		const Zenith_EntityID xBall = Zenith_EntityID::FromPacked(
-			xContext.m_pxBlackboard->GetPackedEntityID(RenderTest_TennisBB::k_szBallEntity,
-				INVALID_ENTITY_ID.GetPacked()));
+		const Zenith_EntityID xBall = RenderTest_TennisNodes::BallEntityRef(xContext, m_strBallEntityVar);
 		const float fAware = Zenith_PerceptionSystem::GetAwarenessOf(
 			xContext.m_xSelf.GetEntityID(), xBall);
 
-		Zenith_Maths::Vector3 xBallPos, xBallVel, xBallSpin;
-		if (!RenderTest_TennisNodes::BallState(xContext, xBallPos, xBallVel, xBallSpin))
+		const Zenith_Maths::Vector3 xBallSpin = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_BallSpin);
+		Zenith_Maths::Vector3 xBallPos, xBallVel;
+		if (!RenderTest_TennisNodes::BallState(xContext, xBall, xBallSpin, xBallPos, xBallVel))
 			return GRAPH_NODE_STATUS_FAILURE;
 		const RenderTest_Tennis::TennisCourt xCourt = RenderTest_TennisNodes::Court();
 		const RenderTest_Tennis::TennisSide eSide = static_cast<RenderTest_Tennis::TennisSide>(
-			xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szMySide, 0));
+			GetInput<int32_t>(xContext, uPIN_MySide));
 		const RenderTest_Tennis::TennisInterceptResult xHit = RenderTest_Tennis::PredictIntercept(
 			xCourt, xBallPos, xBallVel, xBallSpin, eSide, RenderTest_Tennis::StrikeHeight(xCourt),
 			RenderTest_TennisNodes::k_fReachRadius, RenderTest_TennisNodes::SelfPos(xContext),
@@ -264,14 +314,28 @@ public:
 class RTNode_TennisMoveToIntercept : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisMoveToIntercept)
+public:
+	ZENITH_PROPERTY(std::string, m_strBallEntityVar, RenderTest_TennisBB::k_szBallEntity)
+	static constexpr u_int uPIN_BallSpin = 1u;
+	static constexpr u_int uPIN_MySide = 2u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisMoveToIntercept)
+	ZENITH_GRAPH_PIN_TARGET_ENTITY(BallEntity, "m_strBallEntityVar")
+	ZENITH_GRAPH_PIN_INPUT(BallSpin, PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
-		Zenith_Maths::Vector3 xBallPos, xBallVel, xBallSpin;
-		if (!RenderTest_TennisNodes::BallState(xContext, xBallPos, xBallVel, xBallSpin))
+		const Zenith_Maths::Vector3 xBallSpin = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_BallSpin);
+		const Zenith_EntityID xBall = RenderTest_TennisNodes::BallEntityRef(xContext, m_strBallEntityVar);
+		Zenith_Maths::Vector3 xBallPos, xBallVel;
+		if (!RenderTest_TennisNodes::BallState(xContext, xBall, xBallSpin, xBallPos, xBallVel))
 			return GRAPH_NODE_STATUS_SUCCESS;   // quirk preserved: no ball -> no-op SUCCESS
 		const RenderTest_Tennis::TennisCourt xCourt = RenderTest_TennisNodes::Court();
 		const RenderTest_Tennis::TennisSide eSide = static_cast<RenderTest_Tennis::TennisSide>(
-			xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szMySide, 0));
+			GetInput<int32_t>(xContext, uPIN_MySide));
 		const RenderTest_Tennis::TennisInterceptResult xHit = RenderTest_Tennis::PredictIntercept(
 			xCourt, xBallPos, xBallVel, xBallSpin, eSide, RenderTest_Tennis::StrikeHeight(xCourt),
 			RenderTest_TennisNodes::k_fReachRadius, RenderTest_TennisNodes::SelfPos(xContext),
@@ -309,6 +373,20 @@ public:
 class RTNode_TennisArmSwing : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisArmSwing)
+public:
+	ZENITH_PROPERTY(std::string, m_strBallEntityVar, RenderTest_TennisBB::k_szBallEntity)
+	static constexpr u_int uPIN_BallSpin = 1u;
+	static constexpr u_int uPIN_MySide = 2u;
+	static constexpr u_int uPIN_BallEpoch = 3u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisArmSwing)
+	ZENITH_GRAPH_PIN_TARGET_ENTITY(BallEntity, "m_strBallEntityVar")
+	ZENITH_GRAPH_PIN_INPUT(BallSpin, PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(BallEpoch, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		RenderTest_TennisAgentComponent* pxBrain = RenderTest_TennisNodes::Brain(xContext);
@@ -320,12 +398,14 @@ public:
 		if (!pxBody->IsReady())
 			return GRAPH_NODE_STATUS_SUCCESS;
 
-		Zenith_Maths::Vector3 xBallPos, xBallVel, xBallSpin;
-		if (!RenderTest_TennisNodes::BallState(xContext, xBallPos, xBallVel, xBallSpin))
+		const Zenith_Maths::Vector3 xBallSpin = GetInput<Zenith_Maths::Vector3>(xContext, uPIN_BallSpin);
+		const Zenith_EntityID xBall = RenderTest_TennisNodes::BallEntityRef(xContext, m_strBallEntityVar);
+		Zenith_Maths::Vector3 xBallPos, xBallVel;
+		if (!RenderTest_TennisNodes::BallState(xContext, xBall, xBallSpin, xBallPos, xBallVel))
 			return GRAPH_NODE_STATUS_SUCCESS;
 		const RenderTest_Tennis::TennisCourt xCourt = RenderTest_TennisNodes::Court();
 		const RenderTest_Tennis::TennisSide eSide = static_cast<RenderTest_Tennis::TennisSide>(
-			xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szMySide, 0));
+			GetInput<int32_t>(xContext, uPIN_MySide));
 		const RenderTest_Tennis::TennisInterceptResult xHit = RenderTest_Tennis::PredictIntercept(
 			xCourt, xBallPos, xBallVel, xBallSpin, eSide, RenderTest_Tennis::StrikeHeight(xCourt),
 			RenderTest_TennisNodes::k_fReachRadius, RenderTest_TennisNodes::SelfPos(xContext),
@@ -337,7 +417,7 @@ public:
 		{
 			if (pxBody->RequestSwing(pxBrain->GetDecidedShot().m_xAim, xBallPos.x))
 				pxBrain->ArmDecidedShot(static_cast<u_int>(
-					xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szBallEpoch, 0)));
+					GetInput<int32_t>(xContext, uPIN_BallEpoch)));
 		}
 		return GRAPH_NODE_STATUS_SUCCESS;
 	}
@@ -349,17 +429,29 @@ public:
 class RTNode_TennisRecoverToReady : public Zenith_GraphNode
 {
 public:
+	ZENITH_PROPERTIES_BEGIN(RTNode_TennisRecoverToReady)
+public:
+	static constexpr u_int uPIN_MySide = 0u;
+	static constexpr u_int uPIN_Phase = 1u;
+	static constexpr u_int uPIN_IsServer = 2u;
+	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisRecoverToReady)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Phase, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(IsServer, PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PINS_END
+
+public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 	{
 		const RenderTest_Tennis::TennisCourt xCourt = RenderTest_TennisNodes::Court();
-		const int iSide = xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szMySide, 0);
+		const int iSide = GetInput<int32_t>(xContext, uPIN_MySide);
 		// A receiver awaiting a serve stands up near the service line; everyone else holds
 		// the baseline (see ComputeReadyZ - keeps the gently-paced serve returnable).
 		const float fReadyZ = RenderTest_Tennis::ComputeReadyZ(xCourt,
 			static_cast<RenderTest_Tennis::TennisSide>(iSide),
 			static_cast<RenderTest_Tennis::PointPhase>(
-				xContext.m_pxBlackboard->GetInt32(RenderTest_TennisBB::k_szPhase, 0)),
-			xContext.m_pxBlackboard->GetBool(RenderTest_TennisBB::k_szIsServer, false));
+				GetInput<int32_t>(xContext, uPIN_Phase)),
+			GetInput<bool>(xContext, uPIN_IsServer));
 		const Zenith_Maths::Vector3 xDest = RenderTest_Tennis::ProjectToSlab(xCourt,
 			Zenith_Maths::Vector3(xCourt.m_fCenterX, xCourt.m_fSurfaceY, fReadyZ),
 			RenderTest_TennisNodes::k_fNavDestMargin);

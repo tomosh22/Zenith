@@ -160,6 +160,11 @@ Demonstrates:
 
 ## Behaviour Graphs (all game DECISION logic — 5 graphs)
 
+The fourteen remaining factory-shaped sites retain raw authoring because their
+node IDs and data-edge positions are serialized: Branch 550/562/570/586/622/624/638,
+Compare 565/617, StateMachine 665/720, and Switch 780/805/826. Each producer is
+authored after its consumer or its edge intentionally follows a barrier.
+
 Every piece of combat DECISION logic lives in behaviour graphs; the C++
 components keep only SYSTEMS (physics, IK, damage math, HUD render, scene
 mgmt, hit overlap) behind small graph-facing shims. Graphs are boot-authored
@@ -211,6 +216,43 @@ which is `#ifdef ZENITH_TOOLS` because the definitions are (`Combat.cpp`'s tools
 block). The `BuildCombatGameFlow_*` sub-builders stay `static`. A sixth builder
 added without a row in the validate-clean table goes unchecked — the row goes in
 with the builder.
+
+**Live pin execution (B-7.4a).** The 18 annotated node classes expose 26
+descriptors: 14 INPUT and 12 OUTPUT.  Every INPUT is read through
+`GetInput<T>` in the branch where its old blackboard read occurred, and every
+OUTPUT is published through `SetOutput` at its old success point.  The eight
+classes with no variable-name property remain intentionally opaque:
+`CombatDeactivateHitbox`, `CombatSetGameState`, `CombatPlayerPostTick`,
+`CombatEnemyIdleTick`, `CombatSetScenePaused`, `CombatResetGame`,
+`CombatReturnToMenu`, and `CombatFocusPlayButton`.  The totality, table-index,
+input/output, runtime-fixture, and guard-contract rows in
+`Combat_Tests_GraphPinTotality.cpp` are ten Combat `ZENITH_TEST`s, so this migration
+moves only Combat's unit-pin row.  They include initialized-slot zero versus
+bare-UNSET guard failures, success-to-failure retention, and the EnemyPreTick
+cooldown-Dt discriminator. The temporary fallback census rises for bound
+legacy INPUT names until B-7.4b replaces them with data edges or
+`GetVariable` producers; OUTPUT names do not consume fallback entries.
+
+**Builder wiring (B-7.6).** The five production builders author 35 data
+edges: 17 adjacent producer links and 18 per-consumer `GetVariable` links
+(`Combat_PlayerAttack` 11, `Combat_RoundFlow` 5, `Combat_PlayerState` 10,
+`Combat_EnemyBrain` 6, `Combat_GameFlow` 3). The 15 payload-Dt consumers use
+concrete FLOAT `GetVariable(payload)` nodes; PlayerAttack also declares the
+cross-`AttackTick` values `hitFrameReady` BOOL, `isAttacking` BOOL, and
+`comboCount` INT32. RoundFlow, PlayerState, and EnemyBrain declare FLOAT
+`payload`; the player/enemy/game state seeds remain declared while their
+PreTick/GetGameState outputs wire directly into their StateMachine/Switch
+inputs. That is the OUTPUT-wired-and-declared shape: the seed supplies tick 0
+and the output retains the blackboard writer required by C-1 consumers.
+`CombatQueryAttackState` clears all five output names and, on its
+SUCCESS path before the original first guard, explicitly writes IsAttacking,
+ComboCount, then HitFrame into `isAttacking`, `comboCount`, and
+`hitFrameReady`. A query failure reaches none of those writers. The validate-clean
+table asserts each graph's exact edge/GetVariable count, concrete producer
+types, successful initialization, and zero skipped resolutions; warnings such
+as DECLARED_UNUSED remain intentionally outside its ERROR-only gate. Root
+re-authors only `Arena.zscen` for the new RoundFlow declaration; runtime graphs
+move no scene bytes and GameFlow adds no declaration.
 
 **Accepted divergences** (unobservable / precedented): `Combat_GameFlow`'s
 `@60`-graph / `@100`-component split shifts the systems block by one frame on a
@@ -537,3 +579,27 @@ msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=vs2022_Debug_Wi
 cd ..\Games\Combat\Build\output\win64\vs2022_debug_win64_true
 combat.exe
 ```
+
+## C1 graph-pin contract
+
+Graph INPUT and OUTPUT values are wire-only. Author a `GetVariable` producer only
+where a graph intentionally reads a blackboard value, then connect its `Value` pin
+to the consumer; consume produced values through their output pins. INPUT and
+OUTPUT descriptors carry no property-name binding metadata, and graph execution
+does not fall back to blackboard names or dual-write output values.
+
+This removal does not change typed defaults for unconnected inputs or the current
+value of an unconnected `INPUT_CONST` property.
+
+String properties that remain on graph nodes identify permanent roles such as
+selectors, targets, lists, type sources, event stashes, and configuration. They
+are not substitutes for data-pin bindings. Existing serialized unknown properties
+continue through normal property loading's unknown-property handling.
+
+C1 removed 27 obsolete raw INPUT/OUTPUT parameter fields from Combat while
+preserving permanent roles, wires, order, and surviving parameters. T3-final2,
+SceneGuard, and all nine builds are green; observed pins are Combat 2695,
+Zenithmon 4548, and RenderTest 2798. All seven fresh census legs are green with
+zero FALLBACK, aliasing, and validator errors. The final asset audit found 164
+graphs, 881 obsolete parameters removed from 102 graphs, no unexpected removal or
+topology issue, and a 192-asset second boot with no path or byte changes.

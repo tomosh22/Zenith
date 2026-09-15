@@ -3,7 +3,6 @@
 #include "Core/Zenith_PropertySystem.h"                  // Zenith_PropertyValue / PROPERTY_TYPE_INT32
 #include "Scripting/Zenith_GraphNode.h"                  // Zenith_GraphNode / Zenith_GraphContext / status enum
 #include "Scripting/Zenith_GraphNodeRegistry.h"          // RegisterNodeType
-#include "Scripting/Zenith_GraphBlackboard.h"            // TryGetValue -- the payload read
 #include "Zenithmon/Components/ZM_UI_MenuStack.h"        // TryPushDialogue -- the shipped bark surface
 #include "Zenithmon/Source/Data/ZM_TrainerData.h"        // the roster + ZM_SelectTrainerChallengeLines
 #include "Zenithmon/Source/Graph/ZM_GraphAuthoring.h"    // the shared name constants
@@ -22,9 +21,8 @@
 // (ZM_Tests_TrainerChallengeGraph.cpp fires the production event with no scene, no
 // player and no ZM_MenuRoot on purpose), and Zenith_Assert breaks the process in
 // EVERY configuration -- one assert here does not fail one test, it ends the whole
-// boot unit run and takes the gate down with it. In particular
-// Zenith_PropertyValue::GetInt32 ASSERTS on a type mismatch
-// (Zenith_PropertySystem.h:85), so the type tag is checked BEFORE it is called.
+// boot unit run and takes the gate down with it. The typed graph slot handles
+// wrong-tag bindings with its ordinary const default.
 // ============================================================================
 
 // Ownerless process-global observation, so a unit can prove the node was REACHED
@@ -49,37 +47,6 @@ struct ZM_GraphNodeTestCounters
 	}
 };
 
-namespace ZM_GraphNodeDetail
-{
-	// Reads the trainer id the fire site stashed on the blackboard. TOTAL: a missing
-	// variable, a wrong type tag, a negative value and an unregistered id all yield
-	// ZM_TRAINER_NONE, and none of them asserts.
-	inline ZM_TRAINER_ID ResolveChallengeTrainer(Zenith_GraphContext& xContext,
-		const std::string& strVar)
-	{
-		if (xContext.m_pxBlackboard == nullptr)
-		{
-			return ZM_TRAINER_NONE;
-		}
-		const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(strVar);
-		// The TYPE CHECK IS MANDATORY, not defensive tidiness: GetInt32 asserts on a
-		// mismatch, and a graph author can point m_strTrainerIdVar at any variable.
-		if (pxValue == nullptr || pxValue->GetType() != PROPERTY_TYPE_INT32)
-		{
-			return ZM_TRAINER_NONE;
-		}
-		const int32_t iId = pxValue->GetInt32();
-		if (iId < 0)
-		{
-			return ZM_TRAINER_NONE;
-		}
-		const ZM_TRAINER_ID eId = (ZM_TRAINER_ID)(u_int)iId;
-		// ZM_IsRegisteredTrainer collapses the sentinel and every garbage value into
-		// one comparison, and unlike ZM_GetTrainerData it logs nothing.
-		return ZM_IsRegisteredTrainer(eId) ? eId : ZM_TRAINER_NONE;
-	}
-}
-
 // Pushes the named trainer's challenge lines through the shipped dialogue surface.
 // SUCCESS on a push; FAILURE (which aborts the chain, harmlessly, since it is the
 // chain's last node) on an unresolvable id, a silent row, or a refused push.
@@ -88,20 +55,17 @@ class ZM_GraphNode_PushTrainerChallenge : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(ZM_GraphNode_PushTrainerChallenge)
 public:
-	// Default MUST equal szZM_GRAPH_VAR_TRAINER_ID -- the builder relies on the
-	// EXACT-DEFAULT RULE and emits no ParamString for it.
-	ZENITH_PROPERTY(std::string, m_strTrainerIdVar, "zmTrainerId")
+	ZENITH_PROPERTY(int32_t, m_iTrainerId, static_cast<int32_t>(ZM_TRAINER_NONE))
 
-	// The ONE pin Zenithmon's node library has. A plain INPUT of an INT32: the
-	// node READS the trainer id the OnCustomEvent source stashed under this name
-	// (that source's m_strStorePayloadVar is a SELECTOR_WRITE, so the write and
-	// the read are both visible to Zenith_GraphDefinitionValidator and
-	// ZM_TrainerChallenge.bgraph needs no Variable(...) declaration).
+	// The ONE pin Zenithmon's node library has. Its current const default is
+	// ZM_TRAINER_NONE, never zero: Rival Vesper is trainer zero.
 	//
 	// NOT a TARGET_REF: an id here is a data value the node maps to a roster row
 	// through ZM_IsRegisteredTrainer, never anything ResolveTargetEntity sees.
+	static constexpr u_int uPIN_TrainerId = 0u;
+
 	ZENITH_GRAPH_PINS_BEGIN(ZM_GraphNode_PushTrainerChallenge)
-	ZENITH_GRAPH_PIN_INPUT(TrainerId, "m_strTrainerIdVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_CONST(TrainerId, "m_iTrainerId", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -111,8 +75,20 @@ public:
 		// contract unit asserts on, and it must move even on the failure arms.
 		++ZM_GraphNodeTestCounters::s_uChallengePushAttempts;
 
-		const ZM_TRAINER_ID eTrainer =
-			ZM_GraphNodeDetail::ResolveChallengeTrainer(xContext, m_strTrainerIdVar);
+		// Preserve the old direct-read contract: a missing blackboard is an ordinary
+		// unresolvable trainer, not a BADACCESS-producing pin read.
+		if (xContext.m_pxBlackboard == nullptr)
+		{
+			ZM_GraphNodeTestCounters::s_eLastChallengeTrainer = ZM_TRAINER_NONE;
+			return GRAPH_NODE_STATUS_FAILURE;
+		}
+		const int32_t iTrainer = GetInput<int32_t>(xContext, uPIN_TrainerId);
+		ZM_TRAINER_ID eTrainer = iTrainer < 0
+			? ZM_TRAINER_NONE : static_cast<ZM_TRAINER_ID>(static_cast<u_int>(iTrainer));
+		if (!ZM_IsRegisteredTrainer(eTrainer))
+		{
+			eTrainer = ZM_TRAINER_NONE;
+		}
 		ZM_GraphNodeTestCounters::s_eLastChallengeTrainer = eTrainer;
 		if (!ZM_IsRegisteredTrainer(eTrainer))
 		{

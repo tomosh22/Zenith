@@ -27,6 +27,34 @@
 // hot reload / slot removal / element recreation cannot dangle. A button
 // watched by this node is OWNED by it: game-side SetOnClick wiring on the
 // same button is overwritten every tick.
+//
+// ★ THE PINS IN THIS TU ARE LIVE (B-6.6). All THREE data-bearing nodes read
+// their INPUT descriptors through the pin runtime - SetUIColor.Color and
+// SetUIFillAmount.Amount through Zenith_GraphNode::GetInput, SetUIText.Value
+// through TryGetInput - so a wire into any of them carries a value. There are
+// NO OUTPUT pins in this TU at all, so it takes none of B-6.1's `""`
+// output-name divergence. An UNCONNECTED node behaves byte-for-byte as it did:
+// `var.empty() ? const : bb->GetX(var, const)` read. Each node that addresses
+// a pin declares `static constexpr u_int uPIN_<Name>` immediately before its
+// pin table (the INDEX is the runtime address; table order is the contract,
+// asserted by GraphPinTable.UIPinIndicesMatchTables). SetUIVisible and
+// OnUIButtonClicked declare NO constant - their only pin is a target
+// reference, resolved directly, and their Execute addresses no pin.
+//
+// Two things specific to THIS TU:
+//   - SETUITEXT.VALUE IS THE LIBRARY'S FIRST ANY-TYPED PLAIN INPUT read
+//     through TryGetInput (the ListAdd precedent), and it carries the one
+//     brief-level exception to "a read sits in EXACTLY the branch its
+//     blackboard read occupied": the presence check is HOISTED above the
+//     format branch, whose condition becomes `bPresent || !m_strValueVar
+//     full three-outcome parity table is on the Execute below.
+//   - THE FAILURE SHAPES ARE TWO. Shape A - no Zenith_UIComponent on the
+//     target, element not found, element not a Rect (SetUIFillAmount),
+//     SetUIVisible's guards, and SetUIText's first two guards - precedes
+//     every accessor, so a failed instance builds NO pin state, reads no
+//     input and logs no census line. Shape B is SetUIText's "not a
+//     text-bearing element" FAILURE, which runs AFTER the hoisted read: on
+//     in a graph, already pulled its producer. The read stays where it is.
 //------------------------------------------------------------------------------
 
 namespace
@@ -100,17 +128,19 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strElement, "")
 		ZENITH_PROPERTY(std::string, m_strText, "")
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(int32_t, m_iDecimals, -1)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// Value is ANY: it is fetched with TryGetValue and TYPE-DISPATCHED into a
-		// display string (PropertyValueToDisplayString above), so every property
-		// type is legal here. m_strText is the label template and m_strElement the
-		// element name - neither is a blackboard name. m_strTargetVar goes through
-		// ResolveTargetUI -> xContext.ResolveTargetEntity, hence TARGET_ENTITY.
+		// Value is ANY: it is fetched with the PRESENCE-aware TryGetInput and
+		// TYPE-DISPATCHED into a display string (PropertyValueToDisplayString
+		// above), so every property type is legal here and no tag is ever checked.
+		// m_strText is the label template and m_strElement the element name -
+		// neither is a blackboard name. m_strTargetVar goes through ResolveTargetUI
+		// -> xContext.ResolveTargetEntity, hence TARGET_ENTITY.
+		static constexpr u_int uPIN_Value = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIText)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_INPUT(Value, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -128,11 +158,17 @@ namespace
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 
+			// Value is wire-only. Read it after the target and element guards so a
+			// failed UI lookup does not pull a producer. A present value replaces the
+			// first placeholder; an unconnected input leaves the configured text literal.
+			const Zenith_PropertyValue* pxValue = nullptr;
+			const bool bPresent = TryGetInput(xContext, uPIN_Value, pxValue);
+
 			std::string strText = m_strText;
-			if (!m_strValueVar.empty())
+			if (bPresent)
 			{
-				const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(m_strValueVar);
-				const std::string strValue = pxValue ? PropertyValueToDisplayString(*pxValue, m_iDecimals) : "";
+				const std::string strValue = (bPresent && pxValue != nullptr)
+					? PropertyValueToDisplayString(*pxValue, m_iDecimals) : "";
 				const size_t uPlaceholder = strText.find("{}");
 				if (uPlaceholder != std::string::npos)
 				{
@@ -170,11 +206,14 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strElement, "")
 		ZENITH_PROPERTY(Zenith_Maths::Vector4, m_xColor, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f))
-		ZENITH_PROPERTY(std::string, m_strColorVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// The var half wins when named, the inline vec4 otherwise - one pin
+		// carrying both, read through GetInput<Zenith_Maths::Vector4> below.
+		static constexpr u_int uPIN_Color = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIColor)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Color, "m_strColorVar", "m_xColor", PROPERTY_TYPE_VECTOR4)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Color, "m_xColor", PROPERTY_TYPE_VECTOR4)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -191,8 +230,9 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const Zenith_Maths::Vector4 xColor = m_strColorVar.empty()
-				? m_xColor : xContext.m_pxBlackboard->GetVector4(m_strColorVar, m_xColor);
+			// After the component guard AND the element-found guard, exactly where
+			// the blackboard read sat - so either FAILURE reads no pin at all.
+			const Zenith_Maths::Vector4 xColor = GetInput<Zenith_Maths::Vector4>(xContext, uPIN_Color);
 			if (pxElement->GetType() == Zenith_UI::UIElementType::Button)
 			{
 				static_cast<Zenith_UI::Zenith_UIButton*>(pxElement)->SetNormalColor(xColor);
@@ -218,7 +258,9 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// m_bVisible has no var partner, so it is not a pin (INPUT_CONST is only
-		// for the SetBlackboard* value).
+		// for the SetBlackboard* value). With no INPUT and no OUTPUT descriptor,
+		// this Execute addresses no pin and the class declares no uPIN_ constant -
+		// its one pin is a target reference, resolved directly.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIVisible)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -256,11 +298,14 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strElement, "")
 		ZENITH_PROPERTY_RANGED(float, m_fAmount, 1.0f, 0.0f, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strAmountVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
+		// Var-or-const, like SetUIColor.Color: one pin, both halves, read through
+		// GetInput<float> below. SetFillAmount CLAMPS to [0,1] on the way in.
+		static constexpr u_int uPIN_Amount = 0u;
+
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIFillAmount)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Amount, "m_strAmountVar", "m_fAmount", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Amount, "m_fAmount", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -277,8 +322,10 @@ namespace
 			{
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
-			const float fAmount = m_strAmountVar.empty()
-				? m_fAmount : xContext.m_pxBlackboard->GetFloat(m_strAmountVar, m_fAmount);
+			// After the component guard AND the element-is-a-Rect guard, exactly
+			// where the blackboard read sat - a wrong-type element FAILURES first
+			// and reads no pin.
+			const float fAmount = GetInput<float>(xContext, uPIN_Amount);
 			static_cast<Zenith_UI::Zenith_UIRect*>(pxElement)->SetFillAmount(fAmount);
 			return GRAPH_NODE_STATUS_SUCCESS;
 		}
@@ -354,7 +401,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strButton, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// m_strButton is a UI ELEMENT name, not a blackboard variable.
+		// m_strButton is a UI ELEMENT name, not a blackboard variable. Like
+		// SetUIVisible, this class addresses no pin and declares no uPIN_ constant.
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_OnUIButtonClicked)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
@@ -417,18 +465,18 @@ void Zenith_RegisterEngineGraphNodes_UI()
 {
 	Zenith_GraphNodeRegistry& xRegistry = Zenith_GraphNodeRegistry::Get();
 
-	// On Failure = ELEMENT NOT FOUND (:117) + misconfiguration guards (no
-	// Zenith_UIComponent on the target :112, element bears no text :146).
+	// On Failure = ELEMENT NOT FOUND + misconfiguration guards (no
+	// Zenith_UIComponent on the target; the element bears no text).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIText>("SetUIText", GRAPH_EVENT_NONE, 1, false, "UI", true);
-	// On Failure = ELEMENT NOT FOUND (:175) + a misconfiguration guard (no
-	// Zenith_UIComponent on the target :170).
+	// On Failure = ELEMENT NOT FOUND + a misconfiguration guard (no
+	// Zenith_UIComponent on the target).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIColor>("SetUIColor", GRAPH_EVENT_NONE, 1, false, "UI", true);
-	// On Failure = ELEMENT NOT FOUND (:218) + a misconfiguration guard (no
-	// Zenith_UIComponent on the target :208). An EMPTY m_strElement addresses
-	// the whole canvas and always succeeds - it never reaches the pin.
+	// On Failure = ELEMENT NOT FOUND + a misconfiguration guard (no
+	// Zenith_UIComponent on the target). An EMPTY m_strElement addresses the
+	// whole canvas and always succeeds - it never reaches the lookup.
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIVisible>("SetUIVisible", GRAPH_EVENT_NONE, 1, false, "UI", true);
-	// On Failure = ELEMENT NOT FOUND, or found but not a Rect (:248) + a
-	// misconfiguration guard (no Zenith_UIComponent on the target :243).
+	// On Failure = ELEMENT NOT FOUND, or found but not a Rect + a
+	// misconfiguration guard (no Zenith_UIComponent on the target).
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetUIFillAmount>("SetUIFillAmount", GRAPH_EVENT_NONE, 1, false, "UI", true);
 	xRegistry.RegisterNodeType<Zenith_GraphNode_OnUIButtonClicked>("OnUIButtonClicked", GRAPH_EVENT_ON_UPDATE, 1, false, "UI");
 }
