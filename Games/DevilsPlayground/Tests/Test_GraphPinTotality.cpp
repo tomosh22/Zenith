@@ -155,6 +155,12 @@ namespace
 		CheckEqInt(static_cast<int>(uFailures), 0,
 			"every DP node type's blackboard-variable-name property is covered by a pin descriptor, "
 			"and every property a descriptor names exists (see the Zenith_Error lines for each hit)");
+		{
+			Zenith_GraphPinTotalityRegistryGuard xGuard;
+			Zenith_GraphPinTotality_SwapToRegistrar(&DP_RegisterGraphNodes);
+			CheckEqInt(static_cast<int>(Zenith_GraphNodeRegistry::Get().GetTypeCount()), 38,
+				"DP isolated registrar produces exactly 38 node types");
+		}
 		CheckPinInventory();
 
 		g_bTotalityRan = true;

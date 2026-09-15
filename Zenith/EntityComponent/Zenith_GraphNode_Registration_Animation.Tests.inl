@@ -29,10 +29,10 @@ ZENITH_TEST(GraphPinTable, AnimationTotality)
 
 ZENITH_TEST(GraphPinTable, AnimationRoleSpotCheck)
 {
-	// INPUT_VAR_OR_CONST, once per parameter width: the pin's TYPE is the
+	// INPUT_CONST, once per parameter width: the pin's TYPE is the
 	// animator setter's, not the property's spelling.
-	Zenith_CheckGraphPin("SetAnimatorFloat", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strValueVar");
-	Zenith_CheckGraphPin("SetAnimatorBool", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_BOOL, "m_strValueVar");
+	Zenith_CheckGraphPin("SetAnimatorFloat", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "");
+	Zenith_CheckGraphPin("SetAnimatorBool", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_BOOL, "");
 	const Zenith_GraphPinDesc* pxValue = Zenith_FindGraphPin("SetAnimatorFloat", "Value");
 	ZENITH_ASSERT_NOT_NULL(pxValue, "SetAnimatorFloat must declare a Value pin");
 	if (pxValue != nullptr)
@@ -76,9 +76,9 @@ ZENITH_TEST(GraphPinTable, AnimationRoleSpotCheck)
 	// OUTPUTs: ReadAnimatorState's four results, each typed by the value its
 	// Execute writes. The slot is always latched on SUCCESS; only the BLACKBOARD
 	// write is skipped for an empty name.
-	Zenith_CheckGraphPin("ReadAnimatorState", "StateName", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_STRING, "m_strStateNameVar");
-	Zenith_CheckGraphPin("ReadAnimatorState", "NormalizedTime", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_FLOAT, "m_strNormalizedTimeVar");
-	Zenith_CheckGraphPin("ReadAnimatorState", "HasLooped", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_BOOL, "m_strHasLoopedVar");
+	Zenith_CheckGraphPin("ReadAnimatorState", "StateName", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_STRING, "");
+	Zenith_CheckGraphPin("ReadAnimatorState", "NormalizedTime", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_FLOAT, "");
+	Zenith_CheckGraphPin("ReadAnimatorState", "HasLooped", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_BOOL, "");
 }
 
 //==============================================================================
@@ -88,8 +88,8 @@ ZENITH_TEST(GraphPinTable, AnimationRoleSpotCheck)
 // and writes its OUTPUT descriptors through SetOutput. The two tests ABOVE, plus
 // GraphComponent.AnimatorTweenParticleNodesExecution (whose SetAnimator* and
 // Tween* instances bind NO var and therefore take the CONST path of
-// MakePinDefault, and whose `animState` / `animTrans` both arrive through the
-// dual-write), are the proof that an UNCONNECTED node is unchanged. The rows
+// MakePinDefault, and whose `animState` / `animTrans` are observed through
+// output slots), are the proof that an UNCONNECTED node is unchanged. The rows
 // below are the proof that a WIRE now carries a value.
 //
 // ★ EVERY ROW ASSERTS THE EXECUTE STATUS FIRST. ResolveTargetAnimator /
@@ -109,16 +109,15 @@ ZENITH_TEST(GraphPinTable, AnimationRoleSpotCheck)
 // `if (pxBlendTree)`, and AddState leaves a state with NO blend tree. A
 // synthetic, clip-less state therefore ALWAYS reports NormalizedTime 0 and
 // HasLooped false, so those two pins are covered by the APPEARANCE of their
-// dual-write (an entry that did not exist before Execute and is typed
-// afterwards), never by a distinguishing value. A true HasLooped and a non-zero
+// output slots, never by a distinguishing value. A true HasLooped and a non-zero
 // NormalizedTime need a clip-backed blend tree and are NOT covered here.
 //
 // ★ ORDERING RULE (B-6.1): pin state is built ONCE, on the first accessor call,
 // from the properties as they read THEN. Assign every property before the first
 // Execute; use a FRESH node when a leg needs a different var name.
 //
-// ★ NO INPUT VAR-NAME DEFAULT IN THIS TU IS NON-EMPTY (all six read ""), so every
-// fallback row below ASSIGNS the var name it wants to exercise.
+// ★ INPUT values are slot-only. The rows below use typed wires or current
+// constants and never depend on an input-name property.
 //
 // ★ These fixtures never reach a counted census log: the per-game census parses
 // `zenith test <G> --headless` runs, which pass --skip-unit-tests.
@@ -208,10 +207,9 @@ class Zenith_GraphNode_AnimTestCountingFloatProducer : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_AnimTestCountingFloatProducer)
 public:
-	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
 	static constexpr u_int uPIN_Value = 0u;
 	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AnimTestCountingFloatProducer)
-	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -226,10 +224,9 @@ class Zenith_GraphNode_AnimTestCountingVec3Producer : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_AnimTestCountingVec3Producer)
 public:
-	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
 	static constexpr u_int uPIN_Value = 0u;
 	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AnimTestCountingVec3Producer)
-	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_VECTOR3)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -441,9 +438,8 @@ ZENITH_TEST(GraphPinTable, AnimationPinIndicesMatchTables)
 // WIRED INPUTS
 //------------------------------------------------------------------------------
 
-// The 9/7/5 discipline: the const property (9), a blackboard variable the var-name
-// property points at (7), and the WIRE (5). Only a live wire can produce 5, and a
-// wired pin must log NO census fallback line.
+// The 9/7/5 discipline: the current constant (9), an unrelated blackboard value
+// (7), and the WIRE (5). Only the live wire can produce 5.
 ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorFloatValue)
 {
 	Zenith_AnimationPinFixture xFixture("TestAnimPinFloatScene");
@@ -459,7 +455,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorFloatValue)
 	Zenith_GraphNode_SetAnimatorFloat xNode;
 	xNode.m_strParameter = "Speed";
 	xNode.m_fValue = 9.0f;
-	xNode.m_strValueVar = "";
 	xNode.m_strTargetVar = "";								// "" = self
 	xNode.SetInputForTest(uValue, AnimPin_WireFloat(5.0f));
 
@@ -470,8 +465,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorFloatValue)
 
 	ZENITH_ASSERT_EQ_FLOAT(xFixture.Parameters().GetFloat("Speed"), 5.0f, 0.0001f,
 		"the animator parameter did not come from the WIRE");
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u,
-		"a WIRED pin must never reach the transitional var-name fallback");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -490,7 +483,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorIntValue)
 	Zenith_GraphNode_SetAnimatorInt xNode;
 	xNode.m_strParameter = "Phase";
 	xNode.m_iValue = 9;
-	xNode.m_strValueVar = "";
 	xNode.m_strTargetVar = "";
 	xNode.SetInputForTest(uValue, AnimPin_WireInt(5));
 
@@ -500,7 +492,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorIntValue)
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	ZENITH_ASSERT_EQ(xFixture.Parameters().GetInt("Phase"), 5);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -530,13 +521,11 @@ ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorBoolValue)
 		Zenith_GraphNode_SetAnimatorBool xNode;
 		xNode.m_strParameter = "Grounded";
 		xNode.m_bValue = false;
-		xNode.m_strValueVar = "";
 		xNode.m_strTargetVar = "";
 		xNode.SetInputForTest(uValue, AnimPin_WireBool(true));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(xFixture.Parameters().GetBool("Grounded"),
 			"the wired TRUE lost to the const/variable FALSE");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -545,13 +534,11 @@ ZENITH_TEST(AnimationPinRuntime, Wired_SetAnimatorBoolValue)
 		Zenith_GraphNode_SetAnimatorBool xNode;
 		xNode.m_strParameter = "Grounded";
 		xNode.m_bValue = true;
-		xNode.m_strValueVar = "";
 		xNode.m_strTargetVar = "";
 		xNode.SetInputForTest(uValue, AnimPin_WireBool(false));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(xFixture.Parameters().GetBool("Grounded"),
 			"the wired FALSE lost to the const/variable TRUE");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 	}
 }
 
@@ -568,7 +555,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenPositionTo)
 
 	Zenith_GraphNode_TweenPosition xNode;
 	xNode.m_xTo = Zenith_Maths::Vector3(9.0f, 0.0f, 0.0f);
-	xNode.m_strToVar = "";
 	xNode.m_fDuration = 0.0f;
 	xNode.m_iEasing = EASING_LINEAR;
 	xNode.m_strTargetVar = "";
@@ -591,7 +577,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenPositionTo)
 	Zenith_Maths::Vector3 xPosition;
 	xFixture.m_xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPosition);
 	ZENITH_ASSERT_NEAR_VEC3(xPosition, Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f), 0.001f);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uTo), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -605,7 +590,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenScaleTo)
 
 	Zenith_GraphNode_TweenScale xNode;
 	xNode.m_xTo = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
-	xNode.m_strToVar = "";
 	xNode.m_fDuration = 0.0f;
 	xNode.m_iEasing = EASING_LINEAR;
 	xNode.m_strTargetVar = "";
@@ -629,7 +613,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenScaleTo)
 	Zenith_Maths::Vector3 xScale;
 	xFixture.m_xEntity.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
 	ZENITH_ASSERT_NEAR_VEC3(xScale, Zenith_Maths::Vector3(5.0f, 6.0f, 7.0f), 0.001f);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uTo), 0u);
 }
 
 // ★ YAW 0 MUST NOT BE THE WIRE LEG: an identity rotation is indistinguishable from
@@ -646,7 +629,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenRotationTo)
 
 	Zenith_GraphNode_TweenRotation xNode;
 	xNode.m_xToEulerDegrees = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
-	xNode.m_strToVar = "";
 	xNode.m_fDuration = 0.0f;
 	xNode.m_iEasing = EASING_LINEAR;
 	xNode.m_strTargetVar = "";
@@ -669,7 +651,6 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenRotationTo)
 	xFixture.m_xEntity.GetComponent<Zenith_TransformComponent>().GetRotation(xRotation);
 	const Zenith_Maths::Vector3 xForward = xRotation * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
 	ZENITH_ASSERT_NEAR_VEC3(xForward, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 0.01f);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uTo), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -679,7 +660,7 @@ ZENITH_TEST(AnimationPinRuntime, Wired_TweenRotationTo)
 
 // StateName is the one output of this node whose value a clip-less fixture can
 // distinguish from its stamped zero ("Idle" vs ""), so it carries the VALUE claim.
-// NormalizedTime and HasLooped carry the DUAL-WRITE APPEARANCE claim instead: the
+// NormalizedTime and HasLooped use their output-slot presence instead: the
 // blackboard entry does not exist before the Execute and is present, typed, after
 // it. See the banner above for why no clip-less state can report either of them
 // non-zero / true.
@@ -698,10 +679,6 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateCarriesValuesAndDualWri
 
 
 	Zenith_GraphNode_ReadAnimatorState xNode;
-	xNode.m_strStateNameVar = "";
-	xNode.m_strNormalizedTimeVar = "";
-	xNode.m_strTransitioningVar = "";
-	xNode.m_strHasLoopedVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	// SLOTS: all four latched, the STRING one by value.
@@ -729,10 +706,6 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateCarriesValuesAndDualWri
 		xNamedCtx.m_xSelf = xFixture.m_xAnimated;
 
 		Zenith_GraphNode_ReadAnimatorState xNamed;
-		xNamed.m_strStateNameVar = "";
-		xNamed.m_strNormalizedTimeVar = "";
-		xNamed.m_strTransitioningVar = "";
-		xNamed.m_strHasLoopedVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xNamedCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(AnimPin_SlotBool(xNamed.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_HasLooped), "looped slot"),
 			"a clip-less state cannot have looped");
@@ -761,10 +734,6 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateTransitioningIsTrueMidC
 	// NEGATIVE CONTROL first: settled in "Idle", the node reports false.
 	{
 		Zenith_GraphNode_ReadAnimatorState xNode;
-		xNode.m_strStateNameVar = "";
-		xNode.m_strNormalizedTimeVar = "";
-		xNode.m_strTransitioningVar = "";
-		xNode.m_strHasLoopedVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(AnimPin_SlotBool(
 			xNode.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_Transitioning), "settled Transitioning"));
@@ -777,10 +746,6 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateTransitioningIsTrueMidC
 		"the fixture is not mid-crossfade - the row below would assert nothing");
 
 	Zenith_GraphNode_ReadAnimatorState xNode;
-	xNode.m_strStateNameVar = "";
-	xNode.m_strNormalizedTimeVar = "";
-	xNode.m_strTransitioningVar = "";
-	xNode.m_strHasLoopedVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_TRUE(AnimPin_SlotBool(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_Transitioning), "mid-fade Transitioning"),
@@ -810,14 +775,10 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateEmptyNamesParity)
 	xCtx.m_xSelf = xFixture.m_xAnimated;
 
 	Zenith_GraphNode_ReadAnimatorState xNode;
-	xNode.m_strStateNameVar = "";
-	xNode.m_strNormalizedTimeVar = "";
-	xNode.m_strTransitioningVar = "";
-	xNode.m_strHasLoopedVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	ZENITH_ASSERT_STREQ(AnimPin_SlotString(xNode.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_StateName),
-		"unnamed StateName slot").c_str(), "Idle", "the slot is latched even with no variable to dual-write to");
+		"unnamed StateName slot").c_str(), "Idle", "the slot is latched without a blackboard output write");
 	ZENITH_ASSERT_EQ_FLOAT(AnimPin_SlotFloat(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_NormalizedTime),
 		"unnamed NormalizedTime slot"), 0.0f, 0.0001f);
@@ -853,10 +814,6 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateFailureBuildsNoSlotsAnd
 
 	// SUCCEED first, on the animator entity.
 	Zenith_GraphNode_ReadAnimatorState xNode;
-	xNode.m_strStateNameVar = "";
-	xNode.m_strNormalizedTimeVar = "";
-	xNode.m_strTransitioningVar = "";
-	xNode.m_strHasLoopedVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_STREQ(AnimPin_SlotString(xNode.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_StateName),
 		"succeeded StateName").c_str(), "Idle");
@@ -880,10 +837,6 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateFailureBuildsNoSlotsAnd
 		xFreshCtx.m_xSelf = xFixture.m_xNoAnimator;		// a transform, no animator
 
 		Zenith_GraphNode_ReadAnimatorState xFresh;
-		xFresh.m_strStateNameVar = "";
-		xFresh.m_strNormalizedTimeVar = "";
-		xFresh.m_strTransitioningVar = "";
-		xFresh.m_strHasLoopedVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xFreshCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadAnimatorState::uPIN_StateName),
 			"the FAILURE is above every accessor, so no pin state was ever built - there is no slot to read");
@@ -897,9 +850,9 @@ ZENITH_TEST(AnimationPinRuntime, Output_ReadAnimatorStateFailureBuildsNoSlotsAnd
 
 // ★ EVERY INPUT READ IN THIS TU SITS AFTER ITS RESOLVER GUARD - and, for a tween,
 // after the easing guard too - so a FAILURE-before-read execution must log NO census
-// fallback line for a var-BOUND pin. Each leg has its positive control: the identical
-// configuration on a target that resolves.
-ZENITH_TEST(AnimationPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
+// producer. Each leg has its positive control: the identical configuration on a
+// target that resolves.
+ZENITH_TEST(AnimationPinRuntime, GuardedFailureDoesNotReadInputs)
 {
 	Zenith_AnimationPinFixture xFixture("TestAnimPinGuardScene");
 	if (!xFixture.m_bReady)
@@ -916,7 +869,6 @@ ZENITH_TEST(AnimationPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
 		Zenith_GraphNode_SetAnimatorFloat xParams;
 		xParams.m_strParameter = "Speed";
-		xParams.m_strValueVar = "";
 		xDef.SetNodeParamsFromInstance(uSetter, &xParams);
 		xDef.AddEdge(uSource, 0u, uSetter);
 		xDef.AddEdge(uSetter, 0u, uSentinel);
@@ -946,7 +898,6 @@ ZENITH_TEST(AnimationPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		const u_int uProducer = xDef.AddNode("Test_AnimCountingVec3Producer");
 		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
 		Zenith_GraphNode_TweenScale xParams;
-		xParams.m_strToVar = "";
 		xParams.m_iEasing = iEasing;
 		xParams.m_fDuration = 0.0f;
 		xDef.SetNodeParamsFromInstance(uTween, &xParams);
@@ -977,42 +928,10 @@ ZENITH_TEST(AnimationPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 	ZENITH_ASSERT_NEAR_VEC3(xScale, Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f), 0.001f);
 }
 
-// Only a MIGRATED node can reach the transitional var-name fallback, and it logs ONE
-// line per (instance, pin) however often the chain fires - which is what makes "zero
-// FALLBACK lines in a SUITE boot log" C-1's precondition rather than a guess.
-ZENITH_TEST(AnimationPinRuntime, Fallback_CountsOncePerPin)
-{
-	Zenith_AnimationPinFixture xFixture("TestAnimPinCountOnceScene");
-	if (!xFixture.m_bReady)
-	{
-		return;
-	}
-	const u_int uTo = Zenith_GraphNode_TweenScale::uPIN_To;
-
-	Zenith_GraphBlackboard xBB;
-	AnimPin_SeedVec3(xBB, "tv", Zenith_Maths::Vector3(2.0f, 3.0f, 4.0f));
-
-	Zenith_GraphNode_TweenScale xNode;
-	xNode.m_strToVar = "tv";							// ASSIGNED: no INPUT default here is non-empty
-	xNode.m_fDuration = 0.0f;
-	xNode.m_iEasing = EASING_LINEAR;
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-	xCtx.m_xSelf = xFixture.m_xNoAnimator;
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uTo), 0u);
-
-	for (u_int u = 0; u < 2u; ++u)
-	{
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	}
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uTo), 1u, "two reads must log ONE census line");
-}
-
 // An unconnected pin takes its const; an actual wire with the wrong type also takes
 // that const and reports the pin mismatch. A fresh node is used for each leg because
 // input state is latched after its first accessor call.
-ZENITH_TEST(AnimationPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
+ZENITH_TEST(AnimationPinRuntime, UnconnectedOrMismatchedInputUsesConst)
 {
 	Zenith_AnimationPinFixture xFixture("TestAnimPinAbsentVarScene");
 	if (!xFixture.m_bReady)
@@ -1032,7 +951,6 @@ ZENITH_TEST(AnimationPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 		Zenith_GraphNode_SetAnimatorFloat xNode;
 		xNode.m_strParameter = "Speed";
 		xNode.m_fValue = 3.0f;
-		xNode.m_strValueVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.Parameters().GetFloat("Speed"), 3.0f, 0.0001f);
 	}
@@ -1044,7 +962,6 @@ ZENITH_TEST(AnimationPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 		Zenith_GraphNode_SetAnimatorFloat xNode;
 		xNode.m_strParameter = "Speed";
 		xNode.m_fValue = 3.0f;
-		xNode.m_strValueVar = "";
 		xNode.SetInputForTest(uValue, AnimPin_WireInt(42));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.Parameters().GetFloat("Speed"), 3.0f, 0.0001f,

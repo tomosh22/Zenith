@@ -135,10 +135,10 @@ ZENITH_TEST(GraphPinTable, AIRoleSpotCheck)
 	// Zenith_PropertyValue and is therefore never typed. Count beside it is an
 	// ordinary computed OUTPUT.
 	Zenith_CheckGraphPin("QueryPerceivedTargets", "List", GRAPH_PIN_ROLE_LIST, eGRAPH_PIN_TYPE_ANY, "m_strListVar");
-	Zenith_CheckGraphPin("QueryPerceivedTargets", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strCountVar");
+	Zenith_CheckGraphPin("QueryPerceivedTargets", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "");
 
-	// INPUT_VAR_OR_CONST with both halves bound.
-	Zenith_CheckGraphPin("SetNavSpeed", "Speed", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strSpeedVar");
+	// INPUT_CONST: the current constant is used when no typed wire is present.
+	Zenith_CheckGraphPin("SetNavSpeed", "Speed", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "");
 	const Zenith_GraphPinDesc* pxSpeed = Zenith_FindGraphPin("SetNavSpeed", "Speed");
 	ZENITH_ASSERT_NOT_NULL(pxSpeed, "SetNavSpeed must declare a Speed pin");
 	if (pxSpeed != nullptr)
@@ -164,14 +164,14 @@ ZENITH_TEST(GraphPinTable, AIRoleSpotCheck)
 			"NavMoveTo.Target must accept a packed ENTITY_ID and nothing else");
 	}
 
-	// Nav state reads are the node's own computed OUTPUTs - m_strStateVar holds
-	// the 0-3 code this node derives, not a state NAME.
-	Zenith_CheckGraphPin("ReadNavState", "State", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strStateVar");
+	// Nav state reads are the node's own computed OUTPUTs; their 0-3 code lives
+	// in slots, not in a state-name property.
+	Zenith_CheckGraphPin("ReadNavState", "State", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "");
 
 	// ★ SAME PROPERTY NAME, OPPOSITE ROLES: QueryLastHeardSound WRITES the heard
 	// position; EmitSoundStimulus RESOLVES one to emit at. The role follows the
 	// Execute body, never the spelling.
-	Zenith_CheckGraphPin("QueryLastHeardSound", "Position", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "m_strPositionVar");
+	Zenith_CheckGraphPin("QueryLastHeardSound", "Position", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "");
 	Zenith_CheckGraphPin("EmitSoundStimulus", "Position", GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, "m_strPositionVar");
 }
 
@@ -182,8 +182,8 @@ ZENITH_TEST(GraphPinTable, AIRoleSpotCheck)
 // Zenith_GraphNode::GetInput and writes its OUTPUT descriptors through SetOutput.
 // The three tests ABOVE, plus GraphComponent.AINavPerceptionNodesExecution (whose
 // navState / navLeft / wanderPoint / perceivedCount / ptgt / awareness / heardSrc
-// all arrive through the dual-write, and whose SetNavSpeed instance binds NO var
-// and therefore takes the CONST path), are the proof that an UNCONNECTED node is
+// are exposed through output slots, and whose SetNavSpeed instance takes the
+// current-constant path), are the proof that an UNCONNECTED node is
 // unchanged. The rows below are the proof that a WIRE now carries a value.
 //
 // ★ EVERY ROW ASSERTS THE EXECUTE STATUS FIRST. Every node here opens with a
@@ -279,10 +279,9 @@ class Zenith_GraphNode_AITestCountingRadiusProducer : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_AITestCountingRadiusProducer)
 public:
-	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
 	static constexpr u_int uPIN_Value = 0u;
 	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AITestCountingRadiusProducer)
-	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -309,17 +308,17 @@ static void EnsureAICountingRadiusProducerRegistered()
 }
 
 static void AIPin_ClearOutputs(Zenith_GraphNode_ReadNavState& xNode)
-{ xNode.m_strStateVar = ""; xNode.m_strRemainingVar = ""; xNode.m_strVelocityVar = ""; }
+{ (void)xNode; }
 static void AIPin_ClearOutputs(Zenith_GraphNode_FindRandomReachablePoint& xNode)
-{ xNode.m_strResultVar = ""; }
+{ (void)xNode; }
 static void AIPin_ClearOutputs(Zenith_GraphNode_QueryPerceivedTargets& xNode)
-{ xNode.m_strCountVar = ""; }
+{ (void)xNode; }
 static void AIPin_ClearOutputs(Zenith_GraphNode_QueryPrimaryPerceivedTarget& xNode)
-{ xNode.m_strResultVar = ""; }
+{ (void)xNode; }
 static void AIPin_ClearOutputs(Zenith_GraphNode_QueryLastHeardSound& xNode)
-{ xNode.m_strPositionVar = ""; xNode.m_strSourceVar = ""; xNode.m_strAgeVar = ""; }
+{ (void)xNode; }
 static void AIPin_ClearOutputs(Zenith_GraphNode_QueryAwarenessOf& xNode)
-{ xNode.m_strResultVar = ""; }
+{ (void)xNode; }
 
 // The slot readers are TAG-CHECKED: Zenith_PropertyValue's typed getters
 // Zenith_Assert on a mismatch, and a wrong slot type must read as a test FAILURE
@@ -593,7 +592,6 @@ ZENITH_TEST(AIPinRuntime, Wired_SetNavSpeedFromWire)
 
 	Zenith_GraphNode_SetNavSpeed xNode;
 	xNode.m_fSpeed = 9.0f;
-	xNode.m_strSpeedVar = "";
 	xNode.m_strTargetVar = "";		// self
 	xNode.SetInputForTest(uSpeed, AIPin_WireFloat(5.0f));
 
@@ -604,7 +602,6 @@ ZENITH_TEST(AIPinRuntime, Wired_SetNavSpeedFromWire)
 
 	ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xNavAgent.GetMoveSpeed(), 5.0f, 0.001f,
 		"the wire lost to the const (9) or the variable (7)");
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSpeed), 0u, "a WIRED pin must never log a census fallback");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -645,7 +642,6 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		xCtx.m_xSelf = xFixture.m_xAgent;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS),
 			"radius 6.0 on a 10x10 quad must find a point");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u, "no var is bound on this leg");
 	}
 
 	// (b) A resolved wire beats the contrary const: 0.01 must fail even though
@@ -658,14 +654,12 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 6.0f;
-		xNode.m_strRadiusVar = "";
 		xNode.SetInputForTest(uRadius, AIPin_WireFloat(0.01f));
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
 		xCtx.m_xSelf = xFixture.m_xAgent;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE),
 			"the CONST 6.0 was used instead of the variable's 0.01");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u);
 	}
 
 	// (c) THE WIRE BEATS BOTH: const 0.01, var 0.01, wire 6.0 -> SUCCESS, and the
@@ -678,7 +672,6 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 0.01f;
-		xNode.m_strRadiusVar = "";
 		xNode.SetInputForTest(uRadius, AIPin_WireFloat(6.0f));
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
@@ -693,7 +686,6 @@ ZENITH_TEST(AIPinRuntime, Wired_FindRandomReachablePointRadius)
 		ZENITH_ASSERT_TRUE(fDX * fDX + fDZ * fDZ <= 6.0f * 6.0f + 0.01f,
 			"the point (%f, %f, %f) is outside the wired 6.0 XZ radius", xPoint.x, xPoint.y, xPoint.z);
 		ZENITH_ASSERT_EQ(xBB.GetCount(), 1u);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uRadius), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -723,9 +715,6 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 		xCtx.m_pxBlackboard = &xBB;
 		Zenith_GraphNode_ReadNavState xNode;
 		AIPin_ClearOutputs(xNode);
-		xNode.m_strStateVar = "";
-		xNode.m_strRemainingVar = "";
-		xNode.m_strVelocityVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNode.GetOutputForTest(uState), "pre-tick ReadNavState.State"), 1);
 	}
@@ -734,14 +723,12 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 	// takes the transform-write path) and starts the agent accelerating.
 	xFixture.m_xNavAgent.Update(0.02f, xFixture.m_xAgent.GetEntityID());
 
-	// (b) NAMED: Remaining and Velocity are given names, so all three dual-write.
+	// (b) After one tick, all three output slots carry live navigation values.
 	{
 		Zenith_GraphBlackboard xBB;
 		xCtx.m_pxBlackboard = &xBB;
 		Zenith_GraphNode_ReadNavState xNode;
 		AIPin_ClearOutputs(xNode);
-		xNode.m_strRemainingVar = "";
-		xNode.m_strVelocityVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 		const int32_t iState = AIPin_SlotInt(xNode.GetOutputForTest(uState), "ReadNavState.State");
@@ -758,15 +745,12 @@ ZENITH_TEST(AIPinRuntime, Output_ReadNavStateCarriesValues)
 			"ReadNavState.Velocity");
 		ZENITH_ASSERT_TRUE(glm::dot(xVelocity, xVelocity) > 0.0001f, "the agent is not moving after a tick");
 
-		// The dual-write lands exactly where today's SetValue did.
+		// Outputs remain slot-only; this direct node does not write the blackboard.
 		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 	}
 
-	// (c) THE PARITY LEG, on a FRESH node and a FRESH blackboard: m_strRemainingVar
-	//     and m_strVelocityVar default to EMPTY, so those two writes used to be
-	//     skipped entirely. They still create no blackboard variable - what is new
-	//     is that both SLOTS carry the value, which is the only reason a wire can
-	//     come off an unnamed Remaining.
+	// (c) A fresh node and blackboard still receive no output-side blackboard
+	//     writes; both slots carry the values that downstream wires consume.
 	{
 		Zenith_GraphBlackboard xFreshBB;
 		xCtx.m_pxBlackboard = &xFreshBB;
@@ -856,7 +840,6 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointEmptyResultVarCreatesNo
 	AIPin_ClearOutputs(xNode);
 	xNode.m_strCenterVar = "centre";
 	xNode.m_fRadius = 5.0f;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector3 xPoint = AIPin_SlotVec3(xNode.GetOutputForTest(uResult),
@@ -876,7 +859,6 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointEmptyResultVarCreatesNo
 	Zenith_GraphNode_FindRandomReachablePoint xNamed;
 	AIPin_ClearOutputs(xNamed);
 	xNamed.m_strCenterVar = "centre";
-	xNamed.m_strResultVar = "";
 	xNamed.m_fRadius = 5.0f;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const Zenith_Maths::Vector3 xSecondPoint = AIPin_SlotVec3(xNamed.GetOutputForTest(uResult), "second Result");
@@ -909,7 +891,6 @@ ZENITH_TEST(AIPinRuntime, Output_FindRandomReachablePointFailureShapesDiffer)
 		AIPin_ClearOutputs(xNode);
 		xNode.m_strCenterVar = "centre";
 		xNode.m_fRadius = 0.01f;
-		xNode.m_strResultVar = "";
 		xCtx.m_xSelf = xFixture.m_xAgent;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NEAR_VEC3(AIPin_SlotVec3(xNode.GetOutputForTest(uResult), "no-point Result"),
@@ -954,7 +935,6 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPerceivedTargetsCountByValue)
 	{
 		Zenith_GraphNode_QueryPerceivedTargets xNode;
 		AIPin_ClearOutputs(xNode);
-		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotInt(xNode.GetOutputForTest(uCount), "QueryPerceivedTargets.Count"), 1);
 		ZENITH_ASSERT_NULL(xBB.TryGetValue(""), "an EMPTY count name created a blackboard variable");
@@ -964,7 +944,7 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPerceivedTargetsCountByValue)
 	}
 
 	// (b) THE NAMED LEG: m_strCountVar defaults to "perceivedCount", so this one
-	//     dual-writes exactly as today.
+	//     remains slot-only as on every other output.
 	{
 		Zenith_GraphNode_QueryPerceivedTargets xNamed;
 		AIPin_ClearOutputs(xNamed);
@@ -1036,7 +1016,6 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPrimaryPerceivedTargetResultByValue)
 	{
 		Zenith_GraphNode_QueryPrimaryPerceivedTarget xNode;
 		AIPin_ClearOutputs(xNode);
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xNode.GetOutputForTest(uResult), "QueryPrimaryPerceivedTarget.Result"),
 			ulPrey);
@@ -1048,7 +1027,6 @@ ZENITH_TEST(AIPinRuntime, Output_QueryPrimaryPerceivedTargetResultByValue)
 	{
 		Zenith_GraphNode_QueryPrimaryPerceivedTarget xEmpty;
 		AIPin_ClearOutputs(xEmpty);
-		xEmpty.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xEmpty.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xEmpty.GetOutputForTest(uResult), "unnamed Result"), ulPrey);
 		ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
@@ -1131,9 +1109,6 @@ ZENITH_TEST(AIPinRuntime, Output_QueryLastHeardSoundCarriesAllThreeValues)
 	{
 		Zenith_GraphNode_QueryLastHeardSound xNode;
 		AIPin_ClearOutputs(xNode);
-		xNode.m_strPositionVar = "";
-		xNode.m_strSourceVar = "";
-		xNode.m_strAgeVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS),
 			"the seer heard nothing - the stimulus never reached it");
 		ZENITH_ASSERT_NEAR_VEC3(AIPin_SlotVec3(xNode.GetOutputForTest(uPosition), "QueryLastHeardSound.Position"),
@@ -1144,14 +1119,11 @@ ZENITH_TEST(AIPinRuntime, Output_QueryLastHeardSoundCarriesAllThreeValues)
 		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u);
 	}
 
-	// (b) NAMED: giving Source and Age names dual-writes them too - the same
+	// (b) Source and Age remain available through their output slots, the same
 	//     non-empty rule the deleted guards applied.
 	{
 		Zenith_GraphNode_QueryLastHeardSound xNamed;
 		AIPin_ClearOutputs(xNamed);
-		xNamed.m_strPositionVar = "";
-		xNamed.m_strSourceVar = "";
-		xNamed.m_strAgeVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNamed.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_NEAR_VEC3(AIPin_SlotVec3(xNamed.GetOutputForTest(uPosition), "named Position"), xSoundPos, 0.001f);
 		ZENITH_ASSERT_EQ(AIPin_SlotEntity(xNamed.GetOutputForTest(uSource), "named Source"), ulPrey);
@@ -1212,7 +1184,6 @@ ZENITH_TEST(AIPinRuntime, Output_QueryAwarenessOfResultByValue)
 	{
 		Zenith_GraphNode_QueryAwarenessOf xNode;
 		AIPin_ClearOutputs(xNode);
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		fAwareness = AIPin_SlotFloat(xNode.GetOutputForTest(uResult), "QueryAwarenessOf.Result");
 		ZENITH_ASSERT_TRUE(fAwareness > 0.0f, "awareness is 0 - the slot is indistinguishable from unwritten");
@@ -1248,21 +1219,15 @@ ZENITH_TEST(AIPinRuntime, Output_QueryAwarenessOfResultByValue)
 	{
 		Zenith_GraphNode_QueryAwarenessOf xEmpty;
 		AIPin_ClearOutputs(xEmpty);
-		xEmpty.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xEmpty.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(AIPin_SlotFloat(xEmpty.GetOutputForTest(uResult), "unnamed Result") > 0.0f);
 		ZENITH_ASSERT_NULL(xBB.TryGetValue(""), "an EMPTY result name created a blackboard variable");
 	}
 }
 
-// ★ SetNavSpeed's read sits AFTER its nav-agent guard, so a FAILURE-before-read
-// execution logs NO census fallback line for a var-BOUND pin. The positive control
-// is the identical configuration on an entity that HAS an agent - without it, a
-// zero count would be satisfied by a node that never reads anything.
-//
-// ★ BOTH INPUT VAR-NAME DEFAULTS IN THIS TU ARE EMPTY, and an unbound pin never
-// logs, so every fallback row here ASSIGNS its var name.
-ZENITH_TEST(AIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
+// ★ SetNavSpeed's read sits AFTER its nav-agent guard. The matching positive
+// control proves the producer is pulled only when the agent resolves.
+ZENITH_TEST(AIPinRuntime, GuardedFailureDoesNotReadInputs)
 {
 	EnsureAICountingRadiusProducerRegistered();
 	Zenith_AIPinFixture xFixture("TestAIPinGuardScene");
@@ -1274,7 +1239,6 @@ ZENITH_TEST(AIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 		const u_int uProducer = xDef.AddNode("Test_AICountingRadiusProducer");
 		const u_int uSentinel = xDef.AddNode("SetBlackboardBool");
 		Zenith_GraphNode_SetNavSpeed xParams;
-		xParams.m_strSpeedVar = "";
 		xDef.SetNodeParamsFromInstance(uSpeed, &xParams);
 		xDef.AddEdge(uSource, 0u, uSpeed);
 		xDef.AddEdge(uSpeed, 0u, uSentinel);
@@ -1303,7 +1267,7 @@ ZENITH_TEST(AIPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 // exactly where its blackboard read has always been - so a wander that found
 // nothing has already read the pin (and, in a graph, already pulled Radius's
 // producer), while a missing agent or an unresolvable centre has not.
-ZENITH_TEST(AIPinRuntime, Fallback_RadiusReadBeforeNoPointFailure)
+ZENITH_TEST(AIPinRuntime, RadiusReadBeforeNoPointFailure)
 {
 	EnsureAICountingRadiusProducerRegistered();
 	Zenith_AIPinFixture xFixture("TestAIPinRadiusOrderScene");
@@ -1319,8 +1283,6 @@ ZENITH_TEST(AIPinRuntime, Fallback_RadiusReadBeforeNoPointFailure)
 		if (uFind == 0u || uProducer == 0u) return;
 		Zenith_GraphNode_FindRandomReachablePoint xParams;
 		xParams.m_strCenterVar = szCenter;
-		xParams.m_strRadiusVar = "";
-		xParams.m_strResultVar = "";
 		xDef.SetNodeParamsFromInstance(uFind, &xParams);
 		xDef.AddEdge(uSource, 0u, uFind);
 		xDef.AddEdge(uFind, 0u, uSentinel);
@@ -1348,40 +1310,11 @@ ZENITH_TEST(AIPinRuntime, Fallback_RadiusReadBeforeNoPointFailure)
 		"the unresolved Centre guard must run before Radius is pulled");
 }
 
-// The CENSUS observable. Only a MIGRATED node can reach the transitional var-name
-// fallback, and it logs ONE line per (instance, pin) however hot the chain is -
-// which is what makes "zero FALLBACK lines in a SUITE boot log" C-1's precondition
-// rather than a guess.
-ZENITH_TEST(AIPinRuntime, Fallback_CountsOncePerPin)
-{
-	Zenith_AIPinFixture xFixture("TestAIPinCountOnceScene");
-	const u_int uSpeed = Zenith_GraphNode_SetNavSpeed::uPIN_Speed;
-
-	Zenith_GraphBlackboard xBB;
-	AIPin_SeedFloat(xBB, "speed", 7.0f);
-
-	Zenith_GraphNode_SetNavSpeed xNode;
-	xNode.m_fSpeed = 9.0f;
-	xNode.m_strSpeedVar = "speed";		// ASSIGNED: no INPUT default here is non-empty
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-	xCtx.m_xSelf = xFixture.m_xAgent;
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSpeed), 0u);
-
-	for (u_int u = 0; u < 3u; ++u)
-	{
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	}
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSpeed), 1u, "three reads must log ONE census line");
-	// A TARGET_REF pin is not an INPUT and has no fallback counter of its own.
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(1u), 0u);
-}
-
+// A typed-input default and wrong-wire control.
 // An unconnected pin takes its const; an actual wire with the wrong type also takes
 // that const, reporting the pin mismatch. A fresh node is used for each leg because
 // input state is latched after its first accessor call.
-ZENITH_TEST(AIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
+ZENITH_TEST(AIPinRuntime, UnconnectedOrMismatchedInputUsesConst)
 {
 	Zenith_AIPinFixture xFixture("TestAIPinAbsentVarScene");
 	const u_int uSpeed = Zenith_GraphNode_SetNavSpeed::uPIN_Speed;
@@ -1392,12 +1325,11 @@ ZENITH_TEST(AIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 	xCtx.m_pxBlackboard = &xBB;
 	xCtx.m_xSelf = xFixture.m_xAgent;
 
-	// (a) the variable does not exist.
+	// (a) an unconnected input uses its current constant.
 	{
 		xFixture.m_xNavAgent.SetMoveSpeed(0.0f);
 		Zenith_GraphNode_SetNavSpeed xNode;
 		xNode.m_fSpeed = 3.0f;
-		xNode.m_strSpeedVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xFixture.m_xNavAgent.GetMoveSpeed(), 3.0f, 0.001f);
 	}
@@ -1408,7 +1340,6 @@ ZENITH_TEST(AIPinRuntime, Fallback_VarBoundButAbsentTakesTheConst)
 		xFixture.m_xNavAgent.SetMoveSpeed(0.0f);
 		Zenith_GraphNode_SetNavSpeed xNode;
 		xNode.m_fSpeed = 3.0f;
-		xNode.m_strSpeedVar = "";
 		Zenith_PropertyValue xWrongType;
 		xWrongType.SetInt32(42);
 		xNode.SetInputForTest(uSpeed, xWrongType);

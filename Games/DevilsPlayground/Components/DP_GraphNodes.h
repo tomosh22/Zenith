@@ -98,8 +98,6 @@ class DPNode_ReadHeldObjective : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ReadHeldObjective)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
-	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_Tag = 1;
 
@@ -108,8 +106,8 @@ public:
 	// it is a typed INPUT rather than a TARGET_REF. The tag is this node's own
 	// computed answer, staged for the rest of the deposit chain.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ReadHeldObjective)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_OUTPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -138,12 +136,11 @@ class DPNode_WinCheckAlreadyCollected : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_WinCheckAlreadyCollected)
 public:
-	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 	static constexpr u_int uPIN_Tag = 0;
 
 	// Read-only: the objective tag DPReadHeldObjective staged upstream.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_WinCheckAlreadyCollected)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -164,15 +161,13 @@ class DPNode_WinNotifyCollected : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_WinNotifyCollected)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
-	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_Tag = 1;
 
 	// Both read-only; the win-state side table is C++, not the blackboard.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_WinNotifyCollected)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -193,11 +188,10 @@ class DPNode_ConsumeHeldItem : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ConsumeHeldItem)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ConsumeHeldItem)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -225,14 +219,12 @@ class DPNode_DispatchObjectivePlaced : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchObjectivePlaced)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
-	ZENITH_PROPERTY(std::string, m_strTagVar, "heldObjective")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_Tag = 1;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchObjectivePlaced)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -301,14 +293,13 @@ class DPNode_ConsumeKeyForUnlock : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ConsumeKeyForUnlock)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(int32_t, m_iKeyTag, (int32_t)DP_ItemTag::Key)
 	static constexpr u_int uPIN_Villager = 0;
 
 	// m_iKeyTag is an inline constant with no var partner (the double door's
 	// hard-coded Key semantics), so it is not a pin of its own.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ConsumeKeyForUnlock)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -329,11 +320,10 @@ class DPNode_DispatchDoorOpened : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchDoorOpened)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchDoorOpened)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -353,11 +343,10 @@ class DPNode_DispatchDoorClosed : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchDoorClosed)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchDoorClosed)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -378,7 +367,6 @@ class DPNode_AnimateDoorLeaves : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_AnimateDoorLeaves)
 public:
-	ZENITH_PROPERTY(std::string, m_strIsOpenVar, "isOpen")
 	ZENITH_PROPERTY(std::string, m_strOpenTVar, "openT")
 	ZENITH_PROPERTY(std::string, m_strYawKey, "interactables.double_door_open_yaw_deg")
 	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.double_door_open_duration_s")
@@ -389,7 +377,7 @@ public:
 	// satisfy its own read: the graph declares openT. The two *Key properties
 	// are DP_Tuning keys, not blackboard names, so neither is a pin.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_AnimateDoorLeaves)
-	ZENITH_GRAPH_PIN_INPUT(IsOpen, "m_strIsOpenVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(IsOpen, PROPERTY_TYPE_BOOL)
 	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(OpenT, "m_strOpenTVar", PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
@@ -450,13 +438,12 @@ class DPNode_DispatchChestOpened : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DispatchChestOpened)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	static constexpr u_int uPIN_Villager = 0;
 
 	// Read-only, and deliberately ungated: an INVALID payload still opens the
 	// chest (quirk preserved) - the read just yields an invalid EntityID.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DispatchChestOpened)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -492,7 +479,6 @@ class DPNode_DoorCheckKey : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DoorCheckKey)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	ZENITH_PROPERTY(std::string, m_strRequiredKeyVar, "requiredKey")
 	static constexpr u_int uPIN_Villager = 0;
 
@@ -501,7 +487,7 @@ public:
 	// is a SELECTOR_READWRITE; the graph declares requiredKey, and the bootstrap
 	// seeds it per door after attach.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorCheckKey)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(RequiredKey, "m_strRequiredKeyVar", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
@@ -543,11 +529,10 @@ class DPNode_DoorPentagramDeferral : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DoorPentagramDeferral)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
 	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorPentagramDeferral)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -613,9 +598,7 @@ class DPNode_DoorAdvanceAnim : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_DoorAdvanceAnim)
 public:
-	ZENITH_PROPERTY(std::string, m_strAnimVar, "anim")
 	ZENITH_PROPERTY(std::string, m_strOpenTVar, "openT")
-	ZENITH_PROPERTY(std::string, m_strSettledAnimVar, "anim")
 	static constexpr u_int uPIN_Anim = 0;
 	static constexpr u_int uPIN_SettledAnim = 2;
 	ZENITH_PROPERTY(std::string, m_strDurationKey, "interactables.door_open_duration_s")
@@ -627,9 +610,9 @@ public:
 	// openT IS read-modify-written through its property (StoreT), so it is a
 	// SELECTOR_READWRITE. m_strDurationKey is a DP_Tuning key, not a pin.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_DoorAdvanceAnim)
-	ZENITH_GRAPH_PIN_INPUT(Anim, "m_strAnimVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Anim, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(OpenT, "m_strOpenTVar", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_OUTPUT(SettledAnim, "m_strSettledAnimVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_OUTPUT(SettledAnim, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -755,10 +738,6 @@ class DPNode_VillagerEmitFootstep : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_VillagerEmitFootstep)
 public:
-	ZENITH_PROPERTY(std::string, m_strWalkQuietVar, "walkQuiet")
-	ZENITH_PROPERTY(std::string, m_strLoudnessVar, "footstepLoudness")
-	ZENITH_PROPERTY(std::string, m_strRadiusVar, "footstepRadius")
-	ZENITH_PROPERTY(std::string, m_strQuietMultVar, "quietLoudnessMult")
 	ZENITH_PROPERTY(float, m_fQuietMult, 1.0f)
 	static constexpr u_int uPIN_WalkQuiet = 0;
 	static constexpr u_int uPIN_Loudness = 1;
@@ -769,10 +748,10 @@ public:
 	// radius and the quiet multiplier are the OnAwake-seeded tuning mirror; the
 	// graph declares all four.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_VillagerEmitFootstep)
-	ZENITH_GRAPH_PIN_INPUT(WalkQuiet, "m_strWalkQuietVar", PROPERTY_TYPE_BOOL)
-	ZENITH_GRAPH_PIN_INPUT(Loudness, "m_strLoudnessVar", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_INPUT(Radius, "m_strRadiusVar", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(QuietMult, "m_strQuietMultVar", "m_fQuietMult", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(WalkQuiet, PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(Loudness, PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(Radius, PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT_CONST(QuietMult, "m_fQuietMult", PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -883,13 +862,12 @@ class DPNode_PickVillagerUnderCursor : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_PickVillagerUnderCursor)
 public:
-	ZENITH_PROPERTY(std::string, m_strResultVar, "clicked")
 	static constexpr u_int uPIN_Result = 0;
 
 	// The picked villager is this node's own computed answer - an OUTPUT, and
 	// the in-graph WRITER that satisfies DPTryPossess' read of "clicked".
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_PickVillagerUnderCursor)
-	ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -949,11 +927,10 @@ class DPNode_TryPossess : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_TryPossess)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "clicked")
 	static constexpr u_int uPIN_Villager = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_TryPossess)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1019,9 +996,6 @@ class DPNode_ForgeCraft : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ForgeCraft)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "payload")
-	ZENITH_PROPERTY(std::string, m_strRecipeInputVar, "recipeInput")
-	ZENITH_PROPERTY(std::string, m_strRecipeOutputVar, "recipeOutput")
 	ZENITH_PROPERTY(std::string, m_strCraftCountVar, "craftCount")
 	ZENITH_PROPERTY(int32_t, m_iRecipeInput, (int32_t)DP_ItemTag::Iron)
 	ZENITH_PROPERTY(int32_t, m_iRecipeOutput, (int32_t)DP_ItemTag::Key)
@@ -1035,9 +1009,9 @@ public:
 	// tuning keys are string LITERALS inside Execute, not properties, so no pin
 	// can name them.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ForgeCraft)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(RecipeInput, "m_strRecipeInputVar", "m_iRecipeInput", PROPERTY_TYPE_INT32)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(RecipeOutput, "m_strRecipeOutputVar", "m_iRecipeOutput", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT_CONST(RecipeInput, "m_iRecipeInput", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_CONST(RecipeOutput, "m_iRecipeOutput", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PIN_SELECTOR_READWRITE(CraftCount, "m_strCraftCountVar", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
@@ -1122,7 +1096,6 @@ public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ReadTuningFloat)
 public:
 	ZENITH_PROPERTY(std::string, m_strKey, "")
-	ZENITH_PROPERTY(std::string, m_strVar, "value")
 	static constexpr u_int uPIN_Result = 0;
 
 	// m_strKey is a DP_Tuning KEY, not a blackboard name - not a pin (and it
@@ -1130,7 +1103,7 @@ public:
 	// result, so m_strVar is an OUTPUT: it is the in-graph writer that satisfies
 	// DP_Chest's read of "lidDuration" and DP_Villager's of "faintRecovery".
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ReadTuningFloat)
-	ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1162,8 +1135,6 @@ class DPNode_ItemChildRefusal : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemChildRefusal)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
-	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_Tag = 1;
 
@@ -1171,8 +1142,8 @@ public:
 	// (DPItemBase_Component.h:156), which no pin can express - the graph
 	// DECLARES it.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemChildRefusal)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1208,10 +1179,6 @@ class DPNode_ItemArmChannel : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemArmChannel)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
-	ZENITH_PROPERTY(std::string, m_strChannelVillagerVar, "channelVillager")
-	ZENITH_PROPERTY(std::string, m_strChannelDurationVar, "channelDuration")
-	ZENITH_PROPERTY(std::string, m_strChannelRemainingVar, "channelRemaining")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_ChannelVillager = 1;
 	static constexpr u_int uPIN_ChannelDuration = 2;
@@ -1220,10 +1187,10 @@ public:
 	// Villager and channel duration are inputs.  Arming publishes both the
 	// channel owner and its remaining duration through output pins.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemArmChannel)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, "m_strChannelVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(ChannelDuration, "m_strChannelDurationVar", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, "m_strChannelRemainingVar", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(ChannelDuration, PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1247,10 +1214,6 @@ class DPNode_ItemCommitPickup : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemCommitPickup)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
-	ZENITH_PROPERTY(std::string, m_strChannelVillagerVar, "channelVillager")
-	ZENITH_PROPERTY(std::string, m_strChannelRemainingVar, "channelRemaining")
-	ZENITH_PROPERTY(std::string, m_strCommittedVillagerVar, "committedVillager")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_ChannelVillager = 1;
 	static constexpr u_int uPIN_ChannelRemaining = 2;
@@ -1259,10 +1222,10 @@ public:
 	// The output order is the execution order the builder observes: clear owner,
 	// clear remaining, then latch the validated entity for downstream Finish.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemCommitPickup)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, "m_strChannelVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, "m_strChannelRemainingVar", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_OUTPUT(CommittedVillager, "m_strCommittedVillagerVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelVillager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(ChannelRemaining, PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(CommittedVillager, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1292,13 +1255,11 @@ class DPNode_ItemFinishPickup : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemFinishPickup)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "committedVillager")
-	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_Tag = 1;
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemFinishPickup)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 public:
 	GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
@@ -1321,16 +1282,14 @@ class DPNode_ItemRingBell : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemRingBell)
 public:
-	ZENITH_PROPERTY(std::string, m_strVillagerVar, "possessedVillager")
-	ZENITH_PROPERTY(std::string, m_strSpecialBehaviourVar, "specialBehaviour")
 	static constexpr u_int uPIN_Villager = 0;
 	static constexpr u_int uPIN_SpecialBehaviour = 1;
 
 	// The special-behaviour guard is an ordinary string input, allowing the
 	// BellSoul configuration mirror to be wired explicitly.
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemRingBell)
-	ZENITH_GRAPH_PIN_INPUT(Villager, "m_strVillagerVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_INPUT(SpecialBehaviour, "m_strSpecialBehaviourVar", PROPERTY_TYPE_STRING)
+	ZENITH_GRAPH_PIN_INPUT(Villager, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(SpecialBehaviour, PROPERTY_TYPE_STRING)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1363,11 +1322,10 @@ class DPNode_ItemEvaporate : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_ItemEvaporate)
 public:
-	ZENITH_PROPERTY(std::string, m_strTagVar, "tag")
 	static constexpr u_int uPIN_Tag = 0;
 
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_ItemEvaporate)
-	ZENITH_GRAPH_PIN_INPUT(Tag, "m_strTagVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Tag, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -1481,17 +1439,14 @@ class DPNode_PriestPickPatrolTarget : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_PriestPickPatrolTarget)
 public:
-	ZENITH_PROPERTY(std::string, m_strSuspicionRadiusVar, DP_AI::BB_KEY_SUSPICION_RADIUS)
 	ZENITH_PROPERTY(float, m_fSuspicionRadius, 15.0f)
-	ZENITH_PROPERTY(std::string, m_strHighScentTargetVar, DP_AI::BB_KEY_HIGH_SCENT_TARGET)
-	ZENITH_PROPERTY(std::string, m_strPatrolTargetVar, DP_AI::BB_KEY_PATROL_TARGET)
 	static constexpr u_int uPIN_SuspicionRadius = 0;
 	static constexpr u_int uPIN_HighScentTarget = 1;
 	static constexpr u_int uPIN_PatrolTarget = 2;
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_PriestPickPatrolTarget)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(SuspicionRadius, "m_strSuspicionRadiusVar", "m_fSuspicionRadius", PROPERTY_TYPE_FLOAT)
-	ZENITH_GRAPH_PIN_INPUT(HighScentTarget, "m_strHighScentTargetVar", PROPERTY_TYPE_ENTITY_ID)
-	ZENITH_GRAPH_PIN_OUTPUT(PatrolTarget, "m_strPatrolTargetVar", PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT_CONST(SuspicionRadius, "m_fSuspicionRadius", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_INPUT(HighScentTarget, PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_OUTPUT(PatrolTarget, PROPERTY_TYPE_VECTOR3)
 	ZENITH_GRAPH_PINS_END
 public:
 
@@ -1579,10 +1534,9 @@ class DPNode_PriestApprehendChannel : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(DPNode_PriestApprehendChannel)
 public:
-	ZENITH_PROPERTY(std::string, m_strTargetWithDevilVar, DP_AI::BB_KEY_TARGET_WITH_DEVIL)
 	static constexpr u_int uPIN_TargetWithDevil = 0;
 	ZENITH_GRAPH_PINS_BEGIN(DPNode_PriestApprehendChannel)
-	ZENITH_GRAPH_PIN_INPUT(TargetWithDevil, "m_strTargetWithDevilVar", PROPERTY_TYPE_ENTITY_ID)
+	ZENITH_GRAPH_PIN_INPUT(TargetWithDevil, PROPERTY_TYPE_ENTITY_ID)
 	ZENITH_GRAPH_PINS_END
 public:
 

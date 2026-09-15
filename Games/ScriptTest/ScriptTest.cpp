@@ -354,7 +354,6 @@ static void ST_BuildLampEnterChain(Zenith_EngineGraphBuilder& xB, const char* sz
 
 	const u_int uFind = xB.Node("FindEntityByName");
 	xB.ParamString(uFind, "m_strName", szLamp);
-	xB.ParamString(uFind, "m_strResultVar", "");
 	const u_int uStoreLamp = xB.SetBlackboardEntityID(ScriptTest::Vars::szLAMP, { uFind, "Result" });
 
 	const u_int uGrow = xB.Node("SetEntityScale");
@@ -376,7 +375,6 @@ static void ST_BuildLampExitChain(Zenith_EngineGraphBuilder& xB, const char* szE
 
 	const u_int uFind = xB.Node("FindEntityByName");
 	xB.ParamString(uFind, "m_strName", szLamp);
-	xB.ParamString(uFind, "m_strResultVar", "");
 	const u_int uStoreLamp = xB.SetBlackboardEntityID(ScriptTest::Vars::szLAMP, { uFind, "Result" });
 
 	const u_int uShrink = xB.Node("SetEntityScale");
@@ -398,7 +396,6 @@ static void ST_BuildModeCase(
 
 	const u_int uFind = xB.Node("FindEntityByName");
 	xB.ParamString(uFind, "m_strName", ScriptTest::Entities::szNOZZLE);
-	xB.ParamString(uFind, "m_strResultVar", "");
 	const u_int uStoreNozzle = xB.SetBlackboardEntityID(ScriptTest::Vars::szNOZZLE_REF, { uFind, "Result" });
 
 	const u_int uScale = xB.Node("SetEntityScale");
@@ -520,7 +517,6 @@ void BuildGraph_ST_SineBob(Zenith_GraphBuilder& xBuilder)
 	const u_int uCos = xB.Node("MathBlackboardFloat");
 	xB.ParamString(uCos, "m_strVar", ScriptTest::Vars::szT);
 	xB.ParamEnum(uCos, "m_iOp", GRAPH_MATH_FLOAT_OP_COS);
-	xB.ParamString(uCos, "m_strResultVar", "cosTResult");
 
 	const u_int uSeed = xB.Node("SetBlackboardVector3");
 	xB.ParamString(uSeed, "m_strVariable", ScriptTest::Vars::szBOB_VEL);
@@ -532,7 +528,6 @@ void BuildGraph_ST_SineBob(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uScale, "m_strVar", ScriptTest::Vars::szBOB_VEL);
 	xB.ParamInt(uScale, "m_iOp", 2);
 	xB.Raw().DataEdge(uCos, "Result", uScale, "Scalar");
-	xB.ParamString(uScale, "m_strResultVar", "bobVelResult");
 
 	// TranslateEntity multiplies by dt itself, so bobVel is a VELOCITY.
 	const u_int uMove = xB.Node("TranslateEntity");
@@ -562,7 +557,6 @@ void BuildGraph_ST_PlayerMove(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xTick = xB.OnUpdate();
 
 	const u_int uRead = xB.Node("ReadMovementAxis");
-	xB.ParamString(uRead, "m_strResultVar", "");
 	const u_int uStoreMoveDir = xB.Node("SetBlackboardVector3");
 	xB.ParamString(uStoreMoveDir, "m_strVariable", ScriptTest::Vars::szMOVE_DIR);
 	xB.Raw().DataEdge(uRead, "Result", uStoreMoveDir, "Value");
@@ -571,7 +565,6 @@ void BuildGraph_ST_PlayerMove(Zenith_GraphBuilder& xBuilder)
 	xB.ParamString(uScale, "m_strVar", ScriptTest::Vars::szMOVE_DIR);
 	xB.ParamInt(uScale, "m_iOp", 2);	// scale by scalar
 	xB.ParamFloat(uScale, "m_fScalar", 6.0f);
-	xB.ParamString(uScale, "m_strResultVar", "moveVelResult");
 	const u_int uStoreMoveVel = xB.Node("SetBlackboardVector3");
 	xB.ParamString(uStoreMoveVel, "m_strVariable", ScriptTest::Vars::szMOVE_VEL);
 	xB.Raw().DataEdge(uScale, "Result", uStoreMoveVel, "Value");
@@ -622,7 +615,6 @@ void BuildGraph_ST_BallSpawner(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xStart = xB.OnStart();
 	const u_int uFind = xB.Node("FindEntityByName");
 	xB.ParamString(uFind, "m_strName", ScriptTest::Entities::szGAME_MANAGER);
-	xB.ParamString(uFind, "m_strResultVar", "");
 	const u_int uStoreTarget = xB.SetBlackboardEntityID(ScriptTest::Vars::szUI_TARGET, { uFind, "Result" });
 	xStart.Then(uFind).Then(uStoreTarget);
 
@@ -663,7 +655,6 @@ void BuildGraph_ST_KillVolume(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xResolve = xB.OnStart();
 	const u_int uFind = xB.Node("FindEntityByName");
 	xB.ParamString(uFind, "m_strName", ScriptTest::Entities::szGAME_MANAGER);
-	xB.ParamString(uFind, "m_strResultVar", "");
 	const u_int uStoreTarget = xB.SetBlackboardEntityID(ScriptTest::Vars::szUI_TARGET, { uFind, "Result" });
 	xResolve.Then(uFind).Then(uStoreTarget);
 
@@ -707,7 +698,6 @@ void BuildGraph_ST_PressurePlate(Zenith_GraphBuilder& xBuilder)
 	const u_int uEnter = xB.Node("OnCollisionEnter");
 	const u_int uFindOpen = xB.Node("FindEntityByName");
 	xB.ParamString(uFindOpen, "m_strName", ScriptTest::Entities::szGYM_DOOR);
-	xB.ParamString(uFindOpen, "m_strResultVar", "");
 	const u_int uStoreOpenDoor = xB.SetBlackboardEntityID(ScriptTest::Vars::szDOOR, { uFindOpen, "Result" });
 	const u_int uOpen = xB.FireCustomEvent(ScriptTest::Events::szOPEN_DOOR, ScriptTest::Vars::szDOOR);
 	xB.Chain(uEnter, uFindOpen).Chain(uFindOpen, uStoreOpenDoor).Chain(uStoreOpenDoor, uOpen);
@@ -716,7 +706,6 @@ void BuildGraph_ST_PressurePlate(Zenith_GraphBuilder& xBuilder)
 	const u_int uExit = xB.Node("OnCollisionExit");
 	const u_int uFindClose = xB.Node("FindEntityByName");
 	xB.ParamString(uFindClose, "m_strName", ScriptTest::Entities::szGYM_DOOR);
-	xB.ParamString(uFindClose, "m_strResultVar", "");
 	const u_int uStoreCloseDoor = xB.SetBlackboardEntityID(ScriptTest::Vars::szDOOR, { uFindClose, "Result" });
 	const u_int uClose = xB.FireCustomEvent(ScriptTest::Events::szCLOSE_DOOR, ScriptTest::Vars::szDOOR);
 	xB.Chain(uExit, uFindClose).Chain(uFindClose, uStoreCloseDoor).Chain(uStoreCloseDoor, uClose);
@@ -794,7 +783,6 @@ void BuildGraph_ST_TrafficLight(Zenith_GraphBuilder& xBuilder)
 
 	Zenith_GraphChain xTick = xB.OnUpdate();
 	const u_int uStateMachine = xB.Node("StateMachine");
-	xB.ParamString(uStateMachine, "m_strStateVar", "");
 	xB.ParamInt(uStateMachine, "m_iStateCount", 3);
 	xB.ParamString(uStateMachine, "m_strStateNames", ScriptTest::Events::szTL_STATE_NAMES);
 	const u_int uState = xB.Node("GetVariable");
@@ -890,7 +878,6 @@ static void ST_BuildGraph_UIPlayground(Zenith_GraphBuilder& xBuilder, bool bUseW
 	xB.ParamString(uModulo, "m_strVar", ScriptTest::Vars::szCLOCK);
 	xB.ParamEnum(uModulo, "m_iOp", GRAPH_MATH_FLOAT_OP_MODULO);
 	xB.ParamFloat(uModulo, "m_fOperand", 5.0f);
-	xB.ParamString(uModulo, "m_strResultVar", "cycleResult");
 	const u_int uStoreCycle = xB.Node("SetBlackboardFloat");
 	xB.ParamString(uStoreCycle, "m_strVariable", ScriptTest::Vars::szCYCLE);
 	xB.Raw().DataEdge(uModulo, "Result", uStoreCycle, "Value");
@@ -899,7 +886,6 @@ static void ST_BuildGraph_UIPlayground(Zenith_GraphBuilder& xBuilder, bool bUseW
 	xB.ParamString(uDivide, "m_strVar", ScriptTest::Vars::szCYCLE);
 	xB.ParamEnum(uDivide, "m_iOp", GRAPH_MATH_FLOAT_OP_DIVIDE);
 	xB.ParamFloat(uDivide, "m_fOperand", 5.0f);
-	xB.ParamString(uDivide, "m_strResultVar", "fillResult");
 
 	const u_int uFill = xB.Node("SetUIFillAmount");
 	xB.ParamString(uFill, "m_strElement", ScriptTest::UINames::szBAR_FILL);
@@ -910,20 +896,15 @@ static void ST_BuildGraph_UIPlayground(Zenith_GraphBuilder& xBuilder, bool bUseW
 		: xB.Node("CompareBlackboardFloat");
 	if (!bUseWireFactories)
 	{
-		xB.ParamString(uCompare, "m_strVar", "");
 		xB.ParamFloat(uCompare, "m_fCompareTo", 0.8f);
 		xB.ParamEnum(uCompare, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER);
 		xB.Raw().DataEdge(uDivide, "Result", uCompare, "Value");
 	}
-	// CompareFloat's wire overload deliberately has no result-var argument;
-	// replay the authored empty value so the complete property blob matches.
-	xB.ParamString(uCompare, "m_strResultVar", "");
 	const u_int uBranch = bUseWireFactories
 		? xB.Branch({ uCompare, "Result" })
 		: xB.Node("Branch");
 	if (!bUseWireFactories)
 	{
-		xB.ParamString(uBranch, "m_strConditionVar", "");
 		xB.Raw().DataEdge(uCompare, "Result", uBranch, "Condition");
 	}
 
@@ -1081,7 +1062,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const u_int uCooldown = xB.Node("Cooldown");
 	xB.ParamFloat(uCooldown, "m_fSeconds", 0.75f);
 	const u_int uGateArmed = xB.Node("Gate");
-	xB.ParamString(uGateArmed, "m_strOpenVar", "");
 	const u_int uArmed = xB.Node("GetVariable");
 	xB.ParamString(uArmed, "m_strVariable", ScriptTest::Vars::szARMED);
 	xB.Raw().DataEdge(uArmed, "Value", uGateArmed, "Open");
@@ -1090,7 +1070,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	xB.ParamInt(uCount, "m_iDelta", 1);
 	const u_int uRecord = xB.Node("ListAdd");
 	xB.ParamString(uRecord, "m_strListVar", ScriptTest::Vars::szBAG);
-	xB.ParamString(uRecord, "m_strValueVar", "");
 	const u_int uDispensedRecord = xB.Node("GetVariable");
 	xB.ParamString(uDispensedRecord, "m_strVariable", ScriptTest::Vars::szDISPENSED);
 	xB.Raw().DataEdge(uDispensedRecord, "Value", uRecord, "Value");
@@ -1136,7 +1115,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const u_int uHead = xB.Node("GetListElement");
 	xB.ParamString(uHead, "m_strListVar", ScriptTest::Vars::szBAG);
 	xB.ParamInt(uHead, "m_iIndex", 0);
-	xB.ParamString(uHead, "m_strResultVar", "");
 	xDrop.Then(uRemove).Then(uHead);
 
 	// --- Chain 11: empty the bag, and prove the emptiness by ABORTING.
@@ -1146,7 +1124,9 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	// "that node failed".
 	Zenith_GraphChain xEmpty = xB.OnKeyPressed(ZENITH_KEY_C);
 	const u_int uClear = xB.ListClear(ScriptTest::Vars::szBAG);
-	const u_int uProbe = xB.GetListElement(ScriptTest::Vars::szBAG, 0, ScriptTest::Vars::szITEM);
+	const u_int uProbe = xB.Node("GetListElement");
+	xB.ParamString(uProbe, "m_strListVar", ScriptTest::Vars::szBAG);
+	xB.ParamInt(uProbe, "m_iIndex", 0);
 	const u_int uSentinel = xB.SetBlackboardInt(ScriptTest::Vars::szSENTINEL, 99);
 	xEmpty.Then(uClear).Then(uProbe).Then(uSentinel);
 
@@ -1174,7 +1154,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	xB.ParamEnum(uNotJammed, "m_iOp", GRAPH_LOGIC_BOOL_OP_AND);
 	xB.ParamBool(uNotJammed, "m_bInvert", true);
 	xB.ParamBool(uNotJammed, "m_bMissingIsTrue", false);
-	xB.ParamString(uNotJammed, "m_strResultVar", "");
 	const u_int uStoreNotJammed = xB.Node("SetBlackboardBool");
 	xB.ParamString(uStoreNotJammed, "m_strVariable", ScriptTest::Vars::szNOT_JAMMED);
 	xB.Raw().DataEdge(uNotJammed, "Result", uStoreNotJammed, "Value");
@@ -1182,10 +1161,7 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 		std::string(ScriptTest::Vars::szARMED) + "," + ScriptTest::Vars::szNOT_JAMMED;
 	const u_int uCanDispense = xB.LogicBool(strDispenseOperands.c_str(), GRAPH_LOGIC_BOOL_OP_AND);
 	const u_int uBagCount = xB.GetListCount(ScriptTest::Vars::szBAG);
-	xB.ParamString(uCanDispense, "m_strResultVar", "");
-	xB.ParamString(uBagCount, "m_strResultVar", "");
 	const u_int uMode = xB.Node("SwitchOnInt");
-	xB.ParamString(uMode, "m_strVar", "");
 	xB.ParamInt(uMode, "m_iCaseCount", 3);
 	const u_int uModeValue = xB.Node("GetVariable");
 	xB.ParamString(uModeValue, "m_strVariable", ScriptTest::Vars::szMODE);
@@ -1212,7 +1188,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	const std::string strModeCases = std::string(ScriptTest::Labels::szRED) + ","
 		+ ScriptTest::Labels::szGREEN + "," + ScriptTest::Labels::szBLUE;
 	const u_int uLabelSwitch = xB.Node("SwitchOnString");
-	xB.ParamString(uLabelSwitch, "m_strVar", "");
 	xB.ParamString(uLabelSwitch, "m_strCases", strModeCases.c_str());
 	const u_int uLabelValue = xB.Node("GetVariable");
 	xB.ParamString(uLabelValue, "m_strVariable", ScriptTest::Vars::szLABEL);
@@ -1238,7 +1213,6 @@ void BuildGraph_ST_Dispenser(Zenith_GraphBuilder& xBuilder)
 	xB.Edge(uPerFrame, 2, uSelector);
 
 	const u_int uAlarmGate = xB.Node("Gate");
-	xB.ParamString(uAlarmGate, "m_strOpenVar", "");
 	const u_int uAlarm = xB.Node("GetVariable");
 	xB.ParamString(uAlarm, "m_strVariable", ScriptTest::Vars::szALARM);
 	xB.Raw().DataEdge(uAlarm, "Value", uAlarmGate, "Open");
@@ -1307,7 +1281,6 @@ void BuildGraph_ST_FlowPlate(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xPress = xB.OnKeyPressed(ZENITH_KEY_P);
 	const u_int uFind = xB.Node("FindEntityByName");
 	xB.ParamString(uFind, "m_strName", ScriptTest::Entities::szGAME_MANAGER);
-	xB.ParamString(uFind, "m_strResultVar", "");
 	const u_int uStoreManager = xB.SetBlackboardEntityID(ScriptTest::Vars::szMANAGER_REF, { uFind, "Result" });
 	const u_int uFire = xB.FireCustomEvent(ScriptTest::Events::szPLATE_ARMED, ScriptTest::Vars::szMANAGER_REF);
 	xPress.Then(uFind).Then(uStoreManager).Then(uFire);
@@ -1375,11 +1348,9 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xStart = xB.OnStart();
 	const u_int uFindPrey = xB.Node("FindEntityByName");
 	xB.ParamString(uFindPrey, "m_strName", ScriptTest::Entities::szPREY);
-	xB.ParamString(uFindPrey, "m_strResultVar", "");
 	const u_int uStorePrey = xB.SetBlackboardEntityID(ScriptTest::Vars::szPREY_REF, { uFindPrey, "Result" });
 	const u_int uFindManager = xB.Node("FindEntityByName");
 	xB.ParamString(uFindManager, "m_strName", ScriptTest::Entities::szGAME_MANAGER);
-	xB.ParamString(uFindManager, "m_strResultVar", "");
 	const u_int uStoreManager = xB.SetBlackboardEntityID(ScriptTest::Vars::szMANAGER_REF, { uFindManager, "Result" });
 	xStart.Then(uFindPrey).Then(uStorePrey).Then(uFindManager).Then(uStoreManager);
 
@@ -1403,9 +1374,6 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	const u_int uEnsure = xB.Node("EnsureNavAgent");	// m_strNavMeshVar "" = the scene's one holder
 	const u_int uReady = xB.SetBlackboardBool(ScriptTest::Vars::szNAV_READY, true);
 	const u_int uReadState = xB.Node("ReadNavState");
-	xB.ParamString(uReadState, "m_strStateVar", "");
-	xB.ParamString(uReadState, "m_strRemainingVar", "");
-	xB.ParamString(uReadState, "m_strVelocityVar", "");
 	const u_int uStoreNavState = xB.Node("SetBlackboardInt");
 	xB.ParamString(uStoreNavState, "m_strVariable", ScriptTest::Vars::szNAV_STATE);
 	xB.Raw().DataEdge(uReadState, "State", uStoreNavState, "Value");
@@ -1416,7 +1384,6 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 
 	// --- Chain 3 (pin 1): the movement, gated.
 	const u_int uGoGate = xB.Node("Gate");
-	xB.ParamString(uGoGate, "m_strOpenVar", "");
 	const u_int uGo = xB.Node("GetVariable");
 	xB.ParamString(uGo, "m_strVariable", ScriptTest::Vars::szGO);
 	xB.Raw().DataEdge(uGo, "Value", uGoGate, "Open");
@@ -1452,7 +1419,6 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xWander = xB.OnKeyPressed(ZENITH_KEY_W);
 	const u_int uWanderPoint = xB.Node("FindRandomReachablePoint");
 	xB.ParamFloat(uWanderPoint, "m_fRadius", 6.0f);
-	xB.ParamString(uWanderPoint, "m_strResultVar", "");
 	const u_int uStoreWanderDest = xB.Node("SetBlackboardVector3");
 	xB.ParamString(uStoreWanderDest, "m_strVariable", ScriptTest::Vars::szDEST);
 	xB.Raw().DataEdge(uWanderPoint, "Result", uStoreWanderDest, "Value");
@@ -1480,9 +1446,9 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	// four separate anchors did.
 	const u_int uQueryTargets = xB.Node("QueryPerceivedTargets");
 	xB.ParamString(uQueryTargets, "m_strListVar", ScriptTest::Vars::szPERCEIVED);
-	xB.ParamString(uQueryTargets, "m_strCountVar", "");
-	const u_int uFirst = xB.GetListElement(
-		ScriptTest::Vars::szPERCEIVED, 0, ScriptTest::Vars::szFIRST_TARGET);
+	const u_int uFirst = xB.Node("GetListElement");
+	xB.ParamString(uFirst, "m_strListVar", ScriptTest::Vars::szPERCEIVED);
+	xB.ParamInt(uFirst, "m_iIndex", 0);
 	xB.Edge(uSenseSeq, 0, uQueryTargets);
 	xB.Chain(uQueryTargets, uFirst);
 
@@ -1498,7 +1464,6 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	// doomed prey and re-sets a flag nothing would clear again.
 	const u_int uUnseen = xB.SetBlackboardBool(ScriptTest::Vars::szPRIMARY_SEEN, false);
 	const u_int uPrimary = xB.Node("QueryPrimaryPerceivedTarget");
-	xB.ParamString(uPrimary, "m_strResultVar", "");
 	const u_int uSeen = xB.SetBlackboardBool(ScriptTest::Vars::szPRIMARY_SEEN, true);
 	xB.Edge(uSenseSeq, 1, uUnseen);
 	xB.Chain(uUnseen, uPrimary);
@@ -1508,15 +1473,12 @@ void BuildGraph_ST_NavWalker(Zenith_GraphBuilder& xBuilder)
 	// unknown).
 	const u_int uAware = xB.Node("QueryAwarenessOf");
 	xB.ParamString(uAware, "m_strOfVar", ScriptTest::Vars::szPREY_REF);
-	xB.ParamString(uAware, "m_strResultVar", "");
 	xB.Edge(uSenseSeq, 2, uAware);
 
 	// --- Chain 12 (pin 3): the last heard sound. FAILS until something is
 	// heard, which is why it gets a pin of its own rather than a place in
 	// another chain -- a swallowed branch FAILURE stops nothing else.
 	const u_int uHeard = xB.Node("QueryLastHeardSound");
-	xB.ParamString(uHeard, "m_strPositionVar", "");
-	xB.ParamString(uHeard, "m_strSourceVar", "");
 	xB.Edge(uSenseSeq, 3, uHeard);
 
 	// --- Chain 13 (pin 4): the HUD, cross-entity through the packed EntityID

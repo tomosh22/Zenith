@@ -177,14 +177,12 @@ class RTNode_TennisDecideServe : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisDecideServe)
 public:
-	ZENITH_PROPERTY(std::string, m_strServeFromDeuceVar, RenderTest_TennisBB::k_szServeFromDeuce)
 	ZENITH_PROPERTY(bool, m_bServeFromDeuce, true)
-	ZENITH_PROPERTY(std::string, m_strIsSecondServeVar, RenderTest_TennisBB::k_szIsSecondServe)
 	static constexpr u_int uPIN_ServeFromDeuce = 0u;
 	static constexpr u_int uPIN_IsSecondServe = 1u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisDecideServe)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(ServeFromDeuce, "m_strServeFromDeuceVar", "m_bServeFromDeuce", PROPERTY_TYPE_BOOL)
-	ZENITH_GRAPH_PIN_INPUT(IsSecondServe, "m_strIsSecondServeVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT_CONST(ServeFromDeuce, "m_bServeFromDeuce", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(IsSecondServe, PROPERTY_TYPE_BOOL)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -211,14 +209,12 @@ class RTNode_TennisPositionForServe : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisPositionForServe)
 public:
-	ZENITH_PROPERTY(std::string, m_strMySideVar, RenderTest_TennisBB::k_szMySide)
-	ZENITH_PROPERTY(std::string, m_strServeFromDeuceVar, RenderTest_TennisBB::k_szServeFromDeuce)
 	ZENITH_PROPERTY(bool, m_bServeFromDeuce, true)
 	static constexpr u_int uPIN_MySide = 0u;
 	static constexpr u_int uPIN_ServeFromDeuce = 1u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisPositionForServe)
-	ZENITH_GRAPH_PIN_INPUT(MySide, "m_strMySideVar", PROPERTY_TYPE_INT32)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(ServeFromDeuce, "m_strServeFromDeuceVar", "m_bServeFromDeuce", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_CONST(ServeFromDeuce, "m_bServeFromDeuce", PROPERTY_TYPE_BOOL)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -245,10 +241,9 @@ class RTNode_TennisArmServe : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisArmServe)
 public:
-	ZENITH_PROPERTY(std::string, m_strBallEpochVar, RenderTest_TennisBB::k_szBallEpoch)
 	static constexpr u_int uPIN_BallEpoch = 0u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisArmServe)
-	ZENITH_GRAPH_PIN_INPUT(BallEpoch, "m_strBallEpochVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(BallEpoch, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -283,14 +278,12 @@ public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisBallReachable)
 public:
 	ZENITH_PROPERTY(std::string, m_strBallEntityVar, RenderTest_TennisBB::k_szBallEntity)
-	ZENITH_PROPERTY(std::string, m_strBallSpinVar, RenderTest_TennisBB::k_szBallSpin)
-	ZENITH_PROPERTY(std::string, m_strMySideVar, RenderTest_TennisBB::k_szMySide)
 	static constexpr u_int uPIN_BallSpin = 1u;
 	static constexpr u_int uPIN_MySide = 2u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisBallReachable)
 	ZENITH_GRAPH_PIN_TARGET_ENTITY(BallEntity, "m_strBallEntityVar")
-	ZENITH_GRAPH_PIN_INPUT(BallSpin, "m_strBallSpinVar", PROPERTY_TYPE_VECTOR3)
-	ZENITH_GRAPH_PIN_INPUT(MySide, "m_strMySideVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(BallSpin, PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -324,14 +317,12 @@ public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisMoveToIntercept)
 public:
 	ZENITH_PROPERTY(std::string, m_strBallEntityVar, RenderTest_TennisBB::k_szBallEntity)
-	ZENITH_PROPERTY(std::string, m_strBallSpinVar, RenderTest_TennisBB::k_szBallSpin)
-	ZENITH_PROPERTY(std::string, m_strMySideVar, RenderTest_TennisBB::k_szMySide)
 	static constexpr u_int uPIN_BallSpin = 1u;
 	static constexpr u_int uPIN_MySide = 2u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisMoveToIntercept)
 	ZENITH_GRAPH_PIN_TARGET_ENTITY(BallEntity, "m_strBallEntityVar")
-	ZENITH_GRAPH_PIN_INPUT(BallSpin, "m_strBallSpinVar", PROPERTY_TYPE_VECTOR3)
-	ZENITH_GRAPH_PIN_INPUT(MySide, "m_strMySideVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(BallSpin, PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -385,17 +376,14 @@ public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisArmSwing)
 public:
 	ZENITH_PROPERTY(std::string, m_strBallEntityVar, RenderTest_TennisBB::k_szBallEntity)
-	ZENITH_PROPERTY(std::string, m_strBallSpinVar, RenderTest_TennisBB::k_szBallSpin)
-	ZENITH_PROPERTY(std::string, m_strMySideVar, RenderTest_TennisBB::k_szMySide)
-	ZENITH_PROPERTY(std::string, m_strBallEpochVar, RenderTest_TennisBB::k_szBallEpoch)
 	static constexpr u_int uPIN_BallSpin = 1u;
 	static constexpr u_int uPIN_MySide = 2u;
 	static constexpr u_int uPIN_BallEpoch = 3u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisArmSwing)
 	ZENITH_GRAPH_PIN_TARGET_ENTITY(BallEntity, "m_strBallEntityVar")
-	ZENITH_GRAPH_PIN_INPUT(BallSpin, "m_strBallSpinVar", PROPERTY_TYPE_VECTOR3)
-	ZENITH_GRAPH_PIN_INPUT(MySide, "m_strMySideVar", PROPERTY_TYPE_INT32)
-	ZENITH_GRAPH_PIN_INPUT(BallEpoch, "m_strBallEpochVar", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(BallSpin, PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(BallEpoch, PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -443,16 +431,13 @@ class RTNode_TennisRecoverToReady : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(RTNode_TennisRecoverToReady)
 public:
-	ZENITH_PROPERTY(std::string, m_strMySideVar, RenderTest_TennisBB::k_szMySide)
-	ZENITH_PROPERTY(std::string, m_strPhaseVar, RenderTest_TennisBB::k_szPhase)
-	ZENITH_PROPERTY(std::string, m_strIsServerVar, RenderTest_TennisBB::k_szIsServer)
 	static constexpr u_int uPIN_MySide = 0u;
 	static constexpr u_int uPIN_Phase = 1u;
 	static constexpr u_int uPIN_IsServer = 2u;
 	ZENITH_GRAPH_PINS_BEGIN(RTNode_TennisRecoverToReady)
-	ZENITH_GRAPH_PIN_INPUT(MySide, "m_strMySideVar", PROPERTY_TYPE_INT32)
-	ZENITH_GRAPH_PIN_INPUT(Phase, "m_strPhaseVar", PROPERTY_TYPE_INT32)
-	ZENITH_GRAPH_PIN_INPUT(IsServer, "m_strIsServerVar", PROPERTY_TYPE_BOOL)
+	ZENITH_GRAPH_PIN_INPUT(MySide, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(Phase, PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT(IsServer, PROPERTY_TYPE_BOOL)
 	ZENITH_GRAPH_PINS_END
 
 public:

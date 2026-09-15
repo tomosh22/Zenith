@@ -48,8 +48,7 @@ inline constexpr const char* szZM_GRAPH_TRAINER_CHALLENGE_ASSET =
 // Fired synchronously from ZM_Interactable::TickTrainerSight on the FSM's
 // RUN_CHALLENGE action.
 inline constexpr const char* szZM_GRAPH_EVENT_TRAINER_SPOTTED = "ZM_TrainerSpotted";
-// The OnCustomEvent source's m_strStorePayloadVar AND the push node's
-// m_strTrainerIdVar. Both must name the same variable; one constant guarantees it.
+// The OnCustomEvent source stores the payload under this declared variable.
 inline constexpr const char* szZM_GRAPH_VAR_TRAINER_ID = "zmTrainerId";
 // The game node's registered type name.
 inline constexpr const char* szZM_GRAPH_NODE_PUSH_TRAINER_CHALLENGE = "ZMPushTrainerChallenge";

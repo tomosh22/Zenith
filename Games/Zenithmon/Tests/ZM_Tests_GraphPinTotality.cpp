@@ -48,9 +48,8 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ZM_TestUnsetAnyProducer)
 	public:
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_GRAPH_PINS_BEGIN(ZM_TestUnsetAnyProducer)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strValueVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -72,17 +71,24 @@ namespace
 
 ZENITH_TEST(GraphPinTable, ZenithmonNodesTotality)
 {
-	// No exemptions: ZM's single var-name property names exactly one blackboard
-	// variable (the exempt list exists for a comma-separated LIST property,
-	// which ZM has none of).
+	// No exemptions: ZM has one slot-only INPUT descriptor and no permanent
+	// blackboard-name property (the exempt list is for comma-separated LIST data).
 	Zenith_CheckPinTableTotality(&ZM_RegisterGraphNodes, "ZM_GraphNodes.h", nullptr, 0u);
+	Zenith_GraphPinTotalityRegistryGuard xGuard;
+	Zenith_GraphPinTotality_SwapToRegistrar(&ZM_RegisterGraphNodes);
+	ZENITH_ASSERT_EQ(Zenith_GraphNodeRegistry::Get().GetTypeCount(), 1u);
 }
 
 ZENITH_TEST(GraphPinTable, ZenithmonPinIndicesMatchTables)
 {
-	ZENITH_ASSERT_EQ(
-		ZM_GraphNode_PushTrainerChallenge::GetPinTableStatic().FindPinIndex("TrainerId"),
-		ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId);
+	const Zenith_GraphPinTable& xPins = ZM_GraphNode_PushTrainerChallenge::GetPinTableStatic();
+	ZENITH_ASSERT_EQ(xPins.GetPinCount(), 1u);
+	ZENITH_ASSERT_EQ(xPins.FindPinIndex("TrainerId"), ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId);
+	const Zenith_GraphPinDesc& xTrainerId = xPins.GetPinAt(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId);
+	ZENITH_ASSERT_EQ(static_cast<int>(xTrainerId.m_eRole), static_cast<int>(GRAPH_PIN_ROLE_INPUT));
+	ZENITH_ASSERT_EQ(static_cast<int>(xTrainerId.m_eType), static_cast<int>(PROPERTY_TYPE_INT32));
+	ZENITH_ASSERT_STREQ(xTrainerId.m_szConstProperty, "m_iTrainerId");
+	ZENITH_ASSERT_STREQ(xTrainerId.m_szVarNameProperty, "");
 }
 
 ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
@@ -103,9 +109,7 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
 	Zenith_GraphBlackboard xAbsent;
 	Zenith_GraphContext xAbsentContext; xAbsentContext.m_pxBlackboard = &xAbsent;
 	ZM_GraphNode_PushTrainerChallenge xAbsentNode;
-	xAbsentNode.m_strTrainerIdVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xAbsentNode.Execute(xAbsentContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xAbsentNode.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xAbsentNode.GetBadAccessWarningCountForTest(), 0u);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushAttempts, 1u);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer, ZM_TRAINER_NONE);
@@ -114,9 +118,7 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
 	Zenith_PropertyValue xWrongTag; xWrongTag.SetFloat(3.0f);
 	xAbsent.SetValue("zmTrainerId", xWrongTag);
 	ZM_GraphNode_PushTrainerChallenge xWrongNamed;
-	xWrongNamed.m_strTrainerIdVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xWrongNamed.Execute(xAbsentContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xWrongNamed.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xWrongNamed.GetMismatchWarningCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xWrongNamed.GetBadAccessWarningCountForTest(), 0u);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushAttempts, 1u);
@@ -131,7 +133,6 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
 	Zenith_GraphContext xContext;
 	xContext.m_pxBlackboard = &xBlackboard;
 	ZM_GraphNode_PushTrainerChallenge xNode;
-	xNode.m_strTrainerIdVar = "contrary";
 	Zenith_PropertyValue xVesper;
 	xVesper.SetInt32(static_cast<int32_t>(ZM_TRAINER_RIVAL_VESPER));
 	xNode.SetInputForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId, xVesper);
@@ -141,13 +142,11 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdOverrideWins)
 		"a checked TrainerId override wins over the contrary blackboard value");
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushSucceeded, 0u,
 		"the boot-unit override has no menu root and must not push dialogue");
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 
 	Zenith_PropertyValue xWrongOverride; xWrongOverride.SetFloat(2.0f);
 	ZM_GraphNode_PushTrainerChallenge xWrongOverrideNode;
-	xWrongOverrideNode.m_strTrainerIdVar.clear();
 	xWrongOverrideNode.SetInputForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId, xWrongOverride);
 	xWrongOverrideNode.Execute(xContext);
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer, ZM_TRAINER_NONE);
@@ -190,7 +189,6 @@ ZENITH_TEST(GraphPinTable, ZenithmonTrainerIdUnsetAnyWireUsesNone)
 		ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushAttempts, 1u);
 		ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer, ZM_TRAINER_NONE);
 		ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_uChallengePushSucceeded, 0u);
-		ZENITH_ASSERT_EQ(pxConsumer->GetFallbackUseCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 		ZENITH_ASSERT_EQ(pxConsumer->GetMismatchWarningCountForTest(ZM_GraphNode_PushTrainerChallenge::uPIN_TrainerId), 0u);
 		ZENITH_ASSERT_EQ(pxConsumer->GetBadAccessWarningCountForTest(), 0u);
 		ZM_GraphNodeTestCounters::ResetRuntimeStateForTests();

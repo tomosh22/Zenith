@@ -81,6 +81,9 @@ ZENITH_TEST(GraphPinTable, CombatNodesTotality)
 	// exactly ONE blackboard variable (there is no comma-separated LIST
 	// property here, which is the only thing the exempt list exists for).
 	Zenith_CheckPinTableTotality(&Combat_RegisterGraphNodes, "Combat_GraphNodes.h", nullptr, 0u);
+	Zenith_GraphPinTotalityRegistryGuard xGuard;
+	Zenith_GraphPinTotality_SwapToRegistrar(&Combat_RegisterGraphNodes);
+	ZENITH_ASSERT_EQ(Zenith_GraphNodeRegistry::Get().GetTypeCount(), 26u);
 }
 
 ZENITH_TEST(GraphPinTable, CombatPinIndicesMatchTables)
@@ -98,6 +101,7 @@ ZENITH_TEST(GraphPinTable, CombatPinIndicesMatchTables)
 		&CombatNode_EnemyAttackTick::GetPinTableStatic(), &CombatNode_EnemyHitStunTick::GetPinTableStatic(),
 		&CombatNode_EnemyPostTick::GetPinTableStatic(), &CombatNode_GetGameState::GetPinTableStatic()
 	};
+	ZENITH_ASSERT_EQ(static_cast<u_int>(sizeof(apxTables) / sizeof(apxTables[0])), 18u);
 	u_int uDescriptors = 0u, uInputs = 0u, uOutputs = 0u;
 	for (const Zenith_GraphPinTable* pxTable : apxTables)
 	{
@@ -136,7 +140,6 @@ ZENITH_TEST(GraphPinTable, CombatInputOverridesChangeComboEffects)
 	const float fOriginalTimer = Combat_GameComponent::GetComboTimer();
 	Zenith_GraphContext xContext;
 	CombatNode_NotifyComboHit xNotify;
-	xNotify.m_strComboCountVar.clear();
 	Zenith_PropertyValue xCombo;
 	xCombo.SetInt32(3);
 	xNotify.SetInputForTest(CombatNode_NotifyComboHit::uPIN_ComboCount, xCombo);
@@ -144,14 +147,11 @@ ZENITH_TEST(GraphPinTable, CombatInputOverridesChangeComboEffects)
 	ZENITH_ASSERT_EQ(Combat_GameComponent::GetComboCount(), 3u);
 
 	CombatNode_TickComboTimer xTick;
-	xTick.m_strDtVar.clear();
 	Zenith_PropertyValue xDt;
 	xDt.SetFloat(0.75f);
 	xTick.SetInputForTest(CombatNode_TickComboTimer::uPIN_Dt, xDt);
 	ZENITH_ASSERT_EQ(static_cast<int>(xTick.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ_FLOAT(Combat_GameComponent::GetComboTimer(), 1.25f, 0.0001f);
-	ZENITH_ASSERT_EQ(xNotify.GetFallbackUseCountForTest(CombatNode_NotifyComboHit::uPIN_ComboCount), 0u);
-	ZENITH_ASSERT_EQ(xTick.GetFallbackUseCountForTest(CombatNode_TickComboTimer::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xNotify.GetBadAccessWarningCountForTest(), 0u);
 	ZENITH_ASSERT_EQ(xTick.GetBadAccessWarningCountForTest(), 0u);
 	Combat_GameComponent::NotifyComboHit(uOriginalCount, fOriginalTimer);
@@ -163,7 +163,6 @@ ZENITH_TEST(GraphPinTable, CombatGetGameStatePublishesOutputSlot)
 	Combat_GameComponent::SetGameState(Combat_GameState::PAUSED);
 	CombatNode_GetGameState xNode;
 	Zenith_GraphContext xContext;
-	xNode.m_strStateVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xNode.GetOutputForTest(CombatNode_GetGameState::uPIN_State), "GetGameState PAUSED"),
 		static_cast<int32_t>(Combat_GameState::PAUSED));
@@ -185,7 +184,6 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 	const std::vector<Zenith_EntityID> axOriginalEnemies = Combat_GameComponent::GetEnemyEntityIDs();
 	for (const Zenith_EntityID xID : axOriginalEnemies) Combat_GameComponent::UnregisterEnemy(xID);
 	CombatNode_CountAliveEnemies xEmptyCount;
-	xEmptyCount.m_strAliveCountVar.clear(); xEmptyCount.m_strHasEnemiesVar.clear();
 	Zenith_GraphContext xEmptyCountContext;
 	ZENITH_ASSERT_EQ(static_cast<int>(xEmptyCount.Execute(xEmptyCountContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xEmptyCount.GetOutputForTest(CombatNode_CountAliveEnemies::uPIN_AliveCount), "empty AliveCount"), 0);
@@ -257,8 +255,6 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 	}
 
 	CombatNode_QueryAttackState xQuery;
-	xQuery.m_strAttackStartedVar.clear(); xQuery.m_strIsAttackingVar.clear(); xQuery.m_strAttackTypeVar.clear();
-	xQuery.m_strComboCountVar.clear(); xQuery.m_strHitFrameVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xQuery.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_TRUE(CombatSlotBool(xQuery.GetOutputForTest(CombatNode_QueryAttackState::uPIN_AttackStarted), "QueryAttackState.AttackStarted"));
 	ZENITH_ASSERT_TRUE(CombatSlotBool(xQuery.GetOutputForTest(CombatNode_QueryAttackState::uPIN_IsAttacking), "QueryAttackState.IsAttacking"));
@@ -269,21 +265,17 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 
 	xPlayerComponent.HitDetection().SetOwner(xPlayer.GetEntityID());
 	CombatNode_ActivateHitbox xActivate;
-	xActivate.m_strAttackTypeVar.clear(); xActivate.m_strComboCountVar.clear();
 	Zenith_PropertyValue xHeavyType; xHeavyType.SetInt32(static_cast<int32_t>(Combat_AttackType::HEAVY));
 	Zenith_PropertyValue xComboCount; xComboCount.SetInt32(3);
 	xActivate.SetInputForTest(CombatNode_ActivateHitbox::uPIN_AttackType, xHeavyType);
 	xActivate.SetInputForTest(CombatNode_ActivateHitbox::uPIN_ComboCount, xComboCount);
 	ZENITH_ASSERT_EQ(static_cast<int>(xActivate.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_EQ(xActivate.GetFallbackUseCountForTest(CombatNode_ActivateHitbox::uPIN_AttackType), 0u);
-	ZENITH_ASSERT_EQ(xActivate.GetFallbackUseCountForTest(CombatNode_ActivateHitbox::uPIN_ComboCount), 0u);
 	ZENITH_ASSERT_EQ(xActivate.GetBadAccessWarningCountForTest(), 0u);
 	bool bCapturedDamage = false;
 	Combat_DamageEvent xCapturedDamage{};
 	Zenith_Subscription xDamageCapture = Zenith_EventDispatcher::Get().SubscribeScoped<Combat_DamageEvent>(
 		[&](const Combat_DamageEvent& xEvent) { bCapturedDamage = true; xCapturedDamage = xEvent; });
 	CombatNode_RegisterHits xHits;
-	xHits.m_strHitCountVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xHits.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xHits.GetOutputForTest(CombatNode_RegisterHits::uPIN_HitCount), "RegisterHits.HitCount"), 1);
 	ZENITH_ASSERT_EQ(xHits.GetBadAccessWarningCountForTest(), 0u);
@@ -296,7 +288,6 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 	}
 
 	CombatNode_CountAliveEnemies xCount;
-	xCount.m_strAliveCountVar.clear(); xCount.m_strHasEnemiesVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xCount.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_TRUE(CombatSlotInt(xCount.GetOutputForTest(CombatNode_CountAliveEnemies::uPIN_AliveCount), "CountAliveEnemies.AliveCount") >= 1);
 	ZENITH_ASSERT_TRUE(CombatSlotBool(xCount.GetOutputForTest(CombatNode_CountAliveEnemies::uPIN_HasEnemies), "CountAliveEnemies.HasEnemies"));
@@ -304,7 +295,6 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 
 	const Zenith_EntityID xSavedPlayer = Combat_GameComponent::GetPlayerEntityID();
 	CombatNode_CheckPlayerDead xDead;
-	xDead.m_strPlayerDeadVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xDead.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_FALSE(CombatSlotBool(xDead.GetOutputForTest(CombatNode_CheckPlayerDead::uPIN_PlayerDead), "CheckPlayerDead.PlayerDead alive"));
 	ZENITH_ASSERT_EQ(xDead.GetBadAccessWarningCountForTest(), 0u);
@@ -313,7 +303,6 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 	ZENITH_ASSERT_EQ(static_cast<int>(xCount.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xCount.GetOutputForTest(CombatNode_CountAliveEnemies::uPIN_AliveCount), "registered-dead AliveCount"), 0);
 	ZENITH_ASSERT_TRUE(CombatSlotBool(xCount.GetOutputForTest(CombatNode_CountAliveEnemies::uPIN_HasEnemies), "registered-dead HasEnemies"));
-	xDead.m_strPlayerDeadVar.clear();
 	ZENITH_ASSERT_EQ(static_cast<int>(xDead.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_TRUE(CombatSlotBool(xDead.GetOutputForTest(CombatNode_CheckPlayerDead::uPIN_PlayerDead), "CheckPlayerDead.PlayerDead"));
 	Combat_GameComponent::RegisterPlayer(xSavedPlayer);
@@ -323,11 +312,9 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 	// State output visibly non-zero, so a stamped default cannot satisfy this row.
 	xPlayerComponent.TriggerHitStun(1.0f);
 	CombatNode_PlayerPreTick xPlayerPre;
-	xPlayerPre.m_strDtVar.clear(); xPlayerPre.m_strStateVar.clear();
 	xPlayerPre.SetInputForTest(CombatNode_PlayerPreTick::uPIN_Dt, CombatFloat(0.25f));
 	ZENITH_ASSERT_EQ(static_cast<int>(xPlayerPre.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xPlayerPre.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State), "PlayerPreTick.State"), static_cast<int32_t>(Combat_PlayerState::HIT_STUN));
-	ZENITH_ASSERT_EQ(xPlayerPre.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPlayerPre.GetBadAccessWarningCountForTest(), 0u);
 
 	Zenith_Entity xBrainEnemy = xScene.CreateEntity("EnemyBrainPinRuntime");
@@ -340,11 +327,9 @@ ZENITH_TEST(GraphPinTable, CombatRuntimeNodesPublishAndConsumePins)
 	Zenith_GraphContext xEnemyContext;
 	xEnemyContext.m_xSelf = xBrainEnemy;
 	CombatNode_EnemyPreTick xEnemyPre;
-	xEnemyPre.m_strDtVar.clear(); xEnemyPre.m_strStateVar.clear();
 	xEnemyPre.SetInputForTest(CombatNode_EnemyPreTick::uPIN_Dt, CombatFloat(0.125f));
 	ZENITH_ASSERT_EQ(static_cast<int>(xEnemyPre.Execute(xEnemyContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xEnemyPre.GetOutputForTest(CombatNode_EnemyPreTick::uPIN_State), "EnemyPreTick.State"), static_cast<int32_t>(Combat_EnemyState::HIT_STUN));
-	ZENITH_ASSERT_EQ(xEnemyPre.GetFallbackUseCountForTest(CombatNode_EnemyPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xEnemyPre.GetBadAccessWarningCountForTest(), 0u);
 	// Both PreTick nodes read Dt before their component's dependent guard. A
 	// later failure must retain the meaningful state from the successful fire.
@@ -399,7 +384,6 @@ ZENITH_TEST(GraphPinTable, CombatGuardFailuresPreservePinSlotContracts)
 	ZENITH_ASSERT_EQ(static_cast<int>(xQuery.Execute(xEmptyContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 	ZENITH_ASSERT_NULL(xQuery.GetOutputForTest(CombatNode_QueryAttackState::uPIN_AttackStarted));
 	ZENITH_ASSERT_EQ(xQuery.GetBadAccessWarningCountForTest(), 0u);
-	ZENITH_ASSERT_EQ(xQuery.GetFallbackUseCountForTest(CombatNode_QueryAttackState::uPIN_AttackStarted), 0u);
 
 	// PlayerPreTick reads Dt after resolving the player but before the missing
 	// collider makes Graph_PreTick fail. That accessor initializes typed output
@@ -410,13 +394,11 @@ ZENITH_TEST(GraphPinTable, CombatGuardFailuresPreservePinSlotContracts)
 	Combat_PlayerComponent& xPlayerComponent = xPlayer.AddComponent<Combat_PlayerComponent>();
 	xPlayerComponent.OnAwake();
 	CombatNode_PlayerPreTick xPreTick;
-	xPreTick.m_strDtVar.clear(); xPreTick.m_strStateVar.clear();
 	xPreTick.SetInputForTest(CombatNode_PlayerPreTick::uPIN_Dt, CombatFloat(0.5f));
 	Zenith_GraphContext xContext;
 	xContext.m_xSelf = xPlayer;
 	ZENITH_ASSERT_EQ(static_cast<int>(xPreTick.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xPreTick.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State), "failed PlayerPreTick.State"), 0);
-	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPreTick.GetBadAccessWarningCountForTest(), 0u);
 	xPlayerComponent.OnDestroy();
 	Combat_GameComponent::RegisterPlayer(xOriginalPlayer);
@@ -495,11 +477,9 @@ ZENITH_TEST(GraphPinTable, CombatGuardReadUsesPermanentDefaultAfterPrerequisites
 	// One fresh unbound node: no self guard leaves State UNSET; a valid self then
 	// reaches GetInput before the missing-collider guard and stamps typed zero.
 	CombatNode_PlayerPreTick xPreTick;
-	xPreTick.m_strDtVar.clear();
 	Zenith_GraphContext xEmptyContext;
 	ZENITH_ASSERT_EQ(static_cast<int>(xPreTick.Execute(xEmptyContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 	ZENITH_ASSERT_NULL(xPreTick.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State));
-	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPreTick.GetBadAccessWarningCountForTest(), 0u);
 
 	Zenith_TempScene xScene("CombatGuardReadFallback");
@@ -514,7 +494,6 @@ ZENITH_TEST(GraphPinTable, CombatGuardReadUsesPermanentDefaultAfterPrerequisites
 	ZENITH_ASSERT_EQ(static_cast<int>(xPreTick.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 	ZENITH_ASSERT_EQ(CombatSlotInt(xPreTick.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State),
 		"missing-collider PlayerPreTick.State"), 0);
-	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPreTick.GetBadAccessWarningCountForTest(), 0u);
 	xPlayerComponent.OnDestroy();
 	Combat_GameComponent::RegisterPlayer(xOriginalPlayer);
@@ -549,7 +528,6 @@ ZENITH_TEST(GraphPinTable, CombatEnemyPreTickDtControlsCooldownGate)
 		ZENITH_ASSERT_EQ(xEnemyComponent.Graph_GetStateInt(), static_cast<int>(Combat_EnemyState::CHASING));
 	}
 	CombatNode_EnemyPreTick xPreTick;
-	xPreTick.m_strDtVar.clear(); xPreTick.m_strStateVar.clear();
 	Zenith_GraphContext xContext; xContext.m_xSelf = xEnemy;
 	xPreTick.SetInputForTest(CombatNode_EnemyPreTick::uPIN_Dt, CombatFloat(0.0f));
 	const bool bZeroDtPreTick = xPreTick.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS;
@@ -575,7 +553,6 @@ ZENITH_TEST(GraphPinTable, CombatEnemyPreTickDtControlsCooldownGate)
 			}
 		}
 	}
-	ZENITH_ASSERT_EQ(xPreTick.GetFallbackUseCountForTest(CombatNode_EnemyPreTick::uPIN_Dt), 0u);
 	ZENITH_ASSERT_EQ(xPreTick.GetBadAccessWarningCountForTest(), 0u);
 	xEnemyComponent.OnDestroy();
 	Combat_DamageSystem::UnregisterEntity(xEnemy.GetEntityID());
@@ -610,19 +587,16 @@ ZENITH_TEST(GraphPinTable, CombatPlayerPreTickDtExpiresComboWindow)
 		ZENITH_ASSERT_EQ(static_cast<int>(xPlayerComponent.GetController().GetState()), static_cast<int>(Combat_PlayerState::LIGHT_ATTACK_1));
 		Zenith_GraphContext xContext; xContext.m_xSelf = xPlayer;
 		CombatNode_QueryAttackState xQuery;
-		xQuery.m_strAttackStartedVar.clear(); xQuery.m_strIsAttackingVar.clear(); xQuery.m_strAttackTypeVar.clear();
-		xQuery.m_strComboCountVar.clear(); xQuery.m_strHitFrameVar.clear();
 		ZENITH_ASSERT_EQ(static_cast<int>(xQuery.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(CombatSlotInt(xQuery.GetOutputForTest(CombatNode_QueryAttackState::uPIN_ComboCount), "light QueryAttackState.ComboCount"), 1);
 		xPlayerComponent.Graph_AttackTick(0.31f);
-		CombatNode_PlayerPreTick xNode; xNode.m_strDtVar.clear(); xNode.m_strStateVar.clear();
+		CombatNode_PlayerPreTick xNode;
 		xNode.SetInputForTest(CombatNode_PlayerPreTick::uPIN_Dt, CombatFloat(0.0f));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(CombatSlotInt(xNode.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State), "zero Dt state"), static_cast<int32_t>(Combat_PlayerState::LIGHT_ATTACK_1));
 		xNode.SetInputForTest(CombatNode_PlayerPreTick::uPIN_Dt, CombatFloat(0.6f));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xContext)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(CombatSlotInt(xNode.GetOutputForTest(CombatNode_PlayerPreTick::uPIN_State), "expiry Dt state"), static_cast<int32_t>(Combat_PlayerState::IDLE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(CombatNode_PlayerPreTick::uPIN_Dt), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 	xPlayerComponent.OnDestroy(); Combat_GameComponent::RegisterPlayer(xOriginalPlayer);

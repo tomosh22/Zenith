@@ -130,9 +130,9 @@ only** and never names Flux, Physics, AssetHandling, or any concrete component
   `Zenith_GraphBuilder::FailPin`). The editor half — the extra pin laid out and
   keyed, and `Action_Connect` accepting it only on a flagged type — is
   `Editor/Panels/Zenith_EditorPanel_GraphEditor.Tests.inl`.
-  The `PinRuntime_*` block covers the whole pin runtime: the exact var-name
-  fallback, the wire winning over it, typed-zero vs UNSET slots, checked
-  extraction, the dual-write and its absence, the `TryGetInput` truth table row
+  The `PinRuntime_*` block covers the whole pin runtime: slot-only INPUT and
+  OUTPUT pins, typed-zero vs UNSET slots, checked extraction, and the
+  `TryGetInput` truth table row
   by row, pure evaluation / memoisation / cycles / non-SUCCESS, the gather token
   (including a flow node's nested sub-chain), the four resolution refusals with
   their positive controls, variadic ordinals, and the two registration blocks
@@ -268,7 +268,12 @@ seeded from the declared variables.
   ON_UPDATE dispatch entirely (pinned by the idle phase of the 1000-entity
   benchmark).
 
-### Pin runtime (what makes a data wire carry a value)
+### Historical B6/B7 pin-runtime record (superseded for authoring)
+
+The following B6/B7 account records the pre-C1 migration and its readiness
+witnesses. It is not current authoring guidance: the final C1 contract below is
+authoritative wherever this historical account describes named INPUT/OUTPUT
+fallbacks, dual writes, counters, or fallback descriptor metadata.
 
 A `Zenith_GraphDataEdge` stores pin NAMES; `InitialiseFromDefinition` resolves
 them to per-instance SLOTS, and a node reads and writes them through accessors
@@ -539,6 +544,10 @@ site — so "warned exactly once" is a unit assertion rather than a log scrape.
 
 ## Validation (pin descriptor tables + `Zenith_GraphDefinitionValidator`)
 
+The detailed B6/B7 validation notes in this section are historical where they
+describe fallback bindings, alias warnings, or INPUT/OUTPUT name metadata. Apply
+the final C1 contract below when adding or changing a descriptor.
+
 **The problem.** Values pass between nodes by NAMED blackboard variables: a node
 declares `ZENITH_PROPERTY(std::string, m_str…Var, "…")` and reads or writes
 `GetBlackboard()` under that name at runtime. A mistyped name silently yields
@@ -668,7 +677,7 @@ instantiation warning covers it), and exec chains through opaque nodes are
 unreported exactly as before. The consequence is real and deliberate: a
 deliberately-opaque node type cannot be WIRED until it gets pins.
 
-### The wire pass (pass 1b)
+### Historical B7 wire pass (superseded for authoring)
 
 Every data edge is resolved to a real pin, of the right role, on a real node,
 with agreeing endpoint types. **At most ONE finding per edge** — the first
@@ -931,3 +940,32 @@ Each converted game keeps its custom nodes in one header, registered from
 | TilePuzzle | `Games/TilePuzzle/Components/Pinball_GraphNodes.h` | `Pinball_RegisterGraphNodes` |
 
 See each game's CLAUDE.md for its node table and authored graphs.
+
+## C1 graph-pin contract
+
+INPUT and OUTPUT values are wire-only. `ResolveInput` still resolves overrides,
+resolved producer slots, current const-property defaults, and typed defaults for
+unconnected inputs;
+it no longer reads a name from the blackboard. `TryGetInput` remains
+presence-aware for ANY values. `SetOutput` writes only its slot. Typed slots begin
+SET at their typed zero, ANY slots begin UNSET, and existing type guards,
+mismatches, lazy pure pulls, failure/retention behavior, and self-binding remain.
+
+Use a `GetVariable` producer only where a graph intentionally reads a blackboard
+value, then connect its `Value` pin to the consumer. INPUT and OUTPUT descriptors
+carry no property-name binding metadata. `INPUT_CONST` remains wireable and, when
+unconnected, reads the const property's current value.
+
+String properties still identify permanent SELECTOR, TARGET_REF, LIST,
+type-source, event-stash, and configuration roles. They are never substitutes for
+data-pin bindings. Existing serialized unknown properties continue through normal
+property loading's unknown-property handling. `GetListElement` and `ListRemoveAt`
+retain both final factory forms: `(list, index)` and `(list, index, wire)`.
+
+The C1 validation evidence records that C1 changed registrations by 16 removals,
+four additions, and four renames; later repair passes changed none. T3-final2,
+SceneGuard, and all nine builds are green with observed pins Combat 2695,
+Zenithmon 4548, and RenderTest 2798. All seven fresh census legs are green with
+zero FALLBACK, aliasing, and validator errors. The final asset audit found 164
+graphs, 881 obsolete parameters removed from 102 graphs, no unexpected removal or
+topology issue, and a 192-asset second boot with no path or byte changes.

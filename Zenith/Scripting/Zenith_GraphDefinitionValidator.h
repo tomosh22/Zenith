@@ -81,9 +81,9 @@ class Zenith_GraphNodeRegistry;
 // ORPHAN_EDGE, PIN_OUT_OF_RANGE, SELF_READWRITE, UNDECLARED_READ,
 // TYPE_MISMATCH, DUPLICATE_EXEC_SOURCE, DUPLICATE_DATA_INPUT,
 // DATA_EDGE_MALFORMED, WIRE_PIN_UNKNOWN, WIRE_ROLE_MISMATCH, EXEC_INTO_PURE and
-// DATA_CYCLE are ERROR; DECLARED_UNUSED, LIST_NAME, INSTANCE_TYPE_UNRESOLVED,
-// PIN_BINDING_INVALID, DOMINANCE, PURE_UNCONSUMED and IN_PLACE_ALIASING are
-// WARNING. Zenith_GraphBuilder::Build() returns false on any ERROR. (A-5..A-7
+// DATA_CYCLE and forbidden INPUT/OUTPUT PIN_BINDING_INVALID metadata are ERROR;
+// DECLARED_UNUSED, LIST_NAME, INSTANCE_TYPE_UNRESOLVED, other PIN_BINDING_INVALID
+// findings, DOMINANCE and PURE_UNCONSUMED are WARNING. Zenith_GraphBuilder::Build() returns false on any ERROR. (A-5..A-7
 // ran this report-only while the node library was annotated; A-8 latched it.)
 //
 // Leaf-safe: Scripting + Core + Collections only.
@@ -117,7 +117,6 @@ enum Zenith_GraphValidationRule : u_int8
 	GRAPH_VALIDATION_RULE_DATA_CYCLE,				// data edges through pure producers form a cycle
 	GRAPH_VALIDATION_RULE_DOMINANCE,				// a consumer can execute before the producer feeding it
 	GRAPH_VALIDATION_RULE_PURE_UNCONSUMED,			// a pure node no wire consumes - it can never run
-	GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING,		// an OUTPUT whose result var is empty, so it writes back over its own source
 	GRAPH_VALIDATION_RULE_COUNT
 };
 

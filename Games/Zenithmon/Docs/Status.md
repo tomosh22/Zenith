@@ -18,7 +18,7 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-09-14):
-ZM boot `4561`; engine boot (Null Combat) `2708`; Null RenderTest `2810`; registry **73**.**
+ZM boot `4548`; engine boot (Null Combat) `2695`; Null RenderTest `2798`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.

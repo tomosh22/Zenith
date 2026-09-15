@@ -190,23 +190,21 @@ public:
 	// third transitional path. GetInput*/TryGetInput/SetOutput call
 	// EnsurePinState() first: a node whose pin state no graph ever built, but whose
 	// class DOES declare a pin table, builds it from its own tables once. A
-	// directly-constructed node therefore behaves EXACTLY like an unwired graph
-	// node - var-name fallback with the const as the default, dual-write on
-	// SetOutput - which is what keeps the standalone node tests (a node on the
-	// stack, a bare context, Execute) meaning what they meant before the node
-	// library migrated onto the accessors.
+	// directly-constructed node behaves like an unwired graph node: an INPUT
+	// reads its current const-property default or typed zero and an OUTPUT
+	// latches only its slot. This keeps standalone Execute tests valid.
 	//
 	// ORDERING RULE: assign every property BEFORE the first Execute on a
-	// directly-constructed node. Pin state reads property-derived state (var names,
-	// the const property pointer, the instance-resolved slot TYPE) ONCE and is
-	// never refreshed from a later property write - so a test that changes an op
+	// directly-constructed node. Pin state binds the const-property POINTER and
+	// instance-resolved slot TYPE ONCE. The property value is read when the input
+	// is accessed, so a test that changes a const default before executing uses it;
+	// a test that changes an op
 	// code between fires needs a FRESH node.
 	//--------------------------------------------------------------------------
 
 	// The pin's value as T. Connected -> the producer's slot (pure producers
 	// evaluate on demand); a tag that is not T's yields the default plus ONE
-	// warning per (instance, pin). Unconnected -> the bound blackboard variable
-	// if the descriptor has one and it is non-empty, else the pin default.
+	// warning per (instance, pin). Unconnected -> the pin default.
 	// The pin DEFAULT is the const property's current value when the descriptor
 	// declares one, else the type's zero.
 	template<typename T>
@@ -244,9 +242,7 @@ public:
 	bool TryGetInput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue*& pxOut);
 	bool TryGetInput(Zenith_GraphContext& xContext, u_int uPinIndex, u_int uOrdinal, const Zenith_PropertyValue*& pxOut);
 
-	// Latches the OUTPUT slot. While the descriptor still carries a var-name
-	// binding and it reads non-empty the value ALSO goes to the blackboard - the
-	// transitional dual-write (deleted in C-1).
+	// Latches the OUTPUT slot. Outputs never write the blackboard implicitly.
 	void SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue& xValue);
 
 	template<typename T>
@@ -282,7 +278,6 @@ public:
 	const Zenith_PropertyValue* GetOutputForTest(u_int uPinIndex) const;	// null = UNSET
 	u_int GetMismatchWarningCountForTest(u_int uPinIndex) const;
 	u_int GetOutputMismatchWarningCountForTest(u_int uPinIndex) const;
-	u_int GetFallbackUseCountForTest(u_int uPinIndex) const;
 	u_int GetCycleWarningCountForTest() const { return m_uCycleWarningCount; }
 	u_int GetPureStatusWarningCountForTest() const { return m_uPureStatusWarningCount; }
 	u_int GetBadAccessWarningCountForTest() const { return m_uBadAccessWarningCount; }
@@ -314,13 +309,11 @@ private:
 	// inert. Members of a variadic family live in m_axVariadicInputs instead.
 	struct InputBinding
 	{
-		std::string m_strVarName;								// "" = no var-name binding
 		Zenith_PropertyValue m_xConstScratch;					// refreshed by TryGetInput's const path
 		const Zenith_ReflectedProperty* m_pxConstProperty = nullptr;
 		u_int m_uSrcNodeID = 0;
 		u_int m_uSrcSlot = 0;
 		u_int m_uMismatchWarningCount = 0;
-		u_int m_uFallbackUseCount = 0;
 		bool m_bConnected = false;
 		bool m_bIsInput = false;
 	};
@@ -335,7 +328,6 @@ private:
 	struct OutputSlot
 	{
 		Zenith_PropertyValue m_xValue;
-		std::string m_strVarName;								// "" = no dual-write
 		// The slot's RESOLVED type (static, or the instance's GetPinType answer).
 		// eGRAPH_PIN_TYPE_ANY = the slot accepts any tag and starts UNSET.
 		Zenith_PropertyType m_eDeclaredType = eGRAPH_PIN_TYPE_ANY;

@@ -26,7 +26,6 @@ void BuildGraph_ZM_TrainerChallenge(Zenith_GraphBuilder& xBuilder)
 	const u_int uGetTrainerId = xB.Node("GetVariable");
 	xB.ParamString(uGetTrainerId, "m_strVariable", szZM_GRAPH_VAR_TRAINER_ID);
 	const u_int uPush = xB.Node(szZM_GRAPH_NODE_PUSH_TRAINER_CHALLENGE);
-	xB.ParamString(uPush, "m_strTrainerIdVar", "");
 	xB.Raw().DataEdge(uGetTrainerId, "Value", uPush, "TrainerId");
 	xB.OnCustomEvent(szZM_GRAPH_EVENT_TRAINER_SPOTTED, szZM_GRAPH_VAR_TRAINER_ID)
 		.Then(uPush);

@@ -55,12 +55,9 @@
 // single source of truth and a transition is something ELSE writing it - so a
 // WIRED State pulls its producer every fire. Reactive by design, both of them.
 //
-// ★ THE CENSUS RISES WHEREVER ONE OF THESE THREE IS PLACED. All three var-name
 // defaults are NON-EMPTY (m_strVar "value", m_strVar "state", m_strStateVar
 // "state"), so every placed SwitchOnInt / SwitchOnString / StateMachine logs one
-// [GraphPin] FALLBACK line per instance on its first executing fire whether or
 // not the author named the variable. Expected, once per (instance, pin), and
-// exactly what C-1 deletes.
 //
 // ★ STATED DIVERGENCE, unpinned: all three reads used to dereference
 // m_pxBlackboard unconditionally, so a context with a NULL blackboard and a
@@ -89,7 +86,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SwitchOnInt)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(int32_t, m_iCaseBase, 0)
 		ZENITH_PROPERTY_RANGED(int32_t, m_iCaseCount, 4, 1, 254)
 
@@ -97,11 +93,10 @@ namespace
 		// so neither is a pin.
 		//
 		// ★ m_strVar DEFAULTS TO "value", which is NOT empty, so every placed
-		// SwitchOnInt logs one FALLBACK census line on its first activation.
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SwitchOnInt)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -149,7 +144,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SwitchOnString)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "state")
 		ZENITH_PROPERTY(std::string, m_strCases, "")
 
 		// m_strCases is a COMMA-SEPARATED LIST of case labels, not a blackboard
@@ -159,12 +153,10 @@ namespace
 		//
 		// ★ m_strVar DEFAULTS TO "state" - non-empty, and the SAME default
 		// StateMachine's m_strStateVar carries. Two placed nodes therefore
-		// communicate through that shared name today; after C-1 deletes the
-		// var-name fallback the pair needs a WIRE (C-1 ledger).
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SwitchOnString)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_STRING)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -238,7 +230,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_StateMachine)
 	public:
-		ZENITH_PROPERTY(std::string, m_strStateVar, "state")
 		ZENITH_PROPERTY_RANGED(int32_t, m_iStateCount, 4, 1, 255)
 		ZENITH_PROPERTY(std::string, m_strStateNames, "")
 		ZENITH_PROPERTY(std::string, m_strEventPrefix, "")
@@ -247,13 +238,10 @@ namespace
 		// caused by SOMETHING ELSE writing it). m_strStateNames is a comma list
 		// and m_strEventPrefix an event-name fragment - neither is a pin.
 		//
-		// ★ m_strStateVar DEFAULTS TO "state" (non-empty; the one default this TU
-		// shares with SwitchOnString.m_strVar), so every placed StateMachine logs
-		// one FALLBACK census line on its first executing fire.
 		static constexpr u_int uPIN_State = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StateMachine)
-		ZENITH_GRAPH_PIN_INPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT(State, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:

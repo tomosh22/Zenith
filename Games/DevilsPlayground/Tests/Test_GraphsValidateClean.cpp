@@ -138,7 +138,8 @@ namespace
 
 	u_int ExpectedDataEdgeCount(const char* szAssetPath)
 	{
-		if (std::strcmp(szAssetPath, DPVillager_Component::kszGraphAsset) == 0) return 35;
+		// C1 appends two explicit DP_Villager writer Value edges.
+		if (std::strcmp(szAssetPath, DPVillager_Component::kszGraphAsset) == 0) return 37;
 		if (std::strcmp(szAssetPath, DPItemBase_Component::kszGraphAsset) == 0) return 38;
 		if (std::strcmp(szAssetPath, DPForge_Component::kszGraphAsset) == 0) return 3;
 		if (std::strcmp(szAssetPath, DPPlayerController_Component::kszGraphAsset) == 0) return 3;

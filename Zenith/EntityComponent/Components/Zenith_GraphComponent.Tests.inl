@@ -353,19 +353,19 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 		uCompareConst = xDef.AddNode("CompareBlackboardInt");
 		{
 			NodeParamWriter xParams(xDef, uCompareConst, "CompareBlackboardInt");
-			xParams.SetString("m_strVar", "");
+
 			xParams.SetInt("m_iCompareTo", 5);
 			xParams.SetInt("m_iOp", 4);	// equal
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uCompareVar = xDef.AddNode("CompareBlackboardInt");
 		{
 			// var-vs-var: i != i must be false.
 			NodeParamWriter xParams(xDef, uCompareVar, "CompareBlackboardInt");
-			xParams.SetString("m_strVar", "");
-			xParams.SetString("m_strCompareVar", "");
+
+
 			xParams.SetInt("m_iOp", 5);	// notEqual
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		const u_int uSetVec = xDef.AddNode("SetBlackboardVector3");
 		{
@@ -384,7 +384,7 @@ ZENITH_TEST(GraphComponent, BlackboardNodeFamilyExecution)
 		uStoreSelf = xDef.AddNode("StoreSelfEntityID");
 		{
 			NodeParamWriter xParams(xDef, uStoreSelf, "StoreSelfEntityID");
-			xParams.SetString("m_strVariable", "");
+
 		}
 		const u_int uGetI = xDef.AddNode("GetVariable");
 		{
@@ -587,19 +587,19 @@ ZENITH_TEST(GraphComponent, EntityTargetingActsOnOtherEntity)
 		{
 			NodeParamWriter xParams(xDef, uReadPos, "ReadEntityPosition");
 			xParams.SetString("m_strTargetVar", "other");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uDistance = xDef.AddNode("ComputeDistance");
 		{
 			NodeParamWriter xParams(xDef, uDistance, "ComputeDistance");
 			xParams.SetString("m_strToVar", "other");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uValid = xDef.AddNode("QueryEntityValid");
 		{
 			NodeParamWriter xParams(xDef, uValid, "QueryEntityValid");
 			xParams.SetString("m_strEntityVar", "other");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uSource, 0, uTranslate);
 		xDef.AddEdge(uTranslate, 0, uReadPos);
@@ -721,19 +721,19 @@ ZENITH_TEST(GraphComponent, InputNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uShift, "ReadKeyState");
 			xParams.SetInt("m_iKeyCode", ZENITH_KEY_LEFT_SHIFT);
 			xParams.SetInt("m_iMode", 0);
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uMove = xDef.AddNode("ReadMovementAxis");
-		{ NodeParamWriter xParams(xDef, uMove, "ReadMovementAxis"); xParams.SetString("m_strResultVar", ""); }
+		{ NodeParamWriter xParams(xDef, uMove, "ReadMovementAxis");  }
 		uAxis = xDef.AddNode("ReadInputAxis");
-		{ NodeParamWriter xParams(xDef, uAxis, "ReadInputAxis"); xParams.SetString("m_strResultVar", ""); }
+		{ NodeParamWriter xParams(xDef, uAxis, "ReadInputAxis");  }
 		uLmb = xDef.AddNode("ReadMouseButtonHeld");
 		{
 			NodeParamWriter xParams(xDef, uLmb, "ReadMouseButtonHeld");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uMousePos = xDef.AddNode("ReadMousePosition");
-		{ NodeParamWriter xParams(xDef, uMousePos, "ReadMousePosition"); xParams.SetString("m_strResultVar", ""); }
+		{ NodeParamWriter xParams(xDef, uMousePos, "ReadMousePosition");  }
 		xDef.AddEdge(uUpdate, 0, uShift);
 		xDef.AddEdge(uShift, 0, uMove);
 		xDef.AddEdge(uMove, 0, uAxis);
@@ -950,13 +950,13 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 		{
 			NodeParamWriter xParams(xDef, uAxis1D, "ReadActionAxis1D");
 			xParams.SetString("m_strAction", szACTION_TEST_AXIS1D);
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uAxis2D = xDef.AddNode("ReadActionAxis2D");
 		{
 			NodeParamWriter xParams(xDef, uAxis2D, "ReadActionAxis2D");
 			xParams.SetString("m_strAction", szACTION_TEST_AXIS2D);
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uUpdate, 0, uAxis1D);
 		xDef.AddEdge(uAxis1D, 0, uAxis2D);
@@ -969,7 +969,7 @@ ZENITH_TEST(GraphComponent, ActionNodeFamilyExecution)
 		{
 			NodeParamWriter xParams(xDef, uMissAxis, "ReadActionAxis1D");
 			xParams.SetString("m_strAction", "__NoSuchActionAxis");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		const u_int uAfterMiss = xDef.AddNode("SetBlackboardFloat");
 		{
@@ -1623,7 +1623,7 @@ ZENITH_TEST(GraphComponent, SelectorAbortPreemptedFlagSemantics)
 		const u_int uGate = xDef.AddNode("Gate");
 		{
 			NodeParamWriter xParams(xDef, uGate, "Gate");
-			xParams.SetString("m_strOpenVar", "");
+
 		}
 		const u_int uGoHigh = xDef.AddNode("GetVariable");
 		{ NodeParamWriter xParams(xDef, uGoHigh, "GetVariable"); xParams.SetString("m_strVariable", "goHigh"); }
@@ -2013,7 +2013,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetString("m_strVar", "a");
 			xParams.SetInt("m_iOp", 0);	// sub, then persist through the explicit writer
 			SetFloatParam(xParams, "m_fOperand", 4.0f);
-			xParams.SetString("m_strResultVar", "tmpMathSub");
+
 		}
 		const u_int uWriteSub = xDef.AddNode("SetBlackboardFloat");
 		{
@@ -2025,8 +2025,8 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uMul, "MathBlackboardFloat");
 			xParams.SetString("m_strVar", "a");
 			xParams.SetInt("m_iOp", 1);	// mul by wired m -> prod
-			xParams.SetString("m_strOperandVar", "");
-			xParams.SetString("m_strResultVar", "prod");
+
+
 		}
 		const u_int uSetV = xDef.AddNode("SetBlackboardVector3");
 		{
@@ -2039,7 +2039,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uLen, "MathBlackboardVector3");
 			xParams.SetString("m_strVar", "v");
 			xParams.SetInt("m_iOp", 4);	// length -> len
-			xParams.SetString("m_strResultVar", "len");
+
 		}
 		uScale = xDef.AddNode("MathBlackboardVector3");
 		{
@@ -2047,7 +2047,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetString("m_strVar", "v");
 			xParams.SetInt("m_iOp", 2);	// scale x2, then persist through the explicit writer
 			SetFloatParam(xParams, "m_fScalar", 2.0f);
-			xParams.SetString("m_strResultVar", "tmpMathScale");
+
 		}
 		const u_int uWriteScale = xDef.AddNode("SetBlackboardVector3");
 		{
@@ -2095,7 +2095,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 		{
 			NodeParamWriter xParams(xDef, uAddI2, "AddBlackboardInt");
 			xParams.SetString("m_strVariable", "i");
-			xParams.SetString("m_strDeltaVar", "");
+
 		}
 		const u_int uAddV = xDef.AddNode("AddBlackboardVector3");
 		{
@@ -2107,29 +2107,29 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 		const u_int uSelf1 = xDef.AddNode("StoreSelfEntityID");
 		{
 			NodeParamWriter xParams(xDef, uSelf1, "StoreSelfEntityID");
-			xParams.SetString("m_strVariable", "");
+
 		}
 		const u_int uSelf2 = xDef.AddNode("StoreSelfEntityID");
 		{
 			NodeParamWriter xParams(xDef, uSelf2, "StoreSelfEntityID");
-			xParams.SetString("m_strVariable", "");
+
 		}
 		uCmpE = xDef.AddNode("CompareBlackboardEntity");
 		{
 			NodeParamWriter xParams(xDef, uCmpE, "CompareBlackboardEntity");
-			xParams.SetString("m_strVarA", "");
-			xParams.SetString("m_strVarB", "");
+
+
 			xParams.SetInt("m_iOp", 0);	// equal
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uCmpNE = xDef.AddNode("CompareBlackboardEntity");
 		{
 			// s1 (self) vs eOther (a different entity, pre-staged): notEqual.
 			NodeParamWriter xParams(xDef, uCmpNE, "CompareBlackboardEntity");
-			xParams.SetString("m_strVarA", "");
-			xParams.SetString("m_strVarB", "");
+
+
 			xParams.SetInt("m_iOp", 1);	// notEqual
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uRandF = xDef.AddNode("RandomFloat");
 		{
@@ -2137,7 +2137,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			SetFloatParam(xParams, "m_fMin", 5.0f);
 			SetFloatParam(xParams, "m_fMax", 6.0f);
 			xParams.SetInt("m_iSeed", 77);
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uRandI = xDef.AddNode("RandomInt");
 		{
@@ -2145,7 +2145,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetInt("m_iMin", 2);
 			xParams.SetInt("m_iMax", 4);
 			xParams.SetInt("m_iSeed", 77);
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		const u_int uGetM = xDef.AddNode("GetVariable");
 		{ NodeParamWriter xParams(xDef, uGetM, "GetVariable"); xParams.SetString("m_strVariable", "m"); }
@@ -2184,7 +2184,7 @@ ZENITH_TEST(GraphComponent, MathNodeFamilyExecution)
 			xParams.SetString("m_strVar", "a");
 			xParams.SetInt("m_iOp", 2);	// div
 			SetFloatParam(xParams, "m_fOperand", 0.0f);
-			xParams.SetString("m_strResultVar", "tmpMathDiv");
+
 		}
 		const u_int uWriteDiv = xDef.AddNode("SetBlackboardFloat");
 		{
@@ -2343,16 +2343,16 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		uCmp = xDef.AddNode("CompareBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uCmp, "CompareBlackboardFloat");
-			xParams.SetString("m_strVar", "");
-			xParams.SetString("m_strCompareVar", "");
+
+
 			xParams.SetInt("m_iOp", 4);	// equal
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		const u_int uAdd = xDef.AddNode("AddBlackboardFloat");
 		{
 			NodeParamWriter xParams(xDef, uAdd, "AddBlackboardFloat");
 			xParams.SetString("m_strVariable", "t");
-			xParams.SetString("m_strDeltaVar", "");
+
 			SetBoolParam(xParams, "m_bScaleByDt", true);
 		}
 		xDef.AddEdge(uUpdate, 0, uCmp);
@@ -2367,7 +2367,7 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		const u_int uWait = xDef.AddNode("Wait");
 		{
 			NodeParamWriter xParams(xDef, uWait, "Wait");
-			xParams.SetString("m_strSecondsVar", "");
+
 		}
 		const u_int uWaitFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -2386,7 +2386,7 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		const u_int uLoop = xDef.AddNode("Loop");
 		{
 			NodeParamWriter xParams(xDef, uLoop, "Loop");
-			xParams.SetString("m_strCountVar", "");
+
 		}
 		const u_int uBody = xDef.AddNode("AddBlackboardInt");
 		{
@@ -2446,20 +2446,20 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 		uTouch = xDef.AddNode("ReadPointer");
 		{
 			NodeParamWriter xParams(xDef, uTouch, "ReadPointer");
-			xParams.SetString("m_strDownVar", "");
-			xParams.SetString("m_strPositionVar", "");
-			xParams.SetString("m_strTapVar", "");
-			xParams.SetString("m_strCountVar", "");
+
+
+
+
 		}
 		uDelta = xDef.AddNode("ReadMouseDelta");
 		{
 			NodeParamWriter xParams(xDef, uDelta, "ReadMouseDelta");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uWheel = xDef.AddNode("ReadMouseWheel");
 		{
 			NodeParamWriter xParams(xDef, uWheel, "ReadMouseWheel");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uTouchSource, 0, uTouch);
 		xDef.AddEdge(uTouch, 0, uDelta);
@@ -2488,7 +2488,7 @@ ZENITH_TEST(GraphComponent, RetrofittedNodeParamsExecution)
 			xParams.SetString("m_strEventName", "PickRayGo");
 		}
 		const u_int uRay = xDef.AddNode("ReadMousePickRay");
-		{ NodeParamWriter xParams(xDef, uRay, "ReadMousePickRay"); xParams.SetString("m_strOriginVar", ""); xParams.SetString("m_strDirectionVar", ""); }
+		{ NodeParamWriter xParams(xDef, uRay, "ReadMousePickRay");   }
 		const u_int uRayFlag = xDef.AddNode("SetBlackboardBool");
 		{
 			NodeParamWriter xParams(xDef, uRayFlag, "SetBlackboardBool");
@@ -2646,7 +2646,7 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 		uReadVel = xDef.AddNode("ReadVelocity");
 		{
 			NodeParamWriter xParams(xDef, uReadVel, "ReadVelocity");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uImpulseSource, 0, uImpulse);
 		xDef.AddEdge(uImpulse, 0, uReadVel);
@@ -2666,7 +2666,7 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 		uReadVel2 = xDef.AddNode("ReadVelocity");
 		{
 			NodeParamWriter xParams(xDef, uReadVel2, "ReadVelocity");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uSetVelSource, 0, uSetVel);
 		xDef.AddEdge(uSetVel, 0, uReadVel2);
@@ -2721,10 +2721,10 @@ ZENITH_TEST(GraphComponent, PhysicsNodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uCast, "Raycast");
 			SetVec3Param(xParams, "m_xDirection", Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f));
 			SetFloatParam(xParams, "m_fMaxDistance", 100.0f);
-			xParams.SetString("m_strHitEntityVar", "");
-			xParams.SetString("m_strHitPointVar", "");
-			xParams.SetString("m_strHitNormalVar", "");
-			xParams.SetString("m_strHitDistanceVar", "");
+
+
+
+
 		}
 		const u_int uCastFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -2924,9 +2924,9 @@ ZENITH_TEST(GraphComponent, AnimatorTweenParticleNodesExecution)
 		uRead = xDef.AddNode("ReadAnimatorState");
 		{
 			NodeParamWriter xParams(xDef, uRead, "ReadAnimatorState");
-			xParams.SetString("m_strStateNameVar", "");
-			xParams.SetString("m_strNormalizedTimeVar", "");
-			xParams.SetString("m_strTransitioningVar", "");
+
+
+
 		}
 		xDef.AddEdge(uReadSource, 0, uRead);
 
@@ -3152,7 +3152,7 @@ ZENITH_TEST(GraphComponent, UINodeFamilyExecution)
 			NodeParamWriter xParams(xDef, uText, "SetUIText");
 			xParams.SetString("m_strElement", "Title");
 			xParams.SetString("m_strText", "Score: {}");
-			xParams.SetString("m_strValueVar", "");
+
 		}
 		const u_int uScore = xDef.AddNode("GetVariable");
 		{ NodeParamWriter xParams(xDef, uScore, "GetVariable"); xParams.SetString("m_strVariable", "score"); }
@@ -3327,8 +3327,8 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 		uRead = xDef.AddNode("ReadNavState");
 		{
 			NodeParamWriter xParams(xDef, uRead, "ReadNavState");
-			xParams.SetString("m_strStateVar", "");
-			xParams.SetString("m_strRemainingVar", "");
+
+
 		}
 		xDef.AddEdge(uReadSource, 0, uRead);
 
@@ -3361,7 +3361,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 		{
 			NodeParamWriter xParams(xDef, uWander, "FindRandomReachablePoint");
 			SetFloatParam(xParams, "m_fRadius", 8.0f);
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uWanderSource, 0, uWander);
 
@@ -3384,17 +3384,17 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 			xParams.SetString("m_strEventName", "Query");
 		}
 		uList = xDef.AddNode("QueryPerceivedTargets");
-		{ NodeParamWriter xParams(xDef, uList, "QueryPerceivedTargets"); xParams.SetString("m_strCountVar", ""); }
+		{ NodeParamWriter xParams(xDef, uList, "QueryPerceivedTargets");  }
 		uPrimary = xDef.AddNode("QueryPrimaryPerceivedTarget");
 		{
 			NodeParamWriter xParams(xDef, uPrimary, "QueryPrimaryPerceivedTarget");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uAware = xDef.AddNode("QueryAwarenessOf");
 		{
 			NodeParamWriter xParams(xDef, uAware, "QueryAwarenessOf");
 			xParams.SetString("m_strOfVar", "tgt");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uQuerySource, 0, uList);
 		xDef.AddEdge(uList, 0, uPrimary);
@@ -3422,8 +3422,8 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 		uHeard = xDef.AddNode("QueryLastHeardSound");
 		{
 			NodeParamWriter xParams(xDef, uHeard, "QueryLastHeardSound");
-			xParams.SetString("m_strPositionVar", "");
-			xParams.SetString("m_strSourceVar", "");
+
+
 		}
 		const u_int uHeardFlag = xDef.AddNode("SetBlackboardBool");
 		{
@@ -3444,7 +3444,7 @@ ZENITH_TEST(GraphComponent, AINavPerceptionNodesExecution)
 		const u_int uMachine = xDef.AddNode("StateMachine");
 		{
 			NodeParamWriter xParams(xDef, uMachine, "StateMachine");
-			xParams.SetString("m_strStateVar", "");
+
 			xParams.SetInt("m_iStateCount", 2);
 		}
 		const u_int uAbortState = xDef.AddNode("GetVariable");
@@ -3635,7 +3635,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strPrefabPath", strPrefabPath.c_str());
 			xParams.SetString("m_strEntityName", "SpawnedByGraph");
 			xParams.SetString("m_strPositionVar", "spawnAt");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		xDef.AddEdge(uSpawnSource, 0, uSpawn);
 
@@ -3648,14 +3648,14 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		{
 			NodeParamWriter xParams(xDef, uFindName, "FindEntityByName");
 			xParams.SetString("m_strName", "SpawnedByGraph");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		uNearest = xDef.AddNode("FindNearestEntity");
 		{
 			NodeParamWriter xParams(xDef, uNearest, "FindNearestEntity");
 			SetFloatParam(xParams, "m_fRadius", 50.0f);
-			xParams.SetString("m_strResultVar", "");
-			xParams.SetString("m_strDistanceVar", "");
+
+
 		}
 		xDef.AddEdge(uFindSource, 0, uFindName);
 		xDef.AddEdge(uFindName, 0, uNearest);
@@ -3707,14 +3707,14 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		const u_int uRotate = xDef.AddNode("RotateTowardDirection");
 		{
 			NodeParamWriter xParams(xDef, uRotate, "RotateTowardDirection");
-			xParams.SetString("m_strDirectionVar", "");
+
 			SetFloatParam(xParams, "m_fDegreesPerSecond", 0.0f);	// snap
 		}
 		uReadRot = xDef.AddNode("ReadEntityRotation");
 		{
 			NodeParamWriter xParams(xDef, uReadRot, "ReadEntityRotation");
-			xParams.SetString("m_strForwardVar", "");
-			xParams.SetString("m_strEulerVar", "");
+
+
 		}
 		xDef.AddEdge(uRotSource, 0, uRotate);
 		xDef.AddEdge(uRotate, 0, uReadRot);
@@ -3725,12 +3725,12 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		const u_int uTurnGate = xDef.AddNode("Gate");
 		{
 			NodeParamWriter xParams(xDef, uTurnGate, "Gate");
-			xParams.SetString("m_strOpenVar", "");
+
 		}
 		const u_int uTurn = xDef.AddNode("RotateTowardDirection");
 		{
 			NodeParamWriter xParams(xDef, uTurn, "RotateTowardDirection");
-			xParams.SetString("m_strDirectionVar", "");
+
 			SetFloatParam(xParams, "m_fDegreesPerSecond", 90.0f);	// rate-limited
 		}
 		const u_int uFaceDirection = xDef.AddNode("GetVariable");
@@ -3753,7 +3753,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 		{
 			NodeParamWriter xParams(xDef, uDir, "ComputeDirection");
 			xParams.SetString("m_strToVar", "auxTarget");
-			xParams.SetString("m_strResultVar", "");
+
 		}
 		const u_int uScale = xDef.AddNode("SetEntityScale");
 		{
@@ -3765,7 +3765,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			NodeParamWriter xParams(xDef, uRadius, "FindEntitiesInRadius");
 			SetFloatParam(xParams, "m_fRadius", 50.0f);
 			xParams.SetString("m_strListVar", "inRange");
-			xParams.SetString("m_strCountVar", "");
+
 		}
 		xDef.AddEdge(uDirSource, 0, uDir);
 		xDef.AddEdge(uDir, 0, uScale);
@@ -3792,7 +3792,7 @@ ZENITH_TEST(GraphComponent, EntityNodeFamilyRemainderExecution)
 			xParams.SetString("m_strEventName", "Cam");
 		}
 		uBasis = xDef.AddNode("ReadCameraBasis");
-		{ NodeParamWriter xParams(xDef, uBasis, "ReadCameraBasis"); xParams.SetString("m_strForwardVar", ""); xParams.SetString("m_strRightVar", ""); }
+		{ NodeParamWriter xParams(xDef, uBasis, "ReadCameraBasis");   }
 		const u_int uCamFlag = xDef.AddNode("SetBlackboardBool");
 		{
 			NodeParamWriter xParams(xDef, uCamFlag, "SetBlackboardBool");

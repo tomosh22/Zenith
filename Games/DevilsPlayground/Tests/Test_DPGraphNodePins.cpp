@@ -137,7 +137,7 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(DPGraphFinishTagProducer)
 		ZENITH_GRAPH_PINS_BEGIN(DPGraphFinishTagProducer)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
@@ -153,7 +153,7 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(DPGraphCommitVillagerProducer)
 		ZENITH_GRAPH_PINS_BEGIN(DPGraphCommitVillagerProducer)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
@@ -170,7 +170,7 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(DPGraphArmOrderProducer)
 		ZENITH_GRAPH_PINS_BEGIN(DPGraphArmOrderProducer)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
@@ -265,32 +265,27 @@ namespace
 		Zenith_GraphContext xContext;
 		xContext.m_pxBlackboard = &xBlackboard;
 		constexpr uint64_t ulDistinct = 0x0000000100000042ull;
-		auto Clear = [](TNode& xNode) { xNode.m_strVillagerVar = ""; };
+		auto Clear = [](TNode&) {};
 		{
 			TNode xNode; Clear(xNode);
 			Check(!DPGraph_GetEntityInput(xNode, xContext, TNode::uPIN_Villager).IsValid(), "helper real unbound input returns INVALID_ENTITY_ID");
-			Check(xNode.GetFallbackUseCountForTest(TNode::uPIN_Villager) == 0u, "helper real unbound input has no named fallback");
 		}
 		{
 			TNode xNode; Clear(xNode); Zenith_PropertyValue xWrong; xWrong.SetFloat(2.0f);
 			xNode.SetInputForTest(TNode::uPIN_Villager, xWrong);
 			Check(!DPGraph_GetEntityInput(xNode, xContext, TNode::uPIN_Villager).IsValid(), "helper wrong tag returns INVALID_ENTITY_ID");
-			Check(xNode.GetFallbackUseCountForTest(TNode::uPIN_Villager) == 0u, "helper wrong-tag override has no fallback");
 		}
 		{
 			TNode xNode; Clear(xNode); xNode.SetInputForTest(TNode::uPIN_Villager, EntityValue(INVALID_ENTITY_ID.GetPacked()));
 			Check(!DPGraph_GetEntityInput(xNode, xContext, TNode::uPIN_Villager).IsValid(), "helper explicit INVALID remains INVALID_ENTITY_ID");
-			Check(xNode.GetFallbackUseCountForTest(TNode::uPIN_Villager) == 0u, "helper explicit INVALID has no fallback");
 		}
 		{
 			TNode xNode; Clear(xNode); xNode.SetInputForTest(TNode::uPIN_Villager, EntityValue(0ull));
 			CheckEqU64(DPGraph_GetEntityInput(xNode, xContext, TNode::uPIN_Villager).GetPacked(), 0ull, "helper preserves a present packed-zero entity value");
-			Check(xNode.GetFallbackUseCountForTest(TNode::uPIN_Villager) == 0u, "helper packed-zero override has no fallback");
 		}
 		{
 			TNode xNode; Clear(xNode); xNode.SetInputForTest(TNode::uPIN_Villager, EntityValue(ulDistinct));
 			CheckEqU64(DPGraph_GetEntityInput(xNode, xContext, TNode::uPIN_Villager).GetPacked(), ulDistinct, "helper reads the distinct pin override");
-			Check(xNode.GetFallbackUseCountForTest(TNode::uPIN_Villager) == 0u, "helper distinct override has no fallback");
 			Check(xNode.GetBadAccessWarningCountForTest() == 0u, "helper uses valid pin addresses");
 		}
 	}
@@ -338,8 +333,6 @@ namespace
 		Check(pxRemainingOut != nullptr && pxRemainingOut->GetType() == PROPERTY_TYPE_FLOAT, "ItemArmChannel ChannelRemaining output is present and FLOAT-tagged");
 		if (pxVillagerOut && pxVillagerOut->GetType() == PROPERTY_TYPE_ENTITY_ID) CheckEqU64(pxVillagerOut->GetPackedEntityID(), ulOverrideVillager, "ItemArmChannel publishes the overridden Villager");
 		if (pxRemainingOut && pxRemainingOut->GetType() == PROPERTY_TYPE_FLOAT) CheckEqFloat(pxRemainingOut->GetFloat(), 9.5f, "ItemArmChannel publishes the overridden ChannelDuration");
-		Check(xNode.GetFallbackUseCountForTest(DPNode_ItemArmChannel::uPIN_Villager) == 0u, "ItemArmChannel wired Villager has no fallback");
-		Check(xNode.GetFallbackUseCountForTest(DPNode_ItemArmChannel::uPIN_ChannelDuration) == 0u, "ItemArmChannel wired ChannelDuration has no fallback");
 		Check(xNode.GetBadAccessWarningCountForTest() == 0u, "ItemArmChannel uses only valid pin addresses");
 
 		// ItemArmChannel deliberately belongs to the other ENTITY_ID family: its
@@ -350,7 +343,6 @@ namespace
 			Zenith_GraphContext xEmptyContext;
 			xEmptyContext.m_pxBlackboard = &xEmpty;
 			DPNode_ItemArmChannel xMissing;
-			xMissing.m_strVillagerVar = "";
 			Zenith_PropertyValue xDuration;
 			xDuration.SetFloat(1.0f);
 			xMissing.SetOutput(xEmptyContext, DPNode_ItemArmChannel::uPIN_ChannelVillager, EntityValue(0x0000000900000009ull));
@@ -363,7 +355,6 @@ namespace
 			Check(pxMissing != nullptr && pxMissing->GetType() == PROPERTY_TYPE_ENTITY_ID, "ItemArmChannel missing entity output is ENTITY_ID-tagged");
 			if (pxMissing && pxMissing->GetType() == PROPERTY_TYPE_ENTITY_ID) CheckEqU64(pxMissing->GetPackedEntityID(), 0ull, "ItemArmChannel missing entity becomes packed zero");
 			Check(pxMissingRemaining && pxMissingRemaining->GetType() == PROPERTY_TYPE_FLOAT && pxMissingRemaining->GetFloat() == 1.0f, "ItemArmChannel missing entity replaces both preseeded outputs with its fresh values");
-			Check(xMissing.GetFallbackUseCountForTest(DPNode_ItemArmChannel::uPIN_Villager) == 0u, "ItemArmChannel missing Villager has no named fallback");
 		}
 		{
 			Zenith_GraphBlackboard xEmpty;
@@ -379,7 +370,6 @@ namespace
 			const Zenith_PropertyValue* pxWrong = xWrongTag.GetOutputForTest(DPNode_ItemArmChannel::uPIN_ChannelVillager);
 			Check(pxWrong != nullptr && pxWrong->GetType() == PROPERTY_TYPE_ENTITY_ID, "ItemArmChannel wrong-tag entity output is ENTITY_ID-tagged");
 			if (pxWrong && pxWrong->GetType() == PROPERTY_TYPE_ENTITY_ID) CheckEqU64(pxWrong->GetPackedEntityID(), 0ull, "ItemArmChannel wrong-tag entity becomes packed zero");
-			Check(xWrongTag.GetFallbackUseCountForTest(DPNode_ItemArmChannel::uPIN_Villager) == 0u, "ItemArmChannel wrong-tag override does not fall back");
 			Check(xWrongTag.GetMismatchWarningCountForTest(DPNode_ItemArmChannel::uPIN_Villager) == 1u, "ItemArmChannel wrong-tag entity input emits its one typed mismatch diagnostic");
 		}
 		{
@@ -387,8 +377,6 @@ namespace
 			Zenith_GraphContext xUnnamedContext;
 			xUnnamedContext.m_pxBlackboard = &xUnnamed;
 			DPNode_ItemArmChannel xUnnamedNode;
-			xUnnamedNode.m_strChannelVillagerVar = "";
-			xUnnamedNode.m_strChannelRemainingVar = "";
 			Zenith_PropertyValue xDuration;
 			xDuration.SetFloat(4.0f);
 			xUnnamedNode.SetInputForTest(DPNode_ItemArmChannel::uPIN_Villager, EntityValue(0x0000000800000008ull));
@@ -414,10 +402,6 @@ namespace
 		const u_int uProducer = xDefinition.AddNode("DPTestArmOrderProducer");
 		const u_int uArm = xDefinition.AddNode("DPItemArmChannel");
 		DPNode_ItemArmChannel xConfiguredArm;
-		xConfiguredArm.m_strVillagerVar = "";
-		xConfiguredArm.m_strChannelVillagerVar = "";
-		xConfiguredArm.m_strChannelDurationVar = "";
-		xConfiguredArm.m_strChannelRemainingVar = "";
 		const bool bParams = uArm != 0u && xDefinition.SetNodeParamsFromInstance(uArm, &xConfiguredArm);
 		const bool bEdge = uProducer != 0u && uArm != 0u && xDefinition.AddDataEdge(uProducer, "Value", uArm, "ChannelDuration");
 		Check(bParams && bEdge, "ItemArmChannel ordering witness configures its real data wire");
@@ -445,11 +429,11 @@ namespace
 			g_pxLiveArm = pxArm;
 			Check(pxArm->Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS, "ItemArmChannel ordering witness executes");
 			g_pxLiveArm = nullptr;
+			Check(pxArm->GetBadAccessWarningCountForTest() == 0u, "ItemArmChannel ordering witness uses valid pin addresses");
 			const Zenith_PropertyValue* pxRemaining = pxArm->GetOutputForTest(DPNode_ItemArmChannel::uPIN_ChannelRemaining);
 			Check(g_iArmOrderProducerPulls == 1 && g_bArmOrderProducerSawOwner && g_bArmOrderProducerSawRemainingBeforePublish
 				&& pxRemaining && pxRemaining->GetType() == PROPERTY_TYPE_FLOAT && pxRemaining->GetFloat() == 7.5f,
 				"ItemArmChannel publishes its live owner slot before one lazy Duration pull, then publishes 7.5");
-			Check(pxArm->GetFallbackUseCountForTest(DPNode_ItemArmChannel::uPIN_Villager) == 0u && pxArm->GetFallbackUseCountForTest(DPNode_ItemArmChannel::uPIN_ChannelDuration) == 0u && pxArm->GetBadAccessWarningCountForTest() == 0u, "ItemArmChannel ordering witness has no fallback or BADACCESS");
 			Check(pxProducerBase != nullptr && pxProducerBase->GetBadAccessWarningCountForTest() == 0u, "ItemArmChannel ordering producer uses valid output pin addresses");
 		}
 		xGraph.Shutdown();
@@ -460,10 +444,6 @@ namespace
 		const u_int uAliasProducer = xAliasDefinition.AddNode("DPTestArmOrderProducer");
 		const u_int uAliasArm = xAliasDefinition.AddNode("DPItemArmChannel");
 		DPNode_ItemArmChannel xAliasArm;
-		xAliasArm.m_strVillagerVar = "";
-		xAliasArm.m_strChannelVillagerVar = "";
-		xAliasArm.m_strChannelDurationVar = "";
-		xAliasArm.m_strChannelRemainingVar = "";
 		const bool bAliasParams = uAliasArm != 0u && xAliasDefinition.SetNodeParamsFromInstance(uAliasArm, &xAliasArm);
 		const bool bAliasEdge = uAliasProducer != 0u && uAliasArm != 0u && xAliasDefinition.AddDataEdge(uAliasProducer, "Value", uAliasArm, "ChannelDuration");
 		Zenith_BehaviourGraph xAliasGraph;
@@ -518,17 +498,11 @@ namespace
 		xBuilder.ParamString(uSource, "m_strEventName", "Commit");
 		const u_int uProducer = xBuilder.Node("DPTestCommitVillagerProducer");
 		const u_int uCommit = xBuilder.Node("DPItemCommitPickup");
-		xBuilder.ParamString(uCommit, "m_strVillagerVar", "");
-		xBuilder.ParamString(uCommit, "m_strChannelVillagerVar", "");
-		xBuilder.ParamString(uCommit, "m_strChannelRemainingVar", "");
-		xBuilder.ParamString(uCommit, "m_strCommittedVillagerVar", "");
 		const u_int uOwner = xBuilder.Node("SetBlackboardEntityID");
 		xBuilder.ParamString(uOwner, "m_strVariable", "channelVillager");
 		const u_int uRemaining = xBuilder.Node("SetBlackboardFloat");
 		xBuilder.ParamString(uRemaining, "m_strVariable", "channelRemaining");
 		const u_int uFinish = xBuilder.Node("DPItemFinishPickup");
-		xBuilder.ParamString(uFinish, "m_strVillagerVar", "");
-		xBuilder.ParamString(uFinish, "m_strTagVar", "");
 		const u_int uTag = xBuilder.Node("GetVariable");
 		xBuilder.ParamString(uTag, "m_strVariable", "tag");
 		xBuilder.DataEdge(uProducer, "Value", uCommit, "Villager");
@@ -615,7 +589,6 @@ namespace
 		xBlackboard.SetValue(szKey, FloatValue(fExpected + 1.0f));
 		DPNode_ReadTuningFloat xNode;
 		xNode.m_strKey = szKey;
-		xNode.m_strVar = "";
 		Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS, "ReadTuningFloat succeeds for the known chest duration key");
 		Check(xNode.GetBadAccessWarningCountForTest() == 0u, "ReadTuningFloat success uses valid pin addresses");
 		const Zenith_PropertyValue* pxResult = xNode.GetOutputForTest(DPNode_ReadTuningFloat::uPIN_Result);
@@ -686,29 +659,21 @@ namespace
 		Zenith_GraphContext xHeldContext;
 		xHeldContext.m_pxBlackboard = &xHeldBlackboard;
 		DPNode_ReadHeldObjective xHeld;
-		xHeld.m_strVillagerVar = "";
-		xHeld.m_strTagVar = "";
 		xHeld.SetInputForTest(DPNode_ReadHeldObjective::uPIN_Villager, EntityValue(xVillager.GetPacked()));
 		Check(xHeld.Execute(xHeldContext) == GRAPH_NODE_STATUS_SUCCESS, "ReadHeldObjective succeeds for a registered held objective via the distinct Villager pin value");
 		Check(xHeld.GetBadAccessWarningCountForTest() == 0u, "ReadHeldObjective success uses valid pin addresses");
 		const Zenith_PropertyValue* pxHeld = xHeld.GetOutputForTest(DPNode_ReadHeldObjective::uPIN_Tag);
 		Check(pxHeld && pxHeld->GetType() == PROPERTY_TYPE_INT32, "ReadHeldObjective publishes a typed Tag output");
 		if (pxHeld && pxHeld->GetType() == PROPERTY_TYPE_INT32) Check(pxHeld->GetInt32() == static_cast<int32_t>(DP_ItemTag::Objective2), "ReadHeldObjective output is the nonzero objective tag");
-		Check(xHeld.GetFallbackUseCountForTest(DPNode_ReadHeldObjective::uPIN_Villager) == 0u, "ReadHeldObjective distinct override does not fall back");
 
 		DPNode_ReadHeldObjective xUnboundHeld;
-		xUnboundHeld.m_strVillagerVar = "";
-		xUnboundHeld.m_strTagVar = "";
 		Check(xUnboundHeld.Execute(xHeldContext) == GRAPH_NODE_STATUS_FAILURE, "ReadHeldObjective real unbound Villager input fails");
-		Check(xUnboundHeld.GetFallbackUseCountForTest(DPNode_ReadHeldObjective::uPIN_Villager) == 0u, "ReadHeldObjective real unbound Villager input has no named fallback");
 
 		EnsureDPGraphCommitVillagerProducerRegistered();
 		Zenith_GraphDefinition xWireDefinition;
 		const u_int uWireProducer = xWireDefinition.AddNode("DPTestCommitVillagerProducer");
 		const u_int uWireHeld = xWireDefinition.AddNode("DPReadHeldObjective");
 		DPNode_ReadHeldObjective xWireHeldParams;
-		xWireHeldParams.m_strVillagerVar = "";
-		xWireHeldParams.m_strTagVar = "";
 		const bool bWireParams = uWireHeld != 0u && xWireDefinition.SetNodeParamsFromInstance(uWireHeld, &xWireHeldParams);
 		const bool bWireEdge = uWireProducer != 0u && uWireHeld != 0u && xWireDefinition.AddDataEdge(uWireProducer, "Value", uWireHeld, "Villager");
 		Zenith_BehaviourGraph xWireGraph;
@@ -727,7 +692,6 @@ namespace
 			Check(pxWireHeld->Execute(xWireContext) == GRAPH_NODE_STATUS_SUCCESS, "ReadHeldObjective succeeds through its actual Villager wire");
 			const Zenith_PropertyValue* pxWireTag = pxWireHeld->GetOutputForTest(DPNode_ReadHeldObjective::uPIN_Tag);
 			Check(g_iCommitProducerPulls == 1 && pxWireTag && pxWireTag->GetType() == PROPERTY_TYPE_INT32 && pxWireTag->GetInt32() == static_cast<int32_t>(DP_ItemTag::Objective2), "ReadHeldObjective pulls its exact wired Villager once and publishes the nonzero tag");
-			Check(pxWireHeld->GetFallbackUseCountForTest(DPNode_ReadHeldObjective::uPIN_Villager) == 0u, "ReadHeldObjective actual Villager wire has no fallback");
 		}
 		xWireGraph.Shutdown();
 
@@ -745,8 +709,6 @@ namespace
 		Zenith_GraphDefinition xHeldDefinition;
 		const u_int uHeldNode = xHeldDefinition.AddNode("DPReadHeldObjective");
 		DPNode_ReadHeldObjective xFreshHeldParams;
-		xFreshHeldParams.m_strVillagerVar = "";
-		xFreshHeldParams.m_strTagVar = "";
 		const bool bFreshParams = uHeldNode != 0u && xHeldDefinition.SetNodeParamsFromInstance(uHeldNode, &xFreshHeldParams);
 		Zenith_BehaviourGraph xHeldGraph;
 		const bool bHeldInitialized = bFreshParams && xHeldGraph.InitialiseFromDefinition(xHeldDefinition);
@@ -760,7 +722,6 @@ namespace
 			xFreshContext.m_pxGraph = &xHeldGraph;
 			xFreshContext.m_pxBlackboard = &xHeldGraph.GetBlackboard();
 			Check(pxFreshHeld->Execute(xFreshContext) == GRAPH_NODE_STATUS_FAILURE, "fresh ReadHeldObjective missing villager fails");
-			Check(pxFreshHeld->GetFallbackUseCountForTest(DPNode_ReadHeldObjective::uPIN_Villager) == 0u, "fresh ReadHeldObjective unbound Villager has no named fallback");
 			const Zenith_PropertyValue* pxFreshTag = pxFreshHeld->GetOutputForTest(DPNode_ReadHeldObjective::uPIN_Tag);
 			Check(pxFreshTag && pxFreshTag->GetType() == PROPERTY_TYPE_INT32 && pxFreshTag->GetInt32() == 0, "fresh ReadHeldObjective failure has typed INT32 zero");
 			Check(pxFreshHeld->GetBadAccessWarningCountForTest() == 0u, "fresh ReadHeldObjective failure uses valid pin addresses");
@@ -783,10 +744,6 @@ namespace
 		g_bCommitEventSawClears = false;
 		const Zenith_EventHandle uPickupHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnItemPickedUp>(&OnItemPickedUp);
 		DPNode_ItemCommitPickup xCommit;
-		xCommit.m_strVillagerVar = "";
-		xCommit.m_strChannelVillagerVar = "";
-		xCommit.m_strChannelRemainingVar = "";
-		xCommit.m_strCommittedVillagerVar = "";
 		g_pxLiveCommit = &xCommit;
 		Zenith_PropertyValue xTag;
 		xTag.SetInt32(static_cast<int32_t>(DP_ItemTag::BogWater));
@@ -809,8 +766,6 @@ namespace
 			Check(g_iItemPickedEvents == 1 && g_eLastPickedTag == DP_ItemTag::BogWater, "ItemFinishPickup event carries Tag after Commit's slot clears");
 		}
 		DPNode_ItemFinishPickup xInvalidFinish;
-		xInvalidFinish.m_strVillagerVar = "";
-		xInvalidFinish.m_strTagVar = "";
 		xInvalidFinish.SetInputForTest(DPNode_ItemFinishPickup::uPIN_Villager, EntityValue(INVALID_ENTITY_ID.GetPacked()));
 		const int iEventsBeforeInvalidFinish = g_iItemPickedEvents;
 		Check(xInvalidFinish.Execute(xCommitContext) == GRAPH_NODE_STATUS_FAILURE && g_iItemPickedEvents == iEventsBeforeInvalidFinish,
@@ -822,8 +777,6 @@ namespace
 		const u_int uFinishTag = xFinishDefinition.AddNode("DPTestFinishTagProducer");
 		const u_int uFinishNode = xFinishDefinition.AddNode("DPItemFinishPickup");
 		DPNode_ItemFinishPickup xFinishParams;
-		xFinishParams.m_strVillagerVar = "";
-		xFinishParams.m_strTagVar = "";
 		const bool bFinishParams = uFinishNode != 0u && xFinishDefinition.SetNodeParamsFromInstance(uFinishNode, &xFinishParams);
 		const bool bFinishVillagerEdge = uFinishVillager != 0u && uFinishNode != 0u && xFinishDefinition.AddDataEdge(uFinishVillager, "Value", uFinishNode, "Villager");
 		const bool bFinishTagEdge = uFinishTag != 0u && uFinishNode != 0u && xFinishDefinition.AddDataEdge(uFinishTag, "Value", uFinishNode, "Tag");
@@ -859,9 +812,6 @@ namespace
 		xFinishGraph.Shutdown();
 
 		DPNode_ItemCommitPickup xCommitEmpty;
-		xCommitEmpty.m_strChannelVillagerVar = "";
-		xCommitEmpty.m_strChannelRemainingVar = "";
-		xCommitEmpty.m_strCommittedVillagerVar = "";
 		xCommitEmpty.SetInputForTest(DPNode_ItemCommitPickup::uPIN_Villager, EntityValue(xVillager.GetPacked()));
 		Check(xCommitEmpty.Execute(xCommitContext) == GRAPH_NODE_STATUS_SUCCESS, "ItemCommitPickup succeeds with empty output names");
 		Check(xCommitEmpty.GetBadAccessWarningCountForTest() == 0u, "ItemCommitPickup empty outputs use valid pin addresses");
@@ -890,10 +840,6 @@ namespace
 		Zenith_GraphDefinition xCommitDefinition;
 		const u_int uCommitNode = xCommitDefinition.AddNode("DPItemCommitPickup");
 		DPNode_ItemCommitPickup xFreshCommitParams;
-		xFreshCommitParams.m_strVillagerVar = "";
-		xFreshCommitParams.m_strChannelVillagerVar = "";
-		xFreshCommitParams.m_strChannelRemainingVar = "";
-		xFreshCommitParams.m_strCommittedVillagerVar = "";
 		const bool bFreshCommitParams = uCommitNode != 0u && xCommitDefinition.SetNodeParamsFromInstance(uCommitNode, &xFreshCommitParams);
 		Zenith_BehaviourGraph xCommitGraph;
 		const bool bCommitInitialized = bFreshCommitParams && xCommitGraph.InitialiseFromDefinition(xCommitDefinition);
@@ -907,7 +853,6 @@ namespace
 			xFreshCommitContext.m_pxGraph = &xCommitGraph;
 			xFreshCommitContext.m_pxBlackboard = &xCommitGraph.GetBlackboard();
 			Check(pxFreshCommit->Execute(xFreshCommitContext) == GRAPH_NODE_STATUS_FAILURE, "fresh ItemCommitPickup missing villager fails before clear outputs");
-			Check(pxFreshCommit->GetFallbackUseCountForTest(DPNode_ItemCommitPickup::uPIN_Villager) == 0u, "fresh ItemCommitPickup missing Villager has no named fallback");
 			const Zenith_PropertyValue* pxFreshVillager = pxFreshCommit->GetOutputForTest(DPNode_ItemCommitPickup::uPIN_ChannelVillager);
 			const Zenith_PropertyValue* pxFreshRemaining = pxFreshCommit->GetOutputForTest(DPNode_ItemCommitPickup::uPIN_ChannelRemaining);
 			Check(pxFreshVillager && pxFreshVillager->GetType() == PROPERTY_TYPE_ENTITY_ID && pxFreshVillager->GetPackedEntityID() == 0ull, "fresh ItemCommitPickup failure has typed ENTITY_ID zero output");
@@ -927,10 +872,6 @@ namespace
 
 	void SetFootstepInputs(DPNode_VillagerEmitFootstep& xNode, bool bWalkQuiet)
 	{
-		xNode.m_strWalkQuietVar = "";
-		xNode.m_strLoudnessVar = "";
-		xNode.m_strRadiusVar = "";
-		xNode.m_strQuietMultVar = "";
 		xNode.SetInputForTest(DPNode_VillagerEmitFootstep::uPIN_WalkQuiet, BoolValue(bWalkQuiet));
 		xNode.SetInputForTest(DPNode_VillagerEmitFootstep::uPIN_Loudness, FloatValue(0.8f));
 		xNode.SetInputForTest(DPNode_VillagerEmitFootstep::uPIN_Radius, FloatValue(17.0f));
@@ -997,7 +938,6 @@ namespace
 			Check(xNode.Execute(xFootstepContext) == GRAPH_NODE_STATUS_SUCCESS, "VillagerEmitFootstep executes with all distinct pin overrides");
 			Check(xNode.GetBadAccessWarningCountForTest() == 0u, "VillagerEmitFootstep wired leg uses valid pin addresses");
 			CheckOneFootstepEmission(0.2f, "VillagerEmitFootstep finds exactly one quiet footstep emission");
-			Check(xNode.GetFallbackUseCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep wired QuietMult has no fallback");
 			Check(xNode.GetMismatchWarningCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep wired QuietMult has no mismatch");
 		}
 		{
@@ -1009,7 +949,6 @@ namespace
 			Check(xNode.Execute(xFootstepContext) == GRAPH_NODE_STATUS_SUCCESS, "VillagerEmitFootstep accepts a missing QuietMult through its constant default");
 			Check(xNode.GetBadAccessWarningCountForTest() == 0u, "VillagerEmitFootstep missing QuietMult uses valid pin addresses");
 			CheckOneFootstepEmission(0.8f, "VillagerEmitFootstep finds exactly one missing-QuietMult emission");
-			Check(xNode.GetFallbackUseCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep missing QuietMult has no named fallback");
 			Check(xNode.GetMismatchWarningCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep missing QuietMult has no mismatch");
 		}
 		{
@@ -1022,7 +961,6 @@ namespace
 			Check(xNode.Execute(xFootstepContext) == GRAPH_NODE_STATUS_SUCCESS, "VillagerEmitFootstep uses its constant QuietMult for a wrong-tag blackboard value");
 			Check(xNode.GetBadAccessWarningCountForTest() == 0u, "VillagerEmitFootstep wrong-tag blackboard uses valid pin addresses");
 			CheckOneFootstepEmission(0.8f, "VillagerEmitFootstep finds exactly one wrong-blackboard-tag emission");
-			Check(xNode.GetFallbackUseCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep wrong-tag blackboard QuietMult has no named fallback");
 			Check(xNode.GetMismatchWarningCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep wrong-tag blackboard QuietMult has no mismatch diagnostic");
 		}
 		{
@@ -1035,7 +973,6 @@ namespace
 			Check(xNode.Execute(xFootstepContext) == GRAPH_NODE_STATUS_SUCCESS, "VillagerEmitFootstep uses its constant QuietMult for a wrong-tag override");
 			Check(xNode.GetBadAccessWarningCountForTest() == 0u, "VillagerEmitFootstep wrong-tag override uses valid pin addresses");
 			CheckOneFootstepEmission(0.8f, "VillagerEmitFootstep finds exactly one wrong-override-tag emission");
-			Check(xNode.GetFallbackUseCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep wrong-tag override does not fall back");
 			Check(xNode.GetMismatchWarningCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 1u, "VillagerEmitFootstep wrong-tag override emits one mismatch diagnostic");
 		}
 		{
@@ -1047,7 +984,6 @@ namespace
 			Check(xNode.Execute(xFootstepContext) == GRAPH_NODE_STATUS_SUCCESS, "VillagerEmitFootstep executes a non-quiet footstep");
 			Check(xNode.GetBadAccessWarningCountForTest() == 0u, "VillagerEmitFootstep non-quiet leg uses valid pin addresses");
 			CheckOneFootstepEmission(0.8f, "VillagerEmitFootstep finds exactly one non-quiet emission");
-			Check(xNode.GetFallbackUseCountForTest(DPNode_VillagerEmitFootstep::uPIN_QuietMult) == 0u, "VillagerEmitFootstep non-quiet path leaves QuietMult unread");
 		}
 
 		Zenith_GraphBlackboard xEvaporationBlackboard;
@@ -1075,7 +1011,6 @@ namespace
 		Check(pxEvaporationScene != nullptr
 			&& IsPendingDestruction(xEvaporatingItem),
 			"ItemEvaporate marks its exact self entity for deferred destruction");
-		Check(xEvaporate.GetFallbackUseCountForTest(DPNode_ItemEvaporate::uPIN_Tag) == 0u, "ItemEvaporate overridden Tag has no fallback");
 
 		DPNode_ItemEvaporate xInvalidEvaporate;
 		Zenith_GraphContext xInvalidContext;
@@ -1083,7 +1018,6 @@ namespace
 		const int iEventsBeforeInvalid = g_iEvaporatedEvents;
 		Check(xInvalidEvaporate.Execute(xInvalidContext) == GRAPH_NODE_STATUS_FAILURE, "ItemEvaporate invalid self fails before reading Tag");
 		Check(g_iEvaporatedEvents == iEventsBeforeInvalid, "ItemEvaporate invalid self dispatches no evaporation event");
-		Check(xInvalidEvaporate.GetFallbackUseCountForTest(DPNode_ItemEvaporate::uPIN_Tag) == 0u, "ItemEvaporate invalid self leaves Tag unread");
 		Check(xInvalidEvaporate.GetBadAccessWarningCountForTest() == 0u, "ItemEvaporate invalid self touches no invalid pin address");
 		Zenith_EventDispatcher::Get().Unsubscribe(uEvaporationHandle);
 		DP_Items::Internal_UnregisterItemTag(xEvaporatingItem);
@@ -1101,14 +1035,12 @@ namespace
 		xDistinct.SetInputForTest(DPNode_DispatchChestOpened::uPIN_Villager, EntityValue(ulOverride));
 		Check(xDistinct.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS, "DispatchChestOpened executes its distinct Villager override");
 		Check(g_iChestEvents == 1 && g_xLastChestVillager.GetPacked() == ulOverride, "DispatchChestOpened event carries the distinct pin override");
-		Check(xDistinct.GetFallbackUseCountForTest(DPNode_DispatchChestOpened::uPIN_Villager) == 0u, "DispatchChestOpened distinct override has no fallback");
 		Check(xDistinct.GetBadAccessWarningCountForTest() == 0u, "DispatchChestOpened distinct override uses a valid pin address");
 
 		DPNode_DispatchChestOpened xZero;
 		xZero.SetInputForTest(DPNode_DispatchChestOpened::uPIN_Villager, EntityValue(0ull));
 		Check(xZero.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS, "DispatchChestOpened executes its packed-zero Villager override");
 		Check(g_iChestEvents == 2 && g_xLastChestVillager.GetPacked() == 0ull, "DispatchChestOpened event preserves packed-zero payload");
-		Check(xZero.GetFallbackUseCountForTest(DPNode_DispatchChestOpened::uPIN_Villager) == 0u, "DispatchChestOpened packed-zero override has no fallback");
 		Check(xZero.GetBadAccessWarningCountForTest() == 0u, "DispatchChestOpened uses a valid pin address");
 		Zenith_EventDispatcher::Get().Unsubscribe(uHandle);
 	}
@@ -1292,7 +1224,6 @@ namespace
 		Zenith_GraphContext xContext;
 		xContext.m_pxBlackboard = &xBlackboard;
 		DPNode_PickVillagerUnderCursor xNode;
-		xNode.m_strResultVar = "";
 		PriestPickCheck(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 			"PickVillagerUnderCursor succeeds at a projected body centre");
 		const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(DPNode_PickVillagerUnderCursor::uPIN_Result);
@@ -1323,7 +1254,6 @@ namespace
 			Zenith_GraphDefinition xFreshDefinition;
 			const u_int uFreshID = xFreshDefinition.AddNode("DPPickVillagerUnderCursor");
 			DPNode_PickVillagerUnderCursor xFreshParams;
-			xFreshParams.m_strResultVar = "";
 			const bool bFreshParams = uFreshID != 0u && xFreshDefinition.SetNodeParamsFromInstance(uFreshID, &xFreshParams);
 			Zenith_BehaviourGraph xFreshGraph;
 			const bool bFreshInit = bFreshParams && xFreshGraph.InitialiseFromDefinition(xFreshDefinition);
@@ -1446,9 +1376,6 @@ namespace
 		xContext.m_xSelf = xPriestEntity;
 		xContext.m_pxBlackboard = &xBlackboard;
 		DPNode_PriestPickPatrolTarget xNode;
-		xNode.m_strSuspicionRadiusVar = "";
-		xNode.m_strHighScentTargetVar = "";
-		xNode.m_strPatrolTargetVar = "";
 		xNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius, FloatValue(15.0f));
 		xNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget, EntityValue(xWireTarget.GetPacked()));
 		PriestPickCheck(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS, "PriestPickPatrolTarget succeeds with wired radius and high-scent target");
@@ -1462,8 +1389,6 @@ namespace
 		}
 		const Zenith_Maths::Vector3 xPriestPrior = pxSlot && pxSlot->GetType() == PROPERTY_TYPE_VECTOR3
 			? pxSlot->GetVector3() : Zenith_Maths::Vector3(0.0f);
-		PriestPickCheck(xNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius) == 0u
-			&& xNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == 0u, "PriestPickPatrolTarget wired inputs take no fallback");
 		PriestPickCheck(xNode.GetBadAccessWarningCountForTest() == 0u, "PriestPickPatrolTarget uses valid pin addresses");
 
 		EnsureDPGraphArmOrderProducerRegistered();
@@ -1473,9 +1398,6 @@ namespace
 		const u_int uScentProducer = xWireDefinition.AddNode("DPTestCommitVillagerProducer");
 		const u_int uWirePicker = xWireDefinition.AddNode("DPPriestPickPatrolTarget");
 		DPNode_PriestPickPatrolTarget xWireParams;
-		xWireParams.m_strSuspicionRadiusVar = "";
-		xWireParams.m_strHighScentTargetVar = "";
-		xWireParams.m_strPatrolTargetVar = "";
 		const bool bWireParams = uWirePicker != 0u && xWireDefinition.SetNodeParamsFromInstance(uWirePicker, &xWireParams);
 		const bool bRadiusEdge = uRadiusProducer != 0u && uWirePicker != 0u && xWireDefinition.AddDataEdge(uRadiusProducer, "Value", uWirePicker, "SuspicionRadius");
 		const bool bScentEdge = uScentProducer != 0u && uWirePicker != 0u && xWireDefinition.AddDataEdge(uScentProducer, "Value", uWirePicker, "HighScentTarget");
@@ -1505,9 +1427,6 @@ namespace
 				&& PriestPickDistanceXZ(pxWireSlot->GetVector3(), xWirePos) <= 15.5f
 				&& PriestPickDistanceXZ(pxWireSlot->GetVector3(), xBBPos) > 15.5f,
 				"PriestPickPatrolTarget two-input wires preserve the distinct villager-centred region");
-			PriestPickCheck(pxWirePicker->GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius) == 0u
-				&& pxWirePicker->GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == 0u,
-				"PriestPickPatrolTarget two-input wire graph has zero fallback");
 		}
 		g_bArmOrderProducerForceValue = false;
 		xWireGraph.Shutdown();
@@ -1521,9 +1440,6 @@ namespace
 		Zenith_GraphDefinition xFreshDefinition;
 		const u_int uFreshID = xFreshDefinition.AddNode("DPPriestPickPatrolTarget");
 		DPNode_PriestPickPatrolTarget xFreshParams;
-		xFreshParams.m_strSuspicionRadiusVar = "";
-		xFreshParams.m_strHighScentTargetVar = "";
-		xFreshParams.m_strPatrolTargetVar = "";
 		const bool bFreshParams = uFreshID != 0u && xFreshDefinition.SetNodeParamsFromInstance(uFreshID, &xFreshParams);
 		Zenith_BehaviourGraph xFreshGraph;
 		const bool bFreshInit = bFreshParams && xFreshGraph.InitialiseFromDefinition(xFreshDefinition);
@@ -1554,9 +1470,6 @@ namespace
 			xCase.m_xSelf = xPriestEntity;
 			xCase.m_pxBlackboard = &xBB;
 			DPNode_PriestPickPatrolTarget xCaseNode;
-			xCaseNode.m_strSuspicionRadiusVar = "";
-			xCaseNode.m_strHighScentTargetVar = "";
-			xCaseNode.m_strPatrolTargetVar = "";
 			xCaseNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius, FloatValue(15.0f));
 			if (iCase == 0) xCaseNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget, EntityValue(INVALID_ENTITY_ID.GetPacked()));
 			if (iCase == 1) xCaseNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget, FloatValue(1.0f));
@@ -1565,10 +1478,8 @@ namespace
 			const Zenith_PropertyValue* pxCase = xCaseNode.GetOutputForTest(DPNode_PriestPickPatrolTarget::uPIN_PatrolTarget);
 			PriestPickCheck(pxCase && pxCase->GetType() == PROPERTY_TYPE_VECTOR3
 				&& PriestPickDistanceXZ(pxCase->GetVector3(), xPriestPos) <= 15.5f, "PriestPickPatrolTarget invalid/zero HighScent stays priest-centred");
-			PriestPickCheck(xCaseNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius) == 0u
-				&& xCaseNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == 0u
-				&& xCaseNode.GetMismatchWarningCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == (iCase == 1 ? 1u : 0u)
-				&& xCaseNode.GetBadAccessWarningCountForTest() == 0u, "PriestPickPatrolTarget explicit HighScent cases have no fallback or BADACCESS");
+			PriestPickCheck(xCaseNode.GetMismatchWarningCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == (iCase == 1 ? 1u : 0u)
+				&& xCaseNode.GetBadAccessWarningCountForTest() == 0u, "PriestPickPatrolTarget cases have the expected mismatch count and no BADACCESS");
 		};
 		CheckHighScentZero(0, "PriestPickPatrolTarget explicit INVALID HighScent is an invalid entity input");
 		CheckHighScentZero(1, "PriestPickPatrolTarget explicit wrong-tag HighScent is an invalid entity input");
@@ -1589,13 +1500,11 @@ namespace
 		g_xApprehendVictim = INVALID_ENTITY_ID;
 		const Zenith_EventHandle uStartHandle = Zenith_EventDispatcher::Get().Subscribe<DP_OnApprehendChannelStart>(&OnApprehendStart);
 		DPNode_PriestApprehendChannel xApprehend;
-		xApprehend.m_strTargetWithDevilVar = "";
 		xApprehend.OnEnter(xApprehendContext);
 		xApprehend.SetInputForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil, EntityValue(xWireTarget.GetPacked()));
 		PriestPickCheck(xApprehend.Execute(xApprehendContext) == GRAPH_NODE_STATUS_RUNNING, "PriestApprehend valid wired target starts and remains RUNNING at dt zero");
 		PriestPickCheck(g_iApprehendStarts == 1 && g_xApprehendVictim.GetPacked() == xWireTarget.GetPacked(), "PriestApprehend Start event carries the wired target over blackboard target");
-		PriestPickCheck(xApprehend.GetFallbackUseCountForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil) == 0u
-			&& xApprehend.GetBadAccessWarningCountForTest() == 0u, "PriestApprehend wired target has no fallback or BADACCESS");
+		PriestPickCheck(xApprehend.GetBadAccessWarningCountForTest() == 0u, "PriestApprehend wired target has no BADACCESS");
 
 		auto CheckApprehendZero = [&](int iCase, const char* szWhat)
 		{
@@ -1605,7 +1514,6 @@ namespace
 			xCase.m_pxBlackboard = &xBB;
 			xCase.m_fDt = 0.0f;
 			DPNode_PriestApprehendChannel xCaseNode;
-			xCaseNode.m_strTargetWithDevilVar = "";
 			if (iCase == 0) xCaseNode.SetInputForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil, EntityValue(INVALID_ENTITY_ID.GetPacked()));
 			if (iCase == 1) xCaseNode.SetInputForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil, FloatValue(1.0f));
 			if (iCase == 2) xCaseNode.SetInputForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil, EntityValue(0ull));
@@ -1615,20 +1523,17 @@ namespace
 			else PriestPickCheck(eCaseStatus == GRAPH_NODE_STATUS_FAILURE || eCaseStatus == GRAPH_NODE_STATUS_RUNNING || eCaseStatus == GRAPH_NODE_STATUS_SUCCESS, "PriestApprehend packed-zero target reaches the actual execute path");
 			PriestPickCheck(xCaseNode.GetInputPackedEntityID(xCase, DPNode_PriestApprehendChannel::uPIN_TargetWithDevil)
 				== (iCase == 0 ? INVALID_ENTITY_ID.GetPacked() : 0ull), szWhat);
-			PriestPickCheck(xCaseNode.GetFallbackUseCountForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil) == 0u
-				&& xCaseNode.GetMismatchWarningCountForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil) == (iCase == 1 ? 1u : 0u)
-				&& xCaseNode.GetBadAccessWarningCountForTest() == 0u, "PriestApprehend explicit zero-family has no fallback or BADACCESS");
+			PriestPickCheck(xCaseNode.GetMismatchWarningCountForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil) == (iCase == 1 ? 1u : 0u)
+				&& xCaseNode.GetBadAccessWarningCountForTest() == 0u, "PriestApprehend cases have the expected mismatch count and no BADACCESS");
 		};
 		CheckApprehendZero(0, "PriestApprehend missing TargetWithDevil reads packed zero");
 		CheckApprehendZero(1, "PriestApprehend wrong-tag blackboard TargetWithDevil reads packed zero");
 		CheckApprehendZero(2, "PriestApprehend packed-zero TargetWithDevil reads packed zero");
 		DPNode_PriestApprehendChannel xEarlyInvalid;
-		xEarlyInvalid.m_strTargetWithDevilVar = "";
 		Zenith_GraphContext xEarlyContext;
 		xEarlyContext.m_pxBlackboard = &xApprehendBB;
 		xEarlyInvalid.OnEnter(xEarlyContext);
 		PriestPickCheck(xEarlyInvalid.Execute(xEarlyContext) == GRAPH_NODE_STATUS_FAILURE
-			&& xEarlyInvalid.GetFallbackUseCountForTest(DPNode_PriestApprehendChannel::uPIN_TargetWithDevil) == 0u
 			&& xEarlyInvalid.GetBadAccessWarningCountForTest() == 0u, "PriestApprehend invalid self leaves TargetWithDevil unread");
 		Zenith_EventDispatcher::Get().Unsubscribe(uStartHandle);
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[DPGraphPriestPins] fixture load END");

@@ -173,11 +173,11 @@ namespace
 	};
 
 	//==========================================================================
-	// Query readers (latch an OUTPUT slot; dual-write the blackboard while the var
-	// name is bound; ReadMousePickRay alone can FAIL)
+	// Query readers expose computed values through OUTPUT slots only. They do
+	// not bind or publish blackboard variables; ReadMousePickRay may FAIL.
 	//==========================================================================
 
-	// Key state -> bool var. Mode: 0 = held, 1 = pressed this frame.
+	// Key state -> bool OUTPUT slot. Mode: 0 = held, 1 = pressed this frame.
 	class Zenith_GraphNode_ReadKeyState : public Zenith_GraphNode
 	{
 	public:
@@ -185,13 +185,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(int32_t, m_iKeyCode, ZENITH_KEY_LEFT_SHIFT)
 		ZENITH_PROPERTY(int32_t, m_iMode, 0)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "key")
-
 		// Key codes and modes are device configuration, never blackboard values.
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadKeyState)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -206,7 +204,7 @@ namespace
 		const char* GetTypeName() const override { return "ReadKeyState"; }
 	};
 
-	// Four-key quad -> direction vec3 (X = right, Z = forward), optionally
+	// Four-key quad -> direction vec3 OUTPUT slot (X = right, Z = forward), optionally
 	// normalized. Camera-relative rotation is a separate concern
 	// (ReadCameraBasis + vector math nodes).
 	class Zenith_GraphNode_ReadMovementAxis : public Zenith_GraphNode
@@ -219,13 +217,11 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iKeyLeft, ZENITH_KEY_A)
 		ZENITH_PROPERTY(int32_t, m_iKeyRight, ZENITH_KEY_D)
 		ZENITH_PROPERTY(bool, m_bNormalize, true)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "moveDir")
-
 		// The four key codes and the normalize flag are device configuration.
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMovementAxis)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -255,12 +251,10 @@ namespace
 	public:
 		ZENITH_PROPERTY(int32_t, m_iNegativeKey, ZENITH_KEY_A)
 		ZENITH_PROPERTY(int32_t, m_iPositiveKey, ZENITH_KEY_D)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "axis")
-
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadInputAxis)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -280,12 +274,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadMousePosition)
 	public:
-		ZENITH_PROPERTY(std::string, m_strResultVar, "mousePos")
-
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMousePosition)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR2)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -306,13 +298,11 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadMouseDelta)
 	public:
 		ZENITH_PROPERTY(float, m_fSensitivity, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "mouseDelta")
-
 		// m_fSensitivity has no var partner: a scale factor, not an input pin.
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseDelta)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR2)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -334,12 +324,10 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadMouseButtonHeld)
 	public:
 		ZENITH_PROPERTY(int32_t, m_iButton, ZENITH_MOUSE_BUTTON_LEFT)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "mouseHeld")
-
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseButtonHeld)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -356,12 +344,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadMouseWheel)
 	public:
-		ZENITH_PROPERTY(std::string, m_strResultVar, "wheel")
-
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMouseWheel)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -373,7 +359,7 @@ namespace
 		const char* GetTypeName() const override { return "ReadMouseWheel"; }
 	};
 
-	// One slot of the pointer table -> blackboard. The engine tracks up to
+	// One slot of the pointer table -> OUTPUT slots. The engine tracks up to
 	// Zenith_Pointers::uMAX_POINTERS simultaneous pointers, so a graph has to
 	// say WHICH one it means.
 	//
@@ -389,26 +375,19 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadPointer)
 	public:
 		ZENITH_PROPERTY(int32_t, m_iPointerIndex, 0)
-		ZENITH_PROPERTY(std::string, m_strDownVar, "pointerDown")
-		ZENITH_PROPERTY(std::string, m_strPositionVar, "pointerPos")
-		ZENITH_PROPERTY(std::string, m_strTapVar, "")
-		ZENITH_PROPERTY(std::string, m_strCountVar, "")
-
-		// Four independent computed results. Each SLOT is latched on every
-		// SUCCESS; only the transitional BLACKBOARD write is skipped for a pin
-		// whose var name reads empty, which is SetOutput's own dual-write rule -
-		// and which is what an OUTPUT with an empty var already means to the
-		// validator. m_iPointerIndex is a slot selector, not a pin.
+		// Four independent computed OUTPUT slots are latched on every SUCCESS.
+		// m_iPointerIndex selects an engine device slot; it is neither a graph
+		// pin nor a blackboard selector.
 		static constexpr u_int uPIN_Down = 0u;
 		static constexpr u_int uPIN_Position = 1u;
 		static constexpr u_int uPIN_Tap = 2u;
 		static constexpr u_int uPIN_Count = 3u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadPointer)
-		ZENITH_GRAPH_PIN_OUTPUT(Down, "m_strDownVar", PROPERTY_TYPE_BOOL)
-		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR2)
-		ZENITH_GRAPH_PIN_OUTPUT(Tap, "m_strTapVar", PROPERTY_TYPE_BOOL)
-		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Down, PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Position, PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PIN_OUTPUT(Tap, PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Count, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -422,11 +401,8 @@ namespace
 			// where only one finger is down.
 			const Zenith_Pointer* pxPointer = bValidSlot ? &xPointers.GetPointer(static_cast<u_int32>(m_iPointerIndex)) : nullptr;
 
-			// All four latch unconditionally: the four "is the var named" guards
-			// (and the two computations that lived inside them) are gone, and the
-			// dual-write's own non-empty rule reproduces exactly which of them
-			// reach the blackboard - Down/Position by default, Tap/Count only when
-			// an author names them.
+			// Down, Position, and Tap receive false/zero values for an absent or
+			// invalid device slot. Count always reports the global active count.
 			SetOutput<bool>(xContext, uPIN_Down, pxPointer != nullptr && pxPointer->IsDown());
 			SetOutput<Zenith_Maths::Vector2>(xContext, uPIN_Position,
 				pxPointer != nullptr ? pxPointer->m_xPosition : Zenith_Maths::Vector2(0.0f, 0.0f));
@@ -437,23 +413,21 @@ namespace
 		const char* GetTypeName() const override { return "ReadPointer"; }
 	};
 
-	// Main-camera ray under the mouse cursor -> origin + direction vec3 vars
-	// (feed the Physics Raycast node's origin/direction vars for picking).
+	// Main-camera ray under the mouse cursor -> origin + direction vec3 OUTPUT
+	// slots. Wire Direction to Raycast directly; Origin requires an explicit
+	// Vector3 writer and Raycast's permanent TargetPosition reference.
 	// FAILURE when no loaded scene has a resolvable main camera.
 	class Zenith_GraphNode_ReadMousePickRay : public Zenith_GraphNode
 	{
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadMousePickRay)
 	public:
-		ZENITH_PROPERTY(std::string, m_strOriginVar, "rayOrigin")
-		ZENITH_PROPERTY(std::string, m_strDirectionVar, "rayDir")
-
 		static constexpr u_int uPIN_Origin = 0u;
 		static constexpr u_int uPIN_Direction = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadMousePickRay)
-		ZENITH_GRAPH_PIN_OUTPUT(Origin, "m_strOriginVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(Direction, "m_strDirectionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Origin, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Direction, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -602,14 +576,12 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadActionAxis1D)
 	public:
 		ZENITH_PROPERTY(std::string, m_strAction, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "axis")
-
 		// m_strAction names a registered INPUT ACTION, not a blackboard
 		// variable - it is resolved against g_xEngine.Actions() and is not a pin.
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadActionAxis1D)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -641,12 +613,10 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadActionAxis2D)
 	public:
 		ZENITH_PROPERTY(std::string, m_strAction, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "axis2D")
-
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadActionAxis2D)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR2)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR2)
 		ZENITH_GRAPH_PINS_END
 
 	public:

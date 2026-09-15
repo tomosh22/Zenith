@@ -1258,29 +1258,27 @@ namespace
 // retired OnUpdate's same-frame order: transitions -> movement booleans ->
 // life drain/Kill -> footsteps.
 
-static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB, bool bRawBaseline = false)
+static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB, bool bRawBaseline)
 {
 	// T1: possession transitions (the retired OnUpdate switch).
 	Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
-	const u_int uSwitch = xB.SwitchOnInt("state", 4);
+	const u_int uSwitch = xB.Node("SwitchOnInt");
+	xB.ParamInt(uSwitch, "m_iCaseCount", 4);
 	const u_int uSwitchState = xB.Node("GetVariable");
 	xB.ParamString(uSwitchState, "m_strVariable", "state");
 	xB.Raw().DataEdge(uSwitchState, "Value", uSwitch, "Value");
-	xB.ParamString(uSwitch, "m_strVar", "");
 	xTick.Then(uSwitch);
 
 	// Idle + possessed -> Possessed (life bump to max).
-	const u_int uIdleGate = xB.Gate("possessedNow");
+	const u_int uIdleGate = xB.Node("Gate");
 	const u_int uIdlePossessed = xB.Node("GetVariable");
 	xB.ParamString(uIdlePossessed, "m_strVariable", "possessedNow");
 	xB.Raw().DataEdge(uIdlePossessed, "Value", uIdleGate, "Open");
-	xB.ParamString(uIdleGate, "m_strOpenVar", "");
 	const u_int uToPossessed = xB.SetBlackboardInt("state", 1);
 	const u_int uBumpLife = xB.Node("MathBlackboardFloat");	// remainingLife = maxLife
 	xB.ParamString(uBumpLife, "m_strVar", "maxLife");
 	xB.ParamEnum(uBumpLife, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
 	xB.ParamFloat(uBumpLife, "m_fOperand", 0.0f);
-	xB.ParamString(uBumpLife, "m_strResultVar", "bumpLifeResult");
 	const u_int uBumpLifeStore = xB.SetBlackboardFloat("remainingLife", 0.0f);
 	xB.Raw().DataEdge(uBumpLife, "Result", uBumpLifeStore, "Value");
 	xB.Edge(uSwitch, 0, uIdleGate);
@@ -1290,15 +1288,13 @@ static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB,
 	// tuning, like the retired transition). Kill()'s burn-out path never
 	// reaches this: it writes state=Dead synchronously mid-tick, so the
 	// next tick dispatches the Dead pin instead (quirk preserved).
-	const u_int uBrUnpossess = xB.Branch("possessedNow");
+	const u_int uBrUnpossess = xB.Node("Branch");
 	const u_int uUnpossessPossessed = xB.Node("GetVariable");
 	xB.ParamString(uUnpossessPossessed, "m_strVariable", "possessedNow");
 	xB.Raw().DataEdge(uUnpossessPossessed, "Value", uBrUnpossess, "Condition");
-	xB.ParamString(uBrUnpossess, "m_strConditionVar", "");
 	const u_int uToFainted = xB.SetBlackboardInt("state", 2);
 	const u_int uArmFaint = xB.Node("DPReadTuningFloat");
 	xB.ParamString(uArmFaint, "m_strKey", "possession.voluntary_switch_faint_recovery_s");
-	xB.ParamString(uArmFaint, "m_strVar", "");
 	const u_int uArmFaintStore = xB.SetBlackboardFloat("faintRecovery", 0.0f);
 	xB.Raw().DataEdge(uArmFaint, "Result", uArmFaintStore, "Value");
 	xB.Edge(uSwitch, 1, uBrUnpossess);
@@ -1306,18 +1302,16 @@ static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB,
 	xB.Chain(uToFainted, uArmFaint).Chain(uArmFaint, uArmFaintStore);
 
 	// Fainted: system-path wake bypass, else recovery countdown -> Idle.
-	const u_int uBrWake = xB.Branch("possessedNow");
+	const u_int uBrWake = xB.Node("Branch");
 	const u_int uWakePossessed = xB.Node("GetVariable");
 	xB.ParamString(uWakePossessed, "m_strVariable", "possessedNow");
 	xB.Raw().DataEdge(uWakePossessed, "Value", uBrWake, "Condition");
-	xB.ParamString(uBrWake, "m_strConditionVar", "");
 	xB.Edge(uSwitch, 2, uBrWake);
 	const u_int uWake = xB.SetBlackboardInt("state", 1);
 	const u_int uWakeLife = xB.Node("MathBlackboardFloat");	// remainingLife = maxLife
 	xB.ParamString(uWakeLife, "m_strVar", "maxLife");
 	xB.ParamEnum(uWakeLife, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
 	xB.ParamFloat(uWakeLife, "m_fOperand", 0.0f);
-	xB.ParamString(uWakeLife, "m_strResultVar", "wakeLifeResult");
 	const u_int uWakeLifeStore = xB.SetBlackboardFloat("remainingLife", 0.0f);
 	xB.Raw().DataEdge(uWakeLife, "Result", uWakeLifeStore, "Value");
 	const u_int uWakeClear = xB.SetBlackboardFloat("faintRecovery", 0.0f);
@@ -1327,23 +1321,22 @@ static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB,
 	const u_int uRecTick = xB.Node("MathBlackboardFloat");	// faintRecovery -= dt
 	xB.ParamString(uRecTick, "m_strVar", "faintRecovery");
 	xB.ParamEnum(uRecTick, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
-	xB.ParamString(uRecTick, "m_strOperandVar", "dt");
-	xB.ParamString(uRecTick, "m_strResultVar", "faintRecoveryResult");
 	const u_int uRecoveryDt = xB.Node("GetVariable");
 	xB.ParamString(uRecoveryDt, "m_strVariable", "dt");
 	xB.Raw().DataEdge(uRecoveryDt, "Value", uRecTick, "Operand");
-	xB.ParamString(uRecTick, "m_strOperandVar", "");
 	const u_int uRecoveryStore = xB.SetBlackboardFloat("faintRecovery", 0.0f);
 	xB.Raw().DataEdge(uRecTick, "Result", uRecoveryStore, "Value");
 	const u_int uRecDone = bRawBaseline
-		? xB.CompareFloat("faintRecovery", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "faintExpired")
+		? xB.Node("CompareBlackboardFloat")
 		: xB.CompareFloat({ uRecTick, "Result" }, GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f);
-	if (bRawBaseline) xB.Raw().DataEdge(uRecTick, "Result", uRecDone, "Value");
-	xB.ParamString(uRecDone, "m_strVar", "");
-	if (!bRawBaseline) xB.ParamString(uRecDone, "m_strResultVar", "faintExpired");
-	const u_int uRecGate = bRawBaseline ? xB.Gate("faintExpired") : xB.Gate({ uRecDone, "Result" });
+	if (bRawBaseline)
+	{
+		xB.ParamFloat(uRecDone, "m_fCompareTo", 0.0f);
+		xB.ParamEnum(uRecDone, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL);
+		xB.Raw().DataEdge(uRecTick, "Result", uRecDone, "Value");
+	}
+	const u_int uRecGate = bRawBaseline ? xB.Node("Gate") : xB.Gate({ uRecDone, "Result" });
 	if (bRawBaseline) xB.Raw().DataEdge(uRecDone, "Result", uRecGate, "Open");
-	xB.ParamString(uRecGate, "m_strOpenVar", "");
 	const u_int uRecClamp = xB.SetBlackboardFloat("faintRecovery", 0.0f);
 	const u_int uToIdle = xB.SetBlackboardInt("state", 0);
 	xB.Edge(uBrWake, 1, uRecTick);
@@ -1352,7 +1345,7 @@ static void BuildDPVillager_PossessionTransitions(Zenith_EngineGraphBuilder& xB,
 	// Dead (pin 3): terminal, unwired.
 }
 
-static void BuildDPVillager_MovementModes(Zenith_EngineGraphBuilder& xB)
+static void BuildDPVillager_MovementModes(Zenith_EngineGraphBuilder& xB, u_int& uOutIsPoss, u_int& uOutBrPoss)
 {
 	// T2: movement-mode booleans (sprint wins Shift+Ctrl ties).
 	Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
@@ -1360,29 +1353,31 @@ static void BuildDPVillager_MovementModes(Zenith_EngineGraphBuilder& xB)
 	// gate: computed BEFORE the life-drain chain can Kill(), it matches
 	// the retired mid-OnUpdate m_bIsPossessed sync (movement still runs
 	// once on a burn-out death frame).
-	const u_int uIsPoss = xB.CompareInt("state", GRAPH_COMPARE_INT_OP_EQUAL, 1, "stateIsPossessed");
+	const u_int uIsPoss = xB.Node("CompareBlackboardInt");
+	xB.ParamInt(uIsPoss, "m_iCompareTo", 1);
+	xB.ParamEnum(uIsPoss, "m_iOp", GRAPH_COMPARE_INT_OP_EQUAL);
 	const u_int uIsPossState = xB.Node("GetVariable");
 	xB.ParamString(uIsPossState, "m_strVariable", "state");
 	xB.Raw().DataEdge(uIsPossState, "Value", uIsPoss, "Value");
-	xB.ParamString(uIsPoss, "m_strVar", "");
 	xTick.Then(uIsPoss);
-	const u_int uBrPoss = xB.Branch("stateIsPossessed");
+	const u_int uBrPoss = xB.Node("Branch");
 	xB.Raw().DataEdge(uIsPoss, "Result", uBrPoss, "Condition");
-	xB.ParamString(uBrPoss, "m_strConditionVar", "");
-	xB.Chain(uIsPoss, uBrPoss);
+	// The explicit stateIsPossessed writer is appended after the original
+	// graph nodes, preserving their IDs while keeping this result published
+	// for the independently dispatched life-drain and footstep chains.
+	uOutIsPoss = uIsPoss;
+	uOutBrPoss = uBrPoss;
 
-	const u_int uBrMoving = xB.Branch("moving");
+	const u_int uBrMoving = xB.Node("Branch");
 	const u_int uMoving = xB.Node("GetVariable");
 	xB.ParamString(uMoving, "m_strVariable", "moving");
 	xB.Raw().DataEdge(uMoving, "Value", uBrMoving, "Condition");
-	xB.ParamString(uBrMoving, "m_strConditionVar", "");
 	xB.Edge(uBrPoss, 0, uBrMoving);
 
-	const u_int uBrSprint = xB.Branch("sprintHeld");
+	const u_int uBrSprint = xB.Node("Branch");
 	const u_int uSprintHeld = xB.Node("GetVariable");
 	xB.ParamString(uSprintHeld, "m_strVariable", "sprintHeld");
 	xB.Raw().DataEdge(uSprintHeld, "Value", uBrSprint, "Condition");
-	xB.ParamString(uBrSprint, "m_strConditionVar", "");
 	xB.Edge(uBrMoving, 0, uBrSprint);
 
 	const u_int uSprOn = xB.SetBlackboardBool("sprinting", true);
@@ -1393,11 +1388,10 @@ static void BuildDPVillager_MovementModes(Zenith_EngineGraphBuilder& xB)
 	xB.Chain(uSprOn, uSprQuietOff).Chain(uSprQuietOff, uPingSprint);
 
 	const u_int uSprOff = xB.SetBlackboardBool("sprinting", false);
-	const u_int uBrQuiet = xB.Branch("quietHeld");
+	const u_int uBrQuiet = xB.Node("Branch");
 	const u_int uQuietHeld = xB.Node("GetVariable");
 	xB.ParamString(uQuietHeld, "m_strVariable", "quietHeld");
 	xB.Raw().DataEdge(uQuietHeld, "Value", uBrQuiet, "Condition");
-	xB.ParamString(uBrQuiet, "m_strConditionVar", "");
 	xB.Edge(uBrSprint, 1, uSprOff);
 	xB.Chain(uSprOff, uBrQuiet);
 	const u_int uQuietOn = xB.SetBlackboardBool("walkQuiet", true);
@@ -1421,44 +1415,39 @@ static void BuildDPVillager_MovementModes(Zenith_EngineGraphBuilder& xB)
 	xB.Chain(uUnpossSprOff, uUnpossQuietOff);
 }
 
-static void BuildDPVillager_LifeDrain(Zenith_EngineGraphBuilder& xB)
+static void BuildDPVillager_LifeDrain(Zenith_EngineGraphBuilder& xB, u_int& uOutDrainBase, u_int& uOutBrSprint)
 {
 	// T3: life drain -> Kill (MVP-1.7 sprint cost, MVP-1.3.5 death).
 	{
 		Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
-		const u_int uGate = xB.Gate("stateIsPossessed");
+		const u_int uGate = xB.Node("Gate");
 		const u_int uGatePossessed = xB.Node("GetVariable");
 		xB.ParamString(uGatePossessed, "m_strVariable", "stateIsPossessed");
 		xB.Raw().DataEdge(uGatePossessed, "Value", uGate, "Open");
-		xB.ParamString(uGate, "m_strOpenVar", "");
 		xTick.Then(uGate);
 		const u_int uDrainBase = xB.Node("MathBlackboardFloat");	// drain = dt
 		xB.ParamString(uDrainBase, "m_strVar", "dt");
 		xB.ParamEnum(uDrainBase, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
 		xB.ParamFloat(uDrainBase, "m_fOperand", 0.0f);
-		xB.ParamString(uDrainBase, "m_strResultVar", "drain");
 		xB.Chain(uGate, uDrainBase);
-		const u_int uBrSprint = xB.Branch("sprinting");
+		const u_int uBrSprint = xB.Node("Branch");
 		const u_int uSprint = xB.Node("GetVariable");
 		xB.ParamString(uSprint, "m_strVariable", "sprinting");
 		xB.Raw().DataEdge(uSprint, "Value", uBrSprint, "Condition");
-		xB.ParamString(uBrSprint, "m_strConditionVar", "");
-		xB.Chain(uDrainBase, uBrSprint);
+		// The explicit drain writer is appended after the original graph nodes,
+		// so this producer remains the success-only source of the stored value.
+		uOutDrainBase = uDrainBase;
+		uOutBrSprint = uBrSprint;
 		// Sprinting: drain += sprintCostExtra * dt (the OnAwake-baked scale).
 		const u_int uExtra = xB.Node("MathBlackboardFloat");	// extra = dt * sprintCostExtra
 		xB.ParamString(uExtra, "m_strVar", "dt");
 		xB.ParamEnum(uExtra, "m_iOp", GRAPH_MATH_FLOAT_OP_MULTIPLY);
-		xB.ParamString(uExtra, "m_strOperandVar", "sprintCostExtra");
 		const u_int uSprintExtra = xB.Node("GetVariable");
 		xB.ParamString(uSprintExtra, "m_strVariable", "sprintCostExtra");
 		xB.Raw().DataEdge(uSprintExtra, "Value", uExtra, "Operand");
-		xB.ParamString(uExtra, "m_strOperandVar", "");
-		xB.ParamString(uExtra, "m_strResultVar", "extra");
 		const u_int uAddExtra = xB.Node("AddBlackboardFloat");
 		xB.ParamString(uAddExtra, "m_strVariable", "drain");
-		xB.ParamString(uAddExtra, "m_strDeltaVar", "extra");
 		xB.Raw().DataEdge(uExtra, "Result", uAddExtra, "Delta");
-		xB.ParamString(uAddExtra, "m_strDeltaVar", "");
 		const u_int uFireSprint = xB.FireCustomEvent("VillagerApplyDrain");	// chain-reuse: apply at self
 		xB.Edge(uBrSprint, 0, uExtra);
 		xB.Chain(uExtra, uAddExtra).Chain(uAddExtra, uFireSprint);
@@ -1471,20 +1460,17 @@ static void BuildDPVillager_LifeDrain(Zenith_EngineGraphBuilder& xB)
 		const u_int uApply = xB.Node("MathBlackboardFloat");	// remainingLife -= drain
 		xB.ParamString(uApply, "m_strVar", "remainingLife");
 		xB.ParamEnum(uApply, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
-		xB.ParamString(uApply, "m_strOperandVar", "drain");
-		xB.ParamString(uApply, "m_strResultVar", "remainingLifeResult");
 		const u_int uDrain = xB.Node("GetVariable");
 		xB.ParamString(uDrain, "m_strVariable", "drain");
 		xB.Raw().DataEdge(uDrain, "Value", uApply, "Operand");
-		xB.ParamString(uApply, "m_strOperandVar", "");
 		const u_int uApplyStore = xB.SetBlackboardFloat("remainingLife", 0.0f);
 		xB.Raw().DataEdge(uApply, "Result", uApplyStore, "Value");
-		const u_int uDepleted = xB.CompareFloat("remainingLife", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "lifeDepleted");
+		const u_int uDepleted = xB.Node("CompareBlackboardFloat");
+		xB.ParamFloat(uDepleted, "m_fCompareTo", 0.0f);
+		xB.ParamEnum(uDepleted, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL);
 		xB.Raw().DataEdge(uApply, "Result", uDepleted, "Value");
-		xB.ParamString(uDepleted, "m_strVar", "");
-		const u_int uGateDead = xB.Gate("lifeDepleted");
+		const u_int uGateDead = xB.Node("Gate");
 		xB.Raw().DataEdge(uDepleted, "Result", uGateDead, "Open");
-		xB.ParamString(uGateDead, "m_strOpenVar", "");
 		const u_int uKill = xB.Node("DPVillagerKill");
 		xApplyTick.Then(uApply).Then(uApplyStore).Then(uDepleted).Then(uGateDead).Then(uKill);
 	}
@@ -1494,60 +1480,50 @@ static void BuildDPVillager_Footsteps(Zenith_EngineGraphBuilder& xB)
 {
 	// T4: footstep cadence (MVP-1.7.5).
 	Zenith_GraphChain xTick = xB.OnCustomEvent("VillagerTick", "dt");
-	const u_int uGate = xB.Gate("stateIsPossessed");
+	const u_int uGate = xB.Node("Gate");
 	const u_int uFootstepPossessed = xB.Node("GetVariable");
 	xB.ParamString(uFootstepPossessed, "m_strVariable", "stateIsPossessed");
 	xB.Raw().DataEdge(uFootstepPossessed, "Value", uGate, "Open");
-	xB.ParamString(uGate, "m_strOpenVar", "");
 	xTick.Then(uGate);
-	const u_int uBrMoving = xB.Branch("moving");
+	const u_int uBrMoving = xB.Node("Branch");
 	const u_int uFootstepMoving = xB.Node("GetVariable");
 	xB.ParamString(uFootstepMoving, "m_strVariable", "moving");
 	xB.Raw().DataEdge(uFootstepMoving, "Value", uBrMoving, "Condition");
-	xB.ParamString(uBrMoving, "m_strConditionVar", "");
 	xB.Chain(uGate, uBrMoving);
 	// Moving: countdown -= dt; on expiry reset to the interval + emit.
 	const u_int uCdTick = xB.Node("MathBlackboardFloat");
 	xB.ParamString(uCdTick, "m_strVar", "footstepCountdown");
 	xB.ParamEnum(uCdTick, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
-	xB.ParamString(uCdTick, "m_strOperandVar", "dt");
-	xB.ParamString(uCdTick, "m_strResultVar", "footstepCountdownResult");
 	const u_int uFootstepDt = xB.Node("GetVariable");
 	xB.ParamString(uFootstepDt, "m_strVariable", "dt");
 	xB.Raw().DataEdge(uFootstepDt, "Value", uCdTick, "Operand");
-	xB.ParamString(uCdTick, "m_strOperandVar", "");
 	const u_int uCountdownStore = xB.SetBlackboardFloat("footstepCountdown", 0.0f);
 	xB.Raw().DataEdge(uCdTick, "Result", uCountdownStore, "Value");
-	const u_int uDue = xB.CompareFloat("footstepCountdown", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "stepDue");
+	const u_int uDue = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uDue, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uDue, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL);
 	xB.Raw().DataEdge(uCdTick, "Result", uDue, "Value");
-	xB.ParamString(uDue, "m_strVar", "");
-	const u_int uGateDue = xB.Gate("stepDue");
+	const u_int uGateDue = xB.Node("Gate");
 	xB.Raw().DataEdge(uDue, "Result", uGateDue, "Open");
-	xB.ParamString(uGateDue, "m_strOpenVar", "");
 	const u_int uReset = xB.Node("MathBlackboardFloat");	// countdown = interval (exact reset, no overshoot carry)
 	xB.ParamString(uReset, "m_strVar", "footstepInterval");
 	xB.ParamEnum(uReset, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
 	xB.ParamFloat(uReset, "m_fOperand", 0.0f);
-	xB.ParamString(uReset, "m_strResultVar", "footstepResetResult");
 	const u_int uResetStore = xB.SetBlackboardFloat("footstepCountdown", 0.0f);
 	xB.Raw().DataEdge(uReset, "Result", uResetStore, "Value");
 	const u_int uEmit = xB.Node("DPVillagerEmitFootstep");
 	const u_int uEmitQuiet = xB.Node("GetVariable");
 	xB.ParamString(uEmitQuiet, "m_strVariable", "walkQuiet");
 	xB.Raw().DataEdge(uEmitQuiet, "Value", uEmit, "WalkQuiet");
-	xB.ParamString(uEmit, "m_strWalkQuietVar", "");
 	const u_int uEmitLoudness = xB.Node("GetVariable");
 	xB.ParamString(uEmitLoudness, "m_strVariable", "footstepLoudness");
 	xB.Raw().DataEdge(uEmitLoudness, "Value", uEmit, "Loudness");
-	xB.ParamString(uEmit, "m_strLoudnessVar", "");
 	const u_int uEmitRadius = xB.Node("GetVariable");
 	xB.ParamString(uEmitRadius, "m_strVariable", "footstepRadius");
 	xB.Raw().DataEdge(uEmitRadius, "Value", uEmit, "Radius");
-	xB.ParamString(uEmit, "m_strRadiusVar", "");
 	const u_int uEmitQuietMult = xB.Node("GetVariable");
 	xB.ParamString(uEmitQuietMult, "m_strVariable", "quietLoudnessMult");
 	xB.Raw().DataEdge(uEmitQuietMult, "Value", uEmit, "QuietMult");
-	xB.ParamString(uEmit, "m_strQuietMultVar", "");
 	xB.Edge(uBrMoving, 0, uCdTick);
 	xB.Chain(uCdTick, uCountdownStore).Chain(uCountdownStore, uDue).Chain(uDue, uGateDue)
 		.Chain(uGateDue, uReset).Chain(uReset, uResetStore).Chain(uResetStore, uEmit);
@@ -1594,9 +1570,21 @@ static void BuildGraph_DPVillagerImpl(Zenith_GraphBuilder& xBuilder, bool bRawBa
 	xB.Variable("quietLoudnessMult", xF0);
 
 	BuildDPVillager_PossessionTransitions(xB, bRawBaseline);
-	BuildDPVillager_MovementModes(xB);
-	BuildDPVillager_LifeDrain(xB);
+	u_int uIsPoss = 0, uBrPoss = 0, uDrainBase = 0, uBrSprint = 0;
+	BuildDPVillager_MovementModes(xB, uIsPoss, uBrPoss);
+	BuildDPVillager_LifeDrain(xB, uDrainBase, uBrSprint);
 	BuildDPVillager_Footsteps(xB);
+
+	// C1: these values used to reach the permanent blackboard through
+	// implicit node-output publication. They are now explicit, success-only
+	// writers: a failed producer cannot overwrite the prior frame's fact.
+	// Appending retains every pre-existing node ID and authoring order.
+	const u_int uStateIsPossessedStore = xB.SetBlackboardBool("stateIsPossessed", false);
+	xB.Raw().DataEdge(uIsPoss, "Result", uStateIsPossessedStore, "Value");
+	const u_int uDrainStore = xB.SetBlackboardFloat("drain", 0.0f);
+	xB.Raw().DataEdge(uDrainBase, "Result", uDrainStore, "Value");
+	xB.Chain(uIsPoss, uStateIsPossessedStore).Chain(uStateIsPossessedStore, uBrPoss);
+	xB.Chain(uDrainBase, uDrainStore).Chain(uDrainStore, uBrSprint);
 }
 
 // BuildGraph_DPForge - forge craft decisions (W3). Driven by "Interact"
@@ -1620,15 +1608,12 @@ void BuildGraph_DPForge(Zenith_GraphBuilder& xBuilder)
 	const u_int uForgePayload = xB.Node("GetVariable");
 	xB.ParamString(uForgePayload, "m_strVariable", "payload");
 	xB.Raw().DataEdge(uForgePayload, "Value", uCraft, "Villager");
-	xB.ParamString(uCraft, "m_strVillagerVar", "");
 	const u_int uForgeInput = xB.Node("GetVariable");
 	xB.ParamString(uForgeInput, "m_strVariable", "recipeInput");
 	xB.Raw().DataEdge(uForgeInput, "Value", uCraft, "RecipeInput");
-	xB.ParamString(uCraft, "m_strRecipeInputVar", "");
 	const u_int uForgeOutput = xB.Node("GetVariable");
 	xB.ParamString(uForgeOutput, "m_strVariable", "recipeOutput");
 	xB.Raw().DataEdge(uForgeOutput, "Value", uCraft, "RecipeOutput");
-	xB.ParamString(uCraft, "m_strRecipeOutputVar", "");
 	xInteract.Then(uCraft);
 }
 
@@ -1645,24 +1630,21 @@ void BuildGraph_DPPlayerControl(Zenith_GraphBuilder& xBuilder)
 
 	{
 		Zenith_GraphChain xTick = xB.OnCustomEvent("PlayerTick");
-		const u_int uGate = xB.Gate("clickPressed");
+		const u_int uGate = xB.Node("Gate");
 		const u_int uClick = xB.Node("GetVariable");
 		xB.ParamString(uClick, "m_strVariable", "clickPressed");
 		xB.Raw().DataEdge(uClick, "Value", uGate, "Open");
-		xB.ParamString(uGate, "m_strOpenVar", "");
 		const u_int uPick = xB.Node("DPPickVillagerUnderCursor");
 		const u_int uPossess = xB.Node("DPTryPossess");
 		xB.Raw().DataEdge(uPick, "Result", uPossess, "Villager");
-		xB.ParamString(uPossess, "m_strVillagerVar", "");
 		xTick.Then(uGate).Then(uPick).Then(uPossess);
 	}
 	{
 		Zenith_GraphChain xTick = xB.OnCustomEvent("PlayerTick");
-		const u_int uGate = xB.Gate("dropPressed");
+		const u_int uGate = xB.Node("Gate");
 		const u_int uDropPressed = xB.Node("GetVariable");
 		xB.ParamString(uDropPressed, "m_strVariable", "dropPressed");
 		xB.Raw().DataEdge(uDropPressed, "Value", uGate, "Open");
-		xB.ParamString(uGate, "m_strOpenVar", "");
 		const u_int uDrop = xB.Node("DPDropHeldItem");
 		xTick.Then(uGate).Then(uDrop);
 	}
@@ -1688,19 +1670,17 @@ void BuildGraph_DPPauseMenu(Zenith_GraphBuilder& xBuilder)
 	// C1: route by (shown || runOver).
 	{
 		Zenith_GraphChain xTick = xB.OnCustomEvent("PauseKeys");
-		const u_int uBrShown = xB.Branch("shown");
+		const u_int uBrShown = xB.Node("Branch");
 		const u_int uShown = xB.Node("GetVariable");
 		xB.ParamString(uShown, "m_strVariable", "shown");
 		xB.Raw().DataEdge(uShown, "Value", uBrShown, "Condition");
-		xB.ParamString(uBrShown, "m_strConditionVar", "");
 		xTick.Then(uBrShown);
 		const u_int uFireRQ1 = xB.FireCustomEvent("PauseRQ");
 		xB.Edge(uBrShown, 0, uFireRQ1);
-		const u_int uBrOver = xB.Branch("runOver");
+		const u_int uBrOver = xB.Node("Branch");
 		const u_int uRunOver = xB.Node("GetVariable");
 		xB.ParamString(uRunOver, "m_strVariable", "runOver");
 		xB.Raw().DataEdge(uRunOver, "Value", uBrOver, "Condition");
-		xB.ParamString(uBrOver, "m_strConditionVar", "");
 		xB.Edge(uBrShown, 1, uBrOver);
 		const u_int uFireRQ2 = xB.FireCustomEvent("PauseRQ");
 		xB.Edge(uBrOver, 0, uFireRQ2);
@@ -1712,19 +1692,17 @@ void BuildGraph_DPPauseMenu(Zenith_GraphBuilder& xBuilder)
 	// (the retired code only early-returned when a shortcut actually fired).
 	{
 		Zenith_GraphChain xRQ = xB.OnCustomEvent("PauseRQ");
-		const u_int uBrR = xB.Branch("rPressed");
+		const u_int uBrR = xB.Node("Branch");
 		const u_int uRPressed = xB.Node("GetVariable");
 		xB.ParamString(uRPressed, "m_strVariable", "rPressed");
 		xB.Raw().DataEdge(uRPressed, "Value", uBrR, "Condition");
-		xB.ParamString(uBrR, "m_strConditionVar", "");
 		xRQ.Then(uBrR);
 		const u_int uRestart = xB.Node("DPPauseRestart");
 		xB.Edge(uBrR, 0, uRestart);	// chain ends: the early return
-		const u_int uBrQ = xB.Branch("qPressed");
+		const u_int uBrQ = xB.Node("Branch");
 		const u_int uQPressed = xB.Node("GetVariable");
 		xB.ParamString(uQPressed, "m_strVariable", "qPressed");
 		xB.Raw().DataEdge(uQPressed, "Value", uBrQ, "Condition");
-		xB.ParamString(uBrQ, "m_strConditionVar", "");
 		xB.Edge(uBrR, 1, uBrQ);
 		const u_int uQuit = xB.Node("DPPauseQuit");
 		xB.Edge(uBrQ, 0, uQuit);		// chain ends: the early return
@@ -1736,17 +1714,15 @@ void BuildGraph_DPPauseMenu(Zenith_GraphBuilder& xBuilder)
 	// flip "shown" FIRST, then apply (visibility + scene pause + event).
 	{
 		Zenith_GraphChain xEsc = xB.OnCustomEvent("PauseEsc");
-		const u_int uGate = xB.Gate("escPressed");
+		const u_int uGate = xB.Node("Gate");
 		const u_int uEscPressed = xB.Node("GetVariable");
 		xB.ParamString(uEscPressed, "m_strVariable", "escPressed");
 		xB.Raw().DataEdge(uEscPressed, "Value", uGate, "Open");
-		xB.ParamString(uGate, "m_strOpenVar", "");
 		const u_int uCan = xB.Node("DPPauseCanToggle");
-		const u_int uBrFlip = xB.Branch("shown");
+		const u_int uBrFlip = xB.Node("Branch");
 		const u_int uFlipShown = xB.Node("GetVariable");
 		xB.ParamString(uFlipShown, "m_strVariable", "shown");
 		xB.Raw().DataEdge(uFlipShown, "Value", uBrFlip, "Condition");
-		xB.ParamString(uBrFlip, "m_strConditionVar", "");
 		xEsc.Then(uGate).Then(uCan).Then(uBrFlip);
 		const u_int uHide = xB.SetBlackboardBool("shown", false);
 		const u_int uApplyHide = xB.Node("DPPauseApplyToggle");
@@ -1769,32 +1745,29 @@ static void BuildDPItem_Evaporate(Zenith_EngineGraphBuilder& xB)
 	// T1: evaporate countdown (BEFORE the cooldown - the timer ticks
 	// through the cooldown window; only the zero-crossing branch returns).
 	Zenith_GraphChain xTick = xB.OnCustomEvent("ItemTick", "dt");
-	const u_int uArmed = xB.CompareFloat("evaporateRemaining", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.0f, "evapArmed");
+	const u_int uArmed = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uArmed, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uArmed, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER);
 	const u_int uEvaporateRemaining = xB.Node("GetVariable");
 	xB.ParamString(uEvaporateRemaining, "m_strVariable", "evaporateRemaining");
 	xB.Raw().DataEdge(uEvaporateRemaining, "Value", uArmed, "Value");
-	xB.ParamString(uArmed, "m_strVar", "");
-	const u_int uBrArmed = xB.Branch("evapArmed");
+	const u_int uBrArmed = xB.Node("Branch");
 	xB.Raw().DataEdge(uArmed, "Result", uBrArmed, "Condition");
-	xB.ParamString(uBrArmed, "m_strConditionVar", "");
 	xTick.Then(uArmed).Then(uBrArmed);
 	const u_int uTickDown = xB.Node("MathBlackboardFloat");
 	xB.ParamString(uTickDown, "m_strVar", "evaporateRemaining");
 	xB.ParamEnum(uTickDown, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
-	xB.ParamString(uTickDown, "m_strOperandVar", "dt");
-	xB.ParamString(uTickDown, "m_strResultVar", "evaporateRemainingResult");
 	const u_int uEvaporateDt = xB.Node("GetVariable");
 	xB.ParamString(uEvaporateDt, "m_strVariable", "dt");
 	xB.Raw().DataEdge(uEvaporateDt, "Value", uTickDown, "Operand");
-	xB.ParamString(uTickDown, "m_strOperandVar", "");
 	const u_int uEvaporateStore = xB.SetBlackboardFloat("evaporateRemaining", 0.0f);
 	xB.Raw().DataEdge(uTickDown, "Result", uEvaporateStore, "Value");
-	const u_int uDone = xB.CompareFloat("evaporateRemaining", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "evapDone");
+	const u_int uDone = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uDone, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uDone, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL);
 	xB.Raw().DataEdge(uTickDown, "Result", uDone, "Value");
-	xB.ParamString(uDone, "m_strVar", "");
-	const u_int uBrDone = xB.Branch("evapDone");
+	const u_int uBrDone = xB.Node("Branch");
 	xB.Raw().DataEdge(uDone, "Result", uBrDone, "Condition");
-	xB.ParamString(uBrDone, "m_strConditionVar", "");
 	xB.Edge(uBrArmed, 0, uTickDown);
 	xB.Chain(uTickDown, uEvaporateStore).Chain(uEvaporateStore, uDone).Chain(uDone, uBrDone);
 	const u_int uClamp = xB.SetBlackboardFloat("evaporateRemaining", 0.0f);
@@ -1802,7 +1775,6 @@ static void BuildDPItem_Evaporate(Zenith_EngineGraphBuilder& xB)
 	const u_int uEvaporateTag = xB.Node("GetVariable");
 	xB.ParamString(uEvaporateTag, "m_strVariable", "tag");
 	xB.Raw().DataEdge(uEvaporateTag, "Value", uEvaporate, "Tag");
-	xB.ParamString(uEvaporate, "m_strTagVar", "");
 	xB.Edge(uBrDone, 0, uClamp);
 	xB.Chain(uClamp, uEvaporate);	// chain ends: the retired `return`
 	const u_int uNext1 = xB.FireCustomEvent("ItemGate2");
@@ -1816,32 +1788,29 @@ static void BuildDPItem_Cooldown(Zenith_EngineGraphBuilder& xB)
 	// T2: post-drop cooldown - while armed it decrements, clamps and
 	// RETURNS (blocks all pickup logic that frame).
 	Zenith_GraphChain xGate2 = xB.OnCustomEvent("ItemGate2");
-	const u_int uArmed = xB.CompareFloat("postDropCooldown", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.0f, "cdArmed");
+	const u_int uArmed = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uArmed, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uArmed, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER);
 	const u_int uCooldownValue = xB.Node("GetVariable");
 	xB.ParamString(uCooldownValue, "m_strVariable", "postDropCooldown");
 	xB.Raw().DataEdge(uCooldownValue, "Value", uArmed, "Value");
-	xB.ParamString(uArmed, "m_strVar", "");
-	const u_int uBrArmed = xB.Branch("cdArmed");
+	const u_int uBrArmed = xB.Node("Branch");
 	xB.Raw().DataEdge(uArmed, "Result", uBrArmed, "Condition");
-	xB.ParamString(uBrArmed, "m_strConditionVar", "");
 	xGate2.Then(uArmed).Then(uBrArmed);
 	const u_int uTickDown = xB.Node("MathBlackboardFloat");
 	xB.ParamString(uTickDown, "m_strVar", "postDropCooldown");
 	xB.ParamEnum(uTickDown, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
-	xB.ParamString(uTickDown, "m_strOperandVar", "dt");
-	xB.ParamString(uTickDown, "m_strResultVar", "postDropCooldownResult");
 	const u_int uCooldownDt = xB.Node("GetVariable");
 	xB.ParamString(uCooldownDt, "m_strVariable", "dt");
 	xB.Raw().DataEdge(uCooldownDt, "Value", uTickDown, "Operand");
-	xB.ParamString(uTickDown, "m_strOperandVar", "");
 	const u_int uCooldownStore = xB.SetBlackboardFloat("postDropCooldown", 0.0f);
 	xB.Raw().DataEdge(uTickDown, "Result", uCooldownStore, "Value");
-	const u_int uUnder = xB.CompareFloat("postDropCooldown", GRAPH_COMPARE_FLOAT_OP_LESS, 0.0f, "cdUnder");
+	const u_int uUnder = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uUnder, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uUnder, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS);
 	xB.Raw().DataEdge(uTickDown, "Result", uUnder, "Value");
-	xB.ParamString(uUnder, "m_strVar", "");
-	const u_int uGateUnder = xB.Gate("cdUnder");
+	const u_int uGateUnder = xB.Node("Gate");
 	xB.Raw().DataEdge(uUnder, "Result", uGateUnder, "Open");
-	xB.ParamString(uGateUnder, "m_strOpenVar", "");
 	const u_int uClamp = xB.SetBlackboardFloat("postDropCooldown", 0.0f);
 	xB.Edge(uBrArmed, 0, uTickDown);
 	xB.Chain(uTickDown, uCooldownStore).Chain(uCooldownStore, uUnder).Chain(uUnder, uGateUnder).Chain(uGateUnder, uClamp);
@@ -1855,60 +1824,49 @@ static void BuildDPItem_GatesChannel(Zenith_EngineGraphBuilder& xB)
 	// machine. Out-of-range simply ends the chain - the channel state is
 	// left FROZEN, not reset (the pause-not-reset quirk).
 	Zenith_GraphChain xGate3 = xB.OnCustomEvent("ItemGate3");
-	const u_int uPossessed = xB.Gate("possessedValid");
-	const u_int uEmpty = xB.Gate("handsEmpty");
-	const u_int uRange = xB.Gate("inRange");
+	const u_int uPossessed = xB.Node("Gate");
+	const u_int uEmpty = xB.Node("Gate");
+	const u_int uRange = xB.Node("Gate");
 	const u_int uPossessedValid = xB.Node("GetVariable");
 	xB.ParamString(uPossessedValid, "m_strVariable", "possessedValid");
 	xB.Raw().DataEdge(uPossessedValid, "Value", uPossessed, "Open");
-	xB.ParamString(uPossessed, "m_strOpenVar", "");
 	const u_int uHandsEmpty = xB.Node("GetVariable");
 	xB.ParamString(uHandsEmpty, "m_strVariable", "handsEmpty");
 	xB.Raw().DataEdge(uHandsEmpty, "Value", uEmpty, "Open");
-	xB.ParamString(uEmpty, "m_strOpenVar", "");
 	const u_int uInRange = xB.Node("GetVariable");
 	xB.ParamString(uInRange, "m_strVariable", "inRange");
 	xB.Raw().DataEdge(uInRange, "Value", uRange, "Open");
-	xB.ParamString(uRange, "m_strOpenVar", "");
 	const u_int uChild = xB.Node("DPItemChildRefusal");
 	const u_int uChildVillager = xB.Node("GetVariable");
 	xB.ParamString(uChildVillager, "m_strVariable", "possessedVillager");
 	xB.Raw().DataEdge(uChildVillager, "Value", uChild, "Villager");
-	xB.ParamString(uChild, "m_strVillagerVar", "");
 	const u_int uChildTag = xB.Node("GetVariable");
 	xB.ParamString(uChildTag, "m_strVariable", "tag");
 	xB.Raw().DataEdge(uChildTag, "Value", uChild, "Tag");
-	xB.ParamString(uChild, "m_strTagVar", "");
 	xGate3.Then(uPossessed).Then(uEmpty).Then(uRange).Then(uChild);
-	const u_int uHasChannel = xB.CompareFloat("channelDuration", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.0f, "hasChannel");
+	const u_int uHasChannel = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uHasChannel, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uHasChannel, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER);
 	const u_int uChannelDuration = xB.Node("GetVariable");
 	xB.ParamString(uChannelDuration, "m_strVariable", "channelDuration");
 	xB.Raw().DataEdge(uChannelDuration, "Value", uHasChannel, "Value");
-	xB.ParamString(uHasChannel, "m_strVar", "");
-	const u_int uBrChannel = xB.Branch("hasChannel");
+	const u_int uBrChannel = xB.Node("Branch");
 	xB.Raw().DataEdge(uHasChannel, "Result", uBrChannel, "Condition");
-	xB.ParamString(uBrChannel, "m_strConditionVar", "");
 	xB.Chain(uChild, uHasChannel).Chain(uHasChannel, uBrChannel);
 	// No channel (tools/objectives): commit immediately.
 	const u_int uCommitNow = xB.FireCustomEvent("ItemCommit");
 	xB.Edge(uBrChannel, 1, uCommitNow);
 	// Channel: same-villager continuity by index+generation.
 	const u_int uSame = xB.Node("CompareBlackboardEntity");
-	xB.ParamString(uSame, "m_strVarA", "channelVillager");
-	xB.ParamString(uSame, "m_strVarB", "possessedVillager");
 	xB.ParamEnum(uSame, "m_iOp", GRAPH_ENTITY_COMPARE_OP_EQUAL);
-	xB.ParamString(uSame, "m_strResultVar", "sameVillager");
-	const u_int uBrSame = xB.Branch("sameVillager");
+	const u_int uBrSame = xB.Node("Branch");
 	const u_int uChannelVillager = xB.Node("GetVariable");
 	xB.ParamString(uChannelVillager, "m_strVariable", "channelVillager");
 	xB.Raw().DataEdge(uChannelVillager, "Value", uSame, "A");
-	xB.ParamString(uSame, "m_strVarA", "");
 	const u_int uSamePossessed = xB.Node("GetVariable");
 	xB.ParamString(uSamePossessed, "m_strVariable", "possessedVillager");
 	xB.Raw().DataEdge(uSamePossessed, "Value", uSame, "B");
-	xB.ParamString(uSame, "m_strVarB", "");
 	xB.Raw().DataEdge(uSame, "Result", uBrSame, "Condition");
-	xB.ParamString(uBrSame, "m_strConditionVar", "");
 	xB.Edge(uBrChannel, 0, uSame);
 	xB.Chain(uSame, uBrSame);
 	// Different (or no) channeler: fresh arm; the arming frame is free.
@@ -1916,13 +1874,9 @@ static void BuildDPItem_GatesChannel(Zenith_EngineGraphBuilder& xB)
 	const u_int uArmVillager = xB.Node("GetVariable");
 	xB.ParamString(uArmVillager, "m_strVariable", "possessedVillager");
 	xB.Raw().DataEdge(uArmVillager, "Value", uArm, "Villager");
-	xB.ParamString(uArm, "m_strVillagerVar", "");
 	const u_int uArmDuration = xB.Node("GetVariable");
 	xB.ParamString(uArmDuration, "m_strVariable", "channelDuration");
 	xB.Raw().DataEdge(uArmDuration, "Value", uArm, "ChannelDuration");
-	xB.ParamString(uArm, "m_strChannelDurationVar", "");
-	xB.ParamString(uArm, "m_strChannelVillagerVar", "");
-	xB.ParamString(uArm, "m_strChannelRemainingVar", "");
 	const u_int uArmOwnerStore = xB.Node("SetBlackboardEntityID");
 	xB.ParamString(uArmOwnerStore, "m_strVariable", "channelVillager");
 	xB.Raw().DataEdge(uArm, "ChannelVillager", uArmOwnerStore, "Value");
@@ -1934,20 +1888,17 @@ static void BuildDPItem_GatesChannel(Zenith_EngineGraphBuilder& xB)
 	const u_int uTickDown = xB.Node("MathBlackboardFloat");
 	xB.ParamString(uTickDown, "m_strVar", "channelRemaining");
 	xB.ParamEnum(uTickDown, "m_iOp", GRAPH_MATH_FLOAT_OP_SUBTRACT);
-	xB.ParamString(uTickDown, "m_strOperandVar", "dt");
-	xB.ParamString(uTickDown, "m_strResultVar", "channelRemainingResult");
 	const u_int uChannelDt = xB.Node("GetVariable");
 	xB.ParamString(uChannelDt, "m_strVariable", "dt");
 	xB.Raw().DataEdge(uChannelDt, "Value", uTickDown, "Operand");
-	xB.ParamString(uTickDown, "m_strOperandVar", "");
 	const u_int uChannelStore = xB.SetBlackboardFloat("channelRemaining", 0.0f);
 	xB.Raw().DataEdge(uTickDown, "Result", uChannelStore, "Value");
-	const u_int uStill = xB.CompareFloat("channelRemaining", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "channelDone");
+	const u_int uStill = xB.Node("CompareBlackboardFloat");
+	xB.ParamFloat(uStill, "m_fCompareTo", 0.0f);
+	xB.ParamEnum(uStill, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL);
 	xB.Raw().DataEdge(uTickDown, "Result", uStill, "Value");
-	xB.ParamString(uStill, "m_strVar", "");
-	const u_int uGateDone = xB.Gate("channelDone");
+	const u_int uGateDone = xB.Node("Gate");
 	xB.Raw().DataEdge(uStill, "Result", uGateDone, "Open");
-	xB.ParamString(uGateDone, "m_strOpenVar", "");
 	const u_int uCommitChan = xB.FireCustomEvent("ItemCommit");
 	xB.Edge(uBrSame, 0, uTickDown);
 	xB.Chain(uTickDown, uChannelStore).Chain(uChannelStore, uStill).Chain(uStill, uGateDone).Chain(uGateDone, uCommitChan);
@@ -1961,10 +1912,6 @@ static void BuildDPItem_Commit(Zenith_EngineGraphBuilder& xB)
 	const u_int uPickupVillager = xB.Node("GetVariable");
 	xB.ParamString(uPickupVillager, "m_strVariable", "possessedVillager");
 	xB.Raw().DataEdge(uPickupVillager, "Value", uPickup, "Villager");
-	xB.ParamString(uPickup, "m_strVillagerVar", "");
-	xB.ParamString(uPickup, "m_strChannelVillagerVar", "");
-	xB.ParamString(uPickup, "m_strChannelRemainingVar", "");
-	xB.ParamString(uPickup, "m_strCommittedVillagerVar", "");
 	const u_int uPickupOwnerStore = xB.Node("SetBlackboardEntityID");
 	xB.ParamString(uPickupOwnerStore, "m_strVariable", "channelVillager");
 	xB.Raw().DataEdge(uPickup, "ChannelVillager", uPickupOwnerStore, "Value");
@@ -1972,20 +1919,16 @@ static void BuildDPItem_Commit(Zenith_EngineGraphBuilder& xB)
 	xB.Raw().DataEdge(uPickup, "ChannelRemaining", uPickupRemainingStore, "Value");
 	const u_int uFinish = xB.Node("DPItemFinishPickup");
 	xB.Raw().DataEdge(uPickup, "CommittedVillager", uFinish, "Villager");
-	xB.ParamString(uFinish, "m_strVillagerVar", "");
 	const u_int uFinishTag = xB.Node("GetVariable");
 	xB.ParamString(uFinishTag, "m_strVariable", "tag");
 	xB.Raw().DataEdge(uFinishTag, "Value", uFinish, "Tag");
-	xB.ParamString(uFinish, "m_strTagVar", "");
 	const u_int uBell = xB.Node("DPItemRingBell");
 	const u_int uBellVillager = xB.Node("GetVariable");
 	xB.ParamString(uBellVillager, "m_strVariable", "possessedVillager");
 	xB.Raw().DataEdge(uBellVillager, "Value", uBell, "Villager");
-	xB.ParamString(uBell, "m_strVillagerVar", "");
 	const u_int uBellSpecial = xB.Node("GetVariable");
 	xB.ParamString(uBellSpecial, "m_strVariable", "specialBehaviour");
 	xB.Raw().DataEdge(uBellSpecial, "Value", uBell, "SpecialBehaviour");
-	xB.ParamString(uBell, "m_strSpecialBehaviourVar", "");
 	xCommit.Then(uPickup).Then(uPickupOwnerStore).Then(uPickupRemainingStore).Then(uFinish).Then(uBell);
 }
 
@@ -2085,17 +2028,14 @@ void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 	const u_int uApprehendTarget = xB.Node("GetVariable");
 	xB.ParamString(uApprehendTarget, "m_strVariable", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 	xB.Raw().DataEdge(uApprehendTarget, "Value", uApprehend, "TargetWithDevil");
-	xB.ParamString(uApprehend, "m_strTargetWithDevilVar", "");
 	xB.Edge(uSelector, 0, uApprehend);
 
 	// Pin 1 - pursue: HasTarget gate + the BT MoveToEntity parity mover
 	// (acceptance 1.5 FULL 3D, repath 0.4s, live target var).
 	const u_int uHasTarget = xB.Node("QueryEntityValid");
 	xB.ParamString(uHasTarget, "m_strEntityVar", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
-	xB.ParamString(uHasTarget, "m_strResultVar", "hasDevilTarget");
-	const u_int uGateTarget = xB.Gate("hasDevilTarget");
+	const u_int uGateTarget = xB.Node("Gate");
 	xB.Raw().DataEdge(uHasTarget, "Result", uGateTarget, "Open");
-	xB.ParamString(uGateTarget, "m_strOpenVar", "");
 	const u_int uPursue = xB.Node("NavMoveTo");
 	xB.ParamString(uPursue, "m_strDestinationVar", DP_AI::BB_KEY_TARGET_WITH_DEVIL);
 	xB.ParamFloat(uPursue, "m_fAcceptanceRadius", 1.5f);
@@ -2106,11 +2046,10 @@ void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 
 	// Pin 2 - investigate: walk to the heard position, linger 2s, clear the
 	// flag (the bridge re-arms it while the heard sound stays fresh).
-	const u_int uGateInvestigate = xB.Gate(DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
+	const u_int uGateInvestigate = xB.Node("Gate");
 	const u_int uInvestigate = xB.Node("GetVariable");
 	xB.ParamString(uInvestigate, "m_strVariable", DP_AI::BB_KEY_HAS_INVESTIGATE_POS);
 	xB.Raw().DataEdge(uInvestigate, "Value", uGateInvestigate, "Open");
-	xB.ParamString(uGateInvestigate, "m_strOpenVar", "");
 	const u_int uWalkNoise = xB.Node("NavMoveTo");
 	xB.ParamString(uWalkNoise, "m_strDestinationVar", DP_AI::BB_KEY_INVESTIGATE_POS);
 	xB.ParamFloat(uWalkNoise, "m_fAcceptanceRadius", 1.0f);
@@ -2129,11 +2068,9 @@ void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 	const u_int uPatrolRadius = xB.Node("GetVariable");
 	xB.ParamString(uPatrolRadius, "m_strVariable", DP_AI::BB_KEY_SUSPICION_RADIUS);
 	xB.Raw().DataEdge(uPatrolRadius, "Value", uPick, "SuspicionRadius");
-	xB.ParamString(uPick, "m_strSuspicionRadiusVar", "");
 	const u_int uHighScent = xB.Node("GetVariable");
 	xB.ParamString(uHighScent, "m_strVariable", DP_AI::BB_KEY_HIGH_SCENT_TARGET);
 	xB.Raw().DataEdge(uHighScent, "Value", uPick, "HighScentTarget");
-	xB.ParamString(uPick, "m_strHighScentTargetVar", "");
 	const u_int uWalkPatrol = xB.Node("NavMoveTo");
 	xB.ParamString(uWalkPatrol, "m_strDestinationVar", DP_AI::BB_KEY_PATROL_TARGET);
 	xB.ParamFloat(uWalkPatrol, "m_fAcceptanceRadius", 1.0f);
@@ -2142,7 +2079,6 @@ void BuildGraph_DPPriest(Zenith_GraphBuilder& xBuilder)
 	const u_int uPatrolStore = xB.Node("SetBlackboardVector3");
 	xB.ParamString(uPatrolStore, "m_strVariable", DP_AI::BB_KEY_PATROL_TARGET);
 	xB.Raw().DataEdge(uPick, "PatrolTarget", uPatrolStore, "Value");
-	xB.ParamString(uPick, "m_strPatrolTargetVar", "");
 	const u_int uPause = xB.Node("Wait");
 	xB.ParamFloat(uPause, "m_fSeconds", 1.0f);
 	xB.Edge(uSelector, 3, uPick);
@@ -2201,25 +2137,18 @@ void BuildGraph_DPPentagram(Zenith_GraphBuilder& xBuilder)
 	const u_int uReadPayload = xB.Node("GetVariable");
 	xB.ParamString(uReadPayload, "m_strVariable", "payload");
 	xB.Raw().DataEdge(uReadPayload, "Value", uRead, "Villager");
-	xB.ParamString(uRead, "m_strVillagerVar", "");
 	const u_int uNotifyPayload = xB.Node("GetVariable");
 	xB.ParamString(uNotifyPayload, "m_strVariable", "payload");
 	xB.Raw().DataEdge(uNotifyPayload, "Value", uNotify, "Villager");
-	xB.ParamString(uNotify, "m_strVillagerVar", "");
 	const u_int uConsumePayload = xB.Node("GetVariable");
 	xB.ParamString(uConsumePayload, "m_strVariable", "payload");
 	xB.Raw().DataEdge(uConsumePayload, "Value", uConsume, "Villager");
-	xB.ParamString(uConsume, "m_strVillagerVar", "");
 	const u_int uPlacedPayload = xB.Node("GetVariable");
 	xB.ParamString(uPlacedPayload, "m_strVariable", "payload");
 	xB.Raw().DataEdge(uPlacedPayload, "Value", uPlaced, "Villager");
-	xB.ParamString(uPlaced, "m_strVillagerVar", "");
 	xB.Raw().DataEdge(uRead, "Tag", uCheck, "Tag");
-	xB.ParamString(uCheck, "m_strTagVar", "");
 	xB.Raw().DataEdge(uRead, "Tag", uNotify, "Tag");
-	xB.ParamString(uNotify, "m_strTagVar", "");
 	xB.Raw().DataEdge(uRead, "Tag", uPlaced, "Tag");
-	xB.ParamString(uPlaced, "m_strTagVar", "");
 	xInteract.Then(uRead).Then(uCheck).Then(uNotify).Then(uConsume).Then(uPlaced);
 }
 
@@ -2237,18 +2166,16 @@ void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
 	// chest opens even on an invalid payload (quirk preserved - no gate).
 	{
 		Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
-		const u_int uBrOpen = xB.Branch("isOpen");
+		const u_int uBrOpen = xB.Node("Branch");
 		const u_int uOpenFlag = xB.Node("GetVariable");
 		xB.ParamString(uOpenFlag, "m_strVariable", "isOpen");
 		xB.Raw().DataEdge(uOpenFlag, "Value", uBrOpen, "Condition");
-		xB.ParamString(uBrOpen, "m_strConditionVar", "");
 		xInteract.Then(uBrOpen);
 		const u_int uOpen = xB.SetBlackboardBool("isOpen", true);
 		const u_int uEvent = xB.Node("DPDispatchChestOpened");
 		const u_int uChestPayload = xB.Node("GetVariable");
 		xB.ParamString(uChestPayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uChestPayload, "Value", uEvent, "Villager");
-		xB.ParamString(uEvent, "m_strVillagerVar", "");
 		xB.Edge(uBrOpen, 1, uOpen);
 		xB.Chain(uOpen, uEvent);
 	}
@@ -2257,24 +2184,22 @@ void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
 	// read LIVE via the tuning stage node (the retired per-Execute read).
 	{
 		Zenith_GraphChain xUpdate = xB.OnUpdate();
-		const u_int uGateOpen = xB.Gate("isOpen");
+		const u_int uGateOpen = xB.Node("Gate");
 		const u_int uGateOpenValue = xB.Node("GetVariable");
 		xB.ParamString(uGateOpenValue, "m_strVariable", "isOpen");
 		xB.Raw().DataEdge(uGateOpenValue, "Value", uGateOpen, "Open");
-		xB.ParamString(uGateOpen, "m_strOpenVar", "");
 		xUpdate.Then(uGateOpen);
-		const u_int uLidDone = xB.CompareFloat("openT", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL, 1.0f, "lidDone");
+		const u_int uLidDone = xB.Node("CompareBlackboardFloat");
+		xB.ParamFloat(uLidDone, "m_fCompareTo", 1.0f);
+		xB.ParamEnum(uLidDone, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL);
 		const u_int uOpenT = xB.Node("GetVariable");
 		xB.ParamString(uOpenT, "m_strVariable", "openT");
 		xB.Raw().DataEdge(uOpenT, "Value", uLidDone, "Value");
-		xB.ParamString(uLidDone, "m_strVar", "");
-		const u_int uBrDone = xB.Branch("lidDone");
+		const u_int uBrDone = xB.Node("Branch");
 		xB.Raw().DataEdge(uLidDone, "Result", uBrDone, "Condition");
-		xB.ParamString(uBrDone, "m_strConditionVar", "");
 		xB.Chain(uGateOpen, uLidDone).Chain(uLidDone, uBrDone);
 		const u_int uDuration = xB.Node("DPReadTuningFloat");
 		xB.ParamString(uDuration, "m_strKey", "interactables.chest_open_duration_s");
-		xB.ParamString(uDuration, "m_strVar", "lidDuration");
 		const u_int uStepReset = xB.SetBlackboardFloat("lidStep", 0.0f);
 		const u_int uStepDt = xB.Node("AddBlackboardFloat");	// lidStep = dt
 		xB.ParamString(uStepDt, "m_strVariable", "lidStep");
@@ -2283,22 +2208,16 @@ void BuildGraph_DPChest(Zenith_GraphBuilder& xBuilder)
 		const u_int uStepDiv = xB.Node("MathBlackboardFloat");	// lidStep /= duration
 		xB.ParamString(uStepDiv, "m_strVar", "lidStep");
 		xB.ParamEnum(uStepDiv, "m_iOp", GRAPH_MATH_FLOAT_OP_DIVIDE);
-		xB.ParamString(uStepDiv, "m_strOperandVar", "lidDuration");
-		xB.ParamString(uStepDiv, "m_strResultVar", "lidStepResult");
 		xB.Raw().DataEdge(uDuration, "Result", uStepDiv, "Operand");
-		xB.ParamString(uStepDiv, "m_strOperandVar", "");
 		const u_int uStepStore = xB.SetBlackboardFloat("lidStep", 0.0f);
 		xB.Raw().DataEdge(uStepDiv, "Result", uStepStore, "Value");
 		const u_int uAdvance = xB.Node("AddBlackboardFloat");	// openT += lidStep
 		xB.ParamString(uAdvance, "m_strVariable", "openT");
-		xB.ParamString(uAdvance, "m_strDeltaVar", "lidStep");
 		xB.Raw().DataEdge(uStepDiv, "Result", uAdvance, "Delta");
-		xB.ParamString(uAdvance, "m_strDeltaVar", "");
 		const u_int uClamp = xB.Node("MathBlackboardFloat");	// openT = min(openT, 1)
 		xB.ParamString(uClamp, "m_strVar", "openT");
 		xB.ParamEnum(uClamp, "m_iOp", GRAPH_MATH_FLOAT_OP_MIN);
 		xB.ParamFloat(uClamp, "m_fOperand", 1.0f);
-		xB.ParamString(uClamp, "m_strResultVar", "openTClampResult");
 		const u_int uClampStore = xB.SetBlackboardFloat("openT", 0.0f);
 		xB.Raw().DataEdge(uClamp, "Result", uClampStore, "Value");
 		xB.Edge(uBrDone, 1, uDuration);
@@ -2329,29 +2248,24 @@ void BuildGraph_DPDoubleDoor(Zenith_GraphBuilder& xBuilder)
 	// Key, the retired semantics) -> flag -> event.
 	{
 		Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
-		const u_int uBrOpen = xB.Branch("isOpen");
+		const u_int uBrOpen = xB.Node("Branch");
 		const u_int uDoubleOpen = xB.Node("GetVariable");
 		xB.ParamString(uDoubleOpen, "m_strVariable", "isOpen");
 		xB.Raw().DataEdge(uDoubleOpen, "Value", uBrOpen, "Condition");
-		xB.ParamString(uBrOpen, "m_strConditionVar", "");
 		xInteract.Then(uBrOpen);
 		const u_int uValid = xB.Node("QueryEntityValid");
 		xB.ParamString(uValid, "m_strEntityVar", "payload");
-		xB.ParamString(uValid, "m_strResultVar", "payloadValid");
-		const u_int uGateValid = xB.Gate("payloadValid");
+		const u_int uGateValid = xB.Node("Gate");
 		xB.Raw().DataEdge(uValid, "Result", uGateValid, "Open");
-		xB.ParamString(uGateValid, "m_strOpenVar", "");
 		const u_int uKey = xB.Node("DPConsumeKeyForUnlock");
 		const u_int uKeyPayload = xB.Node("GetVariable");
 		xB.ParamString(uKeyPayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uKeyPayload, "Value", uKey, "Villager");
-		xB.ParamString(uKey, "m_strVillagerVar", "");
 		const u_int uOpen = xB.SetBlackboardBool("isOpen", true);
 		const u_int uEvent = xB.Node("DPDispatchDoorOpened");
 		const u_int uEventPayload = xB.Node("GetVariable");
 		xB.ParamString(uEventPayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uEventPayload, "Value", uEvent, "Villager");
-		xB.ParamString(uEvent, "m_strVillagerVar", "");
 		xB.Edge(uBrOpen, 1, uValid);
 		xB.Chain(uValid, uGateValid).Chain(uGateValid, uKey)
 			.Chain(uKey, uOpen).Chain(uOpen, uEvent);
@@ -2362,7 +2276,6 @@ void BuildGraph_DPDoubleDoor(Zenith_GraphBuilder& xBuilder)
 		const u_int uLeavesOpen = xB.Node("GetVariable");
 		xB.ParamString(uLeavesOpen, "m_strVariable", "isOpen");
 		xB.Raw().DataEdge(uLeavesOpen, "Value", uLeaves, "IsOpen");
-		xB.ParamString(uLeaves, "m_strIsOpenVar", "");
 		xUpdate.Then(uLeaves);
 	}
 }
@@ -2389,15 +2302,13 @@ void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 		Zenith_GraphChain xInteract = xB.OnCustomEvent("Interact");
 		const u_int uValid = xB.Node("QueryEntityValid");
 		xB.ParamString(uValid, "m_strEntityVar", "payload");
-		xB.ParamString(uValid, "m_strResultVar", "payloadValid");
-		const u_int uGateValid = xB.Gate("payloadValid");
+		const u_int uGateValid = xB.Node("Gate");
 		xB.Raw().DataEdge(uValid, "Result", uGateValid, "Open");
-		xB.ParamString(uGateValid, "m_strOpenVar", "");
-		const u_int uSwitch = xB.SwitchOnInt("anim", 4);
+		const u_int uSwitch = xB.Node("SwitchOnInt");
+		xB.ParamInt(uSwitch, "m_iCaseCount", 4);
 		const u_int uDoorAnim = xB.Node("GetVariable");
 		xB.ParamString(uDoorAnim, "m_strVariable", "anim");
 		xB.Raw().DataEdge(uDoorAnim, "Value", uSwitch, "Value");
-		xB.ParamString(uSwitch, "m_strVar", "");
 		xInteract.Then(uValid).Then(uGateValid).Then(uSwitch);
 
 		// Closed -> Opening.
@@ -2405,7 +2316,6 @@ void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 		const u_int uCheckPayload = xB.Node("GetVariable");
 		xB.ParamString(uCheckPayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uCheckPayload, "Value", uCheckKey, "Villager");
-		xB.ParamString(uCheckKey, "m_strVillagerVar", "");
 		const u_int uToOpening = xB.SetBlackboardInt("anim", 1);
 		const u_int uSyncOpen = xB.Node("DPDoorStateChanged");
 		const u_int uNoiseOpen = xB.Node("DPDoorEmitNoise");
@@ -2413,7 +2323,6 @@ void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 		const u_int uOpenPayload = xB.Node("GetVariable");
 		xB.ParamString(uOpenPayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uOpenPayload, "Value", uEventOpen, "Villager");
-		xB.ParamString(uEventOpen, "m_strVillagerVar", "");
 		xB.Edge(uSwitch, 0, uCheckKey);
 		xB.Chain(uCheckKey, uToOpening).Chain(uToOpening, uSyncOpen)
 			.Chain(uSyncOpen, uNoiseOpen).Chain(uNoiseOpen, uEventOpen);
@@ -2423,7 +2332,6 @@ void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 		const u_int uDeferralPayload = xB.Node("GetVariable");
 		xB.ParamString(uDeferralPayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uDeferralPayload, "Value", uDeferral, "Villager");
-		xB.ParamString(uDeferral, "m_strVillagerVar", "");
 		const u_int uToClosing = xB.SetBlackboardInt("anim", 3);
 		const u_int uSyncClose = xB.Node("DPDoorStateChanged");
 		const u_int uNoiseClose = xB.Node("DPDoorEmitNoise");
@@ -2431,7 +2339,6 @@ void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 		const u_int uClosePayload = xB.Node("GetVariable");
 		xB.ParamString(uClosePayload, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uClosePayload, "Value", uEventClose, "Villager");
-		xB.ParamString(uEventClose, "m_strVillagerVar", "");
 		xB.Edge(uSwitch, 2, uDeferral);
 		xB.Chain(uDeferral, uToClosing).Chain(uToClosing, uSyncClose)
 			.Chain(uSyncClose, uNoiseClose).Chain(uNoiseClose, uEventClose);
@@ -2442,45 +2349,41 @@ void BuildGraph_DPDoor(Zenith_GraphBuilder& xBuilder)
 		const u_int uAdvanceAnim = xB.Node("GetVariable");
 		xB.ParamString(uAdvanceAnim, "m_strVariable", "anim");
 		xB.Raw().DataEdge(uAdvanceAnim, "Value", uAdvance, "Anim");
-		xB.ParamString(uAdvance, "m_strAnimVar", "");
-		xB.ParamString(uAdvance, "m_strSettledAnimVar", "");
 		// Advance itself succeeds for every valid intermediate and stable state.
 		// Its output is meaningful only when the old persistent Anim and the
 		// updated OpenT agree that this frame crossed a settle boundary.
-		const u_int uOpening = xB.CompareInt("anim", GRAPH_COMPARE_INT_OP_EQUAL,
-			static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening), "");
+		const u_int uOpening = xB.Node("CompareBlackboardInt");
+		xB.ParamInt(uOpening, "m_iCompareTo", static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening));
+		xB.ParamEnum(uOpening, "m_iOp", GRAPH_COMPARE_INT_OP_EQUAL);
 		const u_int uOpeningAnim = xB.Node("GetVariable");
 		xB.ParamString(uOpeningAnim, "m_strVariable", "anim");
 		xB.Raw().DataEdge(uOpeningAnim, "Value", uOpening, "Value");
-		xB.ParamString(uOpening, "m_strVar", "");
-		const u_int uBranchOpening = xB.Branch("");
+		const u_int uBranchOpening = xB.Node("Branch");
 		xB.Raw().DataEdge(uOpening, "Result", uBranchOpening, "Condition");
-		xB.ParamString(uBranchOpening, "m_strConditionVar", "");
-		const u_int uOpened = xB.CompareFloat("openT", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL, 1.0f, "");
+		const u_int uOpened = xB.Node("CompareBlackboardFloat");
+		xB.ParamFloat(uOpened, "m_fCompareTo", 1.0f);
+		xB.ParamEnum(uOpened, "m_iOp", GRAPH_COMPARE_FLOAT_OP_GREATER_EQUAL);
 		const u_int uOpenedT = xB.Node("GetVariable");
 		xB.ParamString(uOpenedT, "m_strVariable", "openT");
 		xB.Raw().DataEdge(uOpenedT, "Value", uOpened, "Value");
-		xB.ParamString(uOpened, "m_strVar", "");
-		const u_int uBranchOpened = xB.Branch("");
+		const u_int uBranchOpened = xB.Node("Branch");
 		xB.Raw().DataEdge(uOpened, "Result", uBranchOpened, "Condition");
-		xB.ParamString(uBranchOpened, "m_strConditionVar", "");
-		const u_int uClosing = xB.CompareInt("anim", GRAPH_COMPARE_INT_OP_EQUAL,
-			static_cast<int32_t>(DPDoor_Component::DoorAnim::Closing), "");
+		const u_int uClosing = xB.Node("CompareBlackboardInt");
+		xB.ParamInt(uClosing, "m_iCompareTo", static_cast<int32_t>(DPDoor_Component::DoorAnim::Closing));
+		xB.ParamEnum(uClosing, "m_iOp", GRAPH_COMPARE_INT_OP_EQUAL);
 		const u_int uClosingAnim = xB.Node("GetVariable");
 		xB.ParamString(uClosingAnim, "m_strVariable", "anim");
 		xB.Raw().DataEdge(uClosingAnim, "Value", uClosing, "Value");
-		xB.ParamString(uClosing, "m_strVar", "");
-		const u_int uBranchClosing = xB.Branch("");
+		const u_int uBranchClosing = xB.Node("Branch");
 		xB.Raw().DataEdge(uClosing, "Result", uBranchClosing, "Condition");
-		xB.ParamString(uBranchClosing, "m_strConditionVar", "");
-		const u_int uClosed = xB.CompareFloat("openT", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL, 0.0f, "");
+		const u_int uClosed = xB.Node("CompareBlackboardFloat");
+		xB.ParamFloat(uClosed, "m_fCompareTo", 0.0f);
+		xB.ParamEnum(uClosed, "m_iOp", GRAPH_COMPARE_FLOAT_OP_LESS_EQUAL);
 		const u_int uClosedT = xB.Node("GetVariable");
 		xB.ParamString(uClosedT, "m_strVariable", "openT");
 		xB.Raw().DataEdge(uClosedT, "Value", uClosed, "Value");
-		xB.ParamString(uClosed, "m_strVar", "");
-		const u_int uBranchClosed = xB.Branch("");
+		const u_int uBranchClosed = xB.Node("Branch");
 		xB.Raw().DataEdge(uClosed, "Result", uBranchClosed, "Condition");
-		xB.ParamString(uBranchClosed, "m_strConditionVar", "");
 		const u_int uSettledStore = xB.SetBlackboardInt("anim", 0);
 		xB.Raw().DataEdge(uAdvance, "SettledAnim", uSettledStore, "Value");
 		const u_int uSettledSync = xB.Node("DPDoorStateChanged");

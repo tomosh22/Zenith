@@ -34,9 +34,6 @@
 // ★ THE PINS IN THIS TU ARE LIVE (B-6.4). Every INPUT descriptor is read
 // through Zenith_GraphNode::GetInput and every OUTPUT descriptor is written
 // through SetOutput, so a wire into or out of any of these 14 nodes carries a
-// value. An UNCONNECTED node behaves byte-for-byte as it did: the var-name
-// fallback IS the old `var.empty() ? const : bb->GetX(var, const)` read, and
-// SetOutput's dual-write IS the old SetValue. Each node that addresses a pin
 // declares `static constexpr u_int uPIN_<Name>` immediately before its pin
 // table (the INDEX is the runtime address; table order is the contract,
 // asserted by GraphPinTable.AnimationPinIndicesMatchTables).
@@ -52,10 +49,8 @@
 //   - EVERY input read sits AFTER the node's resolver guard - and, for the
 //     three tween starters, after the ValidEasing guard as well - exactly where
 //     its blackboard read sat. A resolver FAILURE therefore reads no pin at all
-//     (fallback count 0 for a var-bound pin).
 //   - THIS TU TAKES NO `""` DIVERGENCE. All four ReadAnimatorState writes were
 //     already guarded on a non-empty name, so deleting those guards is PARITY
-//     on the blackboard (SetOutput's dual-write applies the same non-empty
 //     rule); what is new is that the four SLOTS are now latched on every
 //     SUCCESS, which is the only reason a wire can come off a Transitioning or
 //     a HasLooped whose author never named a variable.
@@ -104,7 +99,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strParameter, "Speed")
 		ZENITH_PROPERTY(float, m_fValue, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// m_strParameter names an ANIMATOR parameter declared by the game's
@@ -116,7 +110,7 @@ namespace
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorFloat)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_fValue", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_fValue", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -143,13 +137,12 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strParameter, "State")
 		ZENITH_PROPERTY(int32_t, m_iValue, 0)
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorInt)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_iValue", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_iValue", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -175,13 +168,12 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strParameter, "Grounded")
 		ZENITH_PROPERTY(bool, m_bValue, true)
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAnimatorBool)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_bValue", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_bValue", PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -271,16 +263,11 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadAnimatorState)
 	public:
-		ZENITH_PROPERTY(std::string, m_strStateNameVar, "animState")
-		ZENITH_PROPERTY(std::string, m_strNormalizedTimeVar, "animTime")
-		ZENITH_PROPERTY(std::string, m_strTransitioningVar, "")
-		ZENITH_PROPERTY(std::string, m_strHasLoopedVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// All four are the node's own READ RESULTS (SetOutput in the Execute
 		// below), each typed by the value the Execute actually writes. An empty
 		// name no longer skips anything the pin can see: the SLOT is always
-		// latched on SUCCESS and only the dual-write to the blackboard obeys the
 		// non-empty rule - which is exactly what the four deleted
 		// `!m_strXVar.empty()` guards used to express.
 		static constexpr u_int uPIN_StateName = 0u;
@@ -289,10 +276,10 @@ namespace
 		static constexpr u_int uPIN_HasLooped = 3u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadAnimatorState)
-		ZENITH_GRAPH_PIN_OUTPUT(StateName, "m_strStateNameVar", PROPERTY_TYPE_STRING)
-		ZENITH_GRAPH_PIN_OUTPUT(NormalizedTime, "m_strNormalizedTimeVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Transitioning, "m_strTransitioningVar", PROPERTY_TYPE_BOOL)
-		ZENITH_GRAPH_PIN_OUTPUT(HasLooped, "m_strHasLoopedVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(StateName, PROPERTY_TYPE_STRING)
+		ZENITH_GRAPH_PIN_OUTPUT(NormalizedTime, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Transitioning, PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(HasLooped, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -307,7 +294,6 @@ namespace
 			// ALL FOUR, UNCONDITIONALLY. The four `!m_strXVar.empty()` guards are
 			// gone and so is the Zenith_PropertyValue scratch they shared; the
 			// normalized-time computation came out of its guard with its write.
-			// SetOutput's own dual-write rule reproduces exactly which of them
 			// reach the blackboard (animState / animTime by default, the other
 			// two only when the author names them).
 			const Zenith_AnimatorStateInfo xInfo = pxAnimator->GetCurrentAnimatorStateInfo();
@@ -357,7 +343,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_TweenPosition)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xTo, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strToVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fDuration, 1.0f, 0.0f, 3600.0f)
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
@@ -367,7 +352,7 @@ namespace
 		static constexpr u_int uPIN_To = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenPosition)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xTo", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(To, "m_xTo", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -395,7 +380,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_TweenScale)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xTo, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f))
-		ZENITH_PROPERTY(std::string, m_strToVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fDuration, 1.0f, 0.0f, 3600.0f)
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
@@ -403,7 +387,7 @@ namespace
 		static constexpr u_int uPIN_To = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenScale)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xTo", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(To, "m_xTo", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -430,7 +414,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_TweenRotation)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xToEulerDegrees, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strToVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fDuration, 1.0f, 0.0f, 3600.0f)
 		ZENITH_PROPERTY(int32_t, m_iEasing, EASING_QUAD_OUT)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
@@ -439,7 +422,7 @@ namespace
 		static constexpr u_int uPIN_To = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TweenRotation)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(To, "m_strToVar", "m_xToEulerDegrees", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(To, "m_xToEulerDegrees", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 

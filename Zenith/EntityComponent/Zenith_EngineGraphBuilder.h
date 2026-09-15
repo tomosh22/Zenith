@@ -13,7 +13,7 @@
 //
 //   Zenith_EngineGraphBuilder xB(xBuilder);
 //   const u_int uPre = xB.Node("CombatPlayerPreTick");        // raw (game node)
-//   const u_int uSM  = xB.StateMachine("playerState", 9, "...");
+//   const u_int uSM  = xB.StateMachine({ uState, "Value" }, 9, "...");
 //   xB.OnCustomEvent("PlayerTick").Then(uPre).Then(uSM);      // fluent spine
 //
 // Each factory creates a node + its DEFINING params and returns a
@@ -91,94 +91,45 @@ public:
 	Zenith_GraphChain OnActionReleased(const char* szAction) { return ActionSource("OnActionReleased", szAction); }
 	Zenith_GraphChain OnActionHeld(const char* szAction)     { return ActionSource("OnActionHeld", szAction); }
 
-	// szResultVar omitted -> keep the node default ("axis" / "axis2D").
-	Zenith_GraphChain ReadActionAxis1D(const char* szAction, const char* szResultVar = nullptr)
-	{
-		return ActionRead("ReadActionAxis1D", szAction, szResultVar);
-	}
-
-	Zenith_GraphChain ReadActionAxis2D(const char* szAction, const char* szResultVar = nullptr)
-	{
-		return ActionRead("ReadActionAxis2D", szAction, szResultVar);
-	}
+	Zenith_GraphChain ReadActionAxis1D(const char* szAction) { return ActionRead("ReadActionAxis1D", szAction); }
+	Zenith_GraphChain ReadActionAxis2D(const char* szAction) { return ActionRead("ReadActionAxis2D", szAction); }
 
 	// --- flow ----------------------------------------------------------------
-	Zenith_GraphChain Branch(const char* szConditionVar)
-	{
-		const u_int uNode = m_xBuilder.Node("Branch");
-		m_xBuilder.ParamString(uNode, "m_strConditionVar", szConditionVar);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain Branch(Zenith_GraphWireSource xCondition)
 	{
 		const u_int uNode = m_xBuilder.Node("Branch");
-		m_xBuilder.ParamString(uNode, "m_strConditionVar", "");
 		m_xBuilder.DataEdge(xCondition.uNode, xCondition.szPin, uNode, "Condition");
 		return Anchor(uNode);
 	}
 
-	Zenith_GraphChain Gate(const char* szOpenVar)
-	{
-		const u_int uNode = m_xBuilder.Node("Gate");
-		m_xBuilder.ParamString(uNode, "m_strOpenVar", szOpenVar);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain Gate(Zenith_GraphWireSource xOpen)
 	{
 		const u_int uNode = m_xBuilder.Node("Gate");
-		m_xBuilder.ParamString(uNode, "m_strOpenVar", "");
 		m_xBuilder.DataEdge(xOpen.uNode, xOpen.szPin, uNode, "Open");
 		return Anchor(uNode);
 	}
 
-	Zenith_GraphChain SwitchOnInt(const char* szVar, int32_t iCaseCount)
-	{
-		const u_int uNode = m_xBuilder.Node("SwitchOnInt");
-		m_xBuilder.ParamString(uNode, "m_strVar", szVar);
-		m_xBuilder.ParamInt(uNode, "m_iCaseCount", iCaseCount);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain SwitchOnInt(Zenith_GraphWireSource xValue, int32_t iCaseCount)
 	{
 		const u_int uNode = m_xBuilder.Node("SwitchOnInt");
-		m_xBuilder.ParamString(uNode, "m_strVar", "");
 		m_xBuilder.ParamInt(uNode, "m_iCaseCount", iCaseCount);
 		m_xBuilder.DataEdge(xValue.uNode, xValue.szPin, uNode, "Value");
 		return Anchor(uNode);
 	}
 
-	Zenith_GraphChain StateMachine(const char* szStateVar, int32_t iStateCount, const char* szStateNames)
-	{
-		const u_int uNode = m_xBuilder.Node("StateMachine");
-		m_xBuilder.ParamString(uNode, "m_strStateVar", szStateVar);
-		m_xBuilder.ParamInt(uNode, "m_iStateCount", iStateCount);
-		m_xBuilder.ParamString(uNode, "m_strStateNames", szStateNames);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain StateMachine(Zenith_GraphWireSource xState, int32_t iStateCount, const char* szStateNames)
 	{
 		const u_int uNode = m_xBuilder.Node("StateMachine");
-		m_xBuilder.ParamString(uNode, "m_strStateVar", "");
 		m_xBuilder.ParamInt(uNode, "m_iStateCount", iStateCount);
 		m_xBuilder.ParamString(uNode, "m_strStateNames", szStateNames);
 		m_xBuilder.DataEdge(xState.uNode, xState.szPin, uNode, "State");
 		return Anchor(uNode);
 	}
 
-	// --- blackboard compares (constant form; var-vs-var keeps raw Node) -------
-	Zenith_GraphChain CompareFloat(const char* szVar, Zenith_GraphCompareFloatOp eOp, float fCompareTo, const char* szResultVar)
-	{
-		const u_int uNode = m_xBuilder.Node("CompareBlackboardFloat");
-		m_xBuilder.ParamString(uNode, "m_strVar", szVar);
-		m_xBuilder.ParamFloat(uNode, "m_fCompareTo", fCompareTo);
-		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
-		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
-		return Anchor(uNode);
-	}
+	// --- blackboard compares (constant and wire forms) --------------------------
 	Zenith_GraphChain CompareFloat(Zenith_GraphWireSource xValue, Zenith_GraphCompareFloatOp eOp, float fCompareTo)
 	{
 		const u_int uNode = m_xBuilder.Node("CompareBlackboardFloat");
-		m_xBuilder.ParamString(uNode, "m_strVar", "");
 		m_xBuilder.ParamFloat(uNode, "m_fCompareTo", fCompareTo);
 		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
 		m_xBuilder.DataEdge(xValue.uNode, xValue.szPin, uNode, "Value");
@@ -187,26 +138,15 @@ public:
 	Zenith_GraphChain CompareFloat(Zenith_GraphWireSource xValue, Zenith_GraphCompareFloatOp eOp, Zenith_GraphWireSource xCompareTo)
 	{
 		const u_int uNode = m_xBuilder.Node("CompareBlackboardFloat");
-		m_xBuilder.ParamString(uNode, "m_strVar", "");
 		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
 		m_xBuilder.DataEdge(xValue.uNode, xValue.szPin, uNode, "Value");
 		m_xBuilder.DataEdge(xCompareTo.uNode, xCompareTo.szPin, uNode, "CompareTo");
 		return Anchor(uNode);
 	}
 
-	Zenith_GraphChain CompareInt(const char* szVar, Zenith_GraphCompareIntOp eOp, int32_t iCompareTo, const char* szResultVar)
-	{
-		const u_int uNode = m_xBuilder.Node("CompareBlackboardInt");
-		m_xBuilder.ParamString(uNode, "m_strVar", szVar);
-		m_xBuilder.ParamInt(uNode, "m_iCompareTo", iCompareTo);
-		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
-		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain CompareInt(Zenith_GraphWireSource xValue, Zenith_GraphCompareIntOp eOp, int32_t iCompareTo)
 	{
 		const u_int uNode = m_xBuilder.Node("CompareBlackboardInt");
-		m_xBuilder.ParamString(uNode, "m_strVar", "");
 		m_xBuilder.ParamInt(uNode, "m_iCompareTo", iCompareTo);
 		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
 		m_xBuilder.DataEdge(xValue.uNode, xValue.szPin, uNode, "Value");
@@ -215,7 +155,6 @@ public:
 	Zenith_GraphChain CompareInt(Zenith_GraphWireSource xValue, Zenith_GraphCompareIntOp eOp, Zenith_GraphWireSource xCompareTo)
 	{
 		const u_int uNode = m_xBuilder.Node("CompareBlackboardInt");
-		m_xBuilder.ParamString(uNode, "m_strVar", "");
 		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
 		m_xBuilder.DataEdge(xValue.uNode, xValue.szPin, uNode, "Value");
 		m_xBuilder.DataEdge(xCompareTo.uNode, xCompareTo.szPin, uNode, "CompareTo");
@@ -260,42 +199,17 @@ public:
 	// m_bInvert and m_bMissingIsTrue, including their false defaults. This is the
 	// recorded exception to exact-default omission: matching raw definitions must
 	// include both bool parameters.
-	Zenith_GraphChain LogicBool(
-		const char* szVars,
-		Zenith_GraphLogicBoolOp eOp,
-		const char* szResultVar,
-		bool bInvert = false,
-		bool bMissingIsTrue = false)
-	{
-		const u_int uNode = m_xBuilder.Node("LogicBlackboardBool");
-		m_xBuilder.ParamString(uNode, "m_strVars", szVars);
-		m_xBuilder.ParamEnum(uNode, "m_iOp", eOp);
-		m_xBuilder.ParamBool(uNode, "m_bInvert", bInvert);
-		m_xBuilder.ParamBool(uNode, "m_bMissingIsTrue", bMissingIsTrue);
-		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
-		return Anchor(uNode);
-	}
-
 	// --- blackboard lists -----------------------------------------------------
 	// Read (GetListCount / GetListElement / ForEach) and write (ListAdd /
 	// ListRemoveAt / ListClear). None of these had a DSL helper before, so a
 	// list-walking graph had to drop to raw Node()+Param* for every one.
-	Zenith_GraphChain GetListCount(const char* szListVar, const char* szResultVar)
-	{
-		const u_int uNode = m_xBuilder.Node("GetListCount");
-		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
-		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain GetListCount(const char* szListVar)
 	{
 		const u_int uNode = m_xBuilder.Node("GetListCount");
 		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
 		return Anchor(uNode);
 	}
-	// Result is consumed from the OUTPUT pin in wire-authored graphs. This factory
-	// emits no explicit m_strResultVar parameter; the node's default property is
-	// still serialized, and current dual-write behavior remains until C1.
+	// Result is consumed from the OUTPUT pin in wire-authored graphs.
 	Zenith_GraphChain LogicBool(
 		const char* szVars,
 		Zenith_GraphLogicBoolOp eOp,
@@ -310,14 +224,12 @@ public:
 		return Anchor(uNode);
 	}
 
-	// szIndexVar omitted -> keep the node default ("", i.e. use iIndex).
-	Zenith_GraphChain GetListElement(const char* szListVar, int32_t iIndex, const char* szResultVar, const char* szIndexVar = nullptr)
+	// The list and default index are permanent parameters; Result is wire-only.
+	Zenith_GraphChain GetListElement(const char* szListVar, int32_t iIndex)
 	{
 		const u_int uNode = m_xBuilder.Node("GetListElement");
 		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
 		m_xBuilder.ParamInt(uNode, "m_iIndex", iIndex);
-		m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar);
-		if (szIndexVar) { m_xBuilder.ParamString(uNode, "m_strIndexVar", szIndexVar); }
 		return Anchor(uNode);
 	}
 	Zenith_GraphChain GetListElement(const char* szListVar, int32_t iIndex, Zenith_GraphWireSource xIndex)
@@ -339,29 +251,19 @@ public:
 		return Anchor(uNode);
 	}
 
-	Zenith_GraphChain ListAdd(const char* szListVar, const char* szValueVar)
-	{
-		const u_int uNode = m_xBuilder.Node("ListAdd");
-		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
-		m_xBuilder.ParamString(uNode, "m_strValueVar", szValueVar);
-		return Anchor(uNode);
-	}
 	Zenith_GraphChain ListAdd(const char* szListVar, Zenith_GraphWireSource xValue)
 	{
 		const u_int uNode = m_xBuilder.Node("ListAdd");
 		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
-		m_xBuilder.ParamString(uNode, "m_strValueVar", "");
 		m_xBuilder.DataEdge(xValue.uNode, xValue.szPin, uNode, "Value");
 		return Anchor(uNode);
 	}
 
-	// szIndexVar omitted -> keep the node default ("", i.e. use iIndex).
-	Zenith_GraphChain ListRemoveAt(const char* szListVar, int32_t iIndex, const char* szIndexVar = nullptr)
+	Zenith_GraphChain ListRemoveAt(const char* szListVar, int32_t iIndex)
 	{
 		const u_int uNode = m_xBuilder.Node("ListRemoveAt");
 		m_xBuilder.ParamString(uNode, "m_strListVar", szListVar);
 		m_xBuilder.ParamInt(uNode, "m_iIndex", iIndex);
-		if (szIndexVar) { m_xBuilder.ParamString(uNode, "m_strIndexVar", szIndexVar); }
 		return Anchor(uNode);
 	}
 	Zenith_GraphChain ListRemoveAt(const char* szListVar, int32_t iIndex, Zenith_GraphWireSource xIndex)
@@ -381,14 +283,12 @@ public:
 	}
 
 	// --- events out -----------------------------------------------------------
-	// szTargetVar omitted -> node default ("" = self); szPayloadVar omitted ->
-	// node default ("" = no payload). Both obey the exact-default rule.
-	Zenith_GraphChain FireCustomEvent(const char* szEventName, const char* szTargetVar = nullptr, const char* szPayloadVar = nullptr)
+	// szTargetVar omitted -> node default ("" = self).
+	Zenith_GraphChain FireCustomEvent(const char* szEventName, const char* szTargetVar = nullptr)
 	{
 		const u_int uNode = m_xBuilder.Node("FireCustomEvent");
 		m_xBuilder.ParamString(uNode, "m_strEventName", szEventName);
 		if (szTargetVar) { m_xBuilder.ParamString(uNode, "m_strTargetVar", szTargetVar); }
-		if (szPayloadVar) { m_xBuilder.ParamString(uNode, "m_strPayloadVar", szPayloadVar); }
 		return Anchor(uNode);
 	}
 	Zenith_GraphChain FireCustomEvent(const char* szEventName, const char* szTargetVar, Zenith_GraphWireSource xPayload)
@@ -410,11 +310,10 @@ private:
 		return Anchor(uNode);
 	}
 
-	Zenith_GraphChain ActionRead(const char* szTypeName, const char* szAction, const char* szResultVar)
+	Zenith_GraphChain ActionRead(const char* szTypeName, const char* szAction)
 	{
 		const u_int uNode = m_xBuilder.Node(szTypeName);
 		m_xBuilder.ParamString(uNode, "m_strAction", szAction);
-		if (szResultVar) { m_xBuilder.ParamString(uNode, "m_strResultVar", szResultVar); }
 		return Anchor(uNode);
 	}
 

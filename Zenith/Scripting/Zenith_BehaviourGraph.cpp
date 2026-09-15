@@ -106,7 +106,7 @@ bool Zenith_GraphDefinition::ApplyNodeParams(u_int uNodeID, Zenith_GraphNode* px
 	// Wrap the blob (no copy, no ownership) and apply the params.
 	Zenith_DataStream xParamRead(const_cast<void*>(pxDef->m_xParamBlob.GetData()), pxDef->m_xParamBlob.GetCursor());
 	Zenith_PropertySystem::ReadProperties(pxNode, *xInfo.m_pfnGetPropertyTable(), xParamRead);
-	// Pin state is DERIVED from these properties (var names, the const pointer, the
+	// Pin state is DERIVED from these properties (the const pointer and the
 	// instance-resolved slot type), so a param write invalidates it. The graph's own
 	// BuildPinState always follows this call; a directly-configured instance rebuilds
 	// on its next accessor.
@@ -755,31 +755,12 @@ void Zenith_GraphNode::BuildPinStateFromTables(const Zenith_GraphPinTable& xPins
 	{
 		const Zenith_GraphPinDesc& xDesc = xPins.GetPinAt(uPin);
 
-		// The bound variable name, read EXACTLY the way the validator reads it
-		// (one lifted helper), including the empty-primary fallback.
-		std::string strVar;
-		if (Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szVarNameProperty, strVar)
-			== GRAPH_PIN_READ_PROPERTY_INVALID)
-		{
-			strVar.clear();
-		}
-		if (strVar.empty())
-		{
-			std::string strFallback;
-			if (Zenith_GraphPin_ReadStringProperty(pxProperties, &xNode, xDesc.m_szFallbackVarNameProperty, strFallback)
-				== GRAPH_PIN_READ_PROPERTY_OK)
-			{
-				strVar = strFallback;
-			}
-		}
-
 		Zenith_GraphNode::InputBinding xBinding;
 		Zenith_GraphNode::OutputSlot xSlot;
 
 		if (xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT)
 		{
 			xBinding.m_bIsInput = true;
-			xBinding.m_strVarName = strVar;
 			if (pxProperties != nullptr && xDesc.m_szConstProperty != nullptr && xDesc.m_szConstProperty[0] != '\0')
 			{
 				const Zenith_ReflectedProperty* pxConst = pxProperties->FindProperty(xDesc.m_szConstProperty);
@@ -792,7 +773,6 @@ void Zenith_GraphNode::BuildPinStateFromTables(const Zenith_GraphPinTable& xPins
 		else if (xDesc.m_eRole == GRAPH_PIN_ROLE_OUTPUT)
 		{
 			xSlot.m_bIsOutput = true;
-			xSlot.m_strVarName = strVar;
 			xSlot.m_eDeclaredType = xDesc.m_eType;
 			if (xDesc.m_szTypeFromVarNameProperty != nullptr && xDesc.m_szTypeFromVarNameProperty[0] != '\0')
 			{
@@ -1614,8 +1594,8 @@ const Zenith_PropertyValue* Zenith_BehaviourGraph::PullSlot(u_int uSrcNodeID, u_
 // LAZY SELF-BINDING (B-6.1). PERMANENT runtime behaviour, not a transitional
 // path: a node the graph never resolved, but whose class declares a pin table,
 // binds itself the first time an Execute touches an accessor. It gets EXACTLY
-// what an unwired graph node gets - the var-name fallback with the const as the
-// default, and the dual-write on SetOutput.
+// what an unwired graph node gets - its current const-property default (or
+// typed zero) and slot-only outputs.
 //
 // The BAD-ACCESS path therefore survives for, and only for: an OPAQUE node (no
 // pin table at all - the virtual answers null), an out-of-range or wrong-role
@@ -1758,34 +1738,6 @@ const Zenith_PropertyValue* Zenith_GraphNode::ResolveInput(Zenith_GraphContext& 
 		return CheckedExtract(*pxBinding, *pxValue, eExpected, uPinIndex);
 	}
 
-	// (c) TRANSITIONAL var-name fallback - DELETED IN C-1, together with the
-	//     dual-write in SetOutput. This IS today's read, exactly: a typed
-	//     blackboard getter defaults on a MISSING name and on a type mismatch
-	//     alike, with the pin default as its default, and warns about neither.
-	if (!pxBinding->m_strVarName.empty())
-	{
-		if (xContext.m_pxBlackboard == nullptr)
-		{
-			WarnBadAccess(uPinIndex);
-			return nullptr;
-		}
-		// The census line C-1 waits on: only a MIGRATED node reaches this path,
-		// so "no [GraphPin] FALLBACK line in a boot log" is the precondition for
-		// deleting it. Once per (instance, pin) - a hot chain must not spam.
-		if (pxBinding->m_uFallbackUseCount == 0)
-		{
-			Zenith_Log(LOG_CATEGORY_CORE, "[GraphPin] FALLBACK node=%u:%s pin=%u var=%s",
-				m_uNodeID, GetTypeName(), uPinIndex, pxBinding->m_strVarName.c_str());
-			++pxBinding->m_uFallbackUseCount;
-		}
-		const Zenith_PropertyValue* pxValue = xContext.m_pxBlackboard->TryGetValue(pxBinding->m_strVarName);
-		if (pxValue == nullptr || pxValue->GetType() != eExpected)
-		{
-			return nullptr;
-		}
-		return pxValue;
-	}
-
 	return nullptr;	// unconnected, unbound: the pin default
 }
 
@@ -1858,26 +1810,6 @@ bool Zenith_GraphNode::TryGetInput(Zenith_GraphContext& xContext, u_int uPinInde
 		return pxOut != nullptr;
 	}
 
-	if (!pxBinding->m_strVarName.empty())
-	{
-		if (xContext.m_pxBlackboard == nullptr)
-		{
-			WarnBadAccess(uPinIndex);
-			return false;
-		}
-		// The SAME transitional path ResolveInput takes, so it carries the SAME
-		// census line - a node migrated onto TryGetInput rather than GetInput must
-		// not be invisible to C-1's "zero FALLBACK lines" precondition.
-		if (pxBinding->m_uFallbackUseCount == 0)
-		{
-			Zenith_Log(LOG_CATEGORY_CORE, "[GraphPin] FALLBACK node=%u:%s pin=%u var=%s",
-				m_uNodeID, GetTypeName(), uPinIndex, pxBinding->m_strVarName.c_str());
-			++pxBinding->m_uFallbackUseCount;
-		}
-		pxOut = xContext.m_pxBlackboard->TryGetValue(pxBinding->m_strVarName);
-		return pxOut != nullptr;
-	}
-
 	if (pxBinding->m_pxConstProperty != nullptr && pxBinding->m_pxConstProperty->m_pfnGet != nullptr)
 	{
 		// A const IS a value. The scratch is per-binding and refreshed on every
@@ -1890,7 +1822,7 @@ bool Zenith_GraphNode::TryGetInput(Zenith_GraphContext& xContext, u_int uPinInde
 	return false;
 }
 
-void Zenith_GraphNode::SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex, const Zenith_PropertyValue& xValue)
+void Zenith_GraphNode::SetOutput(Zenith_GraphContext&, u_int uPinIndex, const Zenith_PropertyValue& xValue)
 {
 	EnsurePinState();
 	if (uPinIndex >= m_axOutputs.GetSize())
@@ -1924,14 +1856,6 @@ void Zenith_GraphNode::SetOutput(Zenith_GraphContext& xContext, u_int uPinIndex,
 	xSlot.m_xValue = xValue;
 	xSlot.m_bSet = true;
 
-	// TRANSITIONAL dual-write - DELETED IN C-1, together with the var-name
-	// fallback in ResolveInput. While the descriptor still binds a var name, a
-	// downstream node that has NOT been migrated to GetInput still reads this
-	// result off the blackboard exactly as it does today.
-	if (!xSlot.m_strVarName.empty() && xContext.m_pxBlackboard != nullptr)
-	{
-		xContext.m_pxBlackboard->SetValue(xSlot.m_strVarName, xValue);
-	}
 }
 
 void Zenith_GraphNode::SetInputForTest(u_int uPinIndex, const Zenith_PropertyValue& xValue)
@@ -1990,12 +1914,6 @@ u_int Zenith_GraphNode::GetOutputMismatchWarningCountForTest(u_int uPinIndex) co
 		return 0u;
 	}
 	return m_axOutputs.Get(uPinIndex).m_uMismatchWarningCount;
-}
-
-u_int Zenith_GraphNode::GetFallbackUseCountForTest(u_int uPinIndex) const
-{
-	const InputBinding* pxBinding = FindInputBinding(uPinIndex, uGRAPH_PIN_NO_ORDINAL);
-	return pxBinding ? pxBinding->m_uFallbackUseCount : 0u;
 }
 
 #include "Scripting/Zenith_Scripting.Tests.inl"

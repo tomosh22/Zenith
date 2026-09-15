@@ -197,8 +197,6 @@ namespace
 		Check(xContext.m_fDt > 0.0f, "DoorAdvanceAnim uses a positive live duration");
 
 		DPNode_DoorAdvanceAnim xNode;
-		xNode.m_strAnimVar = "";
-		xNode.m_strSettledAnimVar = "";
 		xNode.SetInputForTest(DPNode_DoorAdvanceAnim::uPIN_Anim,
 			IntValue(static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening)));
 		Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
@@ -216,8 +214,6 @@ namespace
 		}
 		Check(xBlackboard.GetInt32("anim", -1) == static_cast<int32_t>(DPDoor_Component::DoorAnim::Closed),
 			"DoorAdvanceAnim override wins over the distinct Closed Anim blackboard value");
-		Check(xNode.GetFallbackUseCountForTest(DPNode_DoorAdvanceAnim::uPIN_Anim) == 0u,
-			"DoorAdvanceAnim Opening override uses no Anim fallback");
 		Check(xNode.GetMismatchWarningCountForTest(DPNode_DoorAdvanceAnim::uPIN_Anim) == 0u,
 			"DoorAdvanceAnim Opening override emits no Anim mismatch");
 		Check(xNode.GetBadAccessWarningCountForTest() == 0u,
@@ -247,7 +243,6 @@ namespace
 		xContext.m_xSelf = xFixture.DoorEntity();
 		xBlackboard.SetValue("openT", xNearOpen);
 		DPNode_DoorAdvanceAnim xUnnamed;
-		xUnnamed.m_strSettledAnimVar = "";
 		xUnnamed.SetInputForTest(DPNode_DoorAdvanceAnim::uPIN_Anim,
 			IntValue(static_cast<int32_t>(DPDoor_Component::DoorAnim::Opening)));
 		Check(xUnnamed.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
@@ -339,8 +334,8 @@ namespace
 						break;
 					}
 				}
-				Check(pxAdvance != nullptr && pxAdvance->m_strSettledAnimVar.empty(),
-					"authored Advance clears SettledAnim's transitional output name");
+				Check(pxAdvance != nullptr,
+					"authored Advance node is present");
 				Zenith_TransformComponent* pxTransform = xFixture.DoorEntity().TryGetComponent<Zenith_TransformComponent>();
 				Check(pxTransform != nullptr, "Door fixture supplies the CreateEntity Transform prerequisite for rotation");
 				if (pxAdvance == nullptr || pxTransform == nullptr) return;
@@ -449,7 +444,6 @@ namespace
 
 		DP_Player::SetHeldItem(xFixture.m_xVillager, xFixture.m_xKey);
 		DPNode_DoorCheckKey xNode;
-		xNode.m_strVillagerVar = "";
 		xNode.SetInputForTest(DPNode_DoorCheckKey::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 		Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 			"DoorCheckKey accepts the registered held Key from the Villager pin override");
@@ -457,8 +451,6 @@ namespace
 			"DoorCheckKey writes RequiredKey None after consuming the matching key");
 		Check(!DP_Player::GetHeldItemEntity(xFixture.m_xVillager).IsValid(),
 			"DoorCheckKey consumes the held key item");
-		Check(xNode.GetFallbackUseCountForTest(DPNode_DoorCheckKey::uPIN_Villager) == 0u,
-			"DoorCheckKey override uses no Villager fallback despite different payload blackboard value");
 		Check(xNode.GetMismatchWarningCountForTest(DPNode_DoorCheckKey::uPIN_Villager) == 0u,
 			"DoorCheckKey entity override emits no Villager mismatch");
 		Check(xNode.GetBadAccessWarningCountForTest() == 0u,
@@ -510,9 +502,6 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(4));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
-				xNode.m_strVillagerVar = "";
-				xNode.m_strRecipeInputVar = "";
-				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_RecipeInput,
 					IntValue(static_cast<int32_t>(DP_ItemTag::Key)));
@@ -529,10 +518,6 @@ namespace
 					"ForgeCraft marks its registered input for deferred destruction");
 				Check(xBlackboard.GetInt32("craftCount", -1) == 5,
 					"ForgeCraft increments its CraftCount selector in the actual blackboard");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_Villager) == 0u
-					&& xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
-					&& xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
-					"ForgeCraft fully wired override leg has zero fallback uses");
 				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
 					&& xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
 					"ForgeCraft fully wired override leg has zero recipe mismatches");
@@ -545,7 +530,7 @@ namespace
 
 		// Missing recipe names use the nonzero ordinary const twins, rather than
 		// merely observing their accessor defaults.  The real Iron->Key effect
-		// makes the two fallback uses observable and pins the old defaults.
+		// makes the two current-constant uses observable and pins their defaults.
 		{
 			const Zenith_EntityID xInput = xFixture.CreateRegisteredItem(
 				"DPGraphNodeWorldPinsForgeMissingInput", DP_ItemTag::Iron);
@@ -557,9 +542,6 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(9));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
-				xNode.m_strVillagerVar = "";
-				xNode.m_strRecipeInputVar = "";
-				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 				Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 					"ForgeCraft missing recipe bindings execute the real Iron-to-Key default effect");
@@ -572,12 +554,6 @@ namespace
 					"ForgeCraft missing recipe bindings defer input destruction");
 				Check(xBlackboard.GetInt32("craftCount", -1) == 10,
 					"ForgeCraft missing recipe bindings increment CraftCount");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u,
-					"ForgeCraft const RecipeInput has no named fallback");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
-					"ForgeCraft const RecipeOutput has no named fallback");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_Villager) == 0u,
-					"ForgeCraft missing recipe leg still wires Villager");
 				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
 					&& xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
 					"ForgeCraft missing recipe bindings have no mismatch diagnostics");
@@ -604,8 +580,6 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(14));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
-				xNode.m_strRecipeInputVar = "";
-				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 				Check(xNode.Execute(xContext) == GRAPH_NODE_STATUS_SUCCESS,
 					"ForgeCraft blank recipe selectors execute the real Iron-to-Key const-default effect");
@@ -618,9 +592,6 @@ namespace
 					"ForgeCraft blank recipe selectors defer input destruction");
 				Check(xBlackboard.GetInt32("craftCount", -1) == 15,
 					"ForgeCraft blank recipe selectors increment CraftCount");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
-					&& xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
-					"ForgeCraft const-only recipe leg has no named fallback uses");
 				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
 					&& xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
 					"ForgeCraft const-only recipe leg has silent contradictory typed blackboard values");
@@ -650,9 +621,6 @@ namespace
 				xBlackboard.SetValue("craftCount", IntValue(20));
 				xContext.m_pxBlackboard = &xBlackboard;
 				DPNode_ForgeCraft xNode;
-				xNode.m_strVillagerVar = "";
-				xNode.m_strRecipeInputVar = "";
-				xNode.m_strRecipeOutputVar = "";
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_Villager, EntityValue(xFixture.m_xVillager));
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_RecipeInput, xWrongInput);
 				xNode.SetInputForTest(DPNode_ForgeCraft::uPIN_RecipeOutput, xWrongOutput);
@@ -667,9 +635,6 @@ namespace
 					"ForgeCraft wrongly typed recipe values defer input destruction");
 				Check(xBlackboard.GetInt32("craftCount", -1) == 21,
 					"ForgeCraft wrongly typed recipe values increment CraftCount");
-				Check(xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 0u
-					&& xNode.GetFallbackUseCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 0u,
-					"ForgeCraft const recipe values have no named fallback");
 				Check(xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeInput) == 1u
 					&& xNode.GetMismatchWarningCountForTest(DPNode_ForgeCraft::uPIN_RecipeOutput) == 1u,
 					"ForgeCraft wrongly typed recipe overrides emit one mismatch per accessed pin");
@@ -709,10 +674,9 @@ namespace
 			"WinCheckAlreadyCollected rejects the collected override tag");
 		Check(!DP_Win::HasWon() && !DP_Knots::HasBankedThisRun(),
 			"one isolated objective remains below victory and does not bank a run");
-		Check(xCheck.GetFallbackUseCountForTest(DPNode_WinCheckAlreadyCollected::uPIN_Tag) == 0u
-			&& xCheck.GetMismatchWarningCountForTest(DPNode_WinCheckAlreadyCollected::uPIN_Tag) == 0u
+		Check(xCheck.GetMismatchWarningCountForTest(DPNode_WinCheckAlreadyCollected::uPIN_Tag) == 0u
 			&& xCheck.GetBadAccessWarningCountForTest() == 0u,
-			"WinCheckAlreadyCollected override legs have no fallback, mismatch, or bad access");
+			"WinCheckAlreadyCollected override legs have no mismatch or bad access");
 		DP_Win::Reset();
 		DP_Knots::ResetForNewRun();
 
@@ -729,12 +693,10 @@ namespace
 			"WinNotifyCollected sets only the overridden Objective1 bit");
 		Check(!DP_Win::HasWon() && !DP_Knots::HasBankedThisRun(),
 			"WinNotifyCollected's one objective remains below victory and does not bank");
-		Check(xNotify.GetFallbackUseCountForTest(DPNode_WinNotifyCollected::uPIN_Villager) == 0u
-			&& xNotify.GetFallbackUseCountForTest(DPNode_WinNotifyCollected::uPIN_Tag) == 0u
-			&& xNotify.GetMismatchWarningCountForTest(DPNode_WinNotifyCollected::uPIN_Villager) == 0u
+		Check(xNotify.GetMismatchWarningCountForTest(DPNode_WinNotifyCollected::uPIN_Villager) == 0u
 			&& xNotify.GetMismatchWarningCountForTest(DPNode_WinNotifyCollected::uPIN_Tag) == 0u
 			&& xNotify.GetBadAccessWarningCountForTest() == 0u,
-			"WinNotifyCollected override leg has no fallback, mismatch, or bad access");
+			"WinNotifyCollected override leg has no mismatch or bad access");
 		DP_Win::Reset();
 		DP_Knots::ResetForNewRun();
 
@@ -758,12 +720,10 @@ namespace
 			"DispatchObjectivePlaced dispatches from Villager and Objective4 overrides");
 		Check(bPlaced && xPlacedVillager == xFixture.m_xVillager && iPlacedBit == 3,
 			"DispatchObjectivePlaced event carries overridden Villager and Objective4 bit index");
-		Check(xDispatch.GetFallbackUseCountForTest(DPNode_DispatchObjectivePlaced::uPIN_Villager) == 0u
-			&& xDispatch.GetFallbackUseCountForTest(DPNode_DispatchObjectivePlaced::uPIN_Tag) == 0u
-			&& xDispatch.GetMismatchWarningCountForTest(DPNode_DispatchObjectivePlaced::uPIN_Villager) == 0u
+		Check(xDispatch.GetMismatchWarningCountForTest(DPNode_DispatchObjectivePlaced::uPIN_Villager) == 0u
 			&& xDispatch.GetMismatchWarningCountForTest(DPNode_DispatchObjectivePlaced::uPIN_Tag) == 0u
 			&& xDispatch.GetBadAccessWarningCountForTest() == 0u,
-			"DispatchObjectivePlaced override leg has no fallback, mismatch, or bad access");
+			"DispatchObjectivePlaced override leg has no mismatch or bad access");
 		Zenith_EventDispatcher::Get().Unsubscribe(uPlacedHandle);
 
 		Zenith_PropertyValue xOpenT;
@@ -791,10 +751,9 @@ namespace
 			"AnimateDoorLeaves false override succeeds over true blackboard");
 		Check(xBlackboard.GetFloat("openT") == 0.25f,
 			"AnimateDoorLeaves false override retains a nonterminal OpenT");
-		Check(xAnimate.GetFallbackUseCountForTest(DPNode_AnimateDoorLeaves::uPIN_IsOpen) == 0u
-			&& xAnimate.GetMismatchWarningCountForTest(DPNode_AnimateDoorLeaves::uPIN_IsOpen) == 0u
+		Check(xAnimate.GetMismatchWarningCountForTest(DPNode_AnimateDoorLeaves::uPIN_IsOpen) == 0u
 			&& xAnimate.GetBadAccessWarningCountForTest() == 0u,
-			"AnimateDoorLeaves override legs have no fallback, mismatch, or bad access");
+			"AnimateDoorLeaves override legs have no mismatch or bad access");
 	}
 
 	void Setup_DPGraphNodeWorldPins()

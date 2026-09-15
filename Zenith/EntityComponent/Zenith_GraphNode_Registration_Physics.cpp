@@ -29,10 +29,7 @@
 // Zenith_GraphNode::GetInput and every OUTPUT descriptor is written through
 // SetOutput, so a wire into or out of any of these 10 nodes carries a value. An
 // UNCONNECTED node behaves byte-for-byte as it did (with ONE divergence: an OUTPUT
-// whose var name reads EMPTY - ReadVelocity - no longer creates a blackboard
-// variable named ""): the var-name fallback IS the
 // old `var.empty() ? const : bb->GetVector3(var, const)` read, and SetOutput's
-// dual-write IS the old SetValue. Each node that addresses a pin declares
 // `static constexpr u_int uPIN_<Name>` immediately before its pin table (the
 // INDEX is the runtime address; table order is the contract, asserted by
 // GraphPinTable.PhysicsPinIndicesMatchTables).
@@ -40,7 +37,6 @@
 // Three things specific to THIS TU:
 //   - EVERY input read sits AFTER the node's body guard, exactly where its
 //     blackboard read sat, so a bodyless target FAILURE reads no pin at all
-//     (fallback count 0). SetVelocity's read stays ABOVE the per-axis-preserve
 //     branch - the preserve only overwrites components, it does not decide
 //     whether the value is fetched.
 //   - RAYCAST IS THE EXCEPTION and deliberately so: Direction is read after the
@@ -51,7 +47,6 @@
 //   - A MISS returns FAILURE without touching a slot: the four hit slots keep
 //     whatever they last held (their stamped zeros on a fresh instance). A hit
 //     latches all four unconditionally - the four `!m_strHitXVar.empty()` guards
-//     are gone, and the dual-write's own non-empty rule reproduces exactly which
 //     of them reach the blackboard. ReadVelocity has the same shape: a bodyless
 //     target FAILURES before the write. A wire off either node's output must be
 //     gated on SUCCESS (Raycast's FAILURE exec pin is how a graph expresses it).
@@ -92,7 +87,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ApplyImpulse)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xImpulse, Zenith_Maths::Vector3(0.0f, 5.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strImpulseVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// Target reaches xContext.ResolveTargetEntity through ResolveTargetBody
@@ -103,7 +97,7 @@ namespace
 		static constexpr u_int uPIN_Impulse = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ApplyImpulse)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Impulse, "m_strImpulseVar", "m_xImpulse", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Impulse, "m_xImpulse", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -131,13 +125,12 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ApplyForce)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xForce, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strForceVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		static constexpr u_int uPIN_Force = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ApplyForce)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Force, "m_strForceVar", "m_xForce", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Force, "m_xForce", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -165,7 +158,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SetVelocity)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xVelocity, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(bool, m_bSetX, true)
 		ZENITH_PROPERTY(bool, m_bSetY, true)
 		ZENITH_PROPERTY(bool, m_bSetZ, true)
@@ -176,7 +168,7 @@ namespace
 		static constexpr u_int uPIN_Velocity = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetVelocity)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Velocity, "m_strVelocityVar", "m_xVelocity", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Velocity, "m_xVelocity", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -214,8 +206,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadVelocity)
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "velocity")
-
 		// Result is the node's own COMPUTED value (SetVector3 + SetOutput in the
 		// Execute below), so it registers a writer - OUTPUT, not SELECTOR_WRITE.
 		//
@@ -226,7 +216,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadVelocity)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -253,7 +243,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SetAngularVelocity)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xAngularVelocity, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// The const half is m_xAngularVelocity while the var half is
@@ -262,7 +251,7 @@ namespace
 		static constexpr u_int uPIN_Velocity = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetAngularVelocity)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Velocity, "m_strVelocityVar", "m_xAngularVelocity", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Velocity, "m_xAngularVelocity", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -384,14 +373,8 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strOriginVar, "")
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xOriginOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xDirection, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f))
-		ZENITH_PROPERTY(std::string, m_strDirectionVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fMaxDistance, 100.0f, 0.01f, 100000.0f)
 		ZENITH_PROPERTY(bool, m_bIgnoreSelf, true)
-		ZENITH_PROPERTY(std::string, m_strHitEntityVar, "hitEntity")
-		ZENITH_PROPERTY(std::string, m_strHitPointVar, "hitPoint")
-		ZENITH_PROPERTY(std::string, m_strHitNormalVar, "")
-		ZENITH_PROPERTY(std::string, m_strHitDistanceVar, "")
-
 		// Origin is a POSITION ref (Zenith_GraphNode_ResolvePositionRef in the
 		// Execute below takes an EntityID var or a vec3 var; "" = self). The four
 		// hit vars are the node's own computed results, each typed by the
@@ -407,11 +390,11 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Raycast)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Origin, "m_strOriginVar")
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Direction, "m_strDirectionVar", "m_xDirection", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(HitEntity, "m_strHitEntityVar", PROPERTY_TYPE_ENTITY_ID)
-		ZENITH_GRAPH_PIN_OUTPUT(HitPoint, "m_strHitPointVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(HitNormal, "m_strHitNormalVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(HitDistance, "m_strHitDistanceVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Direction, "m_xDirection", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(HitEntity, PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(HitPoint, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(HitNormal, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(HitDistance, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -447,7 +430,6 @@ namespace
 			}
 
 			// A HIT latches all four, unconditionally. The four
-			// `!m_strHitXVar.empty()` guards are GONE: SetOutput's dual-write
 			// applies the same non-empty rule, so which of the four reach the
 			// blackboard is unchanged (hitEntity / hitPoint by default, the other
 			// two only when the author names them) while the SLOTS now always

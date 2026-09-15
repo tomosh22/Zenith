@@ -18,7 +18,6 @@ namespace
 		u_int m_uPinIndex = 0;
 		std::string m_strVar;								// "" = not bound (skipped)
 		Zenith_PropertyType m_eType = eGRAPH_PIN_TYPE_ANY;	// eGRAPH_PIN_TYPE_ANY = unifies with everything
-		bool m_bBoundThroughFallback = false;				// the primary var-name property read EMPTY (the in-place form)
 		bool m_bWired = false;								// pass 1b resolved a data edge INTO this pin
 	};
 
@@ -49,11 +48,9 @@ namespace
 		Zenith_PropertyType m_eType = eGRAPH_PIN_TYPE_ANY;
 	};
 
-	// The var-name read has ONE home, Zenith_GraphPin_ReadStringProperty in
-	// Zenith_GraphPinTable.h - the RUNTIME binds its pins through the same
-	// function (B-2), so "the var name the validator checked" and "the var name
-	// the runtime bound" cannot drift. These aliases keep the call sites below
-	// reading as they did.
+	// Permanent selector, target and list metadata is read through this helper.
+	// INPUT and OUTPUT descriptors are slot-only and reject such metadata before
+	// this helper is called.
 	typedef Zenith_GraphPinReadPropertyResult ReadPropertyResult;
 	constexpr ReadPropertyResult READ_PROPERTY_INVALID = GRAPH_PIN_READ_PROPERTY_INVALID;
 
@@ -810,59 +807,39 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 				xPin.m_pxDesc = &xDesc;		// into the class's static table - stable for the process
 				xPin.m_uPinIndex = uPin;
 
-				// --- the bound variable name (with the empty-var fallback) ---
+				// INPUT and OUTPUT descriptors are slot-only. Reject stale binding
+				// metadata before probing properties, even if a wire is present.
 				std::string strVar;
-				const ReadPropertyResult ePrimary = ReadStringProperty(pxProperties, pxTemp, xDesc.m_szVarNameProperty, strVar);
-				if (ePrimary == READ_PROPERTY_INVALID)
+				const bool bWireRole = xDesc.m_eRole == GRAPH_PIN_ROLE_INPUT || xDesc.m_eRole == GRAPH_PIN_ROLE_OUTPUT;
+				if (bWireRole && xDesc.m_szVarNameProperty != nullptr && xDesc.m_szVarNameProperty[0] != '\0')
 				{
-					strVar.clear();
-					AddFinding(axOut, false, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
+					AddFinding(axOut, true, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, "",
-						"pin binds var-name property '%s', which the type does not declare as a string property",
+						"INPUT/OUTPUT pin carries forbidden blackboard binding metadata '%s'",
 						xDesc.m_szVarNameProperty ? xDesc.m_szVarNameProperty : "");
 				}
-				if (strVar.empty() && xDesc.m_szFallbackVarNameProperty != nullptr && xDesc.m_szFallbackVarNameProperty[0] != '\0')
+				else
 				{
-					std::string strFallback;
-					const ReadPropertyResult eFallback = ReadStringProperty(pxProperties, pxTemp, xDesc.m_szFallbackVarNameProperty, strFallback);
-					if (eFallback == READ_PROPERTY_INVALID)
+					const ReadPropertyResult ePrimary = ReadStringProperty(pxProperties, pxTemp, xDesc.m_szVarNameProperty, strVar);
+					if (ePrimary == READ_PROPERTY_INVALID)
 					{
 						AddFinding(axOut, false, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID,
 							xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, "",
-							"pin names fallback var-name property '%s', which the type does not declare as a string property",
-							xDesc.m_szFallbackVarNameProperty);
-					}
-					else
-					{
-						strVar = strFallback;
-						xPin.m_bBoundThroughFallback = !strFallback.empty();
+							"pin binds var-name property '%s', which the type does not declare as a string property",
+							xDesc.m_szVarNameProperty ? xDesc.m_szVarNameProperty : "");
 					}
 				}
 				xPin.m_strVar = strVar;
 
-				// --- IN-PLACE ALIASING ------------------------------------------
-				// The primary var-name property read EMPTY and the FALLBACK named
-				// something, so this OUTPUT writes back over the variable it was
-				// computed from - the two Math nodes' in-place form. A warning, not
-				// an error: it is legal, it is what the shape means, and C-1
-				// deletes the fallback binding entirely.
-				if (xPin.m_bBoundThroughFallback && xDesc.m_eRole == GRAPH_PIN_ROLE_OUTPUT)
-				{
-					AddFinding(axOut, false, GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING,
-						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
-						"result var '%s' is empty, so the output aliases its own source variable '%s'",
-						xDesc.m_szVarNameProperty ? xDesc.m_szVarNameProperty : "", xPin.m_strVar.c_str());
-				}
-
 				// --- the pin's resolved type ---
 				bool bInstanceDeclined = false;
 				xPin.m_eType = ResolveOnePinType(xDefinition, xDesc, uPin, pxProperties, pxTemp, bInstanceDeclined);
-				if (bInstanceDeclined && !xPin.m_strVar.empty())
+				if (bInstanceDeclined && (bWireRole || !xPin.m_strVar.empty()))
 				{
 					// Never fabricate a type: ANY plus one warning naming the type.
-					// An UNBOUND pin (empty var name) takes part in no later pass,
-					// so it earns no warning either - a blank in-place result var
-					// is the normal shape, not a defect.
+					// INPUT/OUTPUT pins are slot-only, so a declined wire role warns
+					// even with blank binding metadata. A permanent non-wire role
+					// warns only when it names a bound variable.
 					AddFinding(axOut, false, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED,
 						xNode.m_uNodeID, xNode.m_strTypeName.c_str(), xDesc.m_szName, xPin.m_strVar.c_str(),
 						"instance-resolved pin: '%s' declined to answer GetPinType, treating the pin as ANY",
@@ -980,9 +957,7 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 
 		// (b) an UNREGISTERED endpoint is skipped SILENTLY - a per-game node
 		//     library this exe does not carry. The instantiation warning covers
-		//     it, and the wired-input record below is deliberately NOT taken, so
-		//     the destination's var-name check stays ON (the runtime falls back
-		//     to the var name there too).
+		//     it, and the wired-input record below is deliberately NOT taken.
 		if (!pxSrcNode->m_bRegistered || !pxDstNode->m_bRegistered)
 		{
 			continue;
@@ -1083,9 +1058,8 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 		}
 
 		// Both endpoints and both pins resolved - EXACTLY the conditions under
-		// which the runtime sets m_bConnected. Record the wired input so pass 3
-		// skips its var-name check: the WIRE supersedes the fallback binding that
-		// the C-1 sweep deletes.
+		// which the runtime sets m_bConnected. Record the wired input for later
+		// edge and type validation.
 		if (uDstPin < pxDstNode->m_axPins.GetSize())
 		{
 			pxDstNode->m_axPins.Get(uDstPin).m_bWired = true;
@@ -1191,12 +1165,8 @@ void Zenith_GraphDefinitionValidator::Validate(const Zenith_GraphDefinition& xDe
 				continue;
 			}
 
-			// ★ A WIRE SUPERSEDES THE FALLBACK the C-1 sweep deletes. Pass 1b
-			// resolved a data edge into this input under exactly the conditions
-			// that make the runtime set m_bConnected, and a CONNECTED input never
-			// consults its var name (Zenith_GraphNode::ResolveInput takes the pull
-			// path), so neither declare-or-error nor type agreement applies to a
-			// name nothing reads.
+			// A wire supplies the value to this input. Its endpoint/type validation
+			// is complete in the wire pass, so no blackboard binding check applies.
 			if (xPin.m_bWired)
 			{
 				continue;
@@ -1475,7 +1445,6 @@ const char* Zenith_GraphDefinitionValidator::GetRuleName(Zenith_GraphValidationR
 	case GRAPH_VALIDATION_RULE_DATA_CYCLE:               return "DATA_CYCLE";
 	case GRAPH_VALIDATION_RULE_DOMINANCE:                return "DOMINANCE";
 	case GRAPH_VALIDATION_RULE_PURE_UNCONSUMED:          return "PURE_UNCONSUMED";
-	case GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING:        return "IN_PLACE_ALIASING";
 	default:                                             return "UNKNOWN";
 	}
 }

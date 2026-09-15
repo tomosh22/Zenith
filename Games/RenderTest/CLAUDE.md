@@ -224,14 +224,13 @@ are DELETED.
 
 ### Pin tables + validate-clean
 
-The seven blackboard-reading `RTTennis*` nodes now expose 18 var-name
-properties: 15 ordinary INPUTs and three `BallEntity` TARGET_ENTITY references.
-Two `ServeFromDeuce` BOOL const twins preserve its true fallback when its name
-is absent or wrongly tagged. `BallEntity` remains a direct target reference:
-an absent, wrong-tagged, or empty name is `INVALID_ENTITY_ID`, while a present
-packed zero remains a legal value and is never replaced by self. The six nodes
-with no blackboard reads (`RTTennisTickGate`, `RTTennisDecideShot`, and the four
-`RTPlayer*` action verbs) remain intentionally opaque.
+The seven `RTTennis*` tables expose 18 descriptors: 15 INPUT values and three
+`BallEntity` TARGET_ENTITY references. INPUT values have no name properties;
+the `ServeFromDeuce` BOOL const twins retain their current-constant default.
+`BallEntity` is the only remaining target-name role: an absent, wrong-tagged, or
+empty target is `INVALID_ENTITY_ID`, while packed zero remains legal and is never
+replaced by self. The six nodes with no blackboard reads remain intentionally
+opaque.
 
 `RenderTest_TennisBrain` now declares `BallEntity` as an ENTITY_ID seeded with
 packed `INVALID_ENTITY_ID`, because the bridge writes it and the target
@@ -240,22 +239,17 @@ the bridge publishes it but no graph node reads it. The tools boot therefore
 re-authors `RenderTest.zscen` for this declaration; the later wire migration
 re-authors the same scene again when it removes the three obsolete BOOL slots.
 `RenderTest_Tennis.Tests.inl` carries the pin-table totality row and live
-direct-node witnesses. Its B-7.6 rows provide each transient INPUT with an
-explicit typed slot value, preserving the spin-before-bad-BallEntity ordering,
-the true/false serve choices, and the arm nodes' conditional epoch reads without
-depending on named-input fallback.
+direct-node witnesses. Its rows provide transient INPUTs through typed slots,
+preserving the spin-before-bad-BallEntity ordering, true/false serve choices, and
+the arm nodes' conditional epoch reads.
 
 ### B-7.3b builder wiring
 
 `BuildGraph_RenderTestTennisBrain` has exactly 24 data edges: the three
-same-chain comparison-to-gate edges, plus 21 typed `GetVariable` sources (six
-engine inputs and the 15 annotated RTTennis INPUTs). The three old result-name
-BOOL declarations (`tickDue`, `phaseIsServing`, `phaseIsLive`) are gone.
-Every wired INPUT clears its var-name default after the edge is authored, so
-the predicted post-migration census has no INPUT fallback lines. `BallEntity`
-remains a TARGET reference name; selector, READWRITE, and result names also
-remain names. `RenderTest_PlayerActions` deliberately authors zero data edges
-and zero `GetVariable` nodes.
+same-chain comparison-to-gate edges and 21 typed `GetVariable` sources (six
+engine values and 15 RTTennis INPUTs). `BallEntity` remains a TARGET reference;
+there are no INPUT/OUTPUT name defaults to clear. `RenderTest_PlayerActions`
+deliberately authors zero data edges and zero `GetVariable` nodes.
 
 The nine remaining factory-shaped tennis sites stay raw: the accumulator's
 `CompareBlackboardFloat` and following `Gate`; the serve-phase comparison and
@@ -707,3 +701,27 @@ only in the tools build that actually writes the `.ztxtr`.
 `--rendertest-tennis-telemetry[=<base>]` (recorder gated on scene name
 "RenderTest"). T cycles the spectator camera at runtime (via the PlayerActions
 graph). Match telemetry + analytics: `Components/RenderTest_TennisTelemetry.h`.
+
+## C1 graph-pin contract
+
+Graph INPUT and OUTPUT values are wire-only. Author a `GetVariable` producer only
+where a graph intentionally reads a blackboard value, then connect its `Value` pin
+to the consumer; consume produced values through their output pins. INPUT and
+OUTPUT descriptors carry no property-name binding metadata, and graph execution
+does not fall back to blackboard names or dual-write output values.
+
+Unconnected inputs retain their typed defaults, and an unconnected `INPUT_CONST`
+continues to read its current permanent property value.
+
+String properties that remain on graph nodes identify permanent roles such as
+selectors, targets, lists, type sources, event stashes, and configuration. They
+are not substitutes for data-pin bindings. Existing serialized unknown properties
+continue through normal property loading's unknown-property handling. Tennis
+keeps only the `BallEntity` target-name role; raw factory-shaped sites preserve
+their final parameter and delayed-edge order. C1 validation evidence records
+T3-final2, SceneGuard, and all nine builds green
+with pins Combat 2695, Zenithmon 4548, and RenderTest 2798; all seven fresh
+census legs are green with zero FALLBACK, aliasing, and validator errors. The final
+asset audit found 164 graphs, 881 obsolete parameters removed from 102 graphs, no
+unexpected removal or topology issue, and a 192-asset second boot with no path or
+byte changes.

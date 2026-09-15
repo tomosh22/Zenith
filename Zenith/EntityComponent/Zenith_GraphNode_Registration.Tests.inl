@@ -57,10 +57,8 @@ static_assert(GRAPH_LOGIC_BOOL_OP_XOR == 2, "");
 static bool RunCompareFloat(Zenith_GraphBlackboard& xBB, int32_t iOp, float fCompareTo)
 {
 	Zenith_GraphNode_CompareBlackboardFloat xNode;
-	xNode.m_strVar = "";
 	xNode.m_fCompareTo = fCompareTo;
 	xNode.m_iOp = iOp;
-	xNode.m_strResultVar = "";
 	Zenith_PropertyValue xInput;
 	xInput.SetFloat(xBB.GetFloat("v"));
 	xNode.SetInputForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Value, xInput);
@@ -96,8 +94,7 @@ ZENITH_TEST(GraphNodeOps, CompareBlackboardFloatOutOfRangeFails)
 	Zenith_GraphBlackboard xBB;
 	Zenith_PropertyValue xV; xV.SetFloat(1.0f);
 	xBB.SetValue("v", xV);
-	Zenith_GraphNode_CompareBlackboardFloat xNode;
-	xNode.m_strVar = ""; xNode.m_fCompareTo = 0.0f; xNode.m_iOp = 99; xNode.m_strResultVar = "";
+	Zenith_GraphNode_CompareBlackboardFloat xNode; xNode.m_fCompareTo = 0.0f; xNode.m_iOp = 99;
 	xNode.SetInputForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Value, xV);
 	Zenith_GraphContext xCtx; xCtx.m_pxBlackboard = &xBB;
 	// The default: arm of the switch must still FAIL (not silently pick a branch).
@@ -111,10 +108,8 @@ ZENITH_TEST(GraphNodeOps, CompareBlackboardFloatOutOfRangeFails)
 static bool RunCompareInt(Zenith_GraphBlackboard& xBB, int32_t iOp, int32_t iCompareTo)
 {
 	Zenith_GraphNode_CompareBlackboardInt xNode;
-	xNode.m_strVar = "";
 	xNode.m_iCompareTo = iCompareTo;
 	xNode.m_iOp = iOp;
-	xNode.m_strResultVar = "";
 	Zenith_PropertyValue xInput;
 	xInput.SetInt32(xBB.GetInt32("v"));
 	xNode.SetInputForTest(Zenith_GraphNode_CompareBlackboardInt::uPIN_Value, xInput);
@@ -160,8 +155,7 @@ ZENITH_TEST(GraphNodeOps, CompareBlackboardIntOutOfRangeFails)
 	Zenith_GraphBlackboard xBB;
 	Zenith_PropertyValue xV; xV.SetInt32(1);
 	xBB.SetValue("v", xV);
-	Zenith_GraphNode_CompareBlackboardInt xNode;
-	xNode.m_strVar = ""; xNode.m_iCompareTo = 0; xNode.m_iOp = 99; xNode.m_strResultVar = "";
+	Zenith_GraphNode_CompareBlackboardInt xNode; xNode.m_iCompareTo = 0; xNode.m_iOp = 99;
 	xNode.SetInputForTest(Zenith_GraphNode_CompareBlackboardInt::uPIN_Value, xV);
 	Zenith_GraphContext xCtx; xCtx.m_pxBlackboard = &xBB;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
@@ -228,21 +222,24 @@ ZENITH_TEST(EngineGraphBuilder, CompareFloatFactoryMatchesRaw)
 	Zenith_GraphDefinition xFac;
 	{
 		Zenith_GraphBuilder xBuilder(xFac);
-		DeclareFloatVar(xBuilder, "v");		// CompareBlackboardFloat's Value pin READS it
+		DeclareFloatVar(xBuilder, "v");
+		const u_int uSource = xBuilder.Node("GetVariable");
+		xBuilder.ParamString(uSource, "m_strVariable", "v");
 		Zenith_EngineGraphBuilder xB(xBuilder);
-		xB.CompareFloat("v", GRAPH_COMPARE_FLOAT_OP_GREATER, 0.08f, "due");
+		xB.CompareFloat({ uSource, "Value" }, GRAPH_COMPARE_FLOAT_OP_GREATER, 0.08f);
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 	}
 	Zenith_GraphDefinition xRaw;
 	{
 		Zenith_GraphBuilder xBuilder(xRaw);
 		DeclareFloatVar(xBuilder, "v");
+		const u_int uSource = xBuilder.Node("GetVariable");
+		xBuilder.ParamString(uSource, "m_strVariable", "v");
 		const u_int uNode = xBuilder.Node("CompareBlackboardFloat");
 		ZENITH_ASSERT_NE(uNode, 0u);	// engine node resolved (test not vacuous)
-		xBuilder.ParamString(uNode, "m_strVar", "v");
 		xBuilder.ParamFloat(uNode, "m_fCompareTo", 0.08f);
 		xBuilder.ParamInt(uNode, "m_iOp", 2);
-		xBuilder.ParamString(uNode, "m_strResultVar", "due");
+		xBuilder.DataEdge(uSource, "Value", uNode, "Value");
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
 	}
 	ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
@@ -337,13 +334,13 @@ ZENITH_TEST(EngineGraphBuilder, ActionFactoriesMatchRaw)
 	}
 
 	{	// ReadActionAxis1D WITH an explicit result var
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ReadActionAxis1D("Lean", "lean"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ReadActionAxis1D"); xBd.ParamString(u, "m_strAction", "Lean"); xBd.ParamString(u, "m_strResultVar", "lean"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ReadActionAxis1D("Lean"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ReadActionAxis1D"); xBd.ParamString(u, "m_strAction", "Lean"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// ReadActionAxis2D WITH an explicit result var
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ReadActionAxis2D("Move", "move"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ReadActionAxis2D"); xBd.ParamString(u, "m_strAction", "Move"); xBd.ParamString(u, "m_strResultVar", "move"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.ReadActionAxis2D("Move"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("ReadActionAxis2D"); xBd.ParamString(u, "m_strAction", "Move"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 }
@@ -352,7 +349,7 @@ ZENITH_TEST(EngineGraphBuilder, ActionFactoriesMatchRaw)
 // leave the node's own default ("axis" / "axis2D") untouched, NOT overwrite it
 // with "" -- a graph whose read var silently became the empty string writes
 // into a variable nothing can read.
-ZENITH_TEST(EngineGraphBuilder, ReadActionAxisOmittedResultVarKeepsNodeDefault)
+ZENITH_TEST(EngineGraphBuilder, ReadActionAxisFactoriesMatchActionOnlyRaw)
 {
 	Zenith_GraphDefinition xFac;
 	{
@@ -370,37 +367,28 @@ ZENITH_TEST(EngineGraphBuilder, ReadActionAxisOmittedResultVarKeepsNodeDefault)
 	}
 	ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRawDefault));
 
-	Zenith_GraphDefinition xRawEmpty;
-	{
-		Zenith_GraphBuilder xBd(xRawEmpty);
-		const u_int u = xBd.Node("ReadActionAxis2D");
-		xBd.ParamString(u, "m_strAction", "Move");
-		xBd.ParamString(u, "m_strResultVar", "");
-		ZENITH_ASSERT_TRUE(xBd.Build());
-	}
-	ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac, xRawEmpty));
 }
 
 ZENITH_TEST(EngineGraphBuilder, FlowFactoriesMatchRaw)
 {
 	{	// Branch - Condition is an INPUT BOOL read
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareBoolVar(xBd, "c"); Zenith_EngineGraphBuilder xB(xBd); xB.Branch("c"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareBoolVar(xBd, "c"); const u_int u = xBd.Node("Branch"); xBd.ParamString(u, "m_strConditionVar", "c"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareBoolVar(xBd, "c"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","c"); Zenith_EngineGraphBuilder xB(xBd); xB.Branch({s,"Value"}); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareBoolVar(xBd, "c"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","c"); const u_int u = xBd.Node("Branch"); xBd.DataEdge(s,"Value",u,"Condition"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// Gate - Open is an INPUT BOOL read
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareBoolVar(xBd, "o"); Zenith_EngineGraphBuilder xB(xBd); xB.Gate("o"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareBoolVar(xBd, "o"); const u_int u = xBd.Node("Gate"); xBd.ParamString(u, "m_strOpenVar", "o"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareBoolVar(xBd, "o"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","o"); Zenith_EngineGraphBuilder xB(xBd); xB.Gate({s,"Value"}); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareBoolVar(xBd, "o"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","o"); const u_int u = xBd.Node("Gate"); xBd.DataEdge(s,"Value",u,"Open"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// SwitchOnInt - Value is an INPUT INT32 read
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "v"); Zenith_EngineGraphBuilder xB(xBd); xB.SwitchOnInt("v", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "v"); const u_int u = xBd.Node("SwitchOnInt"); xBd.ParamString(u, "m_strVar", "v"); xBd.ParamInt(u, "m_iCaseCount", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "v"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","v"); Zenith_EngineGraphBuilder xB(xBd); xB.SwitchOnInt({s,"Value"}, 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "v"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","v"); const u_int u = xBd.Node("SwitchOnInt"); xBd.DataEdge(s,"Value",u,"Value"); xBd.ParamInt(u, "m_iCaseCount", 3); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// StateMachine - State is an INPUT INT32 read
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "s"); Zenith_EngineGraphBuilder xB(xBd); xB.StateMachine("s", 4, "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "s"); const u_int u = xBd.Node("StateMachine"); xBd.ParamString(u, "m_strStateVar", "s"); xBd.ParamInt(u, "m_iStateCount", 4); xBd.ParamString(u, "m_strStateNames", "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "state"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","state"); Zenith_EngineGraphBuilder xB(xBd); xB.StateMachine({s,"Value"}, 4, "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "state"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","state"); const u_int u = xBd.Node("StateMachine"); xBd.DataEdge(s,"Value",u,"State"); xBd.ParamInt(u, "m_iStateCount", 4); xBd.ParamString(u, "m_strStateNames", "A,B,C,D"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 }
@@ -408,8 +396,8 @@ ZENITH_TEST(EngineGraphBuilder, FlowFactoriesMatchRaw)
 ZENITH_TEST(EngineGraphBuilder, BlackboardFactoriesMatchRaw)
 {
 	{	// CompareInt (with the int-only NOT_EQUAL enum to exercise the mapping)
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "v"); Zenith_EngineGraphBuilder xB(xBd); xB.CompareInt("v", GRAPH_COMPARE_INT_OP_NOT_EQUAL, 7, "r"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "v"); const u_int u = xBd.Node("CompareBlackboardInt"); xBd.ParamString(u, "m_strVar", "v"); xBd.ParamInt(u, "m_iCompareTo", 7); xBd.ParamInt(u, "m_iOp", 5); xBd.ParamString(u, "m_strResultVar", "r"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "v"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","v"); Zenith_EngineGraphBuilder xB(xBd); xB.CompareInt({s,"Value"}, GRAPH_COMPARE_INT_OP_NOT_EQUAL, 7); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "v"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","v"); const u_int u = xBd.Node("CompareBlackboardInt"); xBd.DataEdge(s,"Value",u,"Value"); xBd.ParamInt(u, "m_iCompareTo", 7); xBd.ParamInt(u, "m_iOp", 5); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// SetBlackboardInt
@@ -445,12 +433,6 @@ ZENITH_TEST(EngineGraphBuilder, FireCustomEventFactoryAndDefaults)
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareEntityVar(xBd, "tgt"); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strTargetVar", "tgt"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
-	{	// with payload var only (target left default) - Payload is an INPUT ANY
-		// read, so any declared type unifies; FLOAT is arbitrary
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareFloatVar(xBd, "pl"); Zenith_EngineGraphBuilder xB(xBd); xB.FireCustomEvent("E", nullptr, "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareFloatVar(xBd, "pl"); const u_int u = xBd.Node("FireCustomEvent"); xBd.ParamString(u, "m_strEventName", "E"); xBd.ParamString(u, "m_strPayloadVar", "pl"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
-	}
 }
 
 // The blackboard-logic and list factories. Same equivalence contract as every
@@ -458,7 +440,7 @@ ZENITH_TEST(EngineGraphBuilder, FireCustomEventFactoryAndDefaults)
 ZENITH_TEST(EngineGraphBuilder, LogicAndListFactoriesMatchRaw)
 {
 	{	// LogicBool with the non-default XOR op and a NON-default invert
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.LogicBool("armed,jammed", GRAPH_LOGIC_BOOL_OP_XOR, "odd", true, true); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.LogicBool("armed,jammed", GRAPH_LOGIC_BOOL_OP_XOR, true, true); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		Zenith_GraphDefinition xRaw;
 		{
 			Zenith_GraphBuilder xBd(xRaw);
@@ -468,19 +450,18 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListFactoriesMatchRaw)
 			xBd.ParamInt(u, "m_iOp", 2);
 			xBd.ParamBool(u, "m_bInvert", true);
 			xBd.ParamBool(u, "m_bMissingIsTrue", true);
-			xBd.ParamString(u, "m_strResultVar", "odd");
-			ZENITH_ASSERT_TRUE(xBd.Build());
+						ZENITH_ASSERT_TRUE(xBd.Build());
 		}
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// GetListCount
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.GetListCount("bag", "n"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("GetListCount"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strResultVar", "n"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); Zenith_EngineGraphBuilder xB(xBd); xB.GetListCount("bag"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); const u_int u = xBd.Node("GetListCount"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// GetListElement WITH an index var - Index is an INPUT INT32 read
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "cursor"); Zenith_EngineGraphBuilder xB(xBd); xB.GetListElement("bag", 3, "elem", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "cursor"); const u_int u = xBd.Node("GetListElement"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 3); xBd.ParamString(u, "m_strResultVar", "elem"); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "cursor"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","cursor"); Zenith_EngineGraphBuilder xB(xBd); xB.GetListElement("bag", 3, {s,"Value"}); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "cursor"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","cursor"); const u_int u = xBd.Node("GetListElement"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 3); xBd.DataEdge(s,"Value",u,"Index"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// ForEach WITH an index var
@@ -491,13 +472,13 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListFactoriesMatchRaw)
 	{	// ListAdd - Value is an INPUT ANY read (the value pushed onto the list);
 		// nothing in this fixture writes it, so ENTITY_ID is a plausible pick and
 		// ANY unifies with it either way
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareEntityVar(xBd, "spawned"); Zenith_EngineGraphBuilder xB(xBd); xB.ListAdd("bag", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareEntityVar(xBd, "spawned"); const u_int u = xBd.Node("ListAdd"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamString(u, "m_strValueVar", "spawned"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareEntityVar(xBd, "spawned"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","spawned"); Zenith_EngineGraphBuilder xB(xBd); xB.ListAdd("bag", {s,"Value"}); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareEntityVar(xBd, "spawned"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","spawned"); const u_int u = xBd.Node("ListAdd"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.DataEdge(s,"Value",u,"Value"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// ListRemoveAt WITH an index var - Index is an INPUT INT32 read
-		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "cursor"); Zenith_EngineGraphBuilder xB(xBd); xB.ListRemoveAt("bag", 2, "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "cursor"); const u_int u = xBd.Node("ListRemoveAt"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 2); xBd.ParamString(u, "m_strIndexVar", "cursor"); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder xBd(xFac); DeclareIntVar(xBd, "cursor"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","cursor"); Zenith_EngineGraphBuilder xB(xBd); xB.ListRemoveAt("bag", 2, {s,"Value"}); ZENITH_ASSERT_TRUE(xBd.Build()); }
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder xBd(xRaw); DeclareIntVar(xBd, "cursor"); const u_int s=xBd.Node("GetVariable"); xBd.ParamString(s,"m_strVariable","cursor"); const u_int u = xBd.Node("ListRemoveAt"); ZENITH_ASSERT_NE(u, 0u); xBd.ParamString(u, "m_strListVar", "bag"); xBd.ParamInt(u, "m_iIndex", 2); xBd.DataEdge(s,"Value",u,"Index"); ZENITH_ASSERT_TRUE(xBd.Build()); }
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRaw));
 	}
 	{	// ListClear
@@ -519,7 +500,7 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListOmittedArgsKeepNodeDefaults)
 		{
 			Zenith_GraphBuilder xBd(xFac);
 			Zenith_EngineGraphBuilder xB(xBd);
-			xB.LogicBool("a,b", GRAPH_LOGIC_BOOL_OP_AND, "r");	// no flags
+			xB.LogicBool("a,b", GRAPH_LOGIC_BOOL_OP_AND);	// no flags
 			ZENITH_ASSERT_TRUE(xBd.Build());
 		}
 		Zenith_GraphDefinition xRawDefault;
@@ -528,7 +509,6 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListOmittedArgsKeepNodeDefaults)
 			const u_int u = xBd.Node("LogicBlackboardBool");
 			xBd.ParamString(u, "m_strVars", "a,b");
 			xBd.ParamInt(u, "m_iOp", 0);
-			xBd.ParamString(u, "m_strResultVar", "r");
 			ZENITH_ASSERT_TRUE(xBd.Build());
 		}
 		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac, xRawDefault));
@@ -540,7 +520,6 @@ ZENITH_TEST(EngineGraphBuilder, LogicAndListOmittedArgsKeepNodeDefaults)
 			xBd.ParamString(u, "m_strVars", "a,b");
 			xBd.ParamInt(u, "m_iOp", 0);
 			xBd.ParamBool(u, "m_bInvert", true);
-			xBd.ParamString(u, "m_strResultVar", "r");
 			ZENITH_ASSERT_TRUE(xBd.Build());
 		}
 		ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac, xRawInverted));
@@ -602,79 +581,67 @@ static u_int AddWireEntitySource(Zenith_GraphBuilder& xB)
 	const u_int u = xB.Node("GetVariable"); xB.ParamString(u, "m_strVariable", "wireEntity"); return u;
 }
 
-ZENITH_TEST(EngineGraphBuilder, WireFactoriesSerializeAsRawAndDifferFromLegacy)
+ZENITH_TEST(EngineGraphBuilder, WireFactoriesSerializeAsIndependentRaw)
 {
 	{ // Branch: non-empty "condition" must be explicitly cleared.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireBoolSource(b); Zenith_EngineGraphBuilder e(b); e.Branch({s,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireBoolSource(b); const u_int n=b.Node("Branch"); b.ParamString(n,"m_strConditionVar",""); b.DataEdge(s,"Value",n,"Condition"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareBoolVar(b,"condition"); Zenith_EngineGraphBuilder e(b); e.Branch("condition"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireBoolSource(b); const u_int n=b.Node("Branch"); b.DataEdge(s,"Value",n,"Condition"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // Gate: non-empty "open" clear.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireBoolSource(b); Zenith_EngineGraphBuilder e(b); e.Gate({s,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireBoolSource(b); const u_int n=b.Node("Gate"); b.ParamString(n,"m_strOpenVar",""); b.DataEdge(s,"Value",n,"Open"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareBoolVar(b,"open"); Zenith_EngineGraphBuilder e(b); e.Gate("open"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireBoolSource(b); const u_int n=b.Node("Gate"); b.DataEdge(s,"Value",n,"Open"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // SwitchOnInt: Value clear and preserving case-count blob.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireIntSource(b); Zenith_EngineGraphBuilder e(b); e.SwitchOnInt({s,"Value"},3); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("SwitchOnInt"); b.ParamString(n,"m_strVar",""); b.ParamInt(n,"m_iCaseCount",3); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareIntVar(b,"value"); Zenith_EngineGraphBuilder e(b); e.SwitchOnInt("value",3); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("SwitchOnInt"); b.ParamInt(n,"m_iCaseCount",3); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // StateMachine: Value clear plus both scalar/string params.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireIntSource(b); Zenith_EngineGraphBuilder e(b); e.StateMachine({s,"Value"},2,"Idle,Run"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("StateMachine"); b.ParamString(n,"m_strStateVar",""); b.ParamInt(n,"m_iStateCount",2); b.ParamString(n,"m_strStateNames","Idle,Run"); b.DataEdge(s,"Value",n,"State"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareIntVar(b,"state"); Zenith_EngineGraphBuilder e(b); e.StateMachine("state",2,"Idle,Run"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("StateMachine"); b.ParamInt(n,"m_iStateCount",2); b.ParamString(n,"m_strStateNames","Idle,Run"); b.DataEdge(s,"Value",n,"State"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // CompareFloat Value-only: Result is omitted, Value clear precedes edge.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireFloatSource(b); Zenith_EngineGraphBuilder e(b); e.CompareFloat({s,"Value"},GRAPH_COMPARE_FLOAT_OP_GREATER,1.5f); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireFloatSource(b); const u_int n=b.Node("CompareBlackboardFloat"); b.ParamString(n,"m_strVar",""); b.ParamFloat(n,"m_fCompareTo",1.5f); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_FLOAT_OP_GREATER); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareFloatVar(b,"value"); Zenith_EngineGraphBuilder e(b); e.CompareFloat("value",GRAPH_COMPARE_FLOAT_OP_GREATER,1.5f,"result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireFloatSource(b); const u_int n=b.Node("CompareBlackboardFloat"); b.ParamFloat(n,"m_fCompareTo",1.5f); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_FLOAT_OP_GREATER); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // CompareInt Value + CompareTo: both edges retain order and CompareTo's empty default is omitted.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int a=AddWireIntSource(b,"wireIntA"); const u_int c=AddWireIntSource(b,"wireIntB"); Zenith_EngineGraphBuilder e(b); e.CompareInt({a,"Value"},GRAPH_COMPARE_INT_OP_EQUAL,{c,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int a=AddWireIntSource(b,"wireIntA"); const u_int c=AddWireIntSource(b,"wireIntB"); const u_int n=b.Node("CompareBlackboardInt"); b.ParamString(n,"m_strVar",""); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_INT_OP_EQUAL); b.DataEdge(a,"Value",n,"Value"); b.DataEdge(c,"Value",n,"CompareTo"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareIntVar(b,"value"); Zenith_EngineGraphBuilder e(b); e.CompareInt("value",GRAPH_COMPARE_INT_OP_EQUAL,7,"result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int a=AddWireIntSource(b,"wireIntA"); const u_int c=AddWireIntSource(b,"wireIntB"); const u_int n=b.Node("CompareBlackboardInt"); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_INT_OP_EQUAL); b.DataEdge(a,"Value",n,"Value"); b.DataEdge(c,"Value",n,"CompareTo"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // CompareFloat's two-wire sibling has the same Value/CompareTo edge ordering.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int a=AddWireFloatSource(b); DeclareFloatVar(b,"wireFloatB"); const u_int c=b.Node("GetVariable"); b.ParamString(c,"m_strVariable","wireFloatB"); Zenith_EngineGraphBuilder e(b); e.CompareFloat({a,"Value"},GRAPH_COMPARE_FLOAT_OP_LESS,{c,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int a=AddWireFloatSource(b); DeclareFloatVar(b,"wireFloatB"); const u_int c=b.Node("GetVariable"); b.ParamString(c,"m_strVariable","wireFloatB"); const u_int n=b.Node("CompareBlackboardFloat"); b.ParamString(n,"m_strVar",""); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_FLOAT_OP_LESS); b.DataEdge(a,"Value",n,"Value"); b.DataEdge(c,"Value",n,"CompareTo"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareFloatVar(b,"value"); Zenith_EngineGraphBuilder e(b); e.CompareFloat("value",GRAPH_COMPARE_FLOAT_OP_LESS,1.0f,"result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int a=AddWireFloatSource(b); DeclareFloatVar(b,"wireFloatB"); const u_int c=b.Node("GetVariable"); b.ParamString(c,"m_strVariable","wireFloatB"); const u_int n=b.Node("CompareBlackboardFloat"); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_FLOAT_OP_LESS); b.DataEdge(a,"Value",n,"Value"); b.DataEdge(c,"Value",n,"CompareTo"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // CompareInt Value-only preserves the constant half while omitting Result.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireIntSource(b); Zenith_EngineGraphBuilder e(b); e.CompareInt({s,"Value"},GRAPH_COMPARE_INT_OP_GREATER,3); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("CompareBlackboardInt"); b.ParamString(n,"m_strVar",""); b.ParamInt(n,"m_iCompareTo",3); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_INT_OP_GREATER); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareIntVar(b,"value"); Zenith_EngineGraphBuilder e(b); e.CompareInt("value",GRAPH_COMPARE_INT_OP_GREATER,3,"result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("CompareBlackboardInt"); b.ParamInt(n,"m_iCompareTo",3); b.ParamEnum(n,"m_iOp",GRAPH_COMPARE_INT_OP_GREATER); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // GetListElement: Index default is already empty, Result omitted.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireIntSource(b); Zenith_EngineGraphBuilder e(b); e.GetListElement("bag",4,{s,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("GetListElement"); b.ParamString(n,"m_strListVar","bag"); b.ParamInt(n,"m_iIndex",4); b.DataEdge(s,"Value",n,"Index"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareIntVar(b,"cursor"); Zenith_EngineGraphBuilder e(b); e.GetListElement("bag",4,"element","cursor"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // ListAdd: non-empty item clear.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireEntitySource(b); Zenith_EngineGraphBuilder e(b); e.ListAdd("bag",{s,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireEntitySource(b); const u_int n=b.Node("ListAdd"); b.ParamString(n,"m_strListVar","bag"); b.ParamString(n,"m_strValueVar",""); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareEntityVar(b,"item"); Zenith_EngineGraphBuilder e(b); e.ListAdd("bag","item"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireEntitySource(b); const u_int n=b.Node("ListAdd"); b.ParamString(n,"m_strListVar","bag"); b.DataEdge(s,"Value",n,"Value"); ZENITH_ASSERT_TRUE(b.Build()); }
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // ListRemoveAt: Index default omission.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireIntSource(b); Zenith_EngineGraphBuilder e(b); e.ListRemoveAt("bag",2,{s,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireIntSource(b); const u_int n=b.Node("ListRemoveAt"); b.ParamString(n,"m_strListVar","bag"); b.ParamInt(n,"m_iIndex",2); b.DataEdge(s,"Value",n,"Index"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareIntVar(b,"idx"); Zenith_EngineGraphBuilder e(b); e.ListRemoveAt("bag",2,"idx"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 	{ // FireCustomEvent: Payload default is empty, so it is omitted rather than cleared.
 		Zenith_GraphDefinition xWire; { Zenith_GraphBuilder b(xWire); const u_int s=AddWireFloatSource(b); Zenith_EngineGraphBuilder e(b); e.FireCustomEvent("WireEvent",nullptr,{s,"Value"}); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int s=AddWireFloatSource(b); const u_int n=b.Node("FireCustomEvent"); b.ParamString(n,"m_strEventName","WireEvent"); b.DataEdge(s,"Value",n,"Payload"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); DeclareFloatVar(b,"payload"); Zenith_EngineGraphBuilder e(b); e.FireCustomEvent("WireEvent",nullptr,"payload"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xWire,xLegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xWire,xRaw));
 	}
 }
 
@@ -683,24 +650,20 @@ ZENITH_TEST(EngineGraphBuilder, WireFactoryOutputOmissionSerializesNoCompatibili
 	{ // LogicBool keeps both booleans explicit, but omits Result.
 		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder b(xFac); Zenith_EngineGraphBuilder e(b); e.LogicBool("a,b",GRAPH_LOGIC_BOOL_OP_OR,true,false); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int n=b.Node("LogicBlackboardBool"); b.ParamString(n,"m_strVars","a,b"); b.ParamEnum(n,"m_iOp",GRAPH_LOGIC_BOOL_OP_OR); b.ParamBool(n,"m_bInvert",true); b.ParamBool(n,"m_bMissingIsTrue",false); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); Zenith_EngineGraphBuilder e(b); e.LogicBool("a,b",GRAPH_LOGIC_BOOL_OP_OR,"legacyResult",true,false); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac,xLegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac,xRaw));
 	}
 	{ // GetListCount's one-argument form omits Result.
 		Zenith_GraphDefinition xFac; { Zenith_GraphBuilder b(xFac); Zenith_EngineGraphBuilder e(b); e.GetListCount("bag"); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xRaw; { Zenith_GraphBuilder b(xRaw); const u_int n=b.Node("GetListCount"); b.ParamString(n,"m_strListVar","bag"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xLegacy; { Zenith_GraphBuilder b(xLegacy); Zenith_EngineGraphBuilder e(b); e.GetListCount("bag","result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac,xRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xFac,xLegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xFac,xRaw));
 	}
 	{ // Both action-axis forms already use their one-argument omission spelling.
 		Zenith_GraphDefinition xA; { Zenith_GraphBuilder b(xA); Zenith_EngineGraphBuilder e(b); e.ReadActionAxis1D("LookX"); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xARaw; { Zenith_GraphBuilder b(xARaw); const u_int n=b.Node("ReadActionAxis1D"); b.ParamString(n,"m_strAction","LookX"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xALegacy; { Zenith_GraphBuilder b(xALegacy); Zenith_EngineGraphBuilder e(b); e.ReadActionAxis1D("LookX","result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xA,xARaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xA,xALegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xA,xARaw));
 		Zenith_GraphDefinition xB; { Zenith_GraphBuilder b(xB); Zenith_EngineGraphBuilder e(b); e.ReadActionAxis2D("Move"); ZENITH_ASSERT_TRUE(b.Build()); }
 		Zenith_GraphDefinition xBRaw; { Zenith_GraphBuilder b(xBRaw); const u_int n=b.Node("ReadActionAxis2D"); b.ParamString(n,"m_strAction","Move"); ZENITH_ASSERT_TRUE(b.Build()); }
-		Zenith_GraphDefinition xBLegacy; { Zenith_GraphBuilder b(xBLegacy); Zenith_EngineGraphBuilder e(b); e.ReadActionAxis2D("Move","result"); ZENITH_ASSERT_TRUE(b.Build()); }
-		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xB,xBRaw)); ZENITH_ASSERT_FALSE(GraphDefsSerializeIdentically(xB,xBLegacy));
+		ZENITH_ASSERT_TRUE(GraphDefsSerializeIdentically(xB,xBRaw));
 	}
 }
 
@@ -722,11 +685,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Test_RegConsumerNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(int32_t, m_iDefault, -1)
 
 		ZENITH_GRAPH_PINS_BEGIN(Test_RegConsumerNode)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Value, "m_strValueVar", "m_iDefault", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Value, "m_iDefault", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -752,7 +714,7 @@ namespace
 	public:
 		ZENITH_PROPERTY(int32_t, m_iMarker, 0)
 		ZENITH_GRAPH_PINS_BEGIN(Test_RegUnsetAnyProducerNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext&) override { ++m_uExecuteCount; return GRAPH_NODE_STATUS_SUCCESS; }
@@ -768,7 +730,7 @@ namespace
 		ZENITH_PROPERTY(float, m_fValue, 0.0f)
 		static constexpr u_int uPIN_Value = 0u;
 		ZENITH_GRAPH_PINS_BEGIN(Test_RegCountingFloatProducerNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
@@ -785,7 +747,7 @@ namespace
 	public:
 		ZENITH_PROPERTY(int32_t, m_iMarker, 0)
 		ZENITH_GRAPH_PINS_BEGIN(Test_RegCountingVec3ProducerNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override { ++m_uExecuteCount; Zenith_PropertyValue x; x.SetVector3(Zenith_Maths::Vector3(0.0f,0.0f,5.0f)); SetOutput(xContext,0u,x); return GRAPH_NODE_STATUS_SUCCESS; }
@@ -1038,6 +1000,102 @@ ZENITH_TEST(GraphNodeOps, GetVariable_IsPureAndRunsOnDemand)
 
 // ★ The CORE registrar is not core's set. Zenith_RegisterEngineGraphNodes calls
 // every sibling sub-registrar at its bottom, so running it alone would sweep
+namespace
+{
+	class Test_TotalityNoDescriptorNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Test_TotalityNoDescriptorNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strSelectorVar, "")
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_TotalityNoDescriptor"; }
+	};
+
+	template<u_int uFixture>
+	class Test_TotalityDirectPinNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(Test_TotalityDirectPinNode)
+	public:
+		ZENITH_PROPERTY(int32_t, m_iValue, 7)
+		ZENITH_PROPERTY(std::string, m_strForbidden, "")
+
+		static const Zenith_GraphPinTable& GetPinTableStatic()
+		{
+			static Zenith_GraphPinTable ls_xPins;
+			return ls_xPins;
+		}
+		static Zenith_GraphPinTable& GetPinTableMutable()
+		{
+			return const_cast<Zenith_GraphPinTable&>(GetPinTableStatic());
+		}
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_TotalityDirectPin"; }
+	};
+
+	Zenith_GraphPinDesc Test_TotalityPin(const char* szName, Zenith_GraphPinRole eRole,
+		Zenith_PropertyType eType, const char* szVarNameProperty, const char* szConstProperty,
+		const char* szTypeFromVarNameProperty)
+	{
+		Zenith_GraphPinDesc xPin;
+		xPin.m_szName = szName;
+		xPin.m_eRole = eRole;
+		xPin.m_eType = eType;
+		xPin.m_szVarNameProperty = szVarNameProperty;
+		xPin.m_szConstProperty = szConstProperty;
+		xPin.m_szTypeFromVarNameProperty = szTypeFromVarNameProperty;
+		xPin.m_bInstanceResolved = false;
+		xPin.m_bVariadic = false;
+		xPin.m_uAcceptedTypeMask = uGRAPH_PIN_ACCEPT_ANY;
+		return xPin;
+	}
+
+	void Test_TotalityRegisterEmpty() {}
+	void Test_TotalityRegisterNoDescriptor()
+	{
+		Zenith_GraphNodeRegistry::Get().RegisterNodeType<Test_TotalityNoDescriptorNode>(
+			"Test_TotalityNoDescriptor", GRAPH_EVENT_NONE, 1u, false, "Test");
+	}
+	void Test_TotalityRegisterLegal()
+	{
+		Test_TotalityDirectPinNode<0u>::GetPinTableMutable().AddPin(Test_TotalityPin(
+			"Input", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "", "m_iValue", ""));
+		Test_TotalityDirectPinNode<0u>::GetPinTableMutable().AddPin(Test_TotalityPin(
+			"Output", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "", "", ""));
+		Zenith_GraphNodeRegistry::Get().RegisterNodeType<Test_TotalityDirectPinNode<0u>>(
+			"Test_TotalityLegal", GRAPH_EVENT_NONE, 1u, false, "Test");
+	}
+	void Test_TotalityRegisterMissingConst()
+	{
+		Test_TotalityDirectPinNode<1u>::GetPinTableMutable().AddPin(Test_TotalityPin(
+			"Input", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "", "m_iMissing", ""));
+		Zenith_GraphNodeRegistry::Get().RegisterNodeType<Test_TotalityDirectPinNode<1u>>(
+			"Test_TotalityMissingConst", GRAPH_EVENT_NONE, 1u, false, "Test");
+	}
+	void Test_TotalityRegisterMissingTypeSource()
+	{
+		Test_TotalityDirectPinNode<2u>::GetPinTableMutable().AddPin(Test_TotalityPin(
+			"Output", GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, "", "", "m_strMissingTypeSource"));
+		Zenith_GraphNodeRegistry::Get().RegisterNodeType<Test_TotalityDirectPinNode<2u>>(
+			"Test_TotalityMissingTypeSource", GRAPH_EVENT_NONE, 1u, false, "Test");
+	}
+	void Test_TotalityRegisterIllegalMetadata()
+	{
+		Test_TotalityDirectPinNode<3u>::GetPinTableMutable().AddPin(Test_TotalityPin(
+			"Input", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "m_strForbidden", "m_iValue", ""));
+		Zenith_GraphNodeRegistry::Get().RegisterNodeType<Test_TotalityDirectPinNode<3u>>(
+			"Test_TotalityIllegalMetadata", GRAPH_EVENT_NONE, 1u, false, "Test");
+	}
+	void Test_TotalityRegisterIllegalOutputMetadata()
+	{
+		Test_TotalityDirectPinNode<4u>::GetPinTableMutable().AddPin(Test_TotalityPin(
+			"Output", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strForbidden", "", ""));
+		Zenith_GraphNodeRegistry::Get().RegisterNodeType<Test_TotalityDirectPinNode<4u>>(
+			"Test_TotalityIllegalOutputMetadata", GRAPH_EVENT_NONE, 1u, false, "Test");
+	}
+}
+
 // nine other TUs' node types into this test. Core's own set is the DIFFERENCE:
 // each sub-registrar is run first and its names subtracted. That keeps the test
 // total by construction - a node added to the core TU tomorrow is covered with
@@ -1064,6 +1122,34 @@ ZENITH_TEST(GraphPinTable, RegistrationTotality)
 		"Registration.cpp", nullptr, 0u);
 }
 
+ZENITH_TEST(GraphPinTable, TotalitySyntheticControls)
+{
+	// These registrars are deliberately isolated through the counted harness.
+	// They exercise the harness itself without mutating a production pin table.
+	ZENITH_ASSERT_TRUE(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterEmpty, "TotalityEmpty", nullptr, 0u) > 0u,
+		"an empty registrar must fail rather than proving totality vacuously");
+	ZENITH_ASSERT_TRUE(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterNoDescriptor, "TotalityNoDescriptor", nullptr, 0u) > 0u,
+		"a registered node without a descriptor table must fail");
+
+	ZENITH_ASSERT_EQ(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterLegal, "TotalityLegal", nullptr, 0u), 0u,
+		"legal slot-only INPUT/OUTPUT descriptors must pass with empty name metadata");
+	ZENITH_ASSERT_TRUE(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterMissingConst, "TotalityMissingConst", nullptr, 0u) > 0u,
+		"a descriptor naming a missing permanent constant property must fail");
+	ZENITH_ASSERT_TRUE(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterMissingTypeSource, "TotalityMissingTypeSource", nullptr, 0u) > 0u,
+		"a descriptor naming a missing type-source property must fail");
+	ZENITH_ASSERT_TRUE(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterIllegalMetadata, "TotalityIllegalMetadata", nullptr, 0u) > 0u,
+		"INPUT metadata must be rejected even when its reflected string property exists");
+	ZENITH_ASSERT_TRUE(Zenith_CountPinTableTotalityFailures(
+		&Test_TotalityRegisterIllegalOutputMetadata, "TotalityIllegalOutputMetadata", nullptr, 0u) > 0u,
+		"OUTPUT metadata must be rejected even when its reflected string property exists");
+}
+
 // One representative of each ROLE this TU declares. Roles are what the validator
 // consumes (a WRITE role registers a writer that satisfies other readers; a READ
 // role registers a read that must be satisfied), so a role typo is invisible to
@@ -1073,11 +1159,10 @@ ZENITH_TEST(GraphPinTable, RegistrationRoleSpotCheck)
 	// READWRITE: read AND written in one Execute. Its own write never satisfies
 	// its own read (the validator's SELF_READWRITE rule).
 	Zenith_CheckGraphPin("AddBlackboardFloat", "Variable", GRAPH_PIN_ROLE_SELECTOR_READWRITE, PROPERTY_TYPE_FLOAT, "m_strVariable");
-	// ★ The trap: the SAME property name on Branch is read-only.
-	Zenith_CheckGraphPin("Branch", "Condition", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_BOOL, "m_strConditionVar");
+	Zenith_CheckGraphPin("Branch", "Condition", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_BOOL, "");
 
-	// INPUT_VAR_OR_CONST: the ternary shape, both halves declared.
-	Zenith_CheckGraphPin("AddBlackboardFloat", "Delta", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "m_strDeltaVar");
+	// INPUT_CONST keeps only the permanent constant half.
+	Zenith_CheckGraphPin("AddBlackboardFloat", "Delta", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_FLOAT, "");
 	const Zenith_GraphPinDesc* pxDelta = Zenith_FindGraphPin("AddBlackboardFloat", "Delta");
 	ZENITH_ASSERT_NOT_NULL(pxDelta);
 	if (pxDelta != nullptr)
@@ -1096,8 +1181,8 @@ ZENITH_TEST(GraphPinTable, RegistrationRoleSpotCheck)
 			"ResolveTargetEntity accepts a packed ENTITY_ID and nothing else");
 	}
 
-	// OUTPUT: a computed result, not a configured destination.
-	Zenith_CheckGraphPin("StoreSelfEntityID", "Variable", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_ENTITY_ID, "m_strVariable");
+	// OUTPUT: a computed result, never a configured destination.
+	Zenith_CheckGraphPin("StoreSelfEntityID", "Variable", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_ENTITY_ID, "");
 	// SELECTOR_WRITE, INHERITED: the collision family declares no table of its
 	// own and must resolve to Zenith_GraphNode_CollisionSourceBase's.
 	Zenith_CheckGraphPin("OnCollisionEnter", "StoreEntity", GRAPH_PIN_ROLE_SELECTOR_WRITE, PROPERTY_TYPE_ENTITY_ID, "m_strStoreEntityVar");
@@ -1115,7 +1200,7 @@ ZENITH_TEST(GraphPinTable, GetVariable_TotalityRowPresent)
 	Zenith_CheckGraphPin("GetVariable", "Variable", GRAPH_PIN_ROLE_SELECTOR_READ, eGRAPH_PIN_TYPE_ANY, "m_strVariable");
 
 	// The wire half: an OUTPUT whose TYPE comes from the graph, and whose
-	// binding/const/fallback slots are all empty ON PURPOSE - a type source is
+	// binding/const slots are all empty ON PURPOSE - a type source is
 	// never a writer, or every other reader's declare-or-error would be silently
 	// satisfied by the node that merely READ the variable.
 	const Zenith_GraphPinDesc* pxValue = Zenith_FindGraphPin("GetVariable", "Value");
@@ -1129,7 +1214,6 @@ ZENITH_TEST(GraphPinTable, GetVariable_TotalityRowPresent)
 	ZENITH_ASSERT_STREQ(pxValue->m_szTypeFromVarNameProperty, "m_strVariable");
 	ZENITH_ASSERT_STREQ(pxValue->m_szVarNameProperty, "");
 	ZENITH_ASSERT_STREQ(pxValue->m_szConstProperty, "");
-	ZENITH_ASSERT_STREQ(pxValue->m_szFallbackVarNameProperty, "");
 	ZENITH_ASSERT_FALSE(pxValue->m_bInstanceResolved);
 }
 
@@ -1324,10 +1408,10 @@ namespace
 		Zenith_GraphNode* m_pxTemp;
 	};
 
-	// OnUpdate -> Branch(szConditionVar), with a SetBlackboardBool witness on EACH
+	// OnUpdate -> Branch, with a SetBlackboardBool witness on EACH
 	// exec pin - which pin ran is then a blackboard fact, not an inference.
 	// Returns the Branch's node id (0 = a node type did not resolve).
-	inline u_int CorePin_BuildBranchFixture(Zenith_GraphDefinition& xDefinition, const char* szConditionVar,
+	inline u_int CorePin_BuildBranchFixture(Zenith_GraphDefinition& xDefinition,
 		const char* szTrueVar, const char* szFalseVar)
 	{
 		Zenith_GraphNodeRegistry::Get().EnsureInitialized();
@@ -1338,10 +1422,6 @@ namespace
 		if (uSource == 0u || uBranch == 0u || uTrue == 0u || uFalse == 0u)
 		{
 			return 0u;
-		}
-		{
-			CorePin_NodeParams xParams(xDefinition, uBranch, "Branch");
-			xParams.SetString("m_strConditionVar", szConditionVar);
 		}
 		{
 			CorePin_NodeParams xParams(xDefinition, uTrue, "SetBlackboardBool");
@@ -1360,7 +1440,7 @@ namespace
 	// OnUpdate -> Loop, body pin driving an AddBlackboardFloat COUNTER (const
 	// delta 1, its own variable, a name that collides with no node default) and
 	// done pin a SetBlackboardBool. Returns the Loop's node id.
-	inline u_int CorePin_BuildLoopFixture(Zenith_GraphDefinition& xDefinition, const char* szCountVar,
+	inline u_int CorePin_BuildLoopFixture(Zenith_GraphDefinition& xDefinition,
 		int32_t iConstCount, const char* szCounterVar, const char* szDoneVar)
 	{
 		Zenith_GraphNodeRegistry::Get().EnsureInitialized();
@@ -1374,7 +1454,6 @@ namespace
 		}
 		{
 			CorePin_NodeParams xParams(xDefinition, uLoop, "Loop");
-			xParams.SetString("m_strCountVar", szCountVar);
 			xParams.SetInt("m_iCount", iConstCount);
 		}
 		{
@@ -1642,9 +1721,7 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareFloatValueAndCompareTo)
 	// 6 under LESS: the wire says TRUE, the variable says FALSE.
 	{
 		Zenith_GraphNode_CompareBlackboardFloat xNode;
-		xNode.m_strVar = "";
 		xNode.m_fCompareTo = 6.0f;
-		xNode.m_strCompareVar = "";
 		xNode.m_iOp = GRAPH_COMPARE_FLOAT_OP_LESS;
 		xNode.SetInputForTest(uValue, CorePin_Float(5.0f));
 
@@ -1653,8 +1730,6 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareFloatValueAndCompareTo)
 		ZENITH_ASSERT_TRUE(CorePin_SlotBool(xNode.GetOutputForTest(uResult), "CompareFloat.Result"),
 			"5 < 6 is TRUE - the wired Value never reached the comparison");
 		// The dual-write lands exactly where today's SetValue did.
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u, "a WIRED pin must not log a census line");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uCompareTo), 0u, "an EMPTY var name cannot log");
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -1663,9 +1738,7 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareFloatValueAndCompareTo)
 	// TRUE.
 	{
 		Zenith_GraphNode_CompareBlackboardFloat xNode;
-		xNode.m_strVar = "";
 		xNode.m_fCompareTo = 9.0f;
-		xNode.m_strCompareVar = "";
 		xNode.m_iOp = GRAPH_COMPARE_FLOAT_OP_GREATER;
 		xNode.SetInputForTest(uCompareTo, CorePin_Float(6.0f));
 		xNode.SetInputForTest(uValue, CorePin_Float(7.0f));
@@ -1674,8 +1747,6 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareFloatValueAndCompareTo)
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(CorePin_SlotBool(xNode.GetOutputForTest(uResult), "CompareFloat.Result"),
 			"7 > 6 is TRUE; 7 > 8 and 7 > 9 are both FALSE, so a FALSE here means the wire lost");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uCompareTo), 0u);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -1683,10 +1754,8 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareFloatValueAndCompareTo)
 	// value (true) is distinguishable from a BOOL slot's stamped false.
 	{
 		Zenith_GraphNode_CompareBlackboardFloat xNode;
-		xNode.m_strVar = "";
 		xNode.m_fCompareTo = 6.0f;
 		xNode.m_iOp = GRAPH_COMPARE_FLOAT_OP_LESS;
-		xNode.m_strResultVar = "";
 		xNode.SetInputForTest(uValue, CorePin_Float(5.0f));
 
 		Zenith_GraphContext xCtx;
@@ -1705,24 +1774,19 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareIntValueAndCompareTo)
 
 	{	// LEG A: var 7 vs wire 5, const CompareTo 6, LESS -> only the wire is TRUE.
 		Zenith_GraphNode_CompareBlackboardInt xNode;
-		xNode.m_strVar = "";
 		xNode.m_iCompareTo = 6;
-		xNode.m_strCompareVar = "";
 		xNode.m_iOp = GRAPH_COMPARE_INT_OP_LESS;
 		xNode.SetInputForTest(uValue, CorePin_Int(5));
 
 		Zenith_GraphContext xCtx;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(CorePin_SlotBool(xNode.GetOutputForTest(uResult), "CompareInt.Result"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
 	{	// LEG B: const 9 / var 8 / wire 6 against Value 7, GREATER.
 		Zenith_GraphNode_CompareBlackboardInt xNode;
-		xNode.m_strVar = "";
 		xNode.m_iCompareTo = 9;
-		xNode.m_strCompareVar = "";
 		xNode.m_iOp = GRAPH_COMPARE_INT_OP_GREATER;
 		xNode.SetInputForTest(uCompareTo, CorePin_Int(6));
 		xNode.SetInputForTest(uValue, CorePin_Int(7));
@@ -1730,17 +1794,13 @@ ZENITH_TEST(CorePinRuntime, Wired_CompareIntValueAndCompareTo)
 		Zenith_GraphContext xCtx;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(CorePin_SlotBool(xNode.GetOutputForTest(uResult), "CompareInt.Result"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uCompareTo), 0u);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
 	{	// LEG C: the `""` divergence on a TRUE-yielding configuration.
 		Zenith_GraphNode_CompareBlackboardInt xNode;
-		xNode.m_strVar = "";
 		xNode.m_iCompareTo = 6;
 		xNode.m_iOp = GRAPH_COMPARE_INT_OP_LESS;
-		xNode.m_strResultVar = "";
 		xNode.SetInputForTest(uValue, CorePin_Int(5));
 
 		Zenith_GraphContext xCtx;
@@ -1763,7 +1823,6 @@ ZENITH_TEST(CorePinRuntime, Wired_TranslateEntityUnitsPerSecond)
 
 	Zenith_GraphNode_TranslateEntity xNode;
 	xNode.m_xUnitsPerSecond = Zenith_Maths::Vector3(9.0f, 0.0f, 0.0f);
-	xNode.m_strUnitsVar = "";
 	xNode.m_strTargetVar = "";
 	xNode.SetInputForTest(Zenith_GraphNode_TranslateEntity::uPIN_UnitsPerSecond,
 		CorePin_Vec3(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f)));
@@ -1777,7 +1836,6 @@ ZENITH_TEST(CorePinRuntime, Wired_TranslateEntityUnitsPerSecond)
 	Zenith_Maths::Vector3 xPosition;
 	xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPosition);
 	ZENITH_ASSERT_NEAR_VEC3(xPosition, Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f), 0.001f);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_TranslateEntity::uPIN_UnitsPerSecond), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -1796,7 +1854,6 @@ ZENITH_TEST(CorePinRuntime, Wired_AddBlackboardFloatDelta)
 		Zenith_GraphNode_AddBlackboardFloat xNode;
 		xNode.m_strVariable = "acc";
 		xNode.m_fDelta = 9.0f;
-		xNode.m_strDeltaVar = "d";
 		xNode.SetInputForTest(uDelta, CorePin_Float(5.0f));
 
 		Zenith_GraphContext xCtx;
@@ -1804,7 +1861,6 @@ ZENITH_TEST(CorePinRuntime, Wired_AddBlackboardFloatDelta)
 		xCtx.m_fDt = 0.5f;		// ignored: m_bScaleByDt is false
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("acc"), 15.0f, 0.0001f);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uDelta), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -1848,8 +1904,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardValueFromWire)
 		xNode.SetInputForTest(Zenith_GraphNode_SetBlackboardBool::uPIN_Value, CorePin_Bool(true));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(xBB.GetBool("b"), "the wired true lost to the const false");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardBool::uPIN_Value), 0u,
-			"an INPUT_CONST pin carries no var name and can never log FALLBACK");
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 	{	// the mirror: const true, wire false, destination pre-seeded true.
@@ -1880,7 +1934,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardValueFromWire)
 		xNode.SetInputForTest(Zenith_GraphNode_SetBlackboardFloat::uPIN_Value, CorePin_Float(5.0f));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(xBB.GetFloat("f"), 5.0f, 0.0001f);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardFloat::uPIN_Value), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 	{
@@ -1900,7 +1953,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardValueFromWire)
 		xNode.SetInputForTest(Zenith_GraphNode_SetBlackboardInt::uPIN_Value, CorePin_Int(5));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(xBB.GetInt32("i"), 5);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardInt::uPIN_Value), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 	{
@@ -1921,7 +1973,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardValueFromWire)
 			CorePin_Vec3(Zenith_Maths::Vector3(3.0f, 5.0f, 7.0f)));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_NEAR_VEC3(xBB.GetVector3("vec"), Zenith_Maths::Vector3(3.0f, 5.0f, 7.0f), 0.0001f);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardVector3::uPIN_Value), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 	{
@@ -1941,7 +1992,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardValueFromWire)
 		xNode.SetInputForTest(Zenith_GraphNode_SetBlackboardString::uPIN_Value, CorePin_Str("five"));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_STREQ(xBB.GetString("s").c_str(), "five");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardString::uPIN_Value), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 	{
@@ -2000,7 +2050,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardEntityIDValue)
 		Zenith_GraphContext xCtx; xCtx.m_pxBlackboard = &xBB;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("target"), ulNonZero);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2015,7 +2064,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardEntityIDValue)
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("zero"), 0ull);
 		ZENITH_ASSERT_EQ(static_cast<int>(xBB.TryGetValue("zero")->GetType()), static_cast<int>(PROPERTY_TYPE_ENTITY_ID));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2038,7 +2086,7 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardEntityIDValue)
 		Zenith_GraphContext xCtx; xCtx.m_pxBlackboard=&xBB;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)),static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		const Zenith_PropertyValue* pxValue=xBB.TryGetValue("unconnected"); ZENITH_ASSERT_NOT_NULL(pxValue); if(pxValue!=nullptr){ ZENITH_ASSERT_EQ(static_cast<int>(pxValue->GetType()),static_cast<int>(PROPERTY_TYPE_ENTITY_ID)); if(pxValue->GetType()==PROPERTY_TYPE_ENTITY_ID){ ZENITH_ASSERT_EQ(pxValue->GetPackedEntityID(),0ull); } }
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue),0u); ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(),0u);
+		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
 	{ // A wrong-tag test override is checked extraction: typed zero plus one warning.
@@ -2083,7 +2131,6 @@ ZENITH_TEST(CorePinRuntime, Wired_WaitSecondsFromWire)
 	{	// const 9 / var 7 / wire 0.5, dt 0.3: RUNNING then SUCCESS.
 		Zenith_GraphNode_Wait xNode;
 		xNode.m_fSeconds = 9.0f;
-		xNode.m_strSecondsVar = "";
 		xNode.SetInputForTest(uSeconds, CorePin_Float(0.5f));
 
 		Zenith_GraphContext xCtx;
@@ -2091,7 +2138,6 @@ ZENITH_TEST(CorePinRuntime, Wired_WaitSecondsFromWire)
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_RUNNING));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS),
 			"0.3 + 0.3 >= the WIRED 0.5 - a second RUNNING means the const or the var won");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSeconds), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2101,19 +2147,16 @@ ZENITH_TEST(CorePinRuntime, Wired_WaitSecondsFromWire)
 
 		Zenith_GraphNode_Wait xNode;
 		xNode.m_fSeconds = 9.0f;
-		xNode.m_strSecondsVar = "";
 		xNode.SetInputForTest(uSeconds, CorePin_Float(7.0f));
 
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
 		xCtx.m_fDt = 0.3f;
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSeconds), 0u);
 		for (u_int u = 0; u < 4u; ++u)
 		{
 			ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_RUNNING),
 				"1.2 s of dt is well short of the variable's 7 s");
 		}
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uSeconds), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -2123,9 +2166,9 @@ ZENITH_TEST(CorePinRuntime, Wired_WaitSecondsFromWire)
 // that direction is only ever the mirror.
 ZENITH_TEST(CorePinRuntime, Wired_BranchConditionFromWire)
 {
-	{	// var false, wire TRUE -> exec pin 0.
+	{	// wire TRUE -> exec pin 0.
 		Zenith_GraphDefinition xDef;
-		const u_int uBranch = CorePin_BuildBranchFixture(xDef, "cond", "tookTrue", "tookFalse");
+		const u_int uBranch = CorePin_BuildBranchFixture(xDef, "tookTrue", "tookFalse");
 		ZENITH_ASSERT_NE(uBranch, 0u);
 		if (uBranch == 0u)
 		{
@@ -2133,7 +2176,6 @@ ZENITH_TEST(CorePinRuntime, Wired_BranchConditionFromWire)
 		}
 		Zenith_BehaviourGraph xGraph;
 		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
-		xGraph.GetBlackboard().SetValue("cond", CorePin_Bool(false));
 
 		Zenith_GraphNode* pxBranch = xGraph.FindNode(uBranch);
 		ZENITH_ASSERT_NOT_NULL(pxBranch);
@@ -2147,13 +2189,12 @@ ZENITH_TEST(CorePinRuntime, Wired_BranchConditionFromWire)
 		ZENITH_ASSERT_TRUE(xGraph.GetBlackboard().GetBool("tookTrue"),
 			"the WIRED true did not reach Branch - it took the variable's false pin");
 		ZENITH_ASSERT_NULL(xGraph.GetBlackboard().TryGetValue("tookFalse"));
-		ZENITH_ASSERT_EQ(pxBranch->GetFallbackUseCountForTest(Zenith_GraphNode_Branch::uPIN_Condition), 0u);
 		ZENITH_ASSERT_EQ(pxBranch->GetBadAccessWarningCountForTest(), 0u);
 	}
 
-	{	// THE MIRROR: var true, wire false -> exec pin 1.
+	{	// THE MIRROR: wire false -> exec pin 1.
 		Zenith_GraphDefinition xDef;
-		const u_int uBranch = CorePin_BuildBranchFixture(xDef, "cond", "tookTrue", "tookFalse");
+		const u_int uBranch = CorePin_BuildBranchFixture(xDef, "tookTrue", "tookFalse");
 		ZENITH_ASSERT_NE(uBranch, 0u);
 		if (uBranch == 0u)
 		{
@@ -2161,7 +2202,6 @@ ZENITH_TEST(CorePinRuntime, Wired_BranchConditionFromWire)
 		}
 		Zenith_BehaviourGraph xGraph;
 		ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
-		xGraph.GetBlackboard().SetValue("cond", CorePin_Bool(true));
 
 		Zenith_GraphNode* pxBranch = xGraph.FindNode(uBranch);
 		ZENITH_ASSERT_NOT_NULL(pxBranch);
@@ -2188,14 +2228,12 @@ ZENITH_TEST(CorePinRuntime, Wired_GateOpenFromWire)
 		xBB.SetValue("open", CorePin_Bool(false));
 
 		Zenith_GraphNode_Gate xNode;
-		xNode.m_strOpenVar = "open";
 		xNode.SetInputForTest(uOpen, CorePin_Bool(true));
 
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS),
 			"the WIRED true did not open the gate");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uOpen), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2204,7 +2242,6 @@ ZENITH_TEST(CorePinRuntime, Wired_GateOpenFromWire)
 		xBB.SetValue("open", CorePin_Bool(true));
 
 		Zenith_GraphNode_Gate xNode;
-		xNode.m_strOpenVar = "open";
 		xNode.SetInputForTest(uOpen, CorePin_Bool(false));
 
 		Zenith_GraphContext xCtx;
@@ -2214,13 +2251,13 @@ ZENITH_TEST(CorePinRuntime, Wired_GateOpenFromWire)
 	}
 }
 
-// const 9 / var 7 / wire 2: the body counter is the witness, so "which leg won"
+// const 9 / wire 2: the body counter is the witness, so "which leg won"
 // is a number, not a guess. The done flag proves the loop finished rather than
 // suspending.
 ZENITH_TEST(CorePinRuntime, Wired_LoopCountFromWire)
 {
 	Zenith_GraphDefinition xDef;
-	const u_int uLoop = CorePin_BuildLoopFixture(xDef, "n", 9, "loopCounter", "loopDone");
+	const u_int uLoop = CorePin_BuildLoopFixture(xDef, 9, "loopCounter", "loopDone");
 	ZENITH_ASSERT_NE(uLoop, 0u);
 	if (uLoop == 0u)
 	{
@@ -2228,7 +2265,6 @@ ZENITH_TEST(CorePinRuntime, Wired_LoopCountFromWire)
 	}
 	Zenith_BehaviourGraph xGraph;
 	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
-	xGraph.GetBlackboard().SetValue("n", CorePin_Int(7));
 
 	Zenith_GraphNode* pxLoop = xGraph.FindNode(uLoop);
 	ZENITH_ASSERT_NOT_NULL(pxLoop);
@@ -2240,9 +2276,8 @@ ZENITH_TEST(CorePinRuntime, Wired_LoopCountFromWire)
 
 	FireOneUpdate(xGraph);
 	ZENITH_ASSERT_EQ_FLOAT(xGraph.GetBlackboard().GetFloat("loopCounter"), 2.0f, 0.0001f,
-		"the body ran neither the wire's 2 times, nor the const 9, nor the var 7");
+		"the body ran neither the wire's 2 times nor the const 9");
 	ZENITH_ASSERT_TRUE(xGraph.GetBlackboard().GetBool("loopDone"), "the done chain never ran");
-	ZENITH_ASSERT_EQ(pxLoop->GetFallbackUseCountForTest(Zenith_GraphNode_Loop::uPIN_Count), 0u);
 	ZENITH_ASSERT_EQ(pxLoop->GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -2272,8 +2307,7 @@ ZENITH_TEST(CorePinRuntime, Wired_FireCustomEventPayloadFromWire)
 		Zenith_GraphBlackboard xBB;
 		Zenith_GraphNode_FireCustomEvent xNode;
 		xNode.m_strEventName = "CorePinPayload";
-		xNode.m_strTargetVar = "";		// self
-		xNode.m_strPayloadVar = "";		// EMPTY - today's read would have sent nothing
+		xNode.m_strTargetVar = "";		// self		// EMPTY - today's read would have sent nothing
 		xNode.SetInputForTest(uPayload, CorePin_Float(5.0f));
 
 		Zenith_GraphContext xCtx;
@@ -2284,7 +2318,6 @@ ZENITH_TEST(CorePinRuntime, Wired_FireCustomEventPayloadFromWire)
 			"the wired payload never reached the handler");
 		ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan"),
 			"the handler action did not run for the wired payload");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPayload), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2300,7 +2333,6 @@ ZENITH_TEST(CorePinRuntime, Wired_FireCustomEventPayloadFromWire)
 
 		Zenith_GraphNode_FireCustomEvent xNode;
 		xNode.m_strEventName = "CorePinPayload";
-		xNode.m_strPayloadVar = "";
 
 		Zenith_GraphContext xCtx;
 		xCtx.m_xSelf = xTarget;
@@ -2310,7 +2342,6 @@ ZENITH_TEST(CorePinRuntime, Wired_FireCustomEventPayloadFromWire)
 			"an ABSENT payload variable must deliver no payload at all");
 		ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan"),
 			"an absent payload must still dispatch to the existing handler action");
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPayload), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2326,7 +2357,6 @@ ZENITH_TEST(CorePinRuntime, Wired_FireCustomEventPayloadFromWire)
 
 		Zenith_GraphNode_FireCustomEvent xNode;
 		xNode.m_strEventName = "CorePinPayload";
-		xNode.m_strPayloadVar = "";
 		xNode.SetInputForTest(uPayload, CorePin_Float(7.0f));
 
 		Zenith_GraphContext xCtx;
@@ -2334,7 +2364,6 @@ ZENITH_TEST(CorePinRuntime, Wired_FireCustomEventPayloadFromWire)
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(pxHandler->GetBlackboard().GetFloat("payload"), 7.0f, 0.0001f);
 		ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPayload), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -2365,14 +2394,12 @@ ZENITH_TEST(CorePinRuntime, Wired_BroadcastCustomEventPayloadFromWire)
 		Zenith_GraphBlackboard xBB;
 		Zenith_GraphNode_BroadcastCustomEvent xNode;
 		xNode.m_strEventName = "CorePinBroadcastPayload";
-		xNode.m_strPayloadVar = "";
 		xNode.SetInputForTest(uPayload, CorePin_Float(5.0f));
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(pxHandler->GetBlackboard().GetFloat("payload"), 5.0f, 0.0001f);
 		ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPayload), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2389,13 +2416,11 @@ ZENITH_TEST(CorePinRuntime, Wired_BroadcastCustomEventPayloadFromWire)
 
 		Zenith_GraphNode_BroadcastCustomEvent xNode;
 		xNode.m_strEventName = "CorePinBroadcastPayload";
-		xNode.m_strPayloadVar = "";
 		Zenith_GraphContext xCtx;
 		ZENITH_ASSERT_NULL(pxHandler->GetBlackboard().TryGetValue("handlerRan"));
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_NULL(pxHandler->GetBlackboard().TryGetValue("payload"));
 		ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPayload), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -2412,13 +2437,11 @@ ZENITH_TEST(CorePinRuntime, Wired_BroadcastCustomEventPayloadFromWire)
 
 		Zenith_GraphNode_BroadcastCustomEvent xNode;
 		xNode.m_strEventName = "CorePinBroadcastPayload";
-		xNode.m_strPayloadVar = "";
 		xNode.SetInputForTest(uPayload, CorePin_Float(11.0f));
 		Zenith_GraphContext xCtx;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(pxHandler->GetBlackboard().GetFloat("payload"), 11.0f, 0.0001f);
 		ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uPayload), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -2439,7 +2462,7 @@ ZENITH_TEST(CorePinRuntime, Output_StoreSelfEntityIDByValue)
 	ZENITH_ASSERT_NE(ulSelf, 0ull,
 		"a packed id of 0 is also the ENTITY_ID slot's stamped zero - this row could prove nothing");
 
-	{	// (a) the named default: slot AND blackboard carry the exact id.
+	{	// (a) the output slot carries the exact id without blackboard publication.
 		Zenith_GraphBlackboard xBB;
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
@@ -2450,19 +2473,17 @@ ZENITH_TEST(CorePinRuntime, Output_StoreSelfEntityIDByValue)
 		ZENITH_ASSERT_EQ(CorePin_SlotPackedEntity(
 			xNode.GetOutputForTest(Zenith_GraphNode_StoreSelfEntityID::uPIN_Variable), "StoreSelfEntityID.Variable"),
 			ulSelf);
-		ZENITH_ASSERT_EQ(xBB.GetPackedEntityID("self"), ulSelf);
+		ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "a slot-only OUTPUT must not write the blackboard");
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
-	{	// (b) THE `""` DIVERGENCE: the slot still carries the id; no blackboard
-		//     variable named "" is created, where today's SetValue created one.
+	{	// (b) A separate fresh node likewise leaves the blackboard empty.
 		Zenith_GraphBlackboard xBB;
 		Zenith_GraphContext xCtx;
 		xCtx.m_pxBlackboard = &xBB;
 		xCtx.m_xSelf = xEntity;
 
 		Zenith_GraphNode_StoreSelfEntityID xNode;
-		xNode.m_strVariable = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ(CorePin_SlotPackedEntity(
 			xNode.GetOutputForTest(Zenith_GraphNode_StoreSelfEntityID::uPIN_Variable), "StoreSelfEntityID.Variable"),
@@ -2487,37 +2508,6 @@ ZENITH_TEST(CorePinRuntime, Output_StoreSelfEntityIDByValue)
 	}
 }
 
-// The CENSUS observable. Only a MIGRATED node reaches the transitional var-name
-// fallback, and it logs ONE line per (instance, pin) however hot the chain is -
-// which is what makes "zero FALLBACK lines in a SUITE boot log" C-1's precondition
-// rather than a guess. CompareBlackboardFloat.Value carries it because its var
-// name defaults to "value", NON-empty: this node logs whether or not an author
-// named anything, and that is why this TU's census rises everywhere.
-ZENITH_TEST(CorePinRuntime, Fallback_CountsOncePerPin)
-{
-	const u_int uValue = Zenith_GraphNode_CompareBlackboardFloat::uPIN_Value;
-
-	Zenith_GraphBlackboard xBB;
-	xBB.SetValue("value", CorePin_Float(1.0f));		// the node's OWN default var name
-
-	Zenith_GraphNode_CompareBlackboardFloat xNode;
-	xNode.m_fCompareTo = 5.0f;
-	xNode.m_iOp = GRAPH_COMPARE_FLOAT_OP_LESS;
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_pxBlackboard = &xBB;
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
-
-	for (u_int u = 0; u < 2u; ++u)
-	{
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	}
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 1u, "two reads must log ONE census line");
-	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
-	ZENITH_ASSERT_TRUE(xBB.GetBool("result"));
-}
-
 // The row no existing test in this file covers, and the one ResolveInput
 // implements differently from a naive blackboard read: a var-or-const pin whose
 // variable is MISSING - or present with the WRONG TAG - falls back to the CONST,
@@ -2533,9 +2523,7 @@ ZENITH_TEST(CorePinRuntime, UnwiredCompareToUsesTheExactConstDefault)
 		xBB.SetValue("v", CorePin_Float(5.0f));
 
 		Zenith_GraphNode_CompareBlackboardFloat xNode;
-		xNode.m_strVar = "";
 		xNode.m_fCompareTo = 7.0f;
-		xNode.m_strCompareVar = "";
 		xNode.m_iOp = GRAPH_COMPARE_FLOAT_OP_LESS;
 
 		Zenith_GraphContext xCtx;
@@ -2543,7 +2531,6 @@ ZENITH_TEST(CorePinRuntime, UnwiredCompareToUsesTheExactConstDefault)
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(CorePin_SlotBool(
 			xNode.GetOutputForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Result), "CompareFloat.Result"));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uCompareTo), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetMismatchWarningCountForTest(uCompareTo), 0u);
 	}
@@ -2557,9 +2544,7 @@ ZENITH_TEST(CorePinRuntime, UnwiredCompareToUsesTheExactConstDefault)
 		xBB.SetValue("wrongType", CorePin_Int(2));
 
 		Zenith_GraphNode_CompareBlackboardFloat xNode;
-		xNode.m_strVar = "";
 		xNode.m_fCompareTo = 7.0f;
-		xNode.m_strCompareVar = "";
 		xNode.m_iOp = GRAPH_COMPARE_FLOAT_OP_GREATER;
 
 		Zenith_GraphContext xCtx;
@@ -2599,27 +2584,22 @@ ZENITH_TEST(CorePinRuntime, GuardedFailureDoesNotApplyConnectedInput)
 	xCtx.m_pxBlackboard = &xBB;
 	xCtx.m_fDt = 1.0f;
 
-	{	// LEG A: no transform -> FAILURE, and the var-bound pin was never read.
-		//     ★ m_strUnitsVar defaults EMPTY, so the row has to ASSIGN it - an
-		//     unbound pin could not log whatever the code did.
+	{	// LEG A: no transform -> FAILURE, and the connected pin was never read.
+		//     ★ UnitsPerSecond is supplied only by the test wire; the guard must return
+		//     before it pulls that connected producer.
 		Zenith_GraphNode_TranslateEntity xNode;
-		xNode.m_strUnitsVar = "";
 		xNode.SetInputForTest(uUnits, CorePin_Vec3(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f)));
 		xCtx.m_xSelf = xBare;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uUnits), 0u,
-			"the UnitsPerSecond read moved ABOVE the transform guard - a failed node pulled its input");
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	}
 
 	{	// LEG B, THE POSITIVE CONTROL: same configuration, a target with a
 		//     transform -> SUCCESS and exactly one census line.
 		Zenith_GraphNode_TranslateEntity xNode;
-		xNode.m_strUnitsVar = "";
 		xNode.SetInputForTest(uUnits, CorePin_Vec3(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f)));
 		xCtx.m_xSelf = xWithTransform;
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uUnits), 0u);
 		ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 		Zenith_Maths::Vector3 xPosition;
 		xWithTransform.GetComponent<Zenith_TransformComponent>().GetPosition(xPosition);
@@ -2642,9 +2622,6 @@ ZENITH_TEST(CorePinRuntime, BadOpCodeFailsAfterBothConnectedInputs)
 	const u_int uBefore = xBB.GetCount();
 
 	Zenith_GraphNode_CompareBlackboardFloat xNode;
-	xNode.m_strVar = "";
-	xNode.m_strCompareVar = "";
-	xNode.m_strResultVar = "";
 	xNode.SetInputForTest(uValue, CorePin_Float(5.0f));
 	xNode.SetInputForTest(uCompareTo, CorePin_Float(1.0f));
 	xNode.m_iOp = 99;
@@ -2652,10 +2629,8 @@ ZENITH_TEST(CorePinRuntime, BadOpCodeFailsAfterBothConnectedInputs)
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uValue), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uCompareTo), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
+
 	// The WRITE is below the switch, so nothing was latched or dual-written. ★ The
 	// Result slot is not ABSENT here - pin state WAS built by the two reads. On
 	// this FRESH invalid-op instance it holds the typed slot's stamped false; on
@@ -2681,7 +2656,6 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardEntityIDFromStoreSelfGraph)
 	const u_int uWriter = xDef.AddNode("SetBlackboardEntityID");
 	ZENITH_ASSERT_NE(uSource, 0u); ZENITH_ASSERT_NE(uStore, 0u); ZENITH_ASSERT_NE(uWriter, 0u);
 	if (uSource == 0u || uStore == 0u || uWriter == 0u) { return; }
-	{ CorePin_NodeParams p(xDef,uStore,"StoreSelfEntityID"); p.SetString("m_strVariable",""); }
 	{ CorePin_NodeParams p(xDef,uWriter,"SetBlackboardEntityID"); p.SetString("m_strVariable","target"); }
 	ZENITH_ASSERT_TRUE(xDef.AddEdge(uSource,0u,uStore));
 	ZENITH_ASSERT_TRUE(xDef.AddEdge(uStore,0u,uWriter));
@@ -2694,7 +2668,7 @@ ZENITH_TEST(CorePinRuntime, Wired_SetBlackboardEntityIDFromStoreSelfGraph)
 	ZENITH_ASSERT_EQ(xGraph.GetBlackboard().GetPackedEntityID("target"), xSelf.GetEntityID().GetPacked());
 	Zenith_GraphNode* pxWriter=xGraph.FindNode(uWriter);
 	ZENITH_ASSERT_NOT_NULL(pxWriter);
-	if (pxWriter != nullptr) { ZENITH_ASSERT_EQ(pxWriter->GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardEntityID::uPIN_Value),0u); ZENITH_ASSERT_EQ(pxWriter->GetBadAccessWarningCountForTest(),0u); }
+	if (pxWriter != nullptr) { ZENITH_ASSERT_EQ(pxWriter->GetBadAccessWarningCountForTest(),0u); }
 }
 
 // StoreSelfEntityID fails before it produces an output, so its downstream
@@ -2705,7 +2679,6 @@ ZENITH_TEST(CorePinRuntime, FailedEntityIDProducerSkipsWriterAndPreservesSeed)
 	Zenith_GraphNodeRegistry::Get().EnsureInitialized();
 	const u_int uSource=xDef.AddNode("OnUpdate"), uStore=xDef.AddNode("StoreSelfEntityID"), uWriter=xDef.AddNode("SetBlackboardEntityID");
 	if (uSource==0u || uStore==0u || uWriter==0u) { ZENITH_ASSERT_TRUE(false); return; }
-	{ CorePin_NodeParams p(xDef,uStore,"StoreSelfEntityID"); p.SetString("m_strVariable",""); }
 	{ CorePin_NodeParams p(xDef,uWriter,"SetBlackboardEntityID"); p.SetString("m_strVariable","target"); }
 	xDef.AddEdge(uSource,0u,uStore); xDef.AddEdge(uStore,0u,uWriter); xDef.AddDataEdge(uStore,"Variable",uWriter,"Value");
 	Zenith_BehaviourGraph xGraph; ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(xGraph.GetResolutionSkipCountForTest(),0u);
@@ -2726,7 +2699,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredCompareFactoriesPullRealProducerOutputs)
 		const u_int uOn=b.Node("OnUpdate"), uA=b.Node("GetVariable"), uC=b.Node("GetVariable"); b.ParamString(uA,"m_strVariable","a"); b.ParamString(uC,"m_strVariable","c");
 		Zenith_EngineGraphBuilder e(b); const u_int uCompare=e.CompareFloat({uA,"Value"},GRAPH_COMPARE_FLOAT_OP_LESS,{uC,"Value"}); const u_int uOut=b.Node("SetBlackboardBool"); b.ParamString(uOut,"m_strVariable","out"); b.ParamBool(uOut,"m_bValue",false); b.DataEdge(uCompare,"Result",uOut,"Value"); b.Chain(uOn,uCompare); b.Chain(uCompare,uOut); ZENITH_ASSERT_TRUE(b.Build());
 		Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u); g.GetBlackboard().SetValue("a",CorePin_Float(3.0f)); g.GetBlackboard().SetValue("c",CorePin_Float(7.0f)); FireOneUpdate(g); ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("out")); const Zenith_PropertyValue* pA=g.FindNode(uA)->GetOutputForTest(1u); const Zenith_PropertyValue* pC=g.FindNode(uC)->GetOutputForTest(1u); ZENITH_ASSERT_NOT_NULL(pA); ZENITH_ASSERT_NOT_NULL(pC); if(pA){ZENITH_ASSERT_EQ(static_cast<int>(pA->GetType()),static_cast<int>(PROPERTY_TYPE_FLOAT)); if(pA->GetType()==PROPERTY_TYPE_FLOAT)ZENITH_ASSERT_EQ_FLOAT(pA->GetFloat(),3.0f,0.0001f);} if(pC){ZENITH_ASSERT_EQ(static_cast<int>(pC->GetType()),static_cast<int>(PROPERTY_TYPE_FLOAT)); if(pC->GetType()==PROPERTY_TYPE_FLOAT)ZENITH_ASSERT_EQ_FLOAT(pC->GetFloat(),7.0f,0.0001f);}
-		Zenith_GraphNode* n=g.FindNode(uCompare); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Value),0u); ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_CompareTo),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+		Zenith_GraphNode* n=g.FindNode(uCompare); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 	}
 	{ // INT: 9 < 12 is true; CompareTo's default zero would be false.
 		Zenith_GraphDefinition xDef; Zenith_GraphBuilder b(xDef);
@@ -2734,7 +2707,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredCompareFactoriesPullRealProducerOutputs)
 		const u_int uOn=b.Node("OnUpdate"), uA=b.Node("GetVariable"), uC=b.Node("GetVariable"); b.ParamString(uA,"m_strVariable","a"); b.ParamString(uC,"m_strVariable","c");
 		Zenith_EngineGraphBuilder e(b); const u_int uCompare=e.CompareInt({uA,"Value"},GRAPH_COMPARE_INT_OP_LESS,{uC,"Value"}); const u_int uOut=b.Node("SetBlackboardBool"); b.ParamString(uOut,"m_strVariable","out"); b.ParamBool(uOut,"m_bValue",false); b.DataEdge(uCompare,"Result",uOut,"Value"); b.Chain(uOn,uCompare); b.Chain(uCompare,uOut); ZENITH_ASSERT_TRUE(b.Build());
 		Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u); g.GetBlackboard().SetValue("a",CorePin_Int(9)); g.GetBlackboard().SetValue("c",CorePin_Int(12)); FireOneUpdate(g); ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("out")); const Zenith_PropertyValue* pA=g.FindNode(uA)->GetOutputForTest(1u); const Zenith_PropertyValue* pC=g.FindNode(uC)->GetOutputForTest(1u); ZENITH_ASSERT_NOT_NULL(pA); ZENITH_ASSERT_NOT_NULL(pC); if(pA){ZENITH_ASSERT_EQ(static_cast<int>(pA->GetType()),static_cast<int>(PROPERTY_TYPE_INT32)); if(pA->GetType()==PROPERTY_TYPE_INT32)ZENITH_ASSERT_EQ(pA->GetInt32(),9);} if(pC){ZENITH_ASSERT_EQ(static_cast<int>(pC->GetType()),static_cast<int>(PROPERTY_TYPE_INT32)); if(pC->GetType()==PROPERTY_TYPE_INT32)ZENITH_ASSERT_EQ(pC->GetInt32(),12);}
-		Zenith_GraphNode* n=g.FindNode(uCompare); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_CompareBlackboardInt::uPIN_Value),0u); ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_CompareBlackboardInt::uPIN_CompareTo),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+		Zenith_GraphNode* n=g.FindNode(uCompare); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 	}
 }
 
@@ -2749,7 +2722,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredBranchFactoryExecutesTheConnectedCondition)
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	g.GetBlackboard().SetValue("conditionSource",CorePin_Bool(true)); FireOneUpdate(g);
 	ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("wireTrue")); ZENITH_ASSERT_NULL(g.GetBlackboard().TryGetValue("wireFalse"));
-	Zenith_GraphNode* n=g.FindNode(uBranch); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_Branch::uPIN_Condition),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uBranch); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredGateFactoryExecutesOnlyWhenConnectedSourceIsOpen)
@@ -2762,7 +2735,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredGateFactoryExecutesOnlyWhenConnectedSourceI
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	g.GetBlackboard().SetValue("openSource",CorePin_Bool(true)); FireOneUpdate(g);
 	ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("wireOpened"));
-	Zenith_GraphNode* n=g.FindNode(uGate); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_Gate::uPIN_Open),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uGate); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredSwitchOnIntFactoryExecutesTheConnectedCase)
@@ -2775,7 +2748,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredSwitchOnIntFactoryExecutesTheConnectedCase)
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	g.GetBlackboard().SetValue("switchSource",CorePin_Int(1)); FireOneUpdate(g);
 	ZENITH_ASSERT_NULL(g.GetBlackboard().TryGetValue("case0")); ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("case1"));
-	Zenith_GraphNode* n=g.FindNode(uSwitch); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(0u),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uSwitch); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredStateMachineFactoryReadsTheProducerOnEveryDispatch)
@@ -2788,7 +2761,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredStateMachineFactoryReadsTheProducerOnEveryD
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	g.GetBlackboard().SetValue("stateSource",CorePin_Int(1)); FireOneUpdate(g); ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("runRan")); ZENITH_ASSERT_NULL(g.GetBlackboard().TryGetValue("idleRan"));
 	g.GetBlackboard().SetValue("stateSource",CorePin_Int(0)); FireOneUpdate(g); ZENITH_ASSERT_TRUE(g.GetBlackboard().GetBool("idleRan"),"StateMachine must pull the connected input again on the next dispatch");
-	Zenith_GraphNode* n=g.FindNode(uMachine); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(0u),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uMachine); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredListAddFactoryAppendsTheConnectedValueInOrder)
@@ -2801,7 +2774,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredListAddFactoryAppendsTheConnectedValueInOrd
 	Zenith_Vector<Zenith_PropertyValue>& xs=g.GetBlackboard().GetOrCreateList("items"); xs.PushBack(CorePin_Int(10)); xs.PushBack(CorePin_Int(20)); xs.PushBack(CorePin_Int(30));
 	g.GetBlackboard().SetValue("itemSource",CorePin_Int(40)); FireOneUpdate(g);
 	ZENITH_ASSERT_EQ(xs.GetSize(),4u); ZENITH_ASSERT_EQ(xs.Get(0).GetInt32(),10); ZENITH_ASSERT_EQ(xs.Get(1).GetInt32(),20); ZENITH_ASSERT_EQ(xs.Get(2).GetInt32(),30); ZENITH_ASSERT_EQ(xs.Get(3).GetInt32(),40);
-	Zenith_GraphNode* n=g.FindNode(uAdd); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(0u),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uAdd); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredListRemoveAtFactoryRemovesTheConnectedIndexAndKeepsOrder)
@@ -2814,7 +2787,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredListRemoveAtFactoryRemovesTheConnectedIndex
 	Zenith_Vector<Zenith_PropertyValue>& xs=g.GetBlackboard().GetOrCreateList("items"); xs.PushBack(CorePin_Int(10)); xs.PushBack(CorePin_Int(20)); xs.PushBack(CorePin_Int(30)); xs.PushBack(CorePin_Int(40));
 	g.GetBlackboard().SetValue("indexSource",CorePin_Int(1)); FireOneUpdate(g);
 	ZENITH_ASSERT_EQ(xs.GetSize(),3u); ZENITH_ASSERT_EQ(xs.Get(0).GetInt32(),10); ZENITH_ASSERT_EQ(xs.Get(1).GetInt32(),30); ZENITH_ASSERT_EQ(xs.Get(2).GetInt32(),40);
-	Zenith_GraphNode* n=g.FindNode(uRemove); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(0u),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uRemove); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredGetListElementFactoryCarriesTheChosenItem)
@@ -2827,7 +2800,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredGetListElementFactoryCarriesTheChosenItem)
 	Zenith_Vector<Zenith_PropertyValue>& xs=g.GetBlackboard().GetOrCreateList("items"); xs.PushBack(CorePin_Int(10)); xs.PushBack(CorePin_Int(20)); xs.PushBack(CorePin_Int(30)); xs.PushBack(CorePin_Int(40));
 	g.GetBlackboard().SetValue("indexSource",CorePin_Int(2)); FireOneUpdate(g);
 	ZENITH_ASSERT_EQ(g.GetBlackboard().GetInt32("chosen"),30);
-	Zenith_GraphNode* n=g.FindNode(uElement); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(1u),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uElement); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredFireCustomEventFactorySendsTheRealProducerPayload)
@@ -2839,7 +2812,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredFireCustomEventFactorySendsTheRealProducerP
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u); g.GetBlackboard().SetValue("payloadSource",CorePin_Float(5.0f));
 	Zenith_GraphContext xCtx; xCtx.m_pxGraph=&g; xCtx.m_pxBlackboard=&g.GetBlackboard(); xCtx.m_xSelf=xTarget; g.FireEvent(GRAPH_EVENT_ON_UPDATE,xCtx);
 	ZENITH_ASSERT_TRUE(pxHandler->GetBlackboard().GetBool("handlerRan")); ZENITH_ASSERT_EQ_FLOAT(pxHandler->GetBlackboard().GetFloat("payload"),5.0f,0.0001f);
-	Zenith_GraphNode* n=g.FindNode(uFire); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(Zenith_GraphNode_FireCustomEvent::uPIN_Payload),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uFire); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(EngineGraphBuilder, WiredListAddAnyUnsetProducerLeavesTheListUnchanged)
@@ -2851,7 +2824,7 @@ ZENITH_TEST(EngineGraphBuilder, WiredListAddAnyUnsetProducerLeavesTheListUnchang
 	Zenith_Vector<Zenith_PropertyValue>& xs=g.GetBlackboard().GetOrCreateList("items"); xs.PushBack(CorePin_Int(10)); xs.PushBack(CorePin_Int(20)); FireOneUpdate(g);
 	Test_RegUnsetAnyProducerNode* pxUnset=static_cast<Test_RegUnsetAnyProducerNode*>(g.FindNode(uUnset)); ZENITH_ASSERT_NOT_NULL(pxUnset); if(pxUnset){ ZENITH_ASSERT_EQ(pxUnset->m_uExecuteCount,1u); }
 	ZENITH_ASSERT_EQ(xs.GetSize(),2u,"a successful but UNSET ANY producer must not append a typed zero"); ZENITH_ASSERT_EQ(xs.Get(0).GetInt32(),10); ZENITH_ASSERT_EQ(xs.Get(1).GetInt32(),20);
-	Zenith_GraphNode* n=g.FindNode(uAdd); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetFallbackUseCountForTest(1u),0u); ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* n=g.FindNode(uAdd); ZENITH_ASSERT_NOT_NULL(n); if(n){ ZENITH_ASSERT_EQ(n->GetBadAccessWarningCountForTest(),0u); }
 }
 
 // The writer is useful only when its blackboard value is consumed by a real
@@ -2867,14 +2840,13 @@ ZENITH_TEST(CorePinRuntime, SetBlackboardEntityIDFeedsTargetReferenceEffect)
 	Zenith_GraphDefinition xDef; Zenith_GraphNodeRegistry::Get().EnsureInitialized();
 	const u_int uOn=xDef.AddNode("OnUpdate"), uStore=xDef.AddNode("StoreSelfEntityID"), uWriter=xDef.AddNode("SetBlackboardEntityID"), uScale=xDef.AddNode("SetEntityScale");
 	ZENITH_ASSERT_NE(uOn,0u); ZENITH_ASSERT_NE(uStore,0u); ZENITH_ASSERT_NE(uWriter,0u); ZENITH_ASSERT_NE(uScale,0u); if(uOn==0u||uStore==0u||uWriter==0u||uScale==0u){return;}
-	{ CorePin_NodeParams p(xDef,uStore,"StoreSelfEntityID"); p.SetString("m_strVariable",""); }
 	{ CorePin_NodeParams p(xDef,uWriter,"SetBlackboardEntityID"); p.SetString("m_strVariable","target"); }
 	{ CorePin_NodeParams p(xDef,uScale,"SetEntityScale"); p.SetString("m_strTargetVar","target"); p.Set("m_xScale",CorePin_Vec3(Zenith_Maths::Vector3(4.0f,5.0f,6.0f))); }
 	xDef.AddEdge(uOn,0u,uStore); xDef.AddEdge(uStore,0u,uWriter); xDef.AddEdge(uWriter,0u,uScale); xDef.AddDataEdge(uStore,"Variable",uWriter,"Value");
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	Zenith_GraphContext xCtx; xCtx.m_pxGraph=&g; xCtx.m_pxBlackboard=&g.GetBlackboard(); xCtx.m_xSelf=xSelf; g.FireEvent(GRAPH_EVENT_ON_UPDATE,xCtx);
 	Zenith_Maths::Vector3 xScale; xSelf.GetComponent<Zenith_TransformComponent>().GetScale(xScale); ZENITH_ASSERT_NEAR_VEC3(xScale,Zenith_Maths::Vector3(4.0f,5.0f,6.0f),0.0001f);
-	Zenith_GraphNode* pxWriter=g.FindNode(uWriter); ZENITH_ASSERT_NOT_NULL(pxWriter); if(pxWriter){ ZENITH_ASSERT_EQ(pxWriter->GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardEntityID::uPIN_Value),0u); ZENITH_ASSERT_EQ(pxWriter->GetBadAccessWarningCountForTest(),0u); }
+	Zenith_GraphNode* pxWriter=g.FindNode(uWriter); ZENITH_ASSERT_NOT_NULL(pxWriter); if(pxWriter){ ZENITH_ASSERT_EQ(pxWriter->GetBadAccessWarningCountForTest(),0u); }
 }
 
 ZENITH_TEST(CorePinRuntime, GuardedTranslateDoesNotPullConnectedProducerBeforeTransformGuard)
@@ -2883,7 +2855,7 @@ ZENITH_TEST(CorePinRuntime, GuardedTranslateDoesNotPullConnectedProducerBeforeTr
 	Zenith_TempScene xScene("TestCountingTranslateGuard"); Zenith_Entity xBare=g_xEngine.Scenes().CreateEntityBare(xScene.Scene(),"CountingBare"); Zenith_Entity xLive=xScene.CreateEntity("CountingLive");
 	Zenith_GraphDefinition xDef; const u_int uOn=xDef.AddNode("OnUpdate"), uProducer=xDef.AddNode("Test_RegCountingVec3Producer"), uTranslate=xDef.AddNode("TranslateEntity");
 	if(uOn==0u||uProducer==0u||uTranslate==0u){ZENITH_ASSERT_TRUE(false);return;}
-	{ CorePin_NodeParams p(xDef,uTranslate,"TranslateEntity"); p.SetString("m_strUnitsVar",""); p.Set("m_xUnitsPerSecond",CorePin_Vec3(Zenith_Maths::Vector3(0.0f,0.0f,5.0f))); }
+	{ CorePin_NodeParams p(xDef,uTranslate,"TranslateEntity"); p.Set("m_xUnitsPerSecond",CorePin_Vec3(Zenith_Maths::Vector3(0.0f,0.0f,5.0f))); }
 	xDef.AddEdge(uOn,0u,uTranslate); xDef.AddDataEdge(uProducer,"Value",uTranslate,"UnitsPerSecond");
 	Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	Zenith_GraphNode* pxBase=g.FindNode(uProducer); Test_RegCountingVec3ProducerNode* pxProducer=static_cast<Test_RegCountingVec3ProducerNode*>(pxBase); ZENITH_ASSERT_NOT_NULL(pxProducer); if(pxProducer==nullptr)return;
@@ -2895,10 +2867,10 @@ ZENITH_TEST(CorePinRuntime, BadOpComparePullsBothConnectedProducersBeforeFailure
 {
 	EnsureRegistrationTestNodesRegistered(); Zenith_GraphDefinition xDef; const u_int uOn=xDef.AddNode("OnUpdate"), uA=xDef.AddNode("Test_RegCountingFloatProducer"), uB=xDef.AddNode("Test_RegCountingFloatProducer"), uCompare=xDef.AddNode("CompareBlackboardFloat");
 	if(uOn==0u||uA==0u||uB==0u||uCompare==0u){ZENITH_ASSERT_TRUE(false);return;}
-	{ CorePin_NodeParams p(xDef,uCompare,"CompareBlackboardFloat"); p.SetString("m_strVar",""); p.SetString("m_strCompareVar",""); p.SetString("m_strResultVar",""); p.SetInt("m_iOp",99); }
+	{ CorePin_NodeParams p(xDef,uCompare,"CompareBlackboardFloat"); p.SetInt("m_iOp",99); }
 	xDef.AddEdge(uOn,0u,uCompare); xDef.AddDataEdge(uA,"Value",uCompare,"Value"); xDef.AddDataEdge(uB,"Value",uCompare,"CompareTo"); Zenith_BehaviourGraph g; ZENITH_ASSERT_TRUE(g.InitialiseFromDefinition(xDef)); ZENITH_ASSERT_EQ(g.GetResolutionSkipCountForTest(),0u);
 	Test_RegCountingFloatProducerNode* pxA=static_cast<Test_RegCountingFloatProducerNode*>(g.FindNode(uA)); Test_RegCountingFloatProducerNode* pxB=static_cast<Test_RegCountingFloatProducerNode*>(g.FindNode(uB)); ZENITH_ASSERT_NOT_NULL(pxA); ZENITH_ASSERT_NOT_NULL(pxB); if(pxA==nullptr||pxB==nullptr)return;
-	FireOneUpdate(g); ZENITH_ASSERT_EQ(pxA->m_uExecuteCount,1u); ZENITH_ASSERT_EQ(pxB->m_uExecuteCount,1u); Zenith_GraphNode* pxCompare=g.FindNode(uCompare); ZENITH_ASSERT_NOT_NULL(pxCompare); if(pxCompare){ ZENITH_ASSERT_FALSE(CorePin_SlotBool(pxCompare->GetOutputForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Result),"CompareFloat.Result")); ZENITH_ASSERT_EQ(pxCompare->GetFallbackUseCountForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Value),0u); ZENITH_ASSERT_EQ(pxCompare->GetFallbackUseCountForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_CompareTo),0u); }
+	FireOneUpdate(g); ZENITH_ASSERT_EQ(pxA->m_uExecuteCount,1u); ZENITH_ASSERT_EQ(pxB->m_uExecuteCount,1u); Zenith_GraphNode* pxCompare=g.FindNode(uCompare); ZENITH_ASSERT_NOT_NULL(pxCompare); if(pxCompare){ ZENITH_ASSERT_FALSE(CorePin_SlotBool(pxCompare->GetOutputForTest(Zenith_GraphNode_CompareBlackboardFloat::uPIN_Result),"CompareFloat.Result")); }
 }
 
 ZENITH_TEST(CorePinRuntime, UnsetAnyProducerWritesPackedZeroToEntityIDDestination)
@@ -2914,8 +2886,7 @@ ZENITH_TEST(CorePinRuntime, UnsetAnyProducerWritesPackedZeroToEntityIDDestinatio
 	Zenith_PropertyValue xSeed; xSeed.SetPackedEntityID(0x0000003400000012ull); g.GetBlackboard().SetValue("target",xSeed);
 	FireOneUpdate(g);
 	ZENITH_ASSERT_EQ(pxUnset->m_uExecuteCount,1u); ZENITH_ASSERT_NULL(pxUnset->GetOutputForTest(0u));
-	const Zenith_PropertyValue* pxTarget=g.GetBlackboard().TryGetValue("target"); ZENITH_ASSERT_NOT_NULL(pxTarget); if(pxTarget!=nullptr){ ZENITH_ASSERT_EQ(static_cast<int>(pxTarget->GetType()),static_cast<int>(PROPERTY_TYPE_ENTITY_ID)); if(pxTarget->GetType()==PROPERTY_TYPE_ENTITY_ID){ ZENITH_ASSERT_EQ(pxTarget->GetPackedEntityID(),0ull); } }
-	ZENITH_ASSERT_EQ(pxWriter->GetFallbackUseCountForTest(Zenith_GraphNode_SetBlackboardEntityID::uPIN_Value),0u); ZENITH_ASSERT_EQ(pxWriter->GetBadAccessWarningCountForTest(),0u);
+	const Zenith_PropertyValue* pxTarget=g.GetBlackboard().TryGetValue("target"); ZENITH_ASSERT_NOT_NULL(pxTarget); if(pxTarget!=nullptr){ ZENITH_ASSERT_EQ(static_cast<int>(pxTarget->GetType()),static_cast<int>(PROPERTY_TYPE_ENTITY_ID)); if(pxTarget->GetType()==PROPERTY_TYPE_ENTITY_ID){ ZENITH_ASSERT_EQ(pxTarget->GetPackedEntityID(),0ull); } } ZENITH_ASSERT_EQ(pxWriter->GetBadAccessWarningCountForTest(),0u);
 }
 
 #endif // ZENITH_TESTING

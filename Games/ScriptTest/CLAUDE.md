@@ -172,11 +172,11 @@ hermetic contracts and nine gym behaviours.
 
 `ST_UIPlayground` uses the wire `CompareFloat` and `Branch` factories. Its
 contracts-only raw baseline serializes the whole definition and compares every
-byte, covering node IDs, property blobs and data-edge order; `m_strResultVar` is
-explicitly replayed as empty after `CompareFloat`. The remaining raw
-`StateMachine`, `Gate`, `SwitchOnInt`, and `ListAdd` sites retain their form
-because their `GetVariable` producer is authored after its consumer, so the wire
-factory would change node IDs and the complete serialized stream.
+byte, covering node IDs, permanent property blobs, and data-edge order. The
+remaining raw `StateMachine`, `Gate`, `SwitchOnInt`, and `ListAdd` sites retain
+their final C1 form because their `GetVariable` producer is authored after its
+consumer, so a factory rewrite would change node IDs and the complete serialized
+stream.
 
 ## The nine scenes
 
@@ -339,7 +339,10 @@ There is **no unit-gate line and no `Tools/unit_baselines.json` row**: this game
 adds no boot units, and `Test_UnitBaselineManifest.ps1` requires every row there
 to be gated or declared advisory, so an ungated pin cannot be added silently.
 
-## B-7.1 wire authoring
+## Historical B-7.1 wire-authoring record (superseded for authoring)
+
+The B-7.1 fallback census and compatibility notes below record the B76 starting
+point. The final C1 contract at the end of this file governs current work.
 
 The eight migrated builders author 22 `Raw().DataEdge` wires: six adjacent
 producer-to-consumer edges and sixteen one-consumer `GetVariable` producers.
@@ -349,19 +352,17 @@ Each `GetVariable` is private to its consumer so it is pulled at that consumer's
 execution point. The two new declared seeds are `spawnCount` as INT32 zero and
 `label` as STRING empty; the tools boot re-authors exactly `Gym_Physics` and
 `Gym_Flow` for those attached graphs.
-The B-6.10 ScriptTest fallback census was 69 lines, all mapped by this unit, so
-the B-7.1 target is zero remaining `FALLBACK` lines; the 27 list warnings and
-zero errors remain unchanged.
+The B-6.10/B71 ScriptTest fallback census was 69 lines, all mapped by this unit;
+this is historical B6.10/B71 evidence, not B76 or a C1 result. The 27 LIST_NAME
+warnings are historical B71 evidence. C1 retains 103 LIST_NAME permanent-list
+diagnostics; only DevilsPlayground's six MISMATCH cases are deliberate controls.
 
-The inlined legacy factory sites are `StateMachine`, `CompareFloat`, `Branch`,
-three `Gate`s, `ListAdd`, and `SwitchOnInt`; B-7.6 may re-collapse those only
-onto wire-aware factory forms. Wired consumers with nonempty class defaults
-explicitly clear their old variable property. Output, selector, target and list
-names remain strings. C-1 remains: `ReadMovementAxis -> MathBlackboardVector3`
-is OUTPUT-to-SELECTOR_READ; `bobVel` is reseeded before its math operation every
-tick with no feedback dependency; the cycle OUTPUT-to-SELECTOR_READ pair also
-remains outside wire form. All retained `m_strResultVar` dual-writes remain
-candidates for a later structural deletion.
+The retained raw sites preserve final permanent parameters and delayed data-edge
+order; they do not serialize removed input/output names. `ReadMovementAxis ->
+MathBlackboardVector3` is OUTPUT-to-SELECTOR_READ, `bobVel` is reseeded before
+its math operation every tick with no feedback dependency, and the cycle
+OUTPUT-to-SELECTOR_READ pair remains outside wire form. Targets, selectors,
+lists, and event stashes remain permanent string roles.
 
 ## The manual demo (what a person should see)
 
@@ -435,3 +436,28 @@ Setup and every Step, so their frame counts are 60 Hz and they do not call
 Win64 only (`"android": false`). To add an Android build: copy an existing game's
 `Android/` Gradle tree (e.g. `Games/Combat/Android`), retarget its package/name,
 set `"android": true` in the descriptor, and run `zenith regen`.
+
+## C1 graph-pin contract
+
+Graph INPUT and OUTPUT values are wire-only. Author a `GetVariable` producer only
+where a graph intentionally reads a blackboard value, then connect its `Value` pin
+to the consumer; consume produced values through their output pins. INPUT and
+OUTPUT descriptors carry no property-name binding metadata, and graph execution
+does not fall back to blackboard names or dual-write output values.
+
+Unconnected inputs retain their typed defaults, and an unconnected `INPUT_CONST`
+continues to read its current permanent property value.
+
+String properties that remain on graph nodes identify permanent roles such as
+selectors, targets, lists, type sources, event stashes, and configuration. They
+are not substitutes for data-pin bindings. Existing serialized unknown properties
+continue through normal property loading's unknown-property handling. Use final
+wire factory forms or raw nodes with only permanent parameters; preserve raw node
+and delayed-edge order where the serialized definition requires it. C1 validation
+evidence records T3-final2, SceneGuard, and all nine builds green with pins Combat
+2695, Zenithmon 4548, and RenderTest 2798, and
+fresh all-seven census is green with zero FALLBACK, aliasing, and validator errors;
+ScriptTest retains 103 LIST_NAME permanent-list diagnostics. The final asset audit
+found 164 graphs, 881 obsolete parameters removed from 102 graphs, no unexpected
+removal or topology issue, and a 192-asset second boot with no path or byte
+changes.

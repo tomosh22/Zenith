@@ -22,8 +22,6 @@
 // Zenith_GraphNode::GetInput / GetInputPackedEntityID / TryGetInput and every
 // OUTPUT descriptor is written through SetOutput, so a wire into or out of any of
 // these 16 nodes carries a value. An UNCONNECTED node behaves byte-for-byte as it
-// did: the var-name fallback IS the old `var.empty() ? const : bb->GetX(var,
-// const)` read, and SetOutput's dual-write IS the old SetValue. Each node
 // declares `static constexpr u_int uPIN_<Name>` beside its table (the pin INDEX
 // is the runtime address; table order is the contract, asserted by
 // MathPinIndicesMatchTables) and each GetInput call sits in EXACTLY the branch its
@@ -51,8 +49,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_GetListCount)
 	public:
 		ZENITH_PROPERTY(std::string, m_strListVar, "list")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "count")
-
 		// m_strListVar names the blackboard's parallel LIST store (TryGetList
 		// below), which holds no Zenith_PropertyValue and is therefore never
 		// typed. The count is the node's own computed answer - OUTPUT.
@@ -60,7 +56,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_GetListCount)
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -85,9 +81,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strListVar, "list")
 		ZENITH_PROPERTY(int32_t, m_iIndex, 0)
-		ZENITH_PROPERTY(std::string, m_strIndexVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "item")
-
 		// The result is genuinely ANY and gets no GetPinType: an element's type
 		// is whatever the list happens to hold, which nothing on this node
 		// knows. The index is the const-or-var pin (GetInput below, which IS that
@@ -98,8 +91,8 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_GetListElement)
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Index, "m_strIndexVar", "m_iIndex", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Index, "m_iIndex", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -129,8 +122,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ListAdd)
 	public:
 		ZENITH_PROPERTY(std::string, m_strListVar, "list")
-		ZENITH_PROPERTY(std::string, m_strValueVar, "item")
-
 		// The appended value is READ through the pin runtime (TryGetInput below) and
 		// is genuinely ANY - an element is a Zenith_PropertyValue of whatever
 		// type the author put there, which is why there is no constant twin. The
@@ -140,7 +131,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ListAdd)
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_INPUT(Value, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -180,13 +171,11 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strListVar, "list")
 		ZENITH_PROPERTY(int32_t, m_iIndex, 0)
-		ZENITH_PROPERTY(std::string, m_strIndexVar, "")
-
 		static constexpr u_int uPIN_Index = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ListRemoveAt)
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Index, "m_strIndexVar", "m_iIndex", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Index, "m_iIndex", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -264,8 +253,6 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
 		ZENITH_PROPERTY(bool, m_bInvert, false)
 		ZENITH_PROPERTY(bool, m_bMissingIsTrue, false)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
-
 		// ★ m_strVars IS DELIBERATELY NOT A PIN, and it is the sweep's ONE named
 		// exemption. It is a COMMA-SEPARATED LIST of operand names
 		// (Zenith_GraphNode_ParseCommaList, read one at a time below) - no
@@ -281,7 +268,7 @@ namespace
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_LogicBlackboardBool)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -356,8 +343,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVariable, "value")
 		ZENITH_PROPERTY(int32_t, m_iDelta, 1)
-		ZENITH_PROPERTY(std::string, m_strDeltaVar, "")
-
 		// READWRITE: m_strVariable is READ (GetInt32 below) and WRITTEN
 		// (SetValue below) in the SAME Execute - the integer sibling of
 		// AddBlackboardFloat. Its own write never satisfies its own read. A
@@ -367,7 +352,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AddBlackboardInt)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Variable, "m_strVariable", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Delta, "m_strDeltaVar", "m_iDelta", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Delta, "m_iDelta", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -391,7 +376,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVariable, "vec")
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xDelta, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strDeltaVar, "")
 		ZENITH_PROPERTY(bool, m_bScaleByDt, false)
 
 		// READWRITE, same shape as AddBlackboardInt (GetVector3 then SetValue on
@@ -401,7 +385,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AddBlackboardVector3)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Variable, "m_strVariable", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Delta, "m_strDeltaVar", "m_xDelta", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Delta, "m_xDelta", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -428,11 +412,7 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_CompareBlackboardEntity)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVarA, "a")
-		ZENITH_PROPERTY(std::string, m_strVarB, "b")
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
-
 		// Both operands are READ as packed EntityIDs (GetInputPackedEntityID below) -
 		// values, not targets, so they are ordinary INPUTs and never resolved
 		// through ResolveTargetEntity. m_iOp is a mode, not a blackboard name.
@@ -441,9 +421,9 @@ namespace
 		static constexpr u_int uPIN_Result = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CompareBlackboardEntity)
-		ZENITH_GRAPH_PIN_INPUT(A, "m_strVarA", PROPERTY_TYPE_ENTITY_ID)
-		ZENITH_GRAPH_PIN_INPUT(B, "m_strVarB", PROPERTY_TYPE_ENTITY_ID)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT(A, PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_INPUT(B, PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -474,36 +454,18 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
 		ZENITH_PROPERTY(float, m_fOperand, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strOperandVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "")
-
-		// ★ IN-PLACE ALIASING, and m_strVar is SELECTOR_READ - NOT READWRITE.
-		// m_strVar is written only when m_strResultVar is empty, and
-		// THAT write is already expressed as the Result pin's FALLBACK. Declaring
-		// it READWRITE would fabricate a writer in the out-of-place case, where
-		// this node writes m_strVar never.
-		//
-		// Every op of this node writes a FLOAT, so the Result pin is statically
-		// typed and there is no GetPinType override (contrast the Vector3
-		// sibling, whose length/dot ops collapse to a scalar).
-		//
-		// ★ AND THAT IS WHY THE `m_strResultVar.empty() ? m_strVar : ...` TERNARY IS
-		// GONE FROM Execute: the Result SLOT resolves its var name through exactly
-		// that rule (primary, then m_szFallbackVarNameProperty), so SetOutput's
-		// dual-write lands where the old SetValue landed - in place or out of place.
 		static constexpr u_int uPIN_Operand = 1u;
 		static constexpr u_int uPIN_Result = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_MathBlackboardFloat)
 		ZENITH_GRAPH_PIN_SELECTOR_READ(Value, "m_strVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Operand, "m_strOperandVar", "m_fOperand", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT_FALLBACK(Result, "m_strResultVar", "m_strVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Operand, "m_fOperand", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
 		{
-			// SELECTOR_READ: a configured in-place target, never a wire.
 			const float fValue = xContext.m_pxBlackboard->GetFloat(m_strVar);
 			const float fOperand = GetInput<float>(xContext, uPIN_Operand);
 			float fResult = 0.0f;
@@ -546,14 +508,9 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVar, "vec")
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
-		ZENITH_PROPERTY(std::string, m_strOperandVar, "")
 		ZENITH_PROPERTY(float, m_fScalar, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strScalarVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "")
-
 		// ★ SELECTOR_READ for the same reason as the float sibling: the write
 		// back into m_strVar happens only when m_strResultVar is empty,
-		// and is carried by the Result pin's FALLBACK, not by a static
 		// READWRITE that would claim a writer the out-of-place node has not got.
 		//
 		// The Result TYPE varies with m_iOp (4 = length, 5 = dot both write a
@@ -569,7 +526,6 @@ namespace
 		// GetInput below is that inline default exactly.
 		//
 		// ★ THE SLOT IS STAMPED FROM GetPinType AT BIND TIME, so ops 4/5 write a
-		// FLOAT into a FLOAT slot and SetOutput accepts it; the dual-write then
 		// retypes an in-place VECTOR3 variable to a FLOAT exactly as the old
 		// SetValue(strOut) did (the validator already reports that as a would-be type
 		// error). The tag check is against the SLOT's resolved type, never against
@@ -583,9 +539,9 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_MathBlackboardVector3)
 		ZENITH_GRAPH_PIN_SELECTOR_READ(Value, "m_strVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_INPUT(Operand, "m_strOperandVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Scalar, "m_strScalarVar", "m_fScalar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE_FALLBACK(Result, "m_strResultVar", "m_strVar")
+		ZENITH_GRAPH_PIN_INPUT(Operand, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Scalar, "m_fScalar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Result)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -667,30 +623,26 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(float, m_fTarget, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 		ZENITH_PROPERTY(int32_t, m_iMode, 0)
 		ZENITH_PROPERTY_RANGED(float, m_fT, 0.5f, 0.0f, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strTVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fRate, 1.0f, 0.0f, 100000.0f)
 		ZENITH_PROPERTY(int32_t, m_iEasing, 0)
 
 		// ★ READWRITE, unconditionally: this node is ALWAYS in place - it READS
 		// m_strVar (GetFloat below) and WRITES the blended value straight back to
 		// the SAME name (SetValue below), with no result-var alternative. There
-		// is no fallback shape here, so nothing else expresses the write.
 		// m_iMode / m_iEasing / m_fRate are modes and rates, not blackboard
 		// names, so none of them is a pin.
 		//
 		// ★ T IS READ ONLY INSIDE THE MODE-0 ELSE, exactly where its blackboard read
-		// sat. A rate-mode node must not log a FALLBACK line for T, and must not pull
 		// T's producer at all.
 		static constexpr u_int uPIN_Target = 1u;
 		static constexpr u_int uPIN_T = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_LerpBlackboardFloat)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Value, "m_strVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Target, "m_strTargetVar", "m_fTarget", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(T, "m_strTVar", "m_fT", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Target, "m_fTarget", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(T, "m_fT", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -729,10 +681,8 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVar, "vec")
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xTarget, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 		ZENITH_PROPERTY(int32_t, m_iMode, 0)
 		ZENITH_PROPERTY_RANGED(float, m_fT, 0.5f, 0.0f, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strTVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fRate, 1.0f, 0.0f, 100000.0f)
 		ZENITH_PROPERTY(int32_t, m_iEasing, 0)
 
@@ -745,8 +695,8 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_LerpBlackboardVector3)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Value, "m_strVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Target, "m_strTargetVar", "m_xTarget", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(T, "m_strTVar", "m_fT", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Target, "m_xTarget", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(T, "m_fT", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -784,10 +734,7 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(float, m_fMin, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strMinVar, "")
 		ZENITH_PROPERTY(float, m_fMax, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strMaxVar, "")
-
 		// READWRITE: the clamped variable is read (GetFloat below) and written
 		// back under the same name (SetValue below) - in place, with no result
 		// var to redirect it, and both halves direct.
@@ -796,8 +743,8 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ClampBlackboardFloat)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Value, "m_strVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Min, "m_strMinVar", "m_fMin", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Max, "m_strMaxVar", "m_fMax", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Min, "m_fMin", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Max, "m_fMax", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -858,8 +805,6 @@ namespace
 		ZENITH_PROPERTY(float, m_fMin, 0.0f)
 		ZENITH_PROPERTY(float, m_fMax, 1.0f)
 		ZENITH_PROPERTY(int32_t, m_iSeed, 0)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "random")
-
 		// The bounds and the seed are consts with no var partner, so none of
 		// them is a pin; the draw is the node's own computed result. The node stays
 		// EXEC (it is impure - a latched slot must not be re-drawn on demand), so
@@ -867,7 +812,7 @@ namespace
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RandomFloat)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -892,12 +837,10 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iMin, 0)
 		ZENITH_PROPERTY(int32_t, m_iMax, 9)
 		ZENITH_PROPERTY(int32_t, m_iSeed, 0)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "random")
-
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RandomInt)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:

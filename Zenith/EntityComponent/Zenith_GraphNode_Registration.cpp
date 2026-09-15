@@ -24,10 +24,9 @@
 // ★ THE PINS IN THIS TU ARE LIVE (B-6.9). Every INPUT / INPUT_CONST descriptor is
 // read through Zenith_GraphNode::GetInput or TryGetInput and every OUTPUT
 // descriptor is written through SetOutput, so a wire into or out of any of them
-// carries a value. An UNCONNECTED node behaves byte-for-byte as it did, with ONE
-// divergence (below): the transitional var-name fallback IS the old
-// `var.empty() ? const : bb->GetX(var, const)` read, and SetOutput's dual-write
-// IS the old SetValue. Each node that addresses a pin declares
+// carries a value. An UNCONNECTED node uses its typed default; input and output
+// pins have no name fallback or implicit blackboard publication.
+// Each node that addresses a pin declares
 // `static constexpr u_int uPIN_<Name>` immediately before its pin table (the
 // INDEX is the runtime address; table order is the contract, asserted by
 // GraphPinTable.RegistrationPinIndicesMatchTables). 35 node types register here;
@@ -42,8 +41,6 @@
 //   - INPUT var-or-const: Compare{Float,Int}.CompareTo, TranslateEntity
 //     .UnitsPerSecond, AddBlackboardFloat.Delta, Wait.Seconds, Loop.Count.
 //   - INPUT_CONST (the repo's first WIRE-ABLE constants): the five
-//     SetBlackboard*.Value. They carry NO var-name property, so they can never
-//     log a [GraphPin] FALLBACK line; unconnected, GetInput returns the const.
 //     SetBlackboardEntityID.Value is intentionally different: it is a normal
 //     ENTITY_ID INPUT with no literal-value property, and defaults to packed 0.
 //   - OUTPUT: Compare{Float,Int}.Result and StoreSelfEntityID.Variable.
@@ -54,9 +51,7 @@
 //
 // ★ THE `""` DIVERGENCE, at exactly three sites: CompareBlackboardFloat.Result,
 // CompareBlackboardInt.Result and StoreSelfEntityID.Variable were UNGUARDED
-// writers, so an empty var name used to create a blackboard variable literally
 // named "". It no longer does - the slot still carries the value. No shipped
-// node leaves both a writer's and a reader's var name blank, so nothing
 // observable depended on it.
 //
 // ★ TWO FAILURE SHAPES. Shape A - the FAILURE sits above every accessor, so a
@@ -78,8 +73,6 @@
 // ★ THE CENSUS RISES WITH THIS TU, and that is expected. Branch.m_strConditionVar
 // defaults to "condition", Gate.m_strOpenVar to "open" and Compare*.m_strVar to
 // "value" - all NON-EMPTY - so every PLACED Branch/Gate/Compare instance logs one
-// [GraphPin] FALLBACK line per bound pin the first time it executes, whether or
-// not the author named the variable. C-1 deletes exactly those fallbacks.
 //------------------------------------------------------------------------------
 
 namespace
@@ -225,23 +218,17 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_CompareBlackboardFloat)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(float, m_fCompareTo, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strCompareVar, "")
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
-
 		// ★ m_strVar DEFAULTS TO "value", which is NOT empty - so every placed
-		// instance of this node logs one FALLBACK census line on its first
-		// execution even when the author named nothing. Expected; C-1 deletes it.
 		static constexpr u_int uPIN_Value = 0u;
 		static constexpr u_int uPIN_CompareTo = 1u;
 		static constexpr u_int uPIN_Result = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CompareBlackboardFloat)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(CompareTo, "m_strCompareVar", "m_fCompareTo", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(CompareTo, "m_fCompareTo", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -366,7 +353,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_TranslateEntity)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xUnitsPerSecond, Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f))
-		ZENITH_PROPERTY(std::string, m_strUnitsVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// UnitsPerSecond is the only pin this Execute addresses; Target is a
@@ -374,7 +360,7 @@ namespace
 		static constexpr u_int uPIN_UnitsPerSecond = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_TranslateEntity)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(UnitsPerSecond, "m_strUnitsVar", "m_xUnitsPerSecond", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(UnitsPerSecond, "m_xUnitsPerSecond", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -442,7 +428,6 @@ namespace
 		// the const half, which IS a wire now.
 		//
 		// ★ AN INPUT_CONST PIN CARRIES NO VAR-NAME PROPERTY, so its binding's var
-		// name is permanently empty and it can NEVER log a [GraphPin] FALLBACK
 		// line. Unconnected, GetInput answers MakePinDefault - the const property's
 		// CURRENT value - which is byte-for-byte the old direct member read. These
 		// five are the library's first wire-able constants.
@@ -472,7 +457,6 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "value")
 		ZENITH_PROPERTY(float, m_fValue, 0.0f)
 
-		// INPUT_CONST: no var-name property, so it never logs FALLBACK.
 		static constexpr u_int uPIN_Value = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardFloat)
@@ -501,7 +485,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strVariable, "value")
 		ZENITH_PROPERTY(float, m_fDelta, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strDeltaVar, "")
 		ZENITH_PROPERTY(bool, m_bScaleByDt, false)
 
 		// READWRITE: m_strVariable is READ (:GetFloat below) and WRITTEN
@@ -517,7 +500,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_AddBlackboardFloat)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(Variable, "m_strVariable", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Delta, "m_strDeltaVar", "m_fDelta", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Delta, "m_fDelta", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -546,7 +529,6 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "value")
 		ZENITH_PROPERTY(int32_t, m_iValue, 0)
 
-		// INPUT_CONST: no var-name property, so it never logs FALLBACK.
 		static constexpr u_int uPIN_Value = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardInt)
@@ -573,7 +555,6 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strVariable, "vec")
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xValue, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
 
-		// INPUT_CONST: no var-name property, so it never logs FALLBACK.
 		static constexpr u_int uPIN_Value = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardVector3)
@@ -609,7 +590,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardEntityID)
 		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Variable, "m_strVariable", PROPERTY_TYPE_ENTITY_ID)
-		ZENITH_GRAPH_PIN_INPUT(Value, "", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -633,7 +614,6 @@ namespace
 
 		// m_strValue is the literal STRING written, not a variable name (it does
 		// not match the m_str*Var* matcher either) - hence INPUT_CONST, which
-		// carries no var name and so never logs FALLBACK.
 		static constexpr u_int uPIN_Value = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetBlackboardString)
@@ -723,22 +703,17 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_CompareBlackboardInt)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "value")
 		ZENITH_PROPERTY(int32_t, m_iCompareTo, 0)
-		ZENITH_PROPERTY(std::string, m_strCompareVar, "")
 		ZENITH_PROPERTY(int32_t, m_iOp, 4)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "result")
-
 		// Same index map as the float sibling, and the same non-empty "value"
-		// default on m_strVar (so a placed instance logs one FALLBACK line).
 		static constexpr u_int uPIN_Value = 0u;
 		static constexpr u_int uPIN_CompareTo = 1u;
 		static constexpr u_int uPIN_Result = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_CompareBlackboardInt)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strVar", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(CompareTo, "m_strCompareVar", "m_iCompareTo", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(CompareTo, "m_iCompareTo", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -774,8 +749,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_StoreSelfEntityID)
 	public:
-		ZENITH_PROPERTY(std::string, m_strVariable, "self")
-
 		// OUTPUT, not SELECTOR_WRITE: the value is this node's own COMPUTED
 		// result (self's packed EntityID), not a value routed from a const.
 		// ENTITY_ID has no Zenith_PropertyTraits specialisation (Core stays
@@ -784,7 +757,7 @@ namespace
 		static constexpr u_int uPIN_Variable = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_StoreSelfEntityID)
-		ZENITH_GRAPH_PIN_OUTPUT(Variable, "m_strVariable", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Variable, PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -816,8 +789,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strEventName, "event")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
-		ZENITH_PROPERTY(std::string, m_strPayloadVar, "")
-
 		// The payload is READ (TryGetInput below) and passed on verbatim, so its
 		// type is whatever the sender put there: ANY. m_strEventName is an event
 		// name, not a blackboard name, so it is not a pin.
@@ -825,7 +796,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FireCustomEvent)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
-		ZENITH_GRAPH_PIN_INPUT(Payload, "m_strPayloadVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_INPUT(Payload, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -845,14 +816,11 @@ namespace
 			// second hoist exception (the _UI one is the only one): pxOut is nulled
 			// on entry and every return is `pxOut != nullptr`, so an empty var with
 			// nothing wired returns false with NO log and a null payload; a bound
-			// but ABSENT var logs one FALLBACK line and yields null; a bound and
 			// PRESENT var yields the value. A WIRE supplies a payload even when the
-			// var name is empty, which is how a wired author leaves it. The read
 			// sits BELOW both guards (Shape A).
 			//
 			// ★ POINTER LIFETIME. The payload is passed through UNCHANGED - never
 			// copied - and may point at two different places: a producer's output
-			// slot (the wire path) or a blackboard entry (the transitional var-name
 			// path); an ANY plain INPUT has no const, so the const-scratch case cannot
 			// arise here. The dispatch below
 			// is SYNCHRONOUS and the pointer is not retained past it. The hazard it
@@ -876,14 +844,12 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_BroadcastCustomEvent)
 	public:
 		ZENITH_PROPERTY(std::string, m_strEventName, "event")
-		ZENITH_PROPERTY(std::string, m_strPayloadVar, "")
-
 		// The Payload pin is index 0 here - there is no Target - so a copy of
 		// FireCustomEvent's `uPIN_Payload = 1u` would address nothing.
 		static constexpr u_int uPIN_Payload = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_BroadcastCustomEvent)
-		ZENITH_GRAPH_PIN_INPUT(Payload, "m_strPayloadVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_INPUT(Payload, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -914,12 +880,10 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_Wait)
 	public:
 		ZENITH_PROPERTY_RANGED(float, m_fSeconds, 1.0f, 0.0f, 3600.0f)
-		ZENITH_PROPERTY(std::string, m_strSecondsVar, "")
-
 		static constexpr u_int uPIN_Seconds = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Wait)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Seconds, "m_strSecondsVar", "m_fSeconds", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Seconds, "m_fSeconds", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -930,7 +894,6 @@ namespace
 			// is what lets a shrinking variable shorten a wait in flight, and it
 			// means a WIRED Wait pulls its producer every tick (a gather token is
 			// minted per non-pure Execute, so the memo rule stays consistent). The
-			// per-(instance, pin) FALLBACK counter still logs ONCE across them all.
 			const float fSeconds = GetInput<float>(xContext, uPIN_Seconds);
 			m_fElapsed += xContext.m_fDt;
 			if (m_fElapsed < fSeconds)
@@ -953,19 +916,16 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_Branch)
 	public:
-		ZENITH_PROPERTY(std::string, m_strConditionVar, "condition")
-
 		// ★ READ-ONLY (GetBool below, no write anywhere in Execute) - the same
 		// property NAME as WaitForCondition's, whose node DOES write it back
 		// under m_bResetOnPass and is therefore READWRITE. The role follows the
 		// Execute body, never the property name.
 		//
 		// ★ m_strConditionVar DEFAULTS TO "condition", which is NOT empty, so every
-		// placed Branch logs one FALLBACK census line on its first activation.
 		static constexpr u_int uPIN_Condition = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Branch)
-		ZENITH_GRAPH_PIN_INPUT(Condition, "m_strConditionVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT(Condition, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -1007,14 +967,11 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_Gate)
 	public:
-		ZENITH_PROPERTY(std::string, m_strOpenVar, "open")
-
-		// ★ m_strOpenVar DEFAULTS TO "open", NOT empty - one FALLBACK line per
 		// placed instance.
 		static constexpr u_int uPIN_Open = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Gate)
-		ZENITH_GRAPH_PIN_INPUT(Open, "m_strOpenVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_INPUT(Open, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -1056,12 +1013,10 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_Loop)
 	public:
 		ZENITH_PROPERTY_RANGED(int32_t, m_iCount, 1, 1, 10000)
-		ZENITH_PROPERTY(std::string, m_strCountVar, "")
-
 		static constexpr u_int uPIN_Count = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_Loop)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Count, "m_strCountVar", "m_iCount", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Count, "m_iCount", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:

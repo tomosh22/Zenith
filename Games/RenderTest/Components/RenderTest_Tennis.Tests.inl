@@ -30,6 +30,7 @@
 #include "Scripting/Zenith_GraphBuilder.h"
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
+#include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
 
 #include <cmath>
 #include <cstdio>
@@ -275,7 +276,7 @@ namespace
 	public:
 		static constexpr u_int uPIN_Value = 0u;
 		ZENITH_GRAPH_PINS_BEGIN(RT_TestCountingSpinProducer)
-			ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_VECTOR3)
+			ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
@@ -296,7 +297,7 @@ namespace
 		ZENITH_PROPERTY(int32_t, m_iValue, 0)
 		static constexpr u_int uPIN_Value = 0u;
 		ZENITH_GRAPH_PINS_BEGIN(RT_TestCountingEpochProducer)
-			ZENITH_GRAPH_PIN_OUTPUT(Value, "", PROPERTY_TYPE_INT32)
+			ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext& xContext) override
@@ -1161,7 +1162,6 @@ ZENITH_TEST(RenderTestTennis, Node_BallReachableFailsWithoutBallOrAwareness)
 	Zenith_GraphDefinition xDefinition; Zenith_GraphBuilder xBuilder(xDefinition); Zenith_EngineGraphBuilder xB(xBuilder);
 	const u_int uSpin = xB.Node("RT_TestCountingSpinProducer");
 	const u_int uReach = xB.Node("RTTennisBallReachable");
-	xB.ParamString(uReach, "m_strBallSpinVar", ""); xB.ParamString(uReach, "m_strMySideVar", "");
 	const u_int uSentinel = xB.SetBlackboardBool("reachSucceeded", true);
 	xB.OnCustomEvent("RT_TestReachOrder").Then(uReach).Then(uSentinel);
 	xB.Raw().DataEdge(uSpin, "Value", uReach, "BallSpin");
@@ -1186,7 +1186,7 @@ ZENITH_TEST(RenderTestTennis, Node_BallReachableFailsWithoutBallOrAwareness)
 	SeedNodeBB(xBB, RenderTest_Tennis::POINT_PHASE_LIVE, false, true, 0);
 	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
 	Zenith_PropertyValue xSpin; xSpin.SetVector3(Zenith_Maths::Vector3(0.0f));
-	RTNode_TennisBallReachable xNode; xNode.m_strBallSpinVar.clear(); xNode.m_strMySideVar.clear();
+	RTNode_TennisBallReachable xNode;
 	xNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_BallSpin, xSpin); xNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_MySide, xNear);
 
 	// Reachable descending ball published, but ZERO perception awareness of it
@@ -1218,8 +1218,6 @@ ZENITH_TEST(RenderTestTennis, Node_DecideServeLeavesUnarmed)
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed(),
 		"DecideServe stores the decision UNARMED");
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisDecideServe::uPIN_ServeFromDeuce), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisDecideServe::uPIN_IsSecondServe), 0u);
 	// No brain on the entity -> FAILURE (fails the Selector pin).
 	Zenith_Entity xBare = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("N_DecS_Bare"));
 	Zenith_GraphContext xCtxBare = MakeNodeCtx(xBare, xBB);
@@ -1262,8 +1260,6 @@ ZENITH_TEST(RenderTestTennis, Node_PositionForServeSucceeds)
 	xNode.SetInputForTest(RTNode_TennisPositionForServe::uPIN_MySide, xNear);
 	xNode.SetInputForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce, xTrue);
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisPositionForServe::uPIN_MySide), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce), 0u);
 }
 
 ZENITH_TEST(RenderTestTennis, Node_ArmServeNoAnimatorStaysUnarmed)
@@ -1287,8 +1283,6 @@ ZENITH_TEST(RenderTestTennis, Node_ArmServeNoAnimatorStaysUnarmed)
 	// No animator -> RequestServe returns false -> brain stays UNARMED.
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed(),
 		"ArmServe must not arm when the stroke can't start");
-	ZENITH_ASSERT_EQ(xArm.GetFallbackUseCountForTest(RTNode_TennisArmServe::uPIN_BallEpoch), 0u,
-		"failed RequestServe must not read BallEpoch");
 	ZENITH_ASSERT_EQ(xArm.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -1304,8 +1298,6 @@ ZENITH_TEST(RenderTestTennis, Node_MoveToInterceptSucceeds)
 	const u_int uSpin = xB.Node("RT_TestCountingSpinProducer");
 	const u_int uMove = xB.Node("RTTennisMoveToIntercept");
 	const u_int uSuccess = xB.SetBlackboardBool("moveSucceeded", true);
-	xB.ParamString(uMove, "m_strBallSpinVar", "");
-	xB.ParamString(uMove, "m_strMySideVar", "");
 	// uSpin is deliberately not on the exec spine: MoveToIntercept's first
 	// GetInput must pull this pure source before it discovers the invalid target.
 	xEvent.Then(uMove).Then(uSuccess);
@@ -1337,7 +1329,6 @@ ZENITH_TEST(RenderTestTennis, Node_MoveToInterceptSucceeds)
 			"MoveToIntercept SUCCESS reaches its downstream sentinel with an invalid BallEntity");
 		ZENITH_ASSERT_EQ(pxSpin->m_uExecuteCount, 1u,
 			"the pure Spin producer executes before MoveToIntercept reaches the invalid BallEntity guard");
-		ZENITH_ASSERT_EQ(pxMove->GetFallbackUseCountForTest(RTNode_TennisMoveToIntercept::uPIN_BallSpin), 0u);
 		ZENITH_ASSERT_EQ(pxMove->GetBadAccessWarningCountForTest(), 0u);
 	}
 	xGraph.Shutdown();
@@ -1388,10 +1379,6 @@ ZENITH_TEST(RenderTestTennis, Node_ArmSwingNeverRunsAndStaysUnarmedWithoutAnimat
 	ZENITH_ASSERT_NE(static_cast<int>(e), static_cast<int>(GRAPH_NODE_STATUS_RUNNING));
 	ZENITH_ASSERT_EQ(static_cast<int>(e), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_FALSE(xE.GetComponent<RenderTest_TennisAgentComponent>().IsArmed());
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisArmSwing::uPIN_BallSpin), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisArmSwing::uPIN_MySide), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisArmSwing::uPIN_BallEpoch), 0u,
-		"failed RequestSwing must not read BallEpoch");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -1410,14 +1397,16 @@ ZENITH_TEST(RenderTestTennis, Node_RecoverAlwaysSucceeds)
 	xNode.SetInputForTest(RTNode_TennisRecoverToReady::uPIN_Phase, xOver);
 	xNode.SetInputForTest(RTNode_TennisRecoverToReady::uPIN_IsServer, xFalse);
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisRecoverToReady::uPIN_MySide), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisRecoverToReady::uPIN_Phase), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisRecoverToReady::uPIN_IsServer), 0u);
 }
 
 // Table order is the runtime address for every uPIN_ constant. This totality
 // row also records the six verbs which deliberately have no pin table because
 // they do not read graph data.
+ZENITH_TEST(RenderTestTennis, GraphNodesTotality)
+{
+	Zenith_CheckPinTableTotality(&RenderTest_RegisterGraphNodes, "RenderTest_GraphNodes.h", nullptr, 0u);
+}
+
 ZENITH_TEST(RenderTestTennis, PinIndicesMatchTables)
 {
 	auto CheckPin = [](const Zenith_GraphPinTable& xPins, u_int uIndex, const char* szName,
@@ -1454,13 +1443,13 @@ ZENITH_TEST(RenderTestTennis, PinIndicesMatchTables)
 		CheckPin(xPins, uSpin, "BallSpin", GRAPH_PIN_ROLE_INPUT, szNode);
 		CheckPin(xPins, uSide, "MySide", GRAPH_PIN_ROLE_INPUT, szNode);
 	};
-	auto CheckBinding = [](const Zenith_GraphPinTable& xPins, u_int uIndex, Zenith_PropertyType eType,
-		const char* szVarProperty, const char* szNode)
+	auto CheckInput = [](const Zenith_GraphPinTable& xPins, u_int uIndex, Zenith_PropertyType eType,
+		const char* szNode)
 	{
 		if (uIndex >= xPins.GetPinCount()) return;
 		const Zenith_GraphPinDesc& xPin = xPins.GetPinAt(uIndex);
 		ZENITH_ASSERT_EQ(static_cast<int>(xPin.m_eType), static_cast<int>(eType), "%s: pin %u changed type", szNode, uIndex);
-		ZENITH_ASSERT_STREQ(xPin.m_szVarNameProperty, szVarProperty, "%s: pin %u changed var binding", szNode, uIndex);
+		ZENITH_ASSERT_STREQ(xPin.m_szVarNameProperty, "", "%s: INPUT pin %u retained forbidden name metadata", szNode, uIndex);
 	};
 	auto CheckConstBinding = [](const Zenith_GraphPinTable& xPins, u_int uIndex, const char* szConstProperty,
 		const char* szNode)
@@ -1469,54 +1458,52 @@ ZENITH_TEST(RenderTestTennis, PinIndicesMatchTables)
 		ZENITH_ASSERT_STREQ(xPins.GetPinAt(uIndex).m_szConstProperty, szConstProperty,
 			"%s: pin %u changed constant binding", szNode, uIndex);
 	};
-	auto CheckTargetBinding = [](const Zenith_GraphPinTable& xPins, const char* szNode)
+	auto CheckTargetBinding = [](const Zenith_GraphPinTable& xPins, const char* szVarProperty, const char* szNode)
 	{
 		if (xPins.GetPinCount() == 0u) return;
 		const Zenith_GraphPinDesc& xPin = xPins.GetPinAt(0u);
 		ZENITH_ASSERT_EQ(xPin.m_uAcceptedTypeMask, uGRAPH_PIN_ACCEPT_TARGET_ENTITY,
 			"%s: BallEntity changed accepted target type", szNode);
+		ZENITH_ASSERT_STREQ(xPin.m_szVarNameProperty, szVarProperty, "%s: BallEntity lost its target binding", szNode);
 	};
-	CheckBinding(xDecideServe, RTNode_TennisDecideServe::uPIN_ServeFromDeuce, PROPERTY_TYPE_BOOL, "m_strServeFromDeuceVar", "DecideServe");
+	CheckInput(xDecideServe, RTNode_TennisDecideServe::uPIN_ServeFromDeuce, PROPERTY_TYPE_BOOL, "DecideServe");
 	CheckConstBinding(xDecideServe, RTNode_TennisDecideServe::uPIN_ServeFromDeuce, "m_bServeFromDeuce", "DecideServe");
-	CheckBinding(xDecideServe, RTNode_TennisDecideServe::uPIN_IsSecondServe, PROPERTY_TYPE_BOOL, "m_strIsSecondServeVar", "DecideServe");
-	CheckBinding(xPosition, RTNode_TennisPositionForServe::uPIN_MySide, PROPERTY_TYPE_INT32, "m_strMySideVar", "PositionForServe");
-	CheckBinding(xPosition, RTNode_TennisPositionForServe::uPIN_ServeFromDeuce, PROPERTY_TYPE_BOOL, "m_strServeFromDeuceVar", "PositionForServe");
+	CheckInput(xDecideServe, RTNode_TennisDecideServe::uPIN_IsSecondServe, PROPERTY_TYPE_BOOL, "DecideServe");
+	CheckInput(xPosition, RTNode_TennisPositionForServe::uPIN_MySide, PROPERTY_TYPE_INT32, "PositionForServe");
+	CheckInput(xPosition, RTNode_TennisPositionForServe::uPIN_ServeFromDeuce, PROPERTY_TYPE_BOOL, "PositionForServe");
 	CheckConstBinding(xPosition, RTNode_TennisPositionForServe::uPIN_ServeFromDeuce, "m_bServeFromDeuce", "PositionForServe");
-	CheckBinding(xArmServe, RTNode_TennisArmServe::uPIN_BallEpoch, PROPERTY_TYPE_INT32, "m_strBallEpochVar", "ArmServe");
+	CheckInput(xArmServe, RTNode_TennisArmServe::uPIN_BallEpoch, PROPERTY_TYPE_INT32, "ArmServe");
 	CheckBallNode(RTNode_TennisBallReachable::GetPinTableStatic(), RTNode_TennisBallReachable::uPIN_BallSpin,
 		RTNode_TennisBallReachable::uPIN_MySide, "BallReachable");
 	CheckBallNode(RTNode_TennisMoveToIntercept::GetPinTableStatic(), RTNode_TennisMoveToIntercept::uPIN_BallSpin,
 		RTNode_TennisMoveToIntercept::uPIN_MySide, "MoveToIntercept");
 	const Zenith_GraphPinTable& xReachable = RTNode_TennisBallReachable::GetPinTableStatic();
-	CheckBinding(xReachable, 0u, eGRAPH_PIN_TYPE_ANY, "m_strBallEntityVar", "BallReachable");
-	CheckTargetBinding(xReachable, "BallReachable");
-	CheckBinding(xReachable, RTNode_TennisBallReachable::uPIN_BallSpin, PROPERTY_TYPE_VECTOR3, "m_strBallSpinVar", "BallReachable");
-	CheckBinding(xReachable, RTNode_TennisBallReachable::uPIN_MySide, PROPERTY_TYPE_INT32, "m_strMySideVar", "BallReachable");
+	CheckTargetBinding(xReachable, "m_strBallEntityVar", "BallReachable");
+	CheckInput(xReachable, RTNode_TennisBallReachable::uPIN_BallSpin, PROPERTY_TYPE_VECTOR3, "BallReachable");
+	CheckInput(xReachable, RTNode_TennisBallReachable::uPIN_MySide, PROPERTY_TYPE_INT32, "BallReachable");
 	const Zenith_GraphPinTable& xMove = RTNode_TennisMoveToIntercept::GetPinTableStatic();
-	CheckBinding(xMove, 0u, eGRAPH_PIN_TYPE_ANY, "m_strBallEntityVar", "MoveToIntercept");
-	CheckTargetBinding(xMove, "MoveToIntercept");
-	CheckBinding(xMove, RTNode_TennisMoveToIntercept::uPIN_BallSpin, PROPERTY_TYPE_VECTOR3, "m_strBallSpinVar", "MoveToIntercept");
-	CheckBinding(xMove, RTNode_TennisMoveToIntercept::uPIN_MySide, PROPERTY_TYPE_INT32, "m_strMySideVar", "MoveToIntercept");
+	CheckTargetBinding(xMove, "m_strBallEntityVar", "MoveToIntercept");
+	CheckInput(xMove, RTNode_TennisMoveToIntercept::uPIN_BallSpin, PROPERTY_TYPE_VECTOR3, "MoveToIntercept");
+	CheckInput(xMove, RTNode_TennisMoveToIntercept::uPIN_MySide, PROPERTY_TYPE_INT32, "MoveToIntercept");
 	const Zenith_GraphPinTable& xArmSwing = RTNode_TennisArmSwing::GetPinTableStatic();
 	ZENITH_ASSERT_EQ(xArmSwing.GetPinCount(), 4u, "ArmSwing pin count");
 	CheckPin(xArmSwing, 0u, "BallEntity", GRAPH_PIN_ROLE_TARGET_REF, "ArmSwing");
-	CheckBinding(xArmSwing, 0u, eGRAPH_PIN_TYPE_ANY, "m_strBallEntityVar", "ArmSwing");
-	CheckTargetBinding(xArmSwing, "ArmSwing");
+	CheckTargetBinding(xArmSwing, "m_strBallEntityVar", "ArmSwing");
 	CheckPin(xArmSwing, RTNode_TennisArmSwing::uPIN_BallSpin, "BallSpin", GRAPH_PIN_ROLE_INPUT, "ArmSwing");
 	CheckPin(xArmSwing, RTNode_TennisArmSwing::uPIN_MySide, "MySide", GRAPH_PIN_ROLE_INPUT, "ArmSwing");
 	CheckPin(xArmSwing, RTNode_TennisArmSwing::uPIN_BallEpoch, "BallEpoch", GRAPH_PIN_ROLE_INPUT, "ArmSwing");
-	CheckBinding(xArmSwing, RTNode_TennisArmSwing::uPIN_BallSpin, PROPERTY_TYPE_VECTOR3, "m_strBallSpinVar", "ArmSwing");
-	CheckBinding(xArmSwing, RTNode_TennisArmSwing::uPIN_MySide, PROPERTY_TYPE_INT32, "m_strMySideVar", "ArmSwing");
-	CheckBinding(xArmSwing, RTNode_TennisArmSwing::uPIN_BallEpoch, PROPERTY_TYPE_INT32, "m_strBallEpochVar", "ArmSwing");
+	CheckInput(xArmSwing, RTNode_TennisArmSwing::uPIN_BallSpin, PROPERTY_TYPE_VECTOR3, "ArmSwing");
+	CheckInput(xArmSwing, RTNode_TennisArmSwing::uPIN_MySide, PROPERTY_TYPE_INT32, "ArmSwing");
+	CheckInput(xArmSwing, RTNode_TennisArmSwing::uPIN_BallEpoch, PROPERTY_TYPE_INT32, "ArmSwing");
 
 	const Zenith_GraphPinTable& xRecover = RTNode_TennisRecoverToReady::GetPinTableStatic();
 	ZENITH_ASSERT_EQ(xRecover.GetPinCount(), 3u, "RecoverToReady pin count");
 	CheckPin(xRecover, RTNode_TennisRecoverToReady::uPIN_MySide, "MySide", GRAPH_PIN_ROLE_INPUT, "RecoverToReady");
 	CheckPin(xRecover, RTNode_TennisRecoverToReady::uPIN_Phase, "Phase", GRAPH_PIN_ROLE_INPUT, "RecoverToReady");
 	CheckPin(xRecover, RTNode_TennisRecoverToReady::uPIN_IsServer, "IsServer", GRAPH_PIN_ROLE_INPUT, "RecoverToReady");
-	CheckBinding(xRecover, RTNode_TennisRecoverToReady::uPIN_MySide, PROPERTY_TYPE_INT32, "m_strMySideVar", "RecoverToReady");
-	CheckBinding(xRecover, RTNode_TennisRecoverToReady::uPIN_Phase, PROPERTY_TYPE_INT32, "m_strPhaseVar", "RecoverToReady");
-	CheckBinding(xRecover, RTNode_TennisRecoverToReady::uPIN_IsServer, PROPERTY_TYPE_BOOL, "m_strIsServerVar", "RecoverToReady");
+	CheckInput(xRecover, RTNode_TennisRecoverToReady::uPIN_MySide, PROPERTY_TYPE_INT32, "RecoverToReady");
+	CheckInput(xRecover, RTNode_TennisRecoverToReady::uPIN_Phase, PROPERTY_TYPE_INT32, "RecoverToReady");
+	CheckInput(xRecover, RTNode_TennisRecoverToReady::uPIN_IsServer, PROPERTY_TYPE_BOOL, "RecoverToReady");
 
 	RTNode_TennisTickGate xTickGate; RTNode_TennisDecideShot xDecideShot;
 	RTNode_PlayerInteractGun xInteract; RTNode_PlayerTryReload xReload;
@@ -1967,9 +1954,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsServeConstAndOverrideAreLive)
 	RTNode_TennisDecideServe xOverrideNode;
 	Zenith_PropertyValue xTrue; xTrue.SetBool(true);
 	Zenith_PropertyValue xFalse; xFalse.SetBool(false);
-	xMissingNode.m_strServeFromDeuceVar.clear(); xMissingNode.m_strIsSecondServeVar.clear();
-	xWrongNode.m_strServeFromDeuceVar.clear(); xWrongNode.m_strIsSecondServeVar.clear();
-	xOverrideNode.m_strServeFromDeuceVar.clear(); xOverrideNode.m_strIsSecondServeVar.clear();
 	xWrongNode.SetInputForTest(RTNode_TennisDecideServe::uPIN_ServeFromDeuce, xWrongValue);
 	xOverrideNode.SetInputForTest(RTNode_TennisDecideServe::uPIN_ServeFromDeuce, xFalse);
 	Zenith_GraphContext xMissingCtx = MakeNodeCtx(xA, xMissing);
@@ -1984,7 +1968,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsServeConstAndOverrideAreLive)
 	ZENITH_ASSERT_EQ_FLOAT(xMissingShot.m_xAim.x, xWrongShot.m_xAim.x, 1e-6f);
 	ZENITH_ASSERT_NE(xOverrideShot.m_xAim.x, xMissingShot.m_xAim.x, "false wire override changes the deuce-side serve");
 	ZENITH_ASSERT_EQ(xWrongNode.GetMismatchWarningCountForTest(RTNode_TennisDecideServe::uPIN_ServeFromDeuce), 1u);
-	ZENITH_ASSERT_EQ(xOverrideNode.GetFallbackUseCountForTest(RTNode_TennisDecideServe::uPIN_ServeFromDeuce), 0u);
 	ZENITH_ASSERT_EQ(xOverrideNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -2031,34 +2014,28 @@ ZENITH_TEST(RenderTestTennis, TennisPinsNavOverridesDriveDestinations)
 	Zenith_PropertyValue xFalse; xFalse.SetBool(false);
 	Zenith_PropertyValue xTrue; xTrue.SetBool(true);
 	RTNode_TennisPositionForServe xPositionDefault;
-	xPositionDefault.m_strMySideVar.clear(); xPositionDefault.m_strServeFromDeuceVar.clear();
 	xPositionDefault.SetInputForTest(RTNode_TennisPositionForServe::uPIN_MySide, xFar);
 	ZENITH_ASSERT_EQ(static_cast<int>(xPositionDefault.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const float fTrueDefaultX = xAI.GetNavMeshAgent()->GetDestination().x;
-	ZENITH_ASSERT_EQ(xPositionDefault.GetFallbackUseCountForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce), 0u);
 	ZENITH_ASSERT_EQ(xPositionDefault.GetBadAccessWarningCountForTest(), 0u);
 	Zenith_GraphBlackboard xWrongDeuceBB; SeedNodeBB(xWrongDeuceBB, POINT_PHASE_SERVING, true, false, 0);
 	Zenith_PropertyValue xWrongDeuce; xWrongDeuce.SetInt32(1);
 	xWrongDeuceBB.SetValue(RenderTest_TennisBB::k_szServeFromDeuce, xWrongDeuce);
 	Zenith_GraphContext xWrongDeuceCtx = MakeNodeCtx(xE, xWrongDeuceBB);
 	RTNode_TennisPositionForServe xPositionWrong;
-	xPositionWrong.m_strMySideVar.clear(); xPositionWrong.m_strServeFromDeuceVar.clear();
 	xPositionWrong.SetInputForTest(RTNode_TennisPositionForServe::uPIN_MySide, xFar);
 	xPositionWrong.SetInputForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce, xWrongDeuce);
 	ZENITH_ASSERT_EQ(static_cast<int>(xPositionWrong.Execute(xWrongDeuceCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ_FLOAT(xAI.GetNavMeshAgent()->GetDestination().x, fTrueDefaultX, 1e-6f,
 		"the true typed default wins over a contrary named value");
-	ZENITH_ASSERT_EQ(xPositionWrong.GetFallbackUseCountForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce), 0u);
 	ZENITH_ASSERT_EQ(xPositionWrong.GetMismatchWarningCountForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce), 1u);
 	ZENITH_ASSERT_EQ(xPositionWrong.GetBadAccessWarningCountForTest(), 0u);
 	RTNode_TennisPositionForServe xPosition;
-	xPosition.m_strMySideVar.clear(); xPosition.m_strServeFromDeuceVar.clear();
 	xPosition.SetInputForTest(RTNode_TennisPositionForServe::uPIN_MySide, xFar);
 	xPosition.SetInputForTest(RTNode_TennisPositionForServe::uPIN_ServeFromDeuce, xFalse);
 	ZENITH_ASSERT_EQ(static_cast<int>(xPosition.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_GT(xAI.GetNavMeshAgent()->GetDestination().z, DefaultCourt().m_fNetZ, "side override reaches nav destination");
 	ZENITH_ASSERT_NE(xAI.GetNavMeshAgent()->GetDestination().x, fTrueDefaultX, "false ServeFromDeuce override changes the stance destination");
-	ZENITH_ASSERT_EQ(xPosition.GetFallbackUseCountForTest(RTNode_TennisPositionForServe::uPIN_MySide), 0u);
 	ZENITH_ASSERT_EQ(xPosition.GetBadAccessWarningCountForTest(), 0u);
 	Zenith_Entity xBall = xFix.pxSceneData->GetEntity(xFix.MakeBareEntity("PinMoveBall"));
 	xBall.GetComponent<Zenith_TransformComponent>().SetPosition(
@@ -2115,7 +2092,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsNavOverridesDriveDestinations)
 		"contradictory FAR blackboard falls back to the far current-ball y");
 	ZENITH_ASSERT_EQ_FLOAT(xFarFallbackDest.z, xExpectedFarFallback.z, 1e-5f,
 		"contradictory FAR blackboard falls back to the far current-ball z");
-	ZENITH_ASSERT_EQ(xMove.GetFallbackUseCountForTest(RTNode_TennisMoveToIntercept::uPIN_BallSpin), 0u);
 	ZENITH_ASSERT_EQ(xMove.GetBadAccessWarningCountForTest(), 0u);
 
 	Zenith_PropertyValue xServing; xServing.SetInt32(static_cast<int32_t>(POINT_PHASE_SERVING));
@@ -2140,7 +2116,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsNavOverridesDriveDestinations)
 	const float fServerZ = xAI.GetNavMeshAgent()->GetDestination().z;
 	ZENITH_ASSERT_NE(fReceiverZ, fLiveZ, "Phase override selects the service receiver position");
 	ZENITH_ASSERT_NE(fReceiverZ, fServerZ, "IsServer override independently selects the baseline");
-	ZENITH_ASSERT_EQ(xRecoverReceiver.GetFallbackUseCountForTest(RTNode_TennisRecoverToReady::uPIN_Phase), 0u);
 	ZENITH_ASSERT_EQ(xRecoverReceiver.GetBadAccessWarningCountForTest(), 0u);
 	xAI.SetNavMeshAgent(nullptr); // detach the local agent before its borrowed mesh is destroyed
 	xRef.OnDestroy();
@@ -2169,7 +2144,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsBallReachableOverrideAndAwarenessAreLive
 	xBB.SetValue(RenderTest_TennisBB::k_szBallSpin, xSpin);
 	Zenith_GraphContext xCtx = MakeNodeCtx(xE, xBB);
 	RTNode_TennisBallReachable xBlackboardNode;
-	xBlackboardNode.m_strBallSpinVar.clear(); xBlackboardNode.m_strMySideVar.clear();
 	Zenith_PropertyValue xFar; xFar.SetInt32(static_cast<int32_t>(TENNIS_SIDE_FAR));
 	xBlackboardNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_BallSpin, xSpin);
 	xBlackboardNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_MySide, xFar);
@@ -2179,19 +2153,15 @@ ZENITH_TEST(RenderTestTennis, TennisPinsBallReachableOverrideAndAwarenessAreLive
 	xBB.SetValue(RenderTest_TennisBB::k_szBallSpin, xContrarySpin);
 	Zenith_PropertyValue xNear; xNear.SetInt32(static_cast<int32_t>(TENNIS_SIDE_NEAR));
 	RTNode_TennisBallReachable xSpinOverrideNode;
-	xSpinOverrideNode.m_strBallSpinVar.clear(); xSpinOverrideNode.m_strMySideVar.clear();
 	xSpinOverrideNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_BallSpin, xContrarySpin);
 	xSpinOverrideNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_MySide, xNear);
 	ZENITH_ASSERT_EQ(static_cast<int>(xSpinOverrideNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE),
 		"the typed high-spin override bends the crossing outside the reachable window");
-	ZENITH_ASSERT_EQ(xSpinOverrideNode.GetFallbackUseCountForTest(RTNode_TennisBallReachable::uPIN_BallSpin), 0u);
 	ZENITH_ASSERT_EQ(xSpinOverrideNode.GetBadAccessWarningCountForTest(), 0u);
 	RTNode_TennisBallReachable xNode;
-	xNode.m_strBallSpinVar.clear(); xNode.m_strMySideVar.clear();
 	xNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_BallSpin, xSpin);
 	xNode.SetInputForTest(RTNode_TennisBallReachable::uPIN_MySide, xNear);
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(RTNode_TennisBallReachable::uPIN_BallSpin), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 	Zenith_PerceptionSystem::UnregisterAgent(xE.GetEntityID());
 }
@@ -2212,7 +2182,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsConditionalEpochReadsArmOnlyAfterStrokeS
 		const u_int uEpoch = xB.Node("RT_TestCountingEpochProducer");
 		xB.ParamInt(uEpoch, "m_iValue", 41);
 		const u_int uArm = xB.Node("RTTennisArmServe");
-		xB.ParamString(uArm, "m_strBallEpochVar", "");
 		xB.OnCustomEvent("RT_EpochServe").Then(uArm);
 		xB.Raw().DataEdge(uEpoch, "Value", uArm, "BallEpoch");
 		ZENITH_ASSERT_TRUE(xBuilder.Build());
@@ -2224,7 +2193,7 @@ ZENITH_TEST(RenderTestTennis, TennisPinsConditionalEpochReadsArmOnlyAfterStrokeS
 		Zenith_GraphContext xContext; xContext.m_xSelf = xSelf; xContext.m_pxGraph = &xGraph; xContext.m_pxBlackboard = &xGraph.GetBlackboard();
 		xGraph.FireCustomEvent("RT_EpochServe", xContext);
 		const u_int uPulls = pxEpoch ? pxEpoch->m_uExecuteCount : 0u;
-		if (pxArm) { ZENITH_ASSERT_EQ(pxArm->GetFallbackUseCountForTest(RTNode_TennisArmServe::uPIN_BallEpoch), 0u); ZENITH_ASSERT_EQ(pxArm->GetBadAccessWarningCountForTest(), 0u); }
+		if (pxArm) { ZENITH_ASSERT_EQ(pxArm->GetBadAccessWarningCountForTest(), 0u); }
 		xGraph.Shutdown();
 		return uPulls;
 	};
@@ -2252,9 +2221,6 @@ ZENITH_TEST(RenderTestTennis, TennisPinsConditionalEpochReadsArmOnlyAfterStrokeS
 		const u_int uEpoch = xB.Node("RT_TestCountingEpochProducer");
 		xB.ParamInt(uEpoch, "m_iValue", 53);
 		const u_int uArm = xB.Node("RTTennisArmSwing");
-		xB.ParamString(uArm, "m_strBallSpinVar", "");
-		xB.ParamString(uArm, "m_strMySideVar", "");
-		xB.ParamString(uArm, "m_strBallEpochVar", "");
 		xB.OnCustomEvent("RT_EpochSwing").Then(uArm);
 		xB.Raw().DataEdge(uSpin, "Value", uArm, "BallSpin");
 		xB.Raw().DataEdge(uEpoch, "Value", uArm, "BallEpoch");
@@ -2273,7 +2239,7 @@ ZENITH_TEST(RenderTestTennis, TennisPinsConditionalEpochReadsArmOnlyAfterStrokeS
 		xGraph.FireCustomEvent("RT_EpochSwing", xContext);
 		const u_int uPulls = pxEpoch ? pxEpoch->m_uExecuteCount : 0u;
 		if (pxSpin) { ZENITH_ASSERT_EQ(pxSpin->m_uExecuteCount, 1u, "ArmSwing pulls its wired pure BallSpin source"); }
-		if (pxArm) { ZENITH_ASSERT_EQ(pxArm->GetFallbackUseCountForTest(RTNode_TennisArmSwing::uPIN_BallSpin), 0u); ZENITH_ASSERT_EQ(pxArm->GetFallbackUseCountForTest(RTNode_TennisArmSwing::uPIN_MySide), 0u); ZENITH_ASSERT_EQ(pxArm->GetFallbackUseCountForTest(RTNode_TennisArmSwing::uPIN_BallEpoch), 0u); ZENITH_ASSERT_EQ(pxArm->GetBadAccessWarningCountForTest(), 0u); }
+		if (pxArm) { ZENITH_ASSERT_EQ(pxArm->GetBadAccessWarningCountForTest(), 0u); }
 		xGraph.Shutdown();
 		return uPulls;
 	};

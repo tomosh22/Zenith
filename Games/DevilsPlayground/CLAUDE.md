@@ -519,7 +519,12 @@ The full reference is `C:\dev\Zenith\CLAUDE.md`'s "External agent board"
 section, and `Games/Zenithmon/Docs/Board.md` for how a game's docs and its
 board relate.
 
-## B-7.2a — live game-node pins
+## Historical B-7.2 migration record (superseded for authoring)
+
+The B-7.2a/b narrative and its fallback counts below are a B76 preparation
+record. They do not describe current C1 APIs or authoring requirements.
+
+### B-7.2a — live game-node pins
 
 `Components/DP_GraphNodes.h` is now a live pin surface: its 25 annotated
 node classes publish 48 descriptors, with 35 INPUT, 9 OUTPUT, and 4
@@ -687,7 +692,7 @@ FALLBACK and zero IN_PLACE_ALIASING after this builder migration, but the
 unfiltered suite must be reported honestly until B-7.6 removes the named
 compatibility residue and C-1 reaches zero.
 
-### B76 current graph contract
+### Historical B76 graph contract
 
 The current B76 inventory is 38 registered DP graph classes, 26 pin tables,
 50 descriptors, 36 INPUTs, 10 OUTPUTs, and 4 READWRITE selectors. Production
@@ -710,3 +715,34 @@ DevilsPlayground's board category is branch mode, but this B-7.2 unit is
 explicitly ledgered as a master commit. Header and builder sections remain
 separate because root integrates the header commit first and the builder
 commit afterwards. Observed B-7.2b validation passed both category builds, the full T3 gate, and all seven fresh-boot census suites. DP has 165 registrations (144 ran, 21 headless skips), zero failed tests, 81 INPUT fallbacks, two deliberate mismatches, and zero alias warnings, bad accesses, or validator findings. Builder validation ran 233 counted checks. Combat 2679, Zenithmon 4538, and RenderTest 2784 were observed unchanged.
+
+## C1 graph-pin contract
+
+DP has 26 pin tables with 50 descriptors: 36 INPUT, 10 OUTPUT, and four
+READWRITE selectors. INPUT and OUTPUT values are wire-only; an unconnected
+`INPUT_CONST` reads its current constant value, and other unconnected inputs keep
+their typed defaults. Only `OpenT`, `RequiredKey`, and
+`CraftCount` retain permanent READWRITE selector names. Do not restore an
+`INPUT_VAR_OR_CONST` descriptor, an INPUT/OUTPUT name property, a clear-after-wire
+step, or a fallback/dual-write path.
+
+Use `GetVariable` only for a deliberate blackboard read and connect its `Value`
+to the consuming data pin. Targets, lists, selectors, type sources, event stashes,
+and configuration remain direct permanent names. Preserve each raw builder where
+its node IDs or delayed data-edge order are serialized; factory and raw
+alternatives compare final C1 definitions, not pre-C1 bytes. Existing serialized
+unknown properties retain their normal loader behavior.
+
+C1 adds the approved success-only `stateIsPossessed` and `drain` writers to
+DP_Villager (85 nodes, 60 exec edges, 37 data edges). DP retains 38 registered
+classes and 26 pin tables; `DP_GraphsValidateClean_Test` retains 243 structural
+checks, while `Test_P1Sprint_DrainsLifeFaster` covers successive
+sprint/plain/burnout publication and ordering. The initial C1 census
+completed all seven suite legs; the later post-writer rerun was deliberately
+interrupted after DP and Combat when its stale 35-edge expectation failed. That
+fixture now expects 37 and its 243 checks pass. T3-final2 and the DP D3D extra
+are green, and fresh final2 DP is 165 registrations (144 executed passes, 21
+skips, zero failures). The all-seven final2 census is green with zero FALLBACK,
+aliasing, and validator errors; DP retains six deliberate MISMATCH controls. The final asset audit found
+164 graphs, 881 obsolete parameters removed from 102 graphs, no unexpected removal
+or topology issue, and a 192-asset second boot with no path or byte changes.

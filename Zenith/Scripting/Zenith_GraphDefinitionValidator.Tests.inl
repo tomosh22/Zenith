@@ -37,12 +37,94 @@ namespace
 		ZENITH_PROPERTY(float, m_fNotAString, 1.0f)
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestBadBindingNode)
-		ZENITH_GRAPH_PIN_INPUT(Bad, "m_fNotAString", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_SELECTOR_READ(Bad, "m_fNotAString", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
 		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
 		const char* GetTypeName() const override { return "Test_ValBadBinding"; }
+	};
+
+	// Deliberately bypass the final macros. These model old serialized descriptor
+	// metadata and prove the validator rejects it before it reads either the
+	// stored property value or an incoming wire.
+	class ValTestIllegalInputMetadataNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(ValTestIllegalInputMetadataNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strLegacyBinding, "declared")
+
+		static const Zenith_GraphPinTable& GetPinTableStatic()
+		{
+			static Zenith_GraphPinTable s_xTable;
+			static bool s_bAdded = false;
+			if (!s_bAdded)
+			{
+				s_bAdded = true;
+				Zenith_GraphPinDesc xPin;
+				xPin.m_szName = "Value";
+				xPin.m_eRole = GRAPH_PIN_ROLE_INPUT;
+				xPin.m_eType = PROPERTY_TYPE_FLOAT;
+				xPin.m_szVarNameProperty = "m_strLegacyBinding";
+				s_xTable.AddPin(xPin);
+			}
+			return s_xTable;
+		}
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_ValIllegalInputMetadata"; }
+	};
+
+	class ValTestIllegalOutputMetadataNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(ValTestIllegalOutputMetadataNode)
+	public:
+		ZENITH_PROPERTY(std::string, m_strLegacyBinding, "declared")
+
+		static const Zenith_GraphPinTable& GetPinTableStatic()
+		{
+			static Zenith_GraphPinTable s_xTable;
+			static bool s_bAdded = false;
+			if (!s_bAdded)
+			{
+				s_bAdded = true;
+				Zenith_GraphPinDesc xPin;
+				xPin.m_szName = "Result";
+				xPin.m_eRole = GRAPH_PIN_ROLE_OUTPUT;
+				xPin.m_eType = PROPERTY_TYPE_FLOAT;
+				xPin.m_szVarNameProperty = "m_strLegacyBinding";
+				s_xTable.AddPin(xPin);
+			}
+			return s_xTable;
+		}
+
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_ValIllegalOutputMetadata"; }
+	};
+
+	// Deliberately manual final-shape table: null metadata is legal for both
+	// wire-only roles, unlike the non-empty legacy metadata above.
+	class ValTestNullMetadataNode : public Zenith_GraphNode
+	{
+	public:
+		ZENITH_PROPERTIES_BEGIN(ValTestNullMetadataNode)
+	public:
+		static const Zenith_GraphPinTable& GetPinTableStatic()
+		{
+			static Zenith_GraphPinTable s_xTable;
+			static bool s_bAdded = false;
+			if (!s_bAdded)
+			{
+				s_bAdded = true;
+				Zenith_GraphPinDesc xInput; xInput.m_szName = "Value"; xInput.m_eRole = GRAPH_PIN_ROLE_INPUT; xInput.m_eType = PROPERTY_TYPE_FLOAT; xInput.m_szVarNameProperty = nullptr; s_xTable.AddPin(xInput);
+				Zenith_GraphPinDesc xOutput; xOutput.m_szName = "Result"; xOutput.m_eRole = GRAPH_PIN_ROLE_OUTPUT; xOutput.m_eType = PROPERTY_TYPE_FLOAT; xOutput.m_szVarNameProperty = nullptr; s_xTable.AddPin(xOutput);
+			}
+			return s_xTable;
+		}
+		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
+		const char* GetTypeName() const override { return "Test_ValNullMetadata"; }
 	};
 
 	// Reads one FLOAT variable.
@@ -54,7 +136,7 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "value")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestReaderNode)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_SELECTOR_READ(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -71,7 +153,7 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "value")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestWriterNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -88,7 +170,7 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "value")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestIntWriterNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Result, "m_strResultVar", PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -105,7 +187,7 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "target")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestEntityWriterNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -122,7 +204,7 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strResultVar, "target")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestVec3WriterNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_SELECTOR_WRITE(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -236,25 +318,6 @@ namespace
 		const char* GetTypeName() const override { return "Test_ValConstOnly"; }
 	};
 
-	// MathBlackboardFloat's shape: write to m_strResultVar, or - when that is
-	// empty - back into m_strVar (the in-place form).
-	class ValTestFallbackNode : public Zenith_GraphNode
-	{
-	public:
-		ZENITH_PROPERTIES_BEGIN(ValTestFallbackNode)
-	public:
-		ZENITH_PROPERTY(std::string, m_strVar, "value")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "")
-
-		ZENITH_GRAPH_PINS_BEGIN(ValTestFallbackNode)
-		ZENITH_GRAPH_PIN_OUTPUT_FALLBACK(Result, "m_strResultVar", "m_strVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PINS_END
-
-	public:
-		GraphNodeStatus Execute(Zenith_GraphContext&) override { return GRAPH_NODE_STATUS_SUCCESS; }
-		const char* GetTypeName() const override { return "Test_ValFallback"; }
-	};
-
 	// Instance-resolved pin type: op 0 answers FLOAT, anything else DECLINES -
 	// and a declined answer must produce ANY plus a warning, never a guess.
 	class ValTestInstanceNode : public Zenith_GraphNode
@@ -262,11 +325,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ValTestInstanceNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strResultVar, "value")
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestInstanceNode)
-		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Result, "m_strResultVar")
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Result)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -315,14 +377,8 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ValTestDescriptorNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(float, m_fAmount, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strBothVar, "")
 		ZENITH_PROPERTY(float, m_fBoth, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar2, "")
-		ZENITH_PROPERTY(std::string, m_strVar, "")
-		ZENITH_PROPERTY(std::string, m_strInstVar, "")
 		ZENITH_PROPERTY(std::string, m_strSelReadVar, "")
 		ZENITH_PROPERTY(std::string, m_strSelWriteVar, "")
 		ZENITH_PROPERTY(std::string, m_strSelRWVar, "")
@@ -331,12 +387,12 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strListVar, "")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestDescriptorNode)
-		ZENITH_GRAPH_PIN_INPUT(ValueIn, "m_strValueVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(ValueIn, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_INPUT_CONST(AmountIn, "m_fAmount", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(BothIn, "m_strBothVar", "m_fBoth", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(ResultOut, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT_FALLBACK(FallbackOut, "m_strResultVar2", "m_strVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(InstanceOut, "m_strInstVar")
+		ZENITH_GRAPH_PIN_INPUT_CONST(BothIn, "m_fBoth", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(ResultOut, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(ExtraOut, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(InstanceOut)
 		ZENITH_GRAPH_PIN_SELECTOR_READ(SelRead, "m_strSelReadVar", PROPERTY_TYPE_STRING)
 		ZENITH_GRAPH_PIN_SELECTOR_WRITE(SelWrite, "m_strSelWriteVar", PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PIN_SELECTOR_READWRITE(SelRW, "m_strSelRWVar", PROPERTY_TYPE_FLOAT)
@@ -363,12 +419,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ValTestProducerNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strResultVar, "")
-		ZENITH_PROPERTY(std::string, m_strCountVar, "")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestProducerNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Count, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -384,16 +438,12 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ValTestConsumerNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
-		ZENITH_PROPERTY(std::string, m_strIndexVar, "")
-		ZENITH_PROPERTY(std::string, m_strAnyVar, "")
-		ZENITH_PROPERTY(std::string, m_strEchoVar, "")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestConsumerNode)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT(Index, "m_strIndexVar", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_INPUT(Any, "m_strAnyVar", eGRAPH_PIN_TYPE_ANY)
-		ZENITH_GRAPH_PIN_OUTPUT(Echo, "m_strEchoVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(Index, PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_INPUT(Any, eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_OUTPUT(Echo, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -407,12 +457,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ValTestPureNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strInVar, "")
-		ZENITH_PROPERTY(std::string, m_strOutVar, "")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestPureNode)
-		ZENITH_GRAPH_PIN_INPUT(In, "m_strInVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Out, "m_strOutVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(In, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Out, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -435,11 +483,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(ValTestInstanceOutNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strOutVar, "")
 		ZENITH_PROPERTY(int32_t, m_iOp, 0)
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestInstanceOutNode)
-		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Out, "m_strOutVar")
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Out)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -488,11 +535,10 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(ValTestVariadicNode)
 	public:
 		ZENITH_PROPERTY(int32_t, m_iInputCount, 3)
-		ZENITH_PROPERTY(std::string, m_strTotalVar, "")
 
 		ZENITH_GRAPH_PINS_BEGIN(ValTestVariadicNode)
 		ZENITH_GRAPH_PIN_INPUT_VARIADIC(in, PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Total, "m_strTotalVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Total, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -574,6 +620,9 @@ namespace
 		xRegistry.EnsureInitialized();
 		xRegistry.RegisterNodeType<ValTestReaderNode>("Test_ValReader", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestBadBindingNode>("Test_ValBadBinding", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<ValTestIllegalInputMetadataNode>("Test_ValIllegalInputMetadata", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<ValTestIllegalOutputMetadataNode>("Test_ValIllegalOutputMetadata", GRAPH_EVENT_NONE, 1, false, "Test");
+		xRegistry.RegisterNodeType<ValTestNullMetadataNode>("Test_ValNullMetadata", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestWriterNode>("Test_ValWriter", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestIntWriterNode>("Test_ValIntWriter", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestEntityWriterNode>("Test_ValEntityWriter", GRAPH_EVENT_NONE, 1, false, "Test");
@@ -584,7 +633,6 @@ namespace
 		xRegistry.RegisterNodeType<ValTestTargetPositionNode>("Test_ValTargetPosition", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestListNode>("Test_ValList", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestConstOnlyNode>("Test_ValConstOnly", GRAPH_EVENT_NONE, 1, false, "Test");
-		xRegistry.RegisterNodeType<ValTestFallbackNode>("Test_ValFallback", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestInstanceNode>("Test_ValInstance", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestPinBaseNode>("Test_ValPinBase", GRAPH_EVENT_NONE, 1, false, "Test");
 		xRegistry.RegisterNodeType<ValTestPinDerivedNode>("Test_ValPinDerived", GRAPH_EVENT_NONE, 1, false, "Test");
@@ -683,9 +731,8 @@ namespace
 // The declaration mechanism
 //==============================================================================
 
-// Every descriptor field survives the macro family verbatim - including the two
-// that have no other test (the const-only binding, whose var-name property is
-// deliberately "", and the TARGET masks, which are the corrected pairing rule).
+// Descriptor metadata is registry-only, never a serialized node parameter.
+// INPUT and OUTPUT macro metadata is the non-null empty string; permanent roles retain names.
 ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 {
 	EnsureValidatorTestNodesRegistered();
@@ -701,9 +748,8 @@ ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 	}
 	ZENITH_ASSERT_TRUE(pxValueIn->m_eRole == GRAPH_PIN_ROLE_INPUT);
 	ZENITH_ASSERT_TRUE(pxValueIn->m_eType == PROPERTY_TYPE_FLOAT);
-	ZENITH_ASSERT_STREQ(pxValueIn->m_szVarNameProperty, "m_strValueVar");
+	ZENITH_ASSERT_STREQ(pxValueIn->m_szVarNameProperty, "");
 	ZENITH_ASSERT_STREQ(pxValueIn->m_szConstProperty, "");
-	ZENITH_ASSERT_STREQ(pxValueIn->m_szFallbackVarNameProperty, "");
 	ZENITH_ASSERT_FALSE(pxValueIn->m_bInstanceResolved);
 	ZENITH_ASSERT_FALSE(pxValueIn->m_bVariadic);
 
@@ -721,8 +767,7 @@ ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 		ZENITH_ASSERT_STREQ(pxVariadicIn->m_szConstProperty, "");
 	}
 
-	// A const-only INPUT is a VALID descriptor whose var-name binding is "" -
-	// the variable checks skip it entirely.
+	// A const-only INPUT has empty binding metadata and a separate const property.
 	const Zenith_GraphPinDesc* pxAmountIn = xTable.FindPin("AmountIn");
 	ZENITH_ASSERT_NOT_NULL(pxAmountIn);
 	if (pxAmountIn)
@@ -735,7 +780,7 @@ ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 	ZENITH_ASSERT_NOT_NULL(pxBothIn);
 	if (pxBothIn)
 	{
-		ZENITH_ASSERT_STREQ(pxBothIn->m_szVarNameProperty, "m_strBothVar");
+		ZENITH_ASSERT_STREQ(pxBothIn->m_szVarNameProperty, "");
 		ZENITH_ASSERT_STREQ(pxBothIn->m_szConstProperty, "m_fBoth");
 	}
 
@@ -745,14 +790,14 @@ ZENITH_TEST(GraphPinTable, PinTable_MacroDeclaresTotalTable)
 	{
 		ZENITH_ASSERT_TRUE(pxResultOut->m_eRole == GRAPH_PIN_ROLE_OUTPUT);
 		ZENITH_ASSERT_TRUE(pxResultOut->m_eType == PROPERTY_TYPE_VECTOR3);
+		ZENITH_ASSERT_STREQ(pxResultOut->m_szVarNameProperty, "");
 	}
 
-	const Zenith_GraphPinDesc* pxFallbackOut = xTable.FindPin("FallbackOut");
-	ZENITH_ASSERT_NOT_NULL(pxFallbackOut);
-	if (pxFallbackOut)
+	const Zenith_GraphPinDesc* pxExtraOut = xTable.FindPin("ExtraOut");
+	ZENITH_ASSERT_NOT_NULL(pxExtraOut);
+	if (pxExtraOut)
 	{
-		ZENITH_ASSERT_STREQ(pxFallbackOut->m_szVarNameProperty, "m_strResultVar2");
-		ZENITH_ASSERT_STREQ(pxFallbackOut->m_szFallbackVarNameProperty, "m_strVar");
+		ZENITH_ASSERT_STREQ(pxExtraOut->m_szVarNameProperty, "");
 	}
 
 	const Zenith_GraphPinDesc* pxInstanceOut = xTable.FindPin("InstanceOut");
@@ -1181,44 +1226,6 @@ ZENITH_TEST(GraphValidator, Validator_TargetEntityRefusesVector3)
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_TYPE_MISMATCH), 1u);
 }
 
-// The empty-result-var form binds to the FALLBACK property, and the control
-// half proves that is what did the binding.
-ZENITH_TEST(GraphValidator, Validator_FallbackVarNameBinds)
-{
-	EnsureValidatorTestNodesRegistered();
-
-	{
-		Zenith_GraphDefinition xDef;
-		{
-			Zenith_GraphBuilder xBuilder(xDef);
-			xBuilder.Node("Test_ValFallback");	// result var "" -> binds to m_strVar == "value"
-			xBuilder.Node("Test_ValReader");	// reads "value"
-			ZENITH_ASSERT_TRUE(xBuilder.Build());
-		}
-		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, axFindings);
-		// ★ B-3: the binding is what this test pins, and it still works - but the
-		// in-place shape it expresses is now ONE warning of its own
-		// (IN_PLACE_ALIASING), so the total is 1 rather than 0.
-		ZENITH_ASSERT_EQ(axFindings.GetSize(), 1u);
-		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING), 1u);
-	}
-
-	{
-		Zenith_GraphDefinition xDef;
-		{
-			Zenith_GraphBuilder xBuilder(xDef);
-			const u_int uFallback = xBuilder.Node("Test_ValFallback");
-			xBuilder.ParamString(uFallback, "m_strVar", "elsewhere");
-			xBuilder.Node("Test_ValReader");	// still reads "value" - now unwritten
-			ZENITH_ASSERT_FALSE(xBuilder.Build());	// negative half: the read is unsatisfied
-		}
-		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, axFindings);
-		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 1u);
-	}
-}
-
 // An instance-resolved pin: answered, then DECLINED. A declined answer is ANY
 // plus a warning naming the type - never a fabricated type.
 ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarning)
@@ -1231,7 +1238,8 @@ ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarnin
 			Zenith_GraphBuilder xBuilder(xDef);
 			const u_int uInstance = xBuilder.Node("Test_ValInstance");
 			xBuilder.ParamInt(uInstance, "m_iOp", 0);	// answers FLOAT
-			xBuilder.Node("Test_ValReader");			// INPUT FLOAT <- "value"
+			const u_int uConsumer = xBuilder.Node("Test_ValConsumer");
+			xBuilder.DataEdge(uInstance, "Result", uConsumer, "Value");
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
@@ -1241,11 +1249,13 @@ ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarnin
 
 	{
 		Zenith_GraphDefinition xDef;
+		u_int uInstance = 0;
 		{
 			Zenith_GraphBuilder xBuilder(xDef);
-			const u_int uInstance = xBuilder.Node("Test_ValInstance");
+			uInstance = xBuilder.Node("Test_ValInstance");
 			xBuilder.ParamInt(uInstance, "m_iOp", 1);	// declines
-			xBuilder.Node("Test_ValReader");
+			const u_int uConsumer = xBuilder.Node("Test_ValConsumer");
+			xBuilder.DataEdge(uInstance, "Result", uConsumer, "Value");
 			ZENITH_ASSERT_TRUE(xBuilder.Build());
 		}
 		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
@@ -1253,14 +1263,18 @@ ZENITH_TEST(GraphValidator, Validator_InstanceResolvedPinTypeAndUnresolvedWarnin
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED), 1u);
 		// ANY, so no fabricated disagreement with the FLOAT reader...
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_TYPE_MISMATCH), 0u);
-		// ...and the write still counts as a write.
+		// ...and the valid wire still counts as a write.
 		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
 		const Zenith_GraphValidationFinding* pxFinding =
 			FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_INSTANCE_TYPE_UNRESOLVED);
+		ZENITH_ASSERT_NOT_NULL(pxFinding);
 		if (pxFinding)
 		{
 			// A node declining to answer is not the graph author's defect.
 			ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
+			ZENITH_ASSERT_EQ(pxFinding->m_uNodeID, uInstance);
+			ZENITH_ASSERT_STREQ(pxFinding->m_strTypeName.c_str(), "Test_ValInstance");
+			ZENITH_ASSERT_STREQ(pxFinding->m_strPin.c_str(), "Result");
 		}
 	}
 }
@@ -1358,6 +1372,93 @@ ZENITH_TEST(GraphValidator, Validator_PinBindingToNonStringPropertyIsReportedNot
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
 }
 
+ZENITH_TEST(GraphValidator, Validator_InputOutputMetadataIsAlwaysRejected)
+{
+	EnsureValidatorTestNodesRegistered();
+
+	auto AssertForbiddenMetadata = [](const Zenith_GraphDefinition& xDef, u_int uExpectedNodeID, const char* szType, const char* szPin)
+	{
+		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+		RunValidate(xDef, axFindings);
+		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID), 1u);
+		const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID);
+		ZENITH_ASSERT_NOT_NULL(pxFinding);
+		if (pxFinding != nullptr)
+		{
+			ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_ERROR);
+			ZENITH_ASSERT_EQ(pxFinding->m_uNodeID, uExpectedNodeID);
+			ZENITH_ASSERT_STREQ(pxFinding->m_strTypeName.c_str(), szType);
+			ZENITH_ASSERT_STREQ(pxFinding->m_strPin.c_str(), szPin);
+		}
+	};
+
+	// The descriptor field is forbidden even while the reflected value is empty.
+	{
+		Zenith_GraphDefinition xDef;
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uNode = xBuilder.Node("Test_ValIllegalInputMetadata");
+		Zenith_PropertyValue xDeclared; xDeclared.SetFloat(0.0f);
+		xBuilder.Variable("declared", xDeclared);
+		xBuilder.ParamString(uNode, "m_strLegacyBinding", "");
+		ZENITH_ASSERT_FALSE(xBuilder.Build());
+		AssertForbiddenMetadata(xDef, uNode, "Test_ValIllegalInputMetadata", "Value");
+	}
+
+	// A real data edge cannot mask the old metadata either.
+	{
+		Zenith_GraphDefinition xDef;
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uSource = xBuilder.Node("Test_ValProducer");
+		const u_int uNode = xBuilder.Node("Test_ValIllegalInputMetadata");
+		Zenith_PropertyValue xDeclared; xDeclared.SetFloat(0.0f);
+		xBuilder.Variable("declared", xDeclared);
+		xBuilder.DataEdge(uSource, "Result", uNode, "Value");
+		ZENITH_ASSERT_EQ(xDef.GetDataEdgeCount(), 1u);
+		const Zenith_GraphDataEdge& xWire = xDef.GetDataEdgeAt(0u);
+		ZENITH_ASSERT_EQ(xWire.m_uSrcNodeID, uSource);
+		ZENITH_ASSERT_EQ(xWire.m_uDstNodeID, uNode);
+		ZENITH_ASSERT_STREQ(xWire.m_strSrcPin.c_str(), "Result");
+		ZENITH_ASSERT_STREQ(xWire.m_strDstPin.c_str(), "Value");
+		ZENITH_ASSERT_FALSE(xBuilder.Build());
+		AssertForbiddenMetadata(xDef, uNode, "Test_ValIllegalInputMetadata", "Value");
+	}
+
+	{
+		Zenith_GraphDefinition xDef;
+		Zenith_GraphBuilder xBuilder(xDef);
+		const u_int uNode = xBuilder.Node("Test_ValIllegalOutputMetadata");
+		Zenith_PropertyValue xDeclared; xDeclared.SetFloat(0.0f);
+		xBuilder.Variable("declared", xDeclared);
+		xBuilder.ParamString(uNode, "m_strLegacyBinding", "");
+		ZENITH_ASSERT_FALSE(xBuilder.Build());
+		AssertForbiddenMetadata(xDef, uNode, "Test_ValIllegalOutputMetadata", "Result");
+	}
+}
+
+ZENITH_TEST(GraphValidator, Validator_FinalInputOutputMetadataAcceptsNullAndEmpty)
+{
+	EnsureValidatorTestNodesRegistered();
+	const Zenith_GraphNodeTypeInfo* pxNullInfo = Zenith_GraphNodeRegistry::Get().Find("Test_ValNullMetadata");
+	ZENITH_ASSERT_NOT_NULL(pxNullInfo);
+	if (pxNullInfo != nullptr)
+	{
+		const Zenith_GraphPinTable& xNullTable = ValTestNullMetadataNode::GetPinTableStatic();
+		ZENITH_ASSERT_EQ(xNullTable.GetPinCount(), 2u);
+		ZENITH_ASSERT_NULL(xNullTable.FindPin("Value")->m_szVarNameProperty);
+		ZENITH_ASSERT_NULL(xNullTable.FindPin("Result")->m_szVarNameProperty);
+	}
+	for (const char* szType : { "Test_ValNullMetadata", "Test_ValDescriptors" })
+	{
+		Zenith_GraphDefinition xDef;
+		Zenith_GraphBuilder xBuilder(xDef);
+		xBuilder.Node(szType);
+		ZENITH_ASSERT_TRUE(xBuilder.Build());
+		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
+		RunValidate(xDef, axFindings);
+		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_PIN_BINDING_INVALID), 0u);
+	}
+}
+
 ZENITH_TEST(GraphPinTable, Registry_ExecOutputCountAppliesParamsBeforeCounting)
 {
 	// SwitchOnString derives its pin count from m_strCases and CACHES the parse
@@ -1376,8 +1477,8 @@ ZENITH_TEST(GraphPinTable, Registry_ExecOutputCountAppliesParamsBeforeCounting)
 		Zenith_GraphBuilder xBuilder(xDef);
 		const u_int uSwitch = xBuilder.Node("SwitchOnString");
 		xBuilder.ParamString(uSwitch, "m_strCases", "a,b,c");
-		// SwitchOnString's Value pin reads m_strVar, whose default is "state" -
-		// a positive fixture must DECLARE what it reads or Build() latches.
+		// SwitchOnString's Value selector defaults to "state"; this positive
+		// fixture declares the selector's blackboard name.
 		Zenith_PropertyValue xState;
 		xState.SetString("");
 		xBuilder.Variable("state", xState);
@@ -1889,39 +1990,6 @@ ZENITH_TEST(GraphValidator, Validator_FromVariableWriterDisagreementReportedOnce
 	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_WIRE_PIN_UNKNOWN), 0u);
 }
 
-// ★ A WIRE SUPERSEDES THE FALLBACK the C-1 sweep deletes: a CONNECTED input
-// never consults its var name at runtime, so the name is not a read.
-ZENITH_TEST(GraphValidator, Validator_WiredInputSkipsVarNameCheck)
-{
-	EnsureValidatorTestNodesRegistered();
-
-	Zenith_GraphDefinition xDef;
-	{
-		Zenith_GraphBuilder xBuilder(xDef);
-		const u_int uSrc = xBuilder.Node("Test_ValProducer");
-		const u_int uDst = xBuilder.Node("Test_ValConsumer");
-		xBuilder.ParamString(uDst, "m_strValueVar", "nobody_declares_me");
-		xBuilder.DataEdge(uSrc, "Result", uDst, "Value");
-		ZENITH_ASSERT_TRUE(xBuilder.Build());
-	}
-	Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-	RunValidate(xDef, axFindings);
-	ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 0u);
-
-	// Control: the SAME var name with NO wire IS an undeclared read, so the zero
-	// above is the wire and not a rule that stopped firing.
-	Zenith_GraphDefinition xControl;
-	{
-		Zenith_GraphBuilder xBuilder(xControl);
-		const u_int uDst = xBuilder.Node("Test_ValConsumer");
-		xBuilder.ParamString(uDst, "m_strValueVar", "nobody_declares_me");
-		ZENITH_ASSERT_FALSE(xBuilder.Build());
-	}
-	Zenith_Vector<Zenith_GraphValidationFinding> axControl;
-	RunValidate(xControl, axControl);
-	ZENITH_ASSERT_EQ(CountRule(axControl, GRAPH_VALIDATION_RULE_UNDECLARED_READ), 1u);
-}
-
 ZENITH_TEST(GraphValidator, Validator_WireVariadicOrdinalResolved)
 {
 	EnsureValidatorTestNodesRegistered();
@@ -2193,48 +2261,8 @@ ZENITH_TEST(GraphValidator, Validator_DominanceNeverError)
 }
 
 //==============================================================================
-// B-3 IN-PLACE ALIASING + the exported pin-type resolver
+// The exported pin-type resolver
 //==============================================================================
-
-// The two Math nodes' in-place form: an empty result var means the OUTPUT writes
-// back over the variable it was computed from. B-6.1 records the count; C-1
-// requires zero.
-ZENITH_TEST(GraphValidator, Validator_InPlaceAliasingIsWarning)
-{
-	EnsureValidatorTestNodesRegistered();
-
-	{
-		Zenith_GraphDefinition xDef;
-		{
-			Zenith_GraphBuilder xBuilder(xDef);
-			xBuilder.Node("Test_ValFallback");	// result var "" -> binds m_strVar == "value"
-			xBuilder.Node("Test_ValReader");	// reads "value", so the write satisfies it
-			ZENITH_ASSERT_TRUE(xBuilder.Build());
-		}
-		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, axFindings);
-		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING), 1u);
-		const Zenith_GraphValidationFinding* pxFinding = FirstOfRule(axFindings, GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING);
-		if (pxFinding)
-		{
-			ZENITH_ASSERT_TRUE(pxFinding->m_eSeverity == GRAPH_VALIDATION_SEVERITY_WARNING);
-			ZENITH_ASSERT_STREQ(pxFinding->m_strVar.c_str(), "value");
-		}
-	}
-
-	{	// the result var SET: the output has its own destination, no aliasing
-		Zenith_GraphDefinition xDef;
-		{
-			Zenith_GraphBuilder xBuilder(xDef);
-			const u_int uFallback = xBuilder.Node("Test_ValFallback");
-			xBuilder.ParamString(uFallback, "m_strResultVar", "result");
-			ZENITH_ASSERT_TRUE(xBuilder.Build());
-		}
-		Zenith_Vector<Zenith_GraphValidationFinding> axFindings;
-		RunValidate(xDef, axFindings);
-		ZENITH_ASSERT_EQ(CountRule(axFindings, GRAPH_VALIDATION_RULE_IN_PLACE_ALIASING), 0u);
-	}
-}
 
 // ★ THE RESOLVER AND THE RUNTIME MUST AGREE. Two answers to "what type is this
 // pin" is how a slot gets stamped one way and validated another.

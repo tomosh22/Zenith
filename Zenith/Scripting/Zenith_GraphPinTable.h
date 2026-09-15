@@ -18,8 +18,8 @@
 // checks a whole graph against it.
 //
 //   ZENITH_GRAPH_PINS_BEGIN(MyNode)
-//   ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
-//   ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+//   ZENITH_GRAPH_PIN_INPUT(Value, PROPERTY_TYPE_FLOAT)
+//   ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 //   ZENITH_GRAPH_PINS_END
 //
 // A node class with NO pin table is OPAQUE to the validator: it contributes no
@@ -37,9 +37,8 @@
 //
 // Roles. Only INPUT and OUTPUT ever become drawn wires; every role participates
 // in validation:
-//   INPUT              - reads a value (from a var-name property, a const
-//                        property, or both - "" means that half is absent).
-//   OUTPUT             - the node's own computed result, written to a var.
+//   INPUT              - reads a wire or its current const-property default.
+//   OUTPUT             - the node's own computed slot result.
 //   SELECTOR_READ      - a named-variable REFERENCE that configures the node and
 //   SELECTOR_WRITE       stays a validated string forever (never a wire): a
 //   SELECTOR_READWRITE   configured source, destination, or in-place target.
@@ -95,16 +94,11 @@ struct Zenith_GraphPinDesc
 	// The pin's STATIC type, or eGRAPH_PIN_TYPE_ANY. Ignored (and expected to be
 	// ANY) when m_bInstanceResolved is set.
 	Zenith_PropertyType m_eType = eGRAPH_PIN_TYPE_ANY;
-	// Declared field name of the std::string property carrying the blackboard
-	// variable NAME this pin binds to. "" = the pin has no var-name binding (a
-	// const-only INPUT), which the variable checks SKIP.
+	// Shared name metadata for permanent selector, target and list roles.  DATA
+	// INPUTs and OUTPUTs are slot-only after C-1 and must leave this empty.
 	const char* m_szVarNameProperty = "";
 	// Declared field name of the property carrying an inline constant value.
 	const char* m_szConstProperty = "";
-	// When the bound var-name property reads EMPTY, the pin binds to THIS
-	// property's value instead. Expresses the in-place form of the maths nodes
-	// (write to m_strResultVar, or back into m_strVar when no result var is set).
-	const char* m_szFallbackVarNameProperty = "";
 	// ★ THE ONE WAY A PIN'S TYPE COMES FROM THE GRAPH rather than from the class
 	// (m_eType) or from the instance (m_bInstanceResolved). Declared field name of
 	// the std::string property whose VALUE names a blackboard variable; the pin's
@@ -116,8 +110,8 @@ struct Zenith_GraphPinDesc
 	// the DECLARATION is the contract.
 	//
 	// ★ IT IS A TYPE SOURCE AND NOTHING ELSE - never a binding, never a writer.
-	// A descriptor carrying it leaves m_szVarNameProperty, m_szConstProperty and
-	// m_szFallbackVarNameProperty all "" on purpose: binding the same property as
+	// A descriptor carrying it leaves m_szVarNameProperty and m_szConstProperty
+	// empty on purpose: binding the same property as
 	// a var name would make the node an annotated WRITER of the variable it
 	// READS, which would satisfy every other reader's declare-or-error and
 	// dual-write the variable to itself.
@@ -336,7 +330,7 @@ private:
 // Internal: shared registration machinery (the ZENITH_PROPERTY_REGISTER_BODY
 // shape - a static member FUNCTION does the work, a `static inline const bool`
 // runs it once at static init).
-#define ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, eRoleV, eTypeV, szVarPropV, szConstPropV, szFallbackPropV, bInstanceResolvedV, uMaskV, bVariadicV, szTypeFromVarPropV) \
+#define ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, eRoleV, eTypeV, szVarPropV, szConstPropV, bInstanceResolvedV, uMaskV, bVariadicV, szTypeFromVarPropV) \
 	static bool ZenithGraphPinRegister_##PinName() \
 	{ \
 		Zenith_GraphPinDesc xPin; \
@@ -345,7 +339,6 @@ private:
 		xPin.m_eType = eTypeV; \
 		xPin.m_szVarNameProperty = szVarPropV; \
 		xPin.m_szConstProperty = szConstPropV; \
-		xPin.m_szFallbackVarNameProperty = szFallbackPropV; \
 		xPin.m_szTypeFromVarNameProperty = szTypeFromVarPropV; \
 		xPin.m_bInstanceResolved = bInstanceResolvedV; \
 		xPin.m_bVariadic = bVariadicV; \
@@ -356,17 +349,12 @@ private:
 	static inline const bool s_bZenithGraphPinReg_##PinName = ZenithGraphPinRegister_##PinName();
 
 // --- INPUT ------------------------------------------------------------------
-#define ZENITH_GRAPH_PIN_INPUT(PinName, VarProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+#define ZENITH_GRAPH_PIN_INPUT(PinName, PinType) \
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
-// A const-only input (no var-name property at all): a valid descriptor that the
-// variable checks skip entirely.
+// An input with a current property default when it is unconnected.
 #define ZENITH_GRAPH_PIN_INPUT_CONST(PinName, ConstProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, "", ConstProperty, "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
-
-// "Read the var if one is named, otherwise use the inline constant."
-#define ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(PinName, VarProperty, ConstProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, VarProperty, ConstProperty, "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, "", ConstProperty, false, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
 // A FAMILY of ordinal inputs: wires name "<PinName><ordinal>" ("in0", "in1",
 // ...) and the member count comes from the param-applied instance's
@@ -374,21 +362,15 @@ private:
 // member is a wire or it is the type's zero. Addressed at runtime through
 // GetInput<T>(ctx, pin, ordinal).
 #define ZENITH_GRAPH_PIN_INPUT_VARIADIC(PinName, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, "", "", "", false, uGRAPH_PIN_ACCEPT_ANY, true, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_INPUT, PinType, "", "", false, uGRAPH_PIN_ACCEPT_ANY, true, "")
 
 // --- OUTPUT -----------------------------------------------------------------
-#define ZENITH_GRAPH_PIN_OUTPUT(PinName, VarProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, PinType, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
-
-#define ZENITH_GRAPH_PIN_OUTPUT_FALLBACK(PinName, VarProperty, FallbackVarProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, PinType, VarProperty, "", FallbackVarProperty, false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+#define ZENITH_GRAPH_PIN_OUTPUT(PinName, PinType) \
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, PinType, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
 // Type answered per instance by Zenith_GraphNode::GetPinType(pinIndex, out).
-#define ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(PinName, VarProperty) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, VarProperty, "", "", true, uGRAPH_PIN_ACCEPT_ANY, false, "")
-
-#define ZENITH_GRAPH_PIN_OUTPUT_INSTANCE_FALLBACK(PinName, VarProperty, FallbackVarProperty) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, VarProperty, "", FallbackVarProperty, true, uGRAPH_PIN_ACCEPT_ANY, false, "")
+#define ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(PinName) \
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, "", "", true, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
 // ★ Type FROM THE GRAPH: the pin's resolved type is the DECLARED type of the
 // variable named by SelectorVarProperty's value (see
@@ -398,27 +380,27 @@ private:
 // that READS a variable from registering as an annotated WRITER of it.
 // Undeclared variable -> ANY, and no second finding.
 #define ZENITH_GRAPH_PIN_OUTPUT_FROM_VARIABLE(PinName, SelectorVarProperty) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, "", "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, SelectorVarProperty)
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_OUTPUT, eGRAPH_PIN_TYPE_ANY, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, SelectorVarProperty)
 
 // --- SELECTORS (named references that stay strings forever) ------------------
 #define ZENITH_GRAPH_PIN_SELECTOR_READ(PinName, VarProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_SELECTOR_READ, PinType, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_SELECTOR_READ, PinType, VarProperty, "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
 #define ZENITH_GRAPH_PIN_SELECTOR_WRITE(PinName, VarProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_SELECTOR_WRITE, PinType, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_SELECTOR_WRITE, PinType, VarProperty, "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
 #define ZENITH_GRAPH_PIN_SELECTOR_READWRITE(PinName, VarProperty, PinType) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_SELECTOR_READWRITE, PinType, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_SELECTOR_READWRITE, PinType, VarProperty, "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
 
 // --- TARGET references ------------------------------------------------------
 // ResolveTargetEntity accepts ENTITY_ID only.
 #define ZENITH_GRAPH_PIN_TARGET_ENTITY(PinName, VarProperty) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_TARGET_ENTITY, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, VarProperty, "", false, uGRAPH_PIN_ACCEPT_TARGET_ENTITY, false, "")
 
 // A position reference resolves ENTITY_ID or VECTOR3.
 #define ZENITH_GRAPH_PIN_TARGET_POSITION(PinName, VarProperty) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_TARGET_POSITION, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, VarProperty, "", false, uGRAPH_PIN_ACCEPT_TARGET_POSITION, false, "")
 
 // --- LIST -------------------------------------------------------------------
 #define ZENITH_GRAPH_PIN_LIST(PinName, VarProperty) \
-	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_LIST, eGRAPH_PIN_TYPE_ANY, VarProperty, "", "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")
+	ZENITH_GRAPH_PIN_REGISTER_BODY(PinName, GRAPH_PIN_ROLE_LIST, eGRAPH_PIN_TYPE_ANY, VarProperty, "", false, uGRAPH_PIN_ACCEPT_ANY, false, "")

@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 // ============================================================================
 // Test_P1Sprint_DrainsLifeFaster (MVP-1.7.1 + 1.7.2)
@@ -47,7 +48,7 @@ namespace
 	enum Phase : int { kSP_Start, kSP_WaitScene, kSP_Possess, kSP_AfterBump,
 	                   kSP_SprintBaseline, kSP_SprintTick, kSP_SprintRecord,
 	                   kSP_WalkBaseline, kSP_WalkTick, kSP_WalkRecord,
-	                   kSP_Verify, kSP_Done };
+	                   kSP_BurnoutBaseline, kSP_BurnoutRecord, kSP_Verify, kSP_Done };
 
 	int                     g_iPhase = kSP_Start;
 	Zenith_EntityID         g_xVillager;
@@ -55,11 +56,23 @@ namespace
 	float                   g_fSprintAfter = 0.0f;
 	float                   g_fWalkBaseline = 0.0f;
 	float                   g_fWalkAfter = 0.0f;
+	float                   g_fExpectedSprintDrain = 0.0f;
+	float                   g_fPublishedSprintDrain1 = 0.0f;
+	float                   g_fPublishedSprintDrain2 = 0.0f;
+	float                   g_fPublishedPlainDrain = 0.0f;
+	float                   g_fLifeAfterSprintDrain1 = 0.0f;
+	float                   g_fLifeAfterSprintDrain2 = 0.0f;
+	float                   g_fLifeAfterPlainDrain = 0.0f;
 	int                     g_iTickCount = 0;
 	bool                    g_bSprintingObservedSprintWindow = false;
 	bool                    g_bSprintingObservedWalkWindow = true; // pre-set to "fail sentinel"
+	bool                    g_bPossessionFactAfterTransition = false;
+	bool                    g_bBurnoutKeptPossessionFact = false;
+	bool                    g_bBurnoutReachedDead = false;
+	bool                    g_bDeadTickClearedPossessionFact = false;
 
 	constexpr int kTICK_FRAMES = 60; // ~1.0 s at 60 Hz fixed-dt
+	constexpr float kFIXED_DT = 1.0f / 60.0f;
 
 	DPVillager_Component* GetVillagerBehaviour(Zenith_EntityID xId)
 	{
@@ -67,19 +80,47 @@ namespace
 		if (!xEnt.IsValid()) return nullptr;
 		return xEnt.TryGetComponent<DPVillager_Component>();
 	}
+
+	Zenith_BehaviourGraph* GetVillagerGraph(Zenith_EntityID xId)
+	{
+		Zenith_Entity xEnt = g_xEngine.Scenes().ResolveEntity(xId);
+		Zenith_GraphComponent* pxGraphs = xEnt.IsValid()
+			? xEnt.TryGetComponent<Zenith_GraphComponent>() : nullptr;
+		if (pxGraphs == nullptr) return nullptr;
+		for (u_int u = 0; u < pxGraphs->GetGraphCount(); ++u)
+		{
+			if (std::strcmp(pxGraphs->GetGraphAssetPathAt(u), DPVillager_Component::kszGraphAsset) == 0)
+			{
+				return pxGraphs->GetGraphAt(u);
+			}
+		}
+		return nullptr;
+	}
 }
 
 static void Setup_P1Sprint()
 {
+	Zenith_InputSimulator::SetFixedDt(kFIXED_DT);
 	g_iPhase = kSP_Start;
 	g_xVillager = INVALID_ENTITY_ID;
 	g_fSprintBaseline = 0.0f;
 	g_fSprintAfter = 0.0f;
 	g_fWalkBaseline = 0.0f;
 	g_fWalkAfter = 0.0f;
+	g_fExpectedSprintDrain = 0.0f;
+	g_fPublishedSprintDrain1 = 0.0f;
+	g_fPublishedSprintDrain2 = 0.0f;
+	g_fPublishedPlainDrain = 0.0f;
+	g_fLifeAfterSprintDrain1 = 0.0f;
+	g_fLifeAfterSprintDrain2 = 0.0f;
+	g_fLifeAfterPlainDrain = 0.0f;
 	g_iTickCount = 0;
 	g_bSprintingObservedSprintWindow = false;
 	g_bSprintingObservedWalkWindow = true;
+	g_bPossessionFactAfterTransition = false;
+	g_bBurnoutKeptPossessionFact = false;
+	g_bBurnoutReachedDead = false;
+	g_bDeadTickClearedPossessionFact = false;
 }
 
 static bool Step_P1Sprint(int iFrame)
@@ -122,6 +163,10 @@ static bool Step_P1Sprint(int iFrame)
 		// One frame later OnUpdate has flipped m_bIsPossessed and bumped
 		// remaining life to m_fMaxLife. From here on we control life via
 		// SetRemainingLifeForTest.
+		if (Zenith_BehaviourGraph* pxGraph = GetVillagerGraph(g_xVillager))
+		{
+			g_bPossessionFactAfterTransition = pxGraph->GetBlackboard().GetBool("stateIsPossessed", false);
+		}
 		g_iPhase = kSP_SprintBaseline;
 		return true;
 
@@ -132,6 +177,9 @@ static bool Step_P1Sprint(int iFrame)
 		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
 		pxV->SetRemainingLifeForTest(30.0f);
 		g_fSprintBaseline = pxV->GetRemainingLife();
+		Zenith_BehaviourGraph* pxGraph = GetVillagerGraph(g_xVillager);
+		if (pxGraph == nullptr) { g_iPhase = kSP_Done; return false; }
+		g_fExpectedSprintDrain = kFIXED_DT * (1.0f + pxGraph->GetBlackboard().GetFloat("sprintCostExtra", 0.0f));
 		// ★ C1a -- EDGES, not SetKeyHeld. MOVE and SPRINT are C2 actions now
 		// (DP_Bindings.h), and their key rows are fed by the ORDERED transition
 		// log, not sampled as a level. SetKeyHeld writes only the simulator's
@@ -148,6 +196,23 @@ static bool Step_P1Sprint(int iFrame)
 	case kSP_SprintTick:
 	{
 		++g_iTickCount;
+		if (g_iTickCount <= 2)
+		{
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
+			Zenith_BehaviourGraph* pxGraph = GetVillagerGraph(g_xVillager);
+			if (pxV == nullptr || pxGraph == nullptr) { g_iPhase = kSP_Done; return false; }
+			const float fPublishedDrain = pxGraph->GetBlackboard().GetFloat("drain", 0.0f);
+			if (g_iTickCount == 1)
+			{
+				g_fPublishedSprintDrain1 = fPublishedDrain;
+				g_fLifeAfterSprintDrain1 = pxV->GetRemainingLife();
+			}
+			else
+			{
+				g_fPublishedSprintDrain2 = fPublishedDrain;
+				g_fLifeAfterSprintDrain2 = pxV->GetRemainingLife();
+			}
+		}
 		// Sample m_bIsSprintingNow at least once during the window so
 		// the verify step can fail noisily if the sprint state machine
 		// didn't actually flip on. We check on a mid-window tick so we
@@ -189,6 +254,14 @@ static bool Step_P1Sprint(int iFrame)
 	case kSP_WalkTick:
 	{
 		++g_iTickCount;
+		if (g_iTickCount == 1)
+		{
+			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
+			Zenith_BehaviourGraph* pxGraph = GetVillagerGraph(g_xVillager);
+			if (pxV == nullptr || pxGraph == nullptr) { g_iPhase = kSP_Done; return false; }
+			g_fPublishedPlainDrain = pxGraph->GetBlackboard().GetFloat("drain", 0.0f);
+			g_fLifeAfterPlainDrain = pxV->GetRemainingLife();
+		}
 		if (g_iTickCount == kTICK_FRAMES / 2)
 		{
 			DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
@@ -209,12 +282,38 @@ static bool Step_P1Sprint(int iFrame)
 		// Release W so we don't leak input state into a subsequent
 		// batched test.
 		Zenith_InputSimulator::SimulateKeyUp(ZENITH_KEY_W);
+		g_iPhase = kSP_BurnoutBaseline;
+		return true;
+	}
+
+	case kSP_BurnoutBaseline:
+	{
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
+		if (pxV == nullptr) { g_iPhase = kSP_Done; return false; }
+		// The next graph tick must publish the possession fact before its
+		// drain tail kills this deliberately exhausted villager.
+		pxV->SetRemainingLifeForTest(kFIXED_DT * 0.5f);
+		g_iPhase = kSP_BurnoutRecord;
+		return true;
+	}
+
+	case kSP_BurnoutRecord:
+	{
+		DPVillager_Component* pxV = GetVillagerBehaviour(g_xVillager);
+		Zenith_BehaviourGraph* pxGraph = GetVillagerGraph(g_xVillager);
+		if (pxV == nullptr || pxGraph == nullptr) { g_iPhase = kSP_Done; return false; }
+		g_bBurnoutReachedDead = (pxV->GetState() == DPVillagerState::Dead);
+		g_bBurnoutKeptPossessionFact = pxGraph->GetBlackboard().GetBool("stateIsPossessed", false);
 		g_iPhase = kSP_Verify;
 		return true;
 	}
 
 	case kSP_Verify:
 	{
+		if (Zenith_BehaviourGraph* pxGraph = GetVillagerGraph(g_xVillager))
+		{
+			g_bDeadTickClearedPossessionFact = !pxGraph->GetBlackboard().GetBool("stateIsPossessed", true);
+		}
 		const float fSprintDrop = g_fSprintBaseline - g_fSprintAfter;
 		const float fWalkDrop = g_fWalkBaseline - g_fWalkAfter;
 		std::printf("[P1Sprint] sprintDrop=%.3fs walkDrop=%.3fs diff=%.3fs sprintObs=%d walkObs=%d\n",
@@ -234,6 +333,7 @@ static bool Step_P1Sprint(int iFrame)
 
 static bool Verify_P1Sprint()
 {
+	Zenith_InputSimulator::ClearFixedDt();
 	if (!g_xVillager.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: villager not found");
@@ -247,6 +347,42 @@ static bool Verify_P1Sprint()
 	if (g_bSprintingObservedWalkWindow)
 	{
 		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: IsSprintingNow was true during walk window -- Shift release didn't disengage sprint");
+		return false;
+	}
+	if (!g_bPossessionFactAfterTransition)
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: stateIsPossessed was not published after possession transition");
+		return false;
+	}
+	const float fEpsilon = 0.0001f;
+	if (std::fabs(g_fPublishedSprintDrain1 - g_fExpectedSprintDrain) > fEpsilon
+		|| std::fabs(g_fPublishedSprintDrain2 - g_fExpectedSprintDrain) > fEpsilon)
+	{
+		Zenith_Log(LOG_CATEGORY_AI,
+			"P1Sprint: two sprint drain publications were %.6f and %.6f, expected %.6f",
+			g_fPublishedSprintDrain1, g_fPublishedSprintDrain2, g_fExpectedSprintDrain);
+		return false;
+	}
+	if (std::fabs((g_fSprintBaseline - g_fLifeAfterSprintDrain1) - g_fExpectedSprintDrain) > fEpsilon
+		|| std::fabs((g_fLifeAfterSprintDrain1 - g_fLifeAfterSprintDrain2) - g_fExpectedSprintDrain) > fEpsilon)
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: sprint life decrement did not match each published drain without accumulation");
+		return false;
+	}
+	if (std::fabs(g_fPublishedPlainDrain - kFIXED_DT) > fEpsilon)
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: plain drain publication %.6f did not reset to dt %.6f",
+			g_fPublishedPlainDrain, kFIXED_DT);
+		return false;
+	}
+	if (std::fabs((g_fWalkBaseline - g_fLifeAfterPlainDrain) - kFIXED_DT) > fEpsilon)
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: first plain life decrement did not match fixed dt");
+		return false;
+	}
+	if (!g_bBurnoutReachedDead || !g_bBurnoutKeptPossessionFact || !g_bDeadTickClearedPossessionFact)
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "P1Sprint: burnout fact did not remain true through death then clear on the following dead tick");
 		return false;
 	}
 	const float fSprintDrop = g_fSprintBaseline - g_fSprintAfter;

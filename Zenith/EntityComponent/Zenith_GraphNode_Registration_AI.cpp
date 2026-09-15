@@ -40,9 +40,6 @@
 // _Entity.cpp / _Physics.cpp / _Animation.cpp follow. Every INPUT descriptor is
 // read through Zenith_GraphNode::GetInput and every OUTPUT descriptor is written
 // through SetOutput, so a wire into or out of any of these 13 nodes carries a
-// value. An UNCONNECTED node behaves as it did: the transitional var-name
-// fallback IS the old `var.empty() ? const : bb->GetFloat(var, const)` read, and
-// SetOutput's dual-write IS the old SetValue. Each node whose Execute ADDRESSES a
 // pin declares `static constexpr u_int uPIN_<Name>` immediately before its pin
 // table (the INDEX is the runtime address; table order is the contract, asserted
 // by GraphPinTable.AIPinIndicesMatchTables). SIX of the thirteen declare none:
@@ -55,13 +52,11 @@
 //     three, QueryPerceivedTargets.Count, QueryLastHeardSound's three - and so
 //     did the shared Zenith_PropertyValue scratch above them and the computation
 //     INSIDE each guard (GetDistanceToGo(), GetVelocity(), the list size). Those
-//     are PARITY sites: SetOutput's dual-write applies the same non-empty rule,
 //     so the blackboard sees exactly what it saw; what is new is that the SLOT is
 //     always latched, which is the only reason a wire can come off a Remaining or
 //     an Age whose author never named a variable. The three writers that were
 //     ALWAYS unconditional - FindRandomReachablePoint.Result,
 //     QueryPrimaryPerceivedTarget.Result, QueryAwarenessOf.Result - take B-6.1's
-//     `""` divergence instead: an empty var name no longer creates a blackboard
 //     variable literally named "".
 //
 //  2. TWO FAILURE SHAPES, and they are not interchangeable. SHAPE A (the five
@@ -428,9 +423,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadNavState)
 	public:
-		ZENITH_PROPERTY(std::string, m_strStateVar, "navState")
-		ZENITH_PROPERTY(std::string, m_strRemainingVar, "")
-		ZENITH_PROPERTY(std::string, m_strVelocityVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// All three are the node's own COMPUTED reads of the agent, written
@@ -440,7 +432,6 @@ namespace
 		// ★ THE THREE `!m_strXVar.empty()` GUARDS ARE GONE (B-6.5), and so are the
 		// Zenith_PropertyValue scratch they shared and the GetDistanceToGo() /
 		// GetVelocity() calls that sat INSIDE them. All three slots are latched
-		// unconditionally on the SUCCESS path; SetOutput's dual-write applies the
 		// same non-empty rule, so which of the three reach the BLACKBOARD is
 		// unchanged - navState by default, Remaining and Velocity only when the
 		// author names them. This is PARITY, not a divergence: an empty name
@@ -450,9 +441,9 @@ namespace
 		static constexpr u_int uPIN_Velocity = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadNavState)
-		ZENITH_GRAPH_PIN_OUTPUT(State, "m_strStateVar", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_OUTPUT(Remaining, "m_strRemainingVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Velocity, "m_strVelocityVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(State, PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Remaining, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Velocity, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -498,15 +489,13 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SetNavSpeed)
 	public:
 		ZENITH_PROPERTY_RANGED(float, m_fSpeed, 5.0f, 0.0f, 1000.0f)
-		ZENITH_PROPERTY(std::string, m_strSpeedVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
-		// Speed carries BOTH halves - the var name and the inline constant -
 		// behind one pin. Target is a reference and stays direct.
 		static constexpr u_int uPIN_Speed = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetNavSpeed)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Speed, "m_strSpeedVar", "m_fSpeed", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Speed, "m_fSpeed", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -536,12 +525,9 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strCenterVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fRadius, 15.0f, 0.1f, 10000.0f)
-		ZENITH_PROPERTY(std::string, m_strRadiusVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "wanderPoint")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// Center is a POSITION ref ("" = self) and stays direct; Radius carries
-		// the var name and the inline constant behind one pin; Result is the
 		// point this node COMPUTES and writes.
 		//
 		// ★ Result's write was ALWAYS unconditional, so this is one of the TU's
@@ -552,8 +538,8 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindRandomReachablePoint)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Radius, "m_strRadiusVar", "m_fRadius", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Radius, "m_fRadius", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -604,7 +590,6 @@ namespace
 		ZENITH_PROPERTY(bool, m_bHostileOnly, false)
 		ZENITH_PROPERTY(bool, m_bVisibleOnly, false)
 		ZENITH_PROPERTY(std::string, m_strListVar, "perceived")
-		ZENITH_PROPERTY(std::string, m_strCountVar, "perceivedCount")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// List names the blackboard's parallel LIST store (GetOrCreateList in the
@@ -613,7 +598,6 @@ namespace
 		// filter flags are consts with no var partner.
 		//
 		// ★ The Count write below is UNCONDITIONAL now. It used to sit inside
-		// `if (!m_strCountVar.empty())`; SetOutput's dual-write carries that same
 		// non-empty rule, so the blackboard is unchanged and the slot now always
 		// latches. The LIST name stays a direct GetOrCreateList - a list is not a
 		// Zenith_PropertyValue and can never be a wire.
@@ -621,7 +605,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryPerceivedTargets)
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Count, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -666,7 +650,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_QueryPrimaryPerceivedTarget)
 	public:
-		ZENITH_PROPERTY(std::string, m_strResultVar, "target")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// Result carries a PACKED EntityID (SetPackedEntityID below), so it is an
@@ -679,11 +662,10 @@ namespace
 		// SetNavDestination / QueryAwarenessOf all READ by default - a
 		// QueryPrimaryPerceivedTarget feeding any of them communicates through
 		// that shared default alone today, and must carry a WIRE (or an explicitly
-		// declared variable) once C-1 deletes the dual-write.
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryPrimaryPerceivedTarget)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -716,9 +698,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_QueryLastHeardSound)
 	public:
-		ZENITH_PROPERTY(std::string, m_strPositionVar, "heardPos")
-		ZENITH_PROPERTY(std::string, m_strSourceVar, "")
-		ZENITH_PROPERTY(std::string, m_strAgeVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// ★ Position here is an OUTPUT, not a position REF: this node WRITES the
@@ -728,7 +707,6 @@ namespace
 		//
 		// ★ ALL THREE `!m_strXVar.empty()` GUARDS ARE GONE (B-6.5), along with the
 		// Zenith_PropertyValue scratch they shared. Every slot is latched
-		// unconditionally on the SUCCESS path and SetOutput's dual-write applies
 		// the same non-empty rule, so the blackboard is unchanged - heardPos by
 		// default, Source and Age only when named. PARITY, not a divergence.
 		// Source is an ENTITY_ID and uses the NON-template SetOutput.
@@ -737,9 +715,9 @@ namespace
 		static constexpr u_int uPIN_Age = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryLastHeardSound)
-		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(Source, "m_strSourceVar", PROPERTY_TYPE_ENTITY_ID)
-		ZENITH_GRAPH_PIN_OUTPUT(Age, "m_strAgeVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Position, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Source, PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Age, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -778,7 +756,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_QueryAwarenessOf)
 	public:
 		ZENITH_PROPERTY(std::string, m_strOfVar, "target")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "awareness")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// TWO entity references in one node: Target is the agent DOING the
@@ -789,13 +766,12 @@ namespace
 		// ★ Result's write was ALWAYS unconditional, so this is the third and last
 		// `""` divergence site in this TU.
 		// ★ m_strOfVar defaults to "target", the same name
-		// QueryPrimaryPerceivedTarget.Result writes by default - see the C-1 note
 		// on that node.
 		static constexpr u_int uPIN_Result = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryAwarenessOf)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Of, "m_strOfVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -821,10 +797,10 @@ namespace
 	class Zenith_GraphNode_EmitSoundStimulus : public Zenith_GraphNode
 	{
 	public:
-		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EmitSoundStimulus)
-	public:
+	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EmitSoundStimulus)
+public:
 		ZENITH_PROPERTY(std::string, m_strPositionVar, "")
-		ZENITH_PROPERTY_RANGED(float, m_fLoudness, 0.5f, 0.0f, 10.0f)
+	ZENITH_PROPERTY_RANGED(float, m_fLoudness, 0.5f, 0.0f, 10.0f)
 		ZENITH_PROPERTY_RANGED(float, m_fRadius, 10.0f, 0.1f, 10000.0f)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
@@ -921,10 +897,8 @@ void Zenith_RegisterEngineGraphNodes_AI()
 	xRegistry.RegisterNodeType<Zenith_GraphNode_StopNav>("StopNav", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_ReadNavState>("ReadNavState", GRAPH_EVENT_NONE, 1, false, "AI");
 	xRegistry.RegisterNodeType<Zenith_GraphNode_SetNavSpeed>("SetNavSpeed", GRAPH_EVENT_NONE, 1, false, "AI");
-	// On Failure = NO REACHABLE POINT IN THE RADIUS (the wander fallback) +
 	// misconfiguration guards (no bound agent / no mesh, unresolvable centre ref).
 	// ★ Only the FIRST of those runs BELOW the Radius GetInput, which is why a
-	// no-point execution has already logged a census fallback line and the other
 	// two have not.
 	xRegistry.RegisterNodeType<Zenith_GraphNode_FindRandomReachablePoint>("FindRandomReachablePoint", GRAPH_EVENT_NONE, 1, false, "AI", true);
 

@@ -124,28 +124,28 @@ ZENITH_TEST(GraphPinTable, EntityRoleSpotCheck)
 			"a position ref resolves ENTITY_ID or VECTOR3 - narrowing it would reject every literal-position graph");
 	}
 
-	// INPUT_VAR_OR_CONST: the ternary shape, both halves declared.
-	Zenith_CheckGraphPin("SetEntityScale", "Scale", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_VECTOR3, "m_strScaleVar");
+	// INPUT_CONST: the current constant supplies an unconnected input.
+	Zenith_CheckGraphPin("SetEntityScale", "Scale", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_VECTOR3, "");
 	const Zenith_GraphPinDesc* pxScale = Zenith_FindGraphPin("SetEntityScale", "Scale");
 	ZENITH_ASSERT_NOT_NULL(pxScale);
 	if (pxScale != nullptr)
 	{
 		ZENITH_ASSERT_STREQ(pxScale->m_szConstProperty, "m_xScale",
-			"the Scale pin lost its inline-constant half, so an unset scale var would look like an unsatisfied read");
+			"the Scale pin lost its current-constant half");
 	}
 
 	// LIST + OUTPUT on one node: the found entities go into the parallel LIST
 	// store, the count into an ordinary INT32 variable.
 	Zenith_CheckGraphPin("FindEntitiesInRadius", "List", GRAPH_PIN_ROLE_LIST, eGRAPH_PIN_TYPE_ANY, "m_strListVar");
-	Zenith_CheckGraphPin("FindEntitiesInRadius", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strCountVar");
+	Zenith_CheckGraphPin("FindEntitiesInRadius", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "");
 	// OUTPUT of a packed EntityID - the node's own computed answer.
-	Zenith_CheckGraphPin("FindNearestEntity", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_ENTITY_ID, "m_strResultVar");
+	Zenith_CheckGraphPin("FindNearestEntity", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_ENTITY_ID, "");
 
 	// ★ THE TRAP: ReadCameraBasis.m_strPositionVar is a position the node
 	// WRITES, not a position reference it resolves - nothing in its Execute
 	// passes it to ResolvePositionRef. OUTPUT, not TARGET_REF; annotating it the
 	// other way would make the camera's own output read as an undeclared read.
-	Zenith_CheckGraphPin("ReadCameraBasis", "Position", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "m_strPositionVar");
+	Zenith_CheckGraphPin("ReadCameraBasis", "Position", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "");
 	// ...while SpawnPrefab's really is one.
 	Zenith_CheckGraphPin("SpawnPrefab", "Position", GRAPH_PIN_ROLE_TARGET_REF, eGRAPH_PIN_TYPE_ANY, "m_strPositionVar");
 }
@@ -163,10 +163,9 @@ ZENITH_TEST(GraphPinTable, EntityRoleSpotCheck)
 // a value, and that the nine formerly-guarded writes behave exactly as they did on
 // the blackboard while latching their slots.
 //
-// ★ EVERY Wired_* ROW SETS THREE LEGS and asserts the third: the const property
-// (9), the var-name property pointing at a blackboard variable holding a second
-// value (7), and SetInputForTest (5). Only a live wire can produce 5, and a wired
-// pin must log NO census FALLBACK line. RotateTowardDirection.Direction has no const
+// ★ EVERY Wired_* ROW SETS THREE LEGS and asserts the third: the current constant
+// (9), an unrelated blackboard value (7), and SetInputForTest (5). Only a live
+// wire can produce 5. RotateTowardDirection.Direction has no const
 // property at all, so it gets two legs - which its own row says out loud.
 //
 // ★ NODES ARE CONSTRUCTED DIRECTLY ON THE STACK with m_strTargetVar = "" and
@@ -238,10 +237,9 @@ class Zenith_GraphNode_EntityTestCountingVec3Producer : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EntityTestCountingVec3Producer)
 public:
-	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
 	static constexpr u_int uPIN_Value = 0u;
 	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EntityTestCountingVec3Producer)
-	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_VECTOR3)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_VECTOR3)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -256,11 +254,10 @@ class Zenith_GraphNode_EntityTestCountingFloatProducer : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_EntityTestCountingFloatProducer)
 public:
-	ZENITH_PROPERTY(std::string, m_strUnusedOutput, "")
 	ZENITH_PROPERTY(float, m_fValue, 0.0f)
 	static constexpr u_int uPIN_Value = 0u;
 	ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_EntityTestCountingFloatProducer)
-	ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strUnusedOutput", PROPERTY_TYPE_FLOAT)
+	ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_FLOAT)
 	ZENITH_GRAPH_PINS_END
 
 public:
@@ -438,7 +435,6 @@ ZENITH_TEST(EntityPinRuntime, Wired_SetEntityScaleFromWire)
 
 	Zenith_GraphNode_SetEntityScale xNode;
 	xNode.m_xScale = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);				// leg 1
-	xNode.m_strScaleVar = "";
 	xNode.m_strTargetVar = "";												// "" = self
 	// leg 3: THREE DISTINCT COMPONENTS, so a transposed or partially-read vector
 	// fails rather than agreeing by symmetry.
@@ -453,17 +449,23 @@ ZENITH_TEST(EntityPinRuntime, Wired_SetEntityScaleFromWire)
 	Zenith_Maths::Vector3 xScale;
 	xSelf.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
 	ZENITH_ASSERT_NEAR_VEC3(xScale, Zenith_Maths::Vector3(5.0f, 6.0f, 7.0f), 0.0001f);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetEntityScale::uPIN_Scale), 0u,
-		"a WIRED pin must never reach the transitional var-name fallback");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
+
+	Zenith_GraphNode_SetEntityScale xConstNode;
+	xConstNode.m_xScale = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
+	xConstNode.m_strTargetVar = "";
+	ZENITH_ASSERT_EQ(static_cast<int>(xConstNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
+	ZENITH_ASSERT_EQ(xConstNode.GetMismatchWarningCountForTest(Zenith_GraphNode_SetEntityScale::uPIN_Scale), 0u);
+	xSelf.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
+	ZENITH_ASSERT_NEAR_VEC3(xScale, Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f), 0.0001f);
 }
 
 ZENITH_TEST(EntityPinRuntime, Wired_SetCameraPitchYaw)
 {
 	// The camera fixture: a Zenith_CameraComponent in THIS test's own temp scene,
 	// promoted to main camera through the friend-gated test seam. Without a camera
-	// the node FAILS before either pin is read, so a zero fallback count would be
-	// vacuous - which is why this row asserts the camera really did resolve.
+	// the node FAILS before either pin is read, so this row asserts the camera
+	// really did resolve before checking the connected values.
 	Zenith_TempScene xTempScene("EntityPinCameraScene");
 	Zenith_Entity xCameraEntity = xTempScene.CreateEntity("EntityPinCamera");
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
@@ -479,9 +481,7 @@ ZENITH_TEST(EntityPinRuntime, Wired_SetCameraPitchYaw)
 
 	Zenith_GraphNode_SetCameraPitchYaw xNode;
 	xNode.m_fPitchDegrees = 9.0f;			// leg 1
-	xNode.m_strPitchVar = "";
 	xNode.m_fYawDegrees = 9.0f;
-	xNode.m_strYawVar = "";
 	xNode.m_bAdditive = false;
 	xNode.m_bClampPitch = true;				// 5 and 12 are both well inside +/-89
 	// leg 3: DIFFERENT values per pin, so a swapped Pitch/Yaw index fails.
@@ -494,8 +494,6 @@ ZENITH_TEST(EntityPinRuntime, Wired_SetCameraPitchYaw)
 
 	ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCamera.GetPitch()), glm::radians(5.0f), 0.0001f);
 	ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCamera.GetYaw()), glm::radians(12.0f), 0.0001f);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetCameraPitchYaw::uPIN_Pitch), 0u);
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_SetCameraPitchYaw::uPIN_Yaw), 0u);
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
@@ -513,7 +511,6 @@ ZENITH_TEST(EntityPinRuntime, Wired_RotateTowardDirectionPlainInput)
 
 	{
 		Zenith_GraphNode_RotateTowardDirection xNode;
-		xNode.m_strDirectionVar = "";
 		xNode.m_fDegreesPerSecond = 0.0f;	// snap
 		xNode.m_bYawOnly = true;
 		xNode.m_strTargetVar = "";
@@ -529,7 +526,6 @@ ZENITH_TEST(EntityPinRuntime, Wired_RotateTowardDirectionPlainInput)
 		xSelf.GetComponent<Zenith_TransformComponent>().GetRotation(xRotation);
 		const Zenith_Maths::Vector3 xForward = xRotation * Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
 		ZENITH_ASSERT_NEAR_VEC3(xForward, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f), 0.01f);
-		ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_RotateTowardDirection::uPIN_Direction), 0u);
 	}
 
 	// UNWIRED with an EMPTY var name: the pin has no const property, so its default
@@ -537,7 +533,6 @@ ZENITH_TEST(EntityPinRuntime, Wired_RotateTowardDirectionPlainInput)
 	// and a zero direction is FAILURE. Byte-for-byte today's behaviour.
 	{
 		Zenith_GraphNode_RotateTowardDirection xNode;
-		xNode.m_strDirectionVar = "";
 		xNode.m_strTargetVar = "";
 
 		Zenith_GraphContext xCtx;
@@ -551,7 +546,6 @@ ZENITH_TEST(EntityPinRuntime, Wired_RotateTowardDirectionPlainInput)
 	// named blackboard fallback leg.
 	{
 		Zenith_GraphNode_RotateTowardDirection xNode;
-		xNode.m_strDirectionVar = "";
 		xNode.m_strTargetVar = "";
 		xNode.SetInputForTest(Zenith_GraphNode_RotateTowardDirection::uPIN_Direction,
 			EntityPin_WireVec3(Zenith_Maths::Vector3(0.0f)));
@@ -578,7 +572,6 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityPositionCarriesValueAndDualWrites
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadEntityPosition xNode;
 	xNode.m_strTargetVar = "";
-	xNode.m_strResultVar = "";
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_xSelf = xSelf;
@@ -606,14 +599,13 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityPositionEmptyResultVarCreatesNoBl
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadEntityPosition xNode;
 	xNode.m_strTargetVar = "";
-	xNode.m_strResultVar = "";
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_xSelf = xSelf;
 	xCtx.m_pxBlackboard = &xBB;
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
-	// The value is NOT lost - it simply has no dual-write.
+	// The value remains available through its output slot.
 	ZENITH_ASSERT_NEAR_VEC3(EntityPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadEntityPosition::uPIN_Result), "ReadEntityPosition.Result"),
 		Zenith_Maths::Vector3(3.0f, 4.0f, 5.0f), 0.0001f);
@@ -641,10 +633,6 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadCameraBasisEmptyNamesCarryValuesWithout
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadCameraBasis xNode;
 	xNode.m_bFlattenXZ = false;
-	xNode.m_strForwardVar = "";
-	xNode.m_strRightVar = "";
-	xNode.m_strUpVar = "";			// the default - no blackboard write, ever
-	xNode.m_strPositionVar = "";	// likewise
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
@@ -683,8 +671,6 @@ ZENITH_TEST(EntityPinRuntime, Output_ReadEntityRotationEulerCarriesValueWithEmpt
 
 	Zenith_GraphBlackboard xBB;
 	Zenith_GraphNode_ReadEntityRotation xNode;
-	xNode.m_strForwardVar = "";
-	xNode.m_strEulerVar = "";		// the DEFAULT - no blackboard write
 	xNode.m_strTargetVar = "";
 
 	Zenith_GraphContext xCtx;
@@ -721,8 +707,6 @@ ZENITH_TEST(EntityPinRuntime, Output_FindNearestEntityDistanceCarriesValueWithEm
 	xNode.m_strCenterVar = "";			// "" = self
 	xNode.m_fRadius = 5.0f;
 	xNode.m_strComponentType = "";
-	xNode.m_strResultVar = "";
-	xNode.m_strDistanceVar = "";		// the DEFAULT - no blackboard write
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_xSelf = xSelf;
@@ -755,7 +739,6 @@ ZENITH_TEST(EntityPinRuntime, Output_FindEntitiesInRadiusCountWithEmptyCountVar)
 	xNode.m_fRadius = 5.0f;
 	xNode.m_strComponentType = "";
 	xNode.m_strListVar = "found";
-	xNode.m_strCountVar = "";			// the write that used to be skipped entirely
 
 	Zenith_GraphContext xCtx;
 	xCtx.m_xSelf = xSelf;
@@ -773,64 +756,17 @@ ZENITH_TEST(EntityPinRuntime, Output_FindEntitiesInRadiusCountWithEmptyCountVar)
 		xNode.GetOutputForTest(Zenith_GraphNode_FindEntitiesInRadius::uPIN_Count), "FindEntitiesInRadius.Count"), 1);
 	// The LIST store is a separate map, so the VALUE store is still empty.
 	ZENITH_ASSERT_NULL(xBB.TryGetValue(""));
-	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "an empty m_strCountVar must write no blackboard variable");
+	ZENITH_ASSERT_EQ(xBB.GetCount(), 0u, "a slot-only output must not write the blackboard");
 }
 
 //------------------------------------------------------------------------------
 // THE CENSUS OBSERVABLE, and the guard-ordering contract.
 //------------------------------------------------------------------------------
 
-// Only a MIGRATED node can reach the transitional var-name fallback, and it logs ONE
-// line per (instance, pin) however hot the chain is - which is what makes "zero
-// FALLBACK lines in a SUITE boot log" C-1's precondition rather than a guess.
-ZENITH_TEST(EntityPinRuntime, Fallback_CountsOncePerPin)
-{
-	Zenith_TempScene xTempScene("EntityPinFallbackScene");
-	Zenith_Entity xSelf = xTempScene.CreateEntity("EntityPinFallbackSelf");
-
-	Zenith_GraphBlackboard xBB;
-	EntityPin_SeedVec3(xBB, "sv", Zenith_Maths::Vector3(3.0f, 3.0f, 3.0f));
-
-	Zenith_GraphNode_SetEntityScale xNode;
-	xNode.m_xScale = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
-	xNode.m_strScaleVar = "sv";		// var-BOUND and unwired: the fallback path
-	xNode.m_strTargetVar = "";
-
-	Zenith_GraphContext xCtx;
-	xCtx.m_xSelf = xSelf;
-	xCtx.m_pxBlackboard = &xBB;
-
-	const u_int uScale = Zenith_GraphNode_SetEntityScale::uPIN_Scale;
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uScale), 0u);
-
-	for (u_int u = 0; u < 3u; ++u)
-	{
-		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-		Zenith_Maths::Vector3 xScale;
-		xSelf.GetComponent<Zenith_TransformComponent>().GetScale(xScale);
-		// The var wins over the const on EVERY fire, exactly as today's ternary did.
-		ZENITH_ASSERT_NEAR_VEC3(xScale, Zenith_Maths::Vector3(3.0f, 3.0f, 3.0f), 0.0001f);
-	}
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(uScale), 1u, "three reads must log ONE census line");
-
-	// A var-BOUND name that names nothing takes the CONST, not zero - and warns about
-	// neither, which is what the typed blackboard getter it replaced also did.
-	Zenith_GraphNode_SetEntityScale xMissing;
-	xMissing.m_xScale = Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f);
-	xMissing.m_strScaleVar = "__absent__";
-	xMissing.m_strTargetVar = "";
-	ZENITH_ASSERT_EQ(static_cast<int>(xMissing.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	Zenith_Maths::Vector3 xConstScale;
-	xSelf.GetComponent<Zenith_TransformComponent>().GetScale(xConstScale);
-	ZENITH_ASSERT_NEAR_VEC3(xConstScale, Zenith_Maths::Vector3(9.0f, 9.0f, 9.0f), 0.0001f);
-	ZENITH_ASSERT_EQ(xMissing.GetMismatchWarningCountForTest(uScale), 0u);
-}
-
 // ★ EVERY GetInput SITS AFTER EXACTLY THE EARLY-RETURN GUARDS ITS OLD BLACKBOARD
-// READ SAT BEHIND. A node that FAILS on a guard must not read its inputs at all: no
-// census line, and (in a graph) no pull of a producer that has no business running.
-// Each pin below is var-BOUND, so a stray read would log exactly one line.
-ZENITH_TEST(EntityPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
+// READ SAT BEHIND. A node that FAILS on a guard must not read its inputs at all;
+// in a graph it must not pull a producer that has no business running.
+ZENITH_TEST(EntityPinRuntime, GuardedFailureDoesNotReadInputs)
 {
 	EnsureEntityCountingGuardProducersRegistered();
 	Zenith_TempScene xTempScene("EntityPinGuardScene");
@@ -864,7 +800,7 @@ ZENITH_TEST(EntityPinRuntime, Fallback_GuardedFailureDoesNotReadInputs)
 	{
 		Zenith_GraphDefinition xDef; const u_int uSource=xDef.AddNode("OnUpdate"); const u_int uNode=xDef.AddNode("SetCameraPitchYaw"); const u_int uPitch=xDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uYaw=xDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uSentinel=xDef.AddNode("SetBlackboardBool"); xDef.AddEdge(uSource,0u,uNode); xDef.AddEdge(uNode,0u,uSentinel); ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uPitch,"Value",uNode,"Pitch")); ZENITH_ASSERT_TRUE(xDef.AddDataEdge(uYaw,"Value",uNode,"Yaw")); Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount=0u; Zenith_BehaviourGraph xGraph; ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef)); Zenith_GraphContext xCtx; xCtx.m_pxGraph = &xGraph; xCtx.m_pxBlackboard = &xGraph.GetBlackboard(); xGraph.FireEvent(GRAPH_EVENT_ON_UPDATE,xCtx); ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount,0u); ZENITH_ASSERT_FALSE(xGraph.GetBlackboard().HasValue("flag"));
 	}
-	else Zenith_Log(LOG_CATEGORY_CORE,"[UnitTest] Fallback_GuardedFailureDoesNotReadInputs: camera no-camera leg SKIPPED - another loaded scene leaves a main camera resolvable");
+	else Zenith_Log(LOG_CATEGORY_CORE,"[UnitTest] GuardedFailureDoesNotReadInputs: camera no-camera leg SKIPPED - another loaded scene leaves a main camera resolvable");
 	Zenith_Entity xCameraEntity=xTempScene.CreateEntity("EntityPinGuardCamera"); Zenith_CameraComponent& xCamera=xCameraEntity.AddComponent<Zenith_CameraComponent>(); Zenith_UnitTests::SetMainCameraForTest(xTempScene.Data(),xCameraEntity.GetEntityID()); ZENITH_ASSERT_TRUE(Zenith_GetMainCameraAcrossScenes()==&xCamera);
 	Zenith_GraphDefinition xCameraDef; const u_int uSource=xCameraDef.AddNode("OnUpdate"); const u_int uNode=xCameraDef.AddNode("SetCameraPitchYaw"); const u_int uPitch=xCameraDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uYaw=xCameraDef.AddNode("Test_EntityCountingFloatProducer"); const u_int uSentinel=xCameraDef.AddNode("SetBlackboardBool"); Zenith_GraphNode_EntityTestCountingFloatProducer xPitchParams; xPitchParams.m_fValue=5.0f; xCameraDef.SetNodeParamsFromInstance(uPitch,&xPitchParams); Zenith_GraphNode_EntityTestCountingFloatProducer xYawParams; xYawParams.m_fValue=12.0f; xCameraDef.SetNodeParamsFromInstance(uYaw,&xYawParams); xCameraDef.AddEdge(uSource,0u,uNode); xCameraDef.AddEdge(uNode,0u,uSentinel); ZENITH_ASSERT_TRUE(xCameraDef.AddDataEdge(uPitch,"Value",uNode,"Pitch")); ZENITH_ASSERT_TRUE(xCameraDef.AddDataEdge(uYaw,"Value",uNode,"Yaw")); Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount=0u; Zenith_BehaviourGraph xCameraGraph; ZENITH_ASSERT_TRUE(xCameraGraph.InitialiseFromDefinition(xCameraDef)); Zenith_GraphContext xCameraCtx; xCameraCtx.m_pxGraph = &xCameraGraph; xCameraCtx.m_pxBlackboard = &xCameraGraph.GetBlackboard(); xCameraGraph.FireEvent(GRAPH_EVENT_ON_UPDATE,xCameraCtx); ZENITH_ASSERT_EQ(Zenith_GraphNode_EntityTestCountingFloatProducer::s_uPullCount,2u); ZENITH_ASSERT_TRUE(xCameraGraph.GetBlackboard().HasValue("flag")); ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCamera.GetPitch()),glm::radians(5.0f),0.0001f); ZENITH_ASSERT_EQ_FLOAT(static_cast<float>(xCamera.GetYaw()),glm::radians(12.0f),0.0001f);
 }

@@ -579,3 +579,27 @@ msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=vs2022_Debug_Wi
 cd ..\Games\Combat\Build\output\win64\vs2022_debug_win64_true
 combat.exe
 ```
+
+## C1 graph-pin contract
+
+Graph INPUT and OUTPUT values are wire-only. Author a `GetVariable` producer only
+where a graph intentionally reads a blackboard value, then connect its `Value` pin
+to the consumer; consume produced values through their output pins. INPUT and
+OUTPUT descriptors carry no property-name binding metadata, and graph execution
+does not fall back to blackboard names or dual-write output values.
+
+This removal does not change typed defaults for unconnected inputs or the current
+value of an unconnected `INPUT_CONST` property.
+
+String properties that remain on graph nodes identify permanent roles such as
+selectors, targets, lists, type sources, event stashes, and configuration. They
+are not substitutes for data-pin bindings. Existing serialized unknown properties
+continue through normal property loading's unknown-property handling.
+
+C1 removed 27 obsolete raw INPUT/OUTPUT parameter fields from Combat while
+preserving permanent roles, wires, order, and surviving parameters. T3-final2,
+SceneGuard, and all nine builds are green; observed pins are Combat 2695,
+Zenithmon 4548, and RenderTest 2798. All seven fresh census legs are green with
+zero FALLBACK, aliasing, and validator errors. The final asset audit found 164
+graphs, 881 obsolete parameters removed from 102 graphs, no unexpected removal or
+topology issue, and a 192-asset second boot with no path or byte changes.

@@ -45,12 +45,9 @@
 // neither does the computation feeding it. Nine writes used to (FindEntitiesInRadius
 // Count, SpawnPrefab Result, FindNearestEntity Distance, ReadCameraBasis's four,
 // ReadEntityRotation's two): the guard's OBSERVABLE - no blackboard variable for an
-// empty name - is preserved EXACTLY, because SetOutput's transitional dual-write
 // carries the same non-empty rule. What is new is that the SLOT is always latched,
-// which is what lets a wire off one of those pins work whatever the var name says.
 // The six UNGUARDED writers (ReadEntityPosition/QueryEntityValid/ComputeDistance/
 // ComputeDirection/FindEntityByName Result, FindNearestEntity Result) take B-6.1's
-// one deliberate divergence: an OUTPUT whose var name reads EMPTY no longer creates
 // a blackboard variable literally named "".
 //------------------------------------------------------------------------------
 
@@ -71,8 +68,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadEntityPosition)
 	public:
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "pos")
-
 		// ResolveTargetEntity below: an ENTITY reference, so the accepted-type
 		// mask is ENTITY_ID alone - a string entity name is never legal at
 		// runtime. The position is the node's own computed answer - OUTPUT, written
@@ -81,7 +76,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadEntityPosition)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -114,7 +109,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SetEntityScale)
 	public:
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xScale, Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f))
-		ZENITH_PROPERTY(std::string, m_strScaleVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// The const-or-var ternary below IS the Scale pin: GetInput takes the bound
@@ -124,7 +118,7 @@ namespace
 		static constexpr u_int uPIN_Scale = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetEntityScale)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Scale, "m_strScaleVar", "m_xScale", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Scale, "m_xScale", PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -156,8 +150,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_QueryEntityValid)
 	public:
 		ZENITH_PROPERTY(std::string, m_strEntityVar, "target")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "hasTarget")
-
 		// m_strEntityVar goes through ResolveTargetEntity below like any other
 		// entity reference - it is a TARGET_REF under a different property name,
 		// not an ordinary INPUT. The verdict is the node's own answer - OUTPUT.
@@ -165,7 +157,7 @@ namespace
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_QueryEntityValid)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Entity, "m_strEntityVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_BOOL)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_BOOL)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -189,8 +181,6 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strFromVar, "")
 		ZENITH_PROPERTY(std::string, m_strToVar, "target")
 		ZENITH_PROPERTY(bool, m_bXZOnly, false)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "dist")
-
 		// Both ends are POSITION references (ResolvePositionRef below): the var
 		// may hold a VECTOR3 world position OR a packed ENTITY_ID, which is the
 		// wider of the two TARGET masks. m_bXZOnly is a mode, not a pin. The
@@ -200,7 +190,7 @@ namespace
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ComputeDistance)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(From, "m_strFromVar")
 		ZENITH_GRAPH_PIN_TARGET_POSITION(To, "m_strToVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -236,14 +226,11 @@ namespace
 		ZENITH_PROPERTY_RANGED(float, m_fRadius, 10.0f, 0.0f, 100000.0f)
 		ZENITH_PROPERTY(std::string, m_strComponentType, "")
 		ZENITH_PROPERTY(std::string, m_strListVar, "found")
-		ZENITH_PROPERTY(std::string, m_strCountVar, "foundCount")
-
 		// m_strComponentType is a component META DISPLAY NAME, not a blackboard
 		// name, so it is not a pin (and it escapes the m_str*Var* matcher too).
 		// m_fRadius is a const with no var partner.
 		//
 		// ★ The Count write below is UNCONDITIONAL now. It used to sit inside
-		// `if (!m_strCountVar.empty())`; SetOutput's dual-write carries that same
 		// non-empty rule, so the blackboard sees exactly what it saw, and the slot is
 		// latched either way - which is what makes a wire off Count work.
 		static constexpr u_int uPIN_Count = 2u;
@@ -251,7 +238,7 @@ namespace
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindEntitiesInRadius)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
 		ZENITH_GRAPH_PIN_LIST(List, "m_strListVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Count, "m_strCountVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Count, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -319,21 +306,17 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strFromVar, "")
 		ZENITH_PROPERTY(std::string, m_strToVar, "target")
 		ZENITH_PROPERTY(bool, m_bXZOnly, false)
-		ZENITH_PROPERTY(std::string, m_strResultVar, "dir")
-
 		// The ComputeDistance shape, with a VECTOR3 answer.
 		//
 		// ★ m_strResultVar defaults to "dir" and RotateTowardDirection's
 		// m_strDirectionVar defaults to "dir" TOO, so two placed nodes communicate
-		// through that shared default today. After C-1 deletes the dual-write and the
-		// var-name fallback, a ComputeDirection -> RotateTowardDirection pair must
 		// carry a WIRE.
 		static constexpr u_int uPIN_Result = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ComputeDirection)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(From, "m_strFromVar")
 		ZENITH_GRAPH_PIN_TARGET_POSITION(To, "m_strToVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -376,8 +359,6 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strEntityName, "")
 		ZENITH_PROPERTY(std::string, m_strPositionVar, "")
 		ZENITH_PROPERTY(Zenith_Maths::Vector3, m_xOffset, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f))
-		ZENITH_PROPERTY(std::string, m_strResultVar, "spawned")
-
 		// m_strPrefabPath and m_strEntityName are an ASSET PATH and an entity
 		// name, not blackboard names; m_xOffset is a const with no var partner.
 		// The spawned root's packed EntityID is the node's computed result.
@@ -385,12 +366,11 @@ namespace
 		// ★ An ENTITY_ID OUTPUT goes through the NON-template SetOutput with a
 		// SetPackedEntityID-stamped value: Zenith_PropertyTraits has no u_int64
 		// specialisation. The write used to sit inside `if (!m_strResultVar.empty())`;
-		// SetOutput's dual-write carries that non-empty rule itself.
 		static constexpr u_int uPIN_Result = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SpawnPrefab)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Position, "m_strPositionVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -452,15 +432,13 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_FindEntityByName)
 	public:
 		ZENITH_PROPERTY(std::string, m_strName, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "found")
-
 		// m_strName is an ENTITY name looked up in the scene, not a blackboard
 		// name, so it is not a pin. The found entity is the node's own answer -
 		// an ENTITY_ID OUTPUT, written unconditionally as it always was.
 		static constexpr u_int uPIN_Result = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindEntityByName)
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_ENTITY_ID)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -507,24 +485,20 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strCenterVar, "")
 		ZENITH_PROPERTY_RANGED(float, m_fRadius, 100.0f, 0.0f, 100000.0f)
 		ZENITH_PROPERTY(std::string, m_strComponentType, "")
-		ZENITH_PROPERTY(std::string, m_strResultVar, "nearest")
-		ZENITH_PROPERTY(std::string, m_strDistanceVar, "")
-
 		// Two OUTPUTs: both are computed here, and the optional distance is a
 		// second result rather than a configured destination.
 		//
 		// ★ The Distance write is UNCONDITIONAL now, and so is the std::sqrt that
 		// feeds it: both used to sit inside `if (!m_strDistanceVar.empty())`. One
 		// square root on a node that already walked every transform in every scene is
-		// not a cost, and SetOutput's dual-write reproduces the blackboard-visible
 		// "empty name writes nothing" exactly.
 		static constexpr u_int uPIN_Result = 1u;
 		static constexpr u_int uPIN_Distance = 2u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_FindNearestEntity)
 		ZENITH_GRAPH_PIN_TARGET_POSITION(Center, "m_strCenterVar")
-		ZENITH_GRAPH_PIN_OUTPUT(Result, "m_strResultVar", PROPERTY_TYPE_ENTITY_ID)
-		ZENITH_GRAPH_PIN_OUTPUT(Distance, "m_strDistanceVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Result, PROPERTY_TYPE_ENTITY_ID)
+		ZENITH_GRAPH_PIN_OUTPUT(Distance, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -678,11 +652,6 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadCameraBasis)
 	public:
 		ZENITH_PROPERTY(bool, m_bFlattenXZ, false)
-		ZENITH_PROPERTY(std::string, m_strForwardVar, "camForward")
-		ZENITH_PROPERTY(std::string, m_strRightVar, "camRight")
-		ZENITH_PROPERTY(std::string, m_strUpVar, "")
-		ZENITH_PROPERTY(std::string, m_strPositionVar, "")
-
 		// ★ Four OUTPUTs. m_strPositionVar here is where the camera's position is
 		// WRITTEN - it is NOT the position-REF shape the rest of this TU uses
 		// (nothing resolves it), so it is an OUTPUT and not a TARGET_POSITION.
@@ -691,7 +660,6 @@ namespace
 		// GetPosition(), the two computations that used to live inside their own
 		// `!empty()` guards. Both are trivial accessors on a camera this Execute has
 		// already resolved. An empty name still writes NO blackboard variable, because
-		// that is SetOutput's dual-write rule; what changes is that all four SLOTS
 		// carry the basis, so a wire off Up or Position works on a node whose author
 		// never named a variable for it.
 		static constexpr u_int uPIN_Forward = 0u;
@@ -700,10 +668,10 @@ namespace
 		static constexpr u_int uPIN_Position = 3u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadCameraBasis)
-		ZENITH_GRAPH_PIN_OUTPUT(Forward, "m_strForwardVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(Right, "m_strRightVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(Up, "m_strUpVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(Position, "m_strPositionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Forward, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Right, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Up, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Position, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -755,9 +723,7 @@ namespace
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_SetCameraPitchYaw)
 	public:
 		ZENITH_PROPERTY(float, m_fPitchDegrees, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strPitchVar, "")
 		ZENITH_PROPERTY(float, m_fYawDegrees, 0.0f)
-		ZENITH_PROPERTY(std::string, m_strYawVar, "")
 		ZENITH_PROPERTY(bool, m_bAdditive, false)
 		ZENITH_PROPERTY(bool, m_bClampPitch, true)
 
@@ -769,8 +735,8 @@ namespace
 		static constexpr u_int uPIN_Yaw = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetCameraPitchYaw)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Pitch, "m_strPitchVar", "m_fPitchDegrees", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Yaw, "m_strYawVar", "m_fYawDegrees", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Pitch, "m_fPitchDegrees", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Yaw, "m_fYawDegrees", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -812,7 +778,6 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_RotateTowardDirection)
 	public:
-		ZENITH_PROPERTY(std::string, m_strDirectionVar, "dir")
 		ZENITH_PROPERTY_RANGED(float, m_fDegreesPerSecond, 360.0f, 0.0f, 10800.0f)
 		ZENITH_PROPERTY(bool, m_bYawOnly, true)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
@@ -829,7 +794,7 @@ namespace
 		static constexpr u_int uPIN_Direction = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_RotateTowardDirection)
-		ZENITH_GRAPH_PIN_INPUT(Direction, "m_strDirectionVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_INPUT(Direction, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -887,29 +852,25 @@ namespace
 
 	// Target's rotation -> two OUTPUT pins. Forward (quat * +Z, the steering-safe
 	// representation) and Euler degrees (display/storage - ambiguous near gimbal
-	// poles). Both pins always carry the answer; an empty var name skips only that
 	// pin's blackboard write.
 	class Zenith_GraphNode_ReadEntityRotation : public Zenith_GraphNode
 	{
 	public:
 		ZENITH_PROPERTIES_BEGIN(Zenith_GraphNode_ReadEntityRotation)
 	public:
-		ZENITH_PROPERTY(std::string, m_strForwardVar, "forward")
-		ZENITH_PROPERTY(std::string, m_strEulerVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// Two computed OUTPUTs plus the entity whose rotation is read.
 		//
 		// ★ BOTH writes are UNCONDITIONAL now, glm::eulerAngles included: they used to
 		// sit inside their own `!empty()` guards. The empty name still produces no
-		// blackboard variable (SetOutput's dual-write rule); both slots now carry the
 		// value, so a wire off Euler works on a node with no m_strEulerVar.
 		static constexpr u_int uPIN_Forward = 0u;
 		static constexpr u_int uPIN_Euler = 1u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_ReadEntityRotation)
-		ZENITH_GRAPH_PIN_OUTPUT(Forward, "m_strForwardVar", PROPERTY_TYPE_VECTOR3)
-		ZENITH_GRAPH_PIN_OUTPUT(Euler, "m_strEulerVar", PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Forward, PROPERTY_TYPE_VECTOR3)
+		ZENITH_GRAPH_PIN_OUTPUT(Euler, PROPERTY_TYPE_VECTOR3)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 

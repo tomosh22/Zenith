@@ -547,7 +547,7 @@ void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 	// Guard 1: query attack state, then activate the hitbox on attack start.
 	Zenith_GraphChain xEvt1 = xB.OnCustomEvent("AttackTick");
 	const u_int uQuery = xB.Node("CombatQueryAttackState");
-	// QueryAttackState used to dual-write these observations.  The later guards
+	// QueryAttackState supplies these observations through its output pins. The later guards
 	// still consume them on their independently dispatched AttackTick chains, so
 	// publish the same values explicitly before the original first guard.
 	const u_int uSetAttacking = xB.Node("SetBlackboardBool");
@@ -557,35 +557,23 @@ void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 	const u_int uSetHitFrame = xB.Node("SetBlackboardBool");
 	xB.ParamString(uSetHitFrame, "m_strVariable", "hitFrameReady");
 	const u_int uBranchStart = xB.Node("Branch");
-	xB.ParamString(uBranchStart, "m_strConditionVar", "");
 	const u_int uActivate = xB.Node("CombatActivateHitbox");
 	xEvt1.Then(uQuery).Then(uSetAttacking).Then(uSetCombo).Then(uSetHitFrame).Then(uBranchStart).ThenPin(0, uActivate);
 	xB.Raw().DataEdge(uQuery, "AttackStarted", uBranchStart, "Condition");
 	xB.Raw().DataEdge(uQuery, "IsAttacking", uSetAttacking, "Value");
 	xB.Raw().DataEdge(uQuery, "ComboCount", uSetCombo, "Value");
 	xB.Raw().DataEdge(uQuery, "HitFrame", uSetHitFrame, "Value");
-	xB.ParamString(uQuery, "m_strAttackStartedVar", "");
-	xB.ParamString(uQuery, "m_strIsAttackingVar", "");
-	xB.ParamString(uQuery, "m_strAttackTypeVar", "");
-	xB.ParamString(uQuery, "m_strComboCountVar", "");
-	xB.ParamString(uQuery, "m_strHitFrameVar", "");
 	xB.Raw().DataEdge(uQuery, "AttackType", uActivate, "AttackType");
-	xB.ParamString(uActivate, "m_strAttackTypeVar", "");
 	xB.Raw().DataEdge(uQuery, "ComboCount", uActivate, "ComboCount");
-	xB.ParamString(uActivate, "m_strComboCountVar", "");
 
 	// Guard 2: on the attack hit-frame, register hits; push combo on a landed hit.
 	Zenith_GraphChain xEvt2 = xB.OnCustomEvent("AttackTick");
 	const u_int uBranchHit = xB.Node("Branch");
-	xB.ParamString(uBranchHit, "m_strConditionVar", "");
 	const u_int uRegister = xB.Node("CombatRegisterHits");
 	const u_int uCmpHits = xB.Node("CompareBlackboardInt");
-	xB.ParamString(uCmpHits, "m_strVar", "");
 	xB.ParamInt(uCmpHits, "m_iCompareTo", 0);
 	xB.ParamEnum(uCmpHits, "m_iOp", GRAPH_COMPARE_INT_OP_GREATER);
-	xB.ParamString(uCmpHits, "m_strResultVar", "uHitsPositive");
 	const u_int uBranchHits = xB.Node("Branch");
-	xB.ParamString(uBranchHits, "m_strConditionVar", "");
 	const u_int uNotify = xB.Node("CombatNotifyComboHit");
 	xEvt2.Then(uBranchHit).ThenPin(0, uRegister).Then(uCmpHits).Then(uBranchHits).ThenPin(0, uNotify);
 	const u_int uHitFrame = xB.Node("GetVariable");
@@ -596,12 +584,10 @@ void BuildGraph_CombatPlayerAttack(Zenith_GraphBuilder& xBuilder)
 	const u_int uCombo = xB.Node("GetVariable");
 	xB.ParamString(uCombo, "m_strVariable", "comboCount");
 	xB.Raw().DataEdge(uCombo, "Value", uNotify, "ComboCount");
-	xB.ParamString(uNotify, "m_strComboCountVar", "");
 
 	// Guard 3: deactivate the hitbox when no longer attacking (false pin).
 	Zenith_GraphChain xEvt3 = xB.OnCustomEvent("AttackTick");
 	const u_int uBranchAtk = xB.Node("Branch");
-	xB.ParamString(uBranchAtk, "m_strConditionVar", "");
 	const u_int uDeactivate = xB.Node("CombatDeactivateHitbox");
 	xEvt3.Then(uBranchAtk).ThenPin(1, uDeactivate);
 	const u_int uAttacking = xB.Node("GetVariable");
@@ -629,17 +615,12 @@ void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
 	const u_int uDt = xB.Node("GetVariable");
 	xB.ParamString(uDt, "m_strVariable", "payload");
 	xB.Raw().DataEdge(uDt, "Value", uTick, "Dt");
-	xB.ParamString(uTick, "m_strDtVar", "");
 	const u_int uCount = xB.Node("CombatCountAliveEnemies");
 	const u_int uCmpZero = xB.Node("CompareBlackboardInt");
-	xB.ParamString(uCmpZero, "m_strVar", "");
 	xB.ParamInt(uCmpZero, "m_iCompareTo", 0);
 	xB.ParamEnum(uCmpZero, "m_iOp", GRAPH_COMPARE_INT_OP_EQUAL);
-	xB.ParamString(uCmpZero, "m_strResultVar", "aliveIsZero");
 	const u_int uBranchZero = xB.Node("Branch");
-	xB.ParamString(uBranchZero, "m_strConditionVar", "");
 	const u_int uBranchHas = xB.Node("Branch");
-	xB.ParamString(uBranchHas, "m_strConditionVar", "");
 	const u_int uWin = xB.Node("CombatSetGameState");
 	xB.ParamEnum(uWin, "m_iState", Combat_GameState::VICTORY);
 	xB.Chain(uEvt1, uTick).Chain(uTick, uCount).Chain(uCount, uCmpZero).Chain(uCmpZero, uBranchZero);
@@ -653,7 +634,6 @@ void BuildGraph_CombatRoundFlow(Zenith_GraphBuilder& xBuilder)
 	const u_int uEvt2 = xB.OnCustomEvent("RoundTick");
 	const u_int uCheckDead = xB.Node("CombatCheckPlayerDead");
 	const u_int uBranchDead = xB.Node("Branch");
-	xB.ParamString(uBranchDead, "m_strConditionVar", "");
 	const u_int uLose = xB.Node("CombatSetGameState");
 	xB.ParamEnum(uLose, "m_iState", Combat_GameState::GAME_OVER);
 	xB.Chain(uEvt2, uCheckDead).Chain(uCheckDead, uBranchDead);
@@ -680,7 +660,6 @@ void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xTick = xB.OnCustomEvent("PlayerTick");
 	const u_int uPre = xB.Node("CombatPlayerPreTick");
 	const u_int uSM = xB.Node("StateMachine");
-	xB.ParamString(uSM, "m_strStateVar", "");
 	xB.ParamInt(uSM, "m_iStateCount", 9);
 	xB.ParamString(uSM, "m_strStateNames", "Idle,Walking,LightAttack1,LightAttack2,LightAttack3,HeavyAttack,Dodging,HitStun,Dead");
 	xTick.Then(uPre).Then(uSM);
@@ -714,7 +693,6 @@ void BuildGraph_CombatPlayerState(Zenith_GraphBuilder& xBuilder)
 		const u_int uDt = xB.Node("GetVariable");
 		xB.ParamString(uDt, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uDt, "Value", uConsumer, "Dt");
-		xB.ParamString(uConsumer, "m_strDtVar", "");
 	}
 	Zenith_PropertyValue xPayload; xPayload.SetFloat(0.0f);
 	xBuilder.Variable("payload", xPayload);
@@ -735,7 +713,6 @@ void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
 	Zenith_GraphChain xTick = xB.OnCustomEvent("EnemyBrainTick");
 	const u_int uPre = xB.Node("CombatEnemyPreTick");
 	const u_int uSM = xB.Node("StateMachine");
-	xB.ParamString(uSM, "m_strStateVar", "");
 	xB.ParamInt(uSM, "m_iStateCount", 5);
 	xB.ParamString(uSM, "m_strStateNames", "Idle,Chasing,Attacking,HitStun,Dead");
 	xB.Raw().DataEdge(uPre, "State", uSM, "State");
@@ -761,7 +738,6 @@ void BuildGraph_CombatEnemyBrain(Zenith_GraphBuilder& xBuilder)
 		const u_int uDt = xB.Node("GetVariable");
 		xB.ParamString(uDt, "m_strVariable", "payload");
 		xB.Raw().DataEdge(uDt, "Value", uConsumer, "Dt");
-		xB.ParamString(uConsumer, "m_strDtVar", "");
 	}
 	Zenith_PropertyValue xPayload; xPayload.SetFloat(0.0f);
 	xBuilder.Variable("payload", xPayload);
@@ -795,7 +771,6 @@ static void BuildCombatGameFlow_PauseResume(Zenith_EngineGraphBuilder& xB)
 	const u_int uOnP = xB.OnActionPressed(Combat_Bindings::szACTION_PAUSE);
 	const u_int uGetP = xB.Node("CombatGetGameState");
 	const u_int uSwP = xB.Node("SwitchOnInt");
-	xB.ParamString(uSwP, "m_strVar", "");
 	xB.ParamInt(uSwP, "m_iCaseCount", 5);
 	xB.Chain(uOnP, uGetP).Chain(uGetP, uSwP);
 	xB.Raw().DataEdge(uGetP, "State", uSwP, "Value");
@@ -820,7 +795,6 @@ static void BuildCombatGameFlow_Restart(Zenith_EngineGraphBuilder& xB)
 	const u_int uOnR = xB.OnActionPressed(Combat_Bindings::szACTION_RESTART);
 	const u_int uGetR = xB.Node("CombatGetGameState");
 	const u_int uSwR = xB.Node("SwitchOnInt");
-	xB.ParamString(uSwR, "m_strVar", "");
 	xB.ParamInt(uSwR, "m_iCaseCount", 5);
 	xB.Chain(uOnR, uGetR).Chain(uGetR, uSwR);
 	xB.Raw().DataEdge(uGetR, "State", uSwR, "Value");
@@ -841,7 +815,6 @@ static void BuildCombatGameFlow_ReturnToMenu(Zenith_EngineGraphBuilder& xB)
 	const u_int uOnEsc = xB.OnActionPressed(Combat_Bindings::szACTION_RETURN_TO_MENU);
 	const u_int uGetE = xB.Node("CombatGetGameState");
 	const u_int uSwE = xB.Node("SwitchOnInt");
-	xB.ParamString(uSwE, "m_strVar", "");
 	xB.ParamInt(uSwE, "m_iCaseCount", 5);
 	xB.Chain(uOnEsc, uGetE).Chain(uGetE, uSwE);
 	xB.Raw().DataEdge(uGetE, "State", uSwE, "Value");

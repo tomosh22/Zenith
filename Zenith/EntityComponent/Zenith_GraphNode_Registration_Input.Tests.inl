@@ -21,19 +21,18 @@ ZENITH_TEST(GraphPinTable, InputTotality)
 
 ZENITH_TEST(GraphPinTable, InputRoleSpotCheck)
 {
-	// This TU is almost entirely OUTPUTS: a query node's result var is its own
-	// computed value. The types are the ones the Execute bodies actually Set*.
-	Zenith_CheckGraphPin("ReadKeyState", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_BOOL, "m_strResultVar");
-	Zenith_CheckGraphPin("ReadMovementAxis", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "m_strResultVar");
+	// This TU is almost entirely OUTPUTS: a query node publishes its computed
+	// value through a slot. The types are the ones the Execute bodies actually Set*.
+	Zenith_CheckGraphPin("ReadKeyState", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_BOOL, "");
+	Zenith_CheckGraphPin("ReadMovementAxis", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR3, "");
 	// ★ VECTOR2, not VECTOR3: the mouse/action 2D reads write SetVector2, and a
 	// VECTOR3 here would make every correct graph a type error.
-	Zenith_CheckGraphPin("ReadMouseDelta", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR2, "m_strResultVar");
-	Zenith_CheckGraphPin("ReadActionAxis2D", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR2, "m_strResultVar");
+	Zenith_CheckGraphPin("ReadMouseDelta", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR2, "");
+	Zenith_CheckGraphPin("ReadActionAxis2D", "Result", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_VECTOR2, "");
 
-	// ReadPointer publishes FOUR independent results; the two whose var name is
-	// empty by default reach the blackboard only when an author names them.
-	Zenith_CheckGraphPin("ReadPointer", "Down", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_BOOL, "m_strDownVar");
-	Zenith_CheckGraphPin("ReadPointer", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "m_strCountVar");
+	// ReadPointer publishes FOUR independent results through output slots.
+	Zenith_CheckGraphPin("ReadPointer", "Down", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_BOOL, "");
+	Zenith_CheckGraphPin("ReadPointer", "Count", GRAPH_PIN_ROLE_OUTPUT, PROPERTY_TYPE_INT32, "");
 
 	// The one non-OUTPUT: an event SOURCE stashing its payload into a configured
 	// destination (the collision-source pattern).
@@ -47,7 +46,7 @@ ZENITH_TEST(GraphPinTable, InputRoleSpotCheck)
 // Zenith_GraphNode::SetOutput. ★ THIS TU HAS NO INPUT PIN AT ALL: every key code,
 // mode, sensitivity, pointer index and action NAME is device / action
 // configuration, so nothing here can ever log a [GraphPin] FALLBACK census line
-// and there is no fallback row to write. InputPinRuntime.NoPinIsAnInputPin is the
+// and there is no input-default row to write. InputPinRuntime.NoPinIsAnInputPin is the
 // mechanical statement of that, so the claim is falsifiable rather than a comment.
 //
 // ★ EVERY ROW ASSERTS THE EXECUTE STATUS FIRST. Two of the readers FAIL before
@@ -195,13 +194,12 @@ namespace
 	// FAILURE precedes the write), which the requires-expression below supplies
 	// without the device readers having to declare an m_strAction they do not own.
 	template<typename TNode>
-	void InputPin_CheckEmptyResultVarLatchesSlot(u_int uPin, Zenith_PropertyType eType, const char* szClass,
+	void InputPin_CheckResultSlotLatches(u_int uPin, Zenith_PropertyType eType, const char* szClass,
 		const char* szAction)
 	{
 		Zenith_GraphContext xCtx;
 
 		TNode xNode;
-		xNode.m_strResultVar = "";
 		if constexpr (requires { xNode.m_strAction; })
 		{
 			xNode.m_strAction = szAction;
@@ -211,7 +209,7 @@ namespace
 			(void)szAction;
 		}
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS),
-			"%s did not reach its write with an empty result var", szClass);
+			"%s did not reach its output write", szClass);
 
 		const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(uPin);
 		ZENITH_ASSERT_NOT_NULL(pxSlot, "%s: the SLOT must still be latched", szClass);
@@ -328,11 +326,8 @@ ZENITH_TEST(GraphPinTable, InputPinIndicesMatchTables)
 	ZENITH_ASSERT_NULL(xActionHeld.GetPinTableVirtual(), "OnActionHeld gained a pin table");
 }
 
-// ★ THE CENSUS CONTRACT, MADE MECHANICAL. FALLBACK is an INPUT-only observable -
-// a dual-write never logs one - and this TU declares no INPUT pin, so its census
-// delta is ZERO for every game BY CONSTRUCTION rather than by a survey of where
-// the nodes happen to be placed. The walk is what makes that falsifiable: add an
-// INPUT pin here tomorrow and this fails rather than the census quietly moving.
+// ★ This TU declares no INPUT pin. The walk makes that falsifiable: add an INPUT
+// pin here tomorrow and this test fails.
 ZENITH_TEST(InputPinRuntime, NoPinIsAnInputPin)
 {
 	const Zenith_GraphPinTable* apxTables[] =
@@ -359,7 +354,7 @@ ZENITH_TEST(InputPinRuntime, NoPinIsAnInputPin)
 		{
 			const Zenith_GraphPinDesc& xDesc = pxTable->GetPinAt(uPin);
 			ZENITH_ASSERT_NE(static_cast<int>(xDesc.m_eRole), static_cast<int>(GRAPH_PIN_ROLE_INPUT),
-				"pin '%s' is an INPUT - this TU's census delta is only zero because it has none",
+				"pin '%s' is an INPUT - this TU must not declare value inputs",
 				xDesc.m_szName != nullptr ? xDesc.m_szName : "(null)");
 		}
 	}
@@ -369,40 +364,36 @@ ZENITH_TEST(InputPinRuntime, NoPinIsAnInputPin)
 	Zenith_GraphContext xCtx;
 	xCtx.m_pxBlackboard = &xBB;
 	Zenith_GraphNode_ReadInputAxis xNode;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
-	ZENITH_ASSERT_EQ(xNode.GetFallbackUseCountForTest(Zenith_GraphNode_ReadInputAxis::uPIN_Result), 0u,
-		"an OUTPUT pin has no fallback path to count");
 	ZENITH_ASSERT_EQ(xNode.GetBadAccessWarningCountForTest(), 0u);
 }
 
-// Every unguarded writer still latches its typed output slot with an empty output
-// name. The test seam observes the value directly, without depending on the
-// transitional blackboard dual-write.
-ZENITH_TEST(InputPinRuntime, Output_EmptyResultVarStillLatchesTypedSlot)
+// Every unguarded writer latches its typed output slot. The test seam observes
+// the value directly.
+ZENITH_TEST(InputPinRuntime, Output_TypedSlotsLatch)
 {
 	// The two action readers FAIL above their write unless the action resolves, so
 	// their legs need the fixture registered; the seven device readers ignore it.
 	InputPin_RegisterAxisActions();
 
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadKeyState>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadKeyState>(
 		Zenith_GraphNode_ReadKeyState::uPIN_Result, PROPERTY_TYPE_BOOL, "ReadKeyState", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMovementAxis>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadMovementAxis>(
 		Zenith_GraphNode_ReadMovementAxis::uPIN_Result, PROPERTY_TYPE_VECTOR3, "ReadMovementAxis", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadInputAxis>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadInputAxis>(
 		Zenith_GraphNode_ReadInputAxis::uPIN_Result, PROPERTY_TYPE_FLOAT, "ReadInputAxis", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMousePosition>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadMousePosition>(
 		Zenith_GraphNode_ReadMousePosition::uPIN_Result, PROPERTY_TYPE_VECTOR2, "ReadMousePosition", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMouseDelta>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadMouseDelta>(
 		Zenith_GraphNode_ReadMouseDelta::uPIN_Result, PROPERTY_TYPE_VECTOR2, "ReadMouseDelta", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMouseButtonHeld>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadMouseButtonHeld>(
 		Zenith_GraphNode_ReadMouseButtonHeld::uPIN_Result, PROPERTY_TYPE_BOOL, "ReadMouseButtonHeld", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadMouseWheel>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadMouseWheel>(
 		Zenith_GraphNode_ReadMouseWheel::uPIN_Result, PROPERTY_TYPE_FLOAT, "ReadMouseWheel", "");
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadActionAxis1D>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadActionAxis1D>(
 		Zenith_GraphNode_ReadActionAxis1D::uPIN_Result, PROPERTY_TYPE_FLOAT, "ReadActionAxis1D",
 		szINPUTPIN_ACTION_AXIS1D);
-	InputPin_CheckEmptyResultVarLatchesSlot<Zenith_GraphNode_ReadActionAxis2D>(
+	InputPin_CheckResultSlotLatches<Zenith_GraphNode_ReadActionAxis2D>(
 		Zenith_GraphNode_ReadActionAxis2D::uPIN_Result, PROPERTY_TYPE_VECTOR2, "ReadActionAxis2D",
 		szINPUTPIN_ACTION_AXIS2D);
 }
@@ -422,7 +413,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxisFailureBuildsNoSlots)
 
 	Zenith_GraphNode_ReadActionAxis1D xNode;
 	xNode.m_strAction = szINPUTPIN_ACTION_AXIS1D;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const Zenith_PropertyValue* pxSlot = xNode.GetOutputForTest(Zenith_GraphNode_ReadActionAxis1D::uPIN_Result);
 	ZENITH_ASSERT_NOT_NULL(pxSlot, "a resolvable action must latch its Result slot");
@@ -443,7 +433,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxisFailureBuildsNoSlots)
 		xFreshCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_ReadActionAxis2D xFresh;
 		xFresh.m_strAction = "__NoSuchInputPinAction2D";
-		xFresh.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xFreshCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadActionAxis2D::uPIN_Result),
 			"the FAILURE is above every accessor, so no pin state was ever built");
@@ -519,8 +508,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayCarriesValues)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMousePickRay xNode;
-	xNode.m_strOriginVar = "";
-	xNode.m_strDirectionVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector3 xOrigin = InputPin_SlotVec3(
@@ -596,8 +583,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayFailureBuildsNoSlots)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMousePickRay xNode;
-	xNode.m_strOriginVar = "";
-	xNode.m_strDirectionVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	const Zenith_Maths::Vector3 xOrigin = InputPin_SlotVec3(
 		xNode.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Origin), "ReadMousePickRay.Origin (resolved)");
@@ -626,8 +611,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePickRayFailureBuildsNoSlots)
 		Zenith_GraphContext xFreshCtx;
 		xFreshCtx.m_pxBlackboard = &xFreshBB;
 		Zenith_GraphNode_ReadMousePickRay xFresh;
-		xFresh.m_strOriginVar = "";
-		xFresh.m_strDirectionVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xFresh.Execute(xFreshCtx)), static_cast<int>(GRAPH_NODE_STATUS_FAILURE));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Origin));
 		ZENITH_ASSERT_NULL(xFresh.GetOutputForTest(Zenith_GraphNode_ReadMousePickRay::uPIN_Direction));
@@ -678,7 +661,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadKeyStateResultByValue)
 	{
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_LEFT_SHIFT, true);
 		Zenith_GraphNode_ReadKeyState xNode;
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadKeyState::uPIN_Result),
 			"ReadKeyState.Result (held)"), "the slot did not carry the held key");
@@ -691,7 +673,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadKeyStateResultByValue)
 		Zenith_GraphNode_ReadKeyState xNode;
 		xNode.m_iKeyCode = ZENITH_KEY_SPACE;
 		xNode.m_iMode = 1;
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadKeyState::uPIN_Result),
 			"ReadKeyState.Result (pressed)"), "the slot did not carry the press edge");
@@ -716,7 +697,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMovementAxisResultByValue)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMovementAxis xNode;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector3 xSlot = InputPin_SlotVec3(
@@ -741,7 +721,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadInputAxisResultByValue)
 	{
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_D, true);
 		Zenith_GraphNode_ReadInputAxis xNode;
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadInputAxis::uPIN_Result),
 			"ReadInputAxis.Result (+)"), 1.0f, 0.0001f);
@@ -750,7 +729,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadInputAxisResultByValue)
 	{
 		Zenith_InputSimulator::SetKeyHeld(ZENITH_KEY_A, true);
 		Zenith_GraphNode_ReadInputAxis xNode;
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadInputAxis::uPIN_Result),
 			"ReadInputAxis.Result (-)"), -1.0f, 0.0001f);
@@ -771,7 +749,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMousePositionResultByValue)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMousePosition xNode;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector2 xSlot = InputPin_SlotVec2(
@@ -805,7 +782,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseDeltaResultByValue)
 
 	Zenith_GraphNode_ReadMouseDelta xNode;
 	xNode.m_fSensitivity = 2.0f;		// so the row also proves the scale is applied
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector2 xSlot = InputPin_SlotVec2(
@@ -830,7 +806,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseButtonHeldResultByValue)
 	// below is the one that carries the value.
 	{
 		Zenith_GraphNode_ReadMouseButtonHeld xNode;
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(InputPin_SlotBool(xNode.GetOutputForTest(
 			Zenith_GraphNode_ReadMouseButtonHeld::uPIN_Result), "ReadMouseButtonHeld.Result (up)"));
@@ -838,7 +813,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseButtonHeldResultByValue)
 	{
 		Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_LEFT);
 		Zenith_GraphNode_ReadMouseButtonHeld xNode;
-		xNode.m_strResultVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(
 			Zenith_GraphNode_ReadMouseButtonHeld::uPIN_Result), "ReadMouseButtonHeld.Result (down)"));
@@ -863,7 +837,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadMouseWheelResultByValue)
 	xCtx.m_pxBlackboard = &xBB;
 
 	Zenith_GraphNode_ReadMouseWheel xNode;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 	ZENITH_ASSERT_EQ_FLOAT(InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadMouseWheel::uPIN_Result),
 		"ReadMouseWheel.Result"), 1.5f, 0.0001f);
@@ -895,7 +868,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis1DResultByValue)
 
 	Zenith_GraphNode_ReadActionAxis1D xNode;
 	xNode.m_strAction = szINPUTPIN_ACTION_AXIS1D;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const float fSlot = InputPin_SlotFloat(xNode.GetOutputForTest(Zenith_GraphNode_ReadActionAxis1D::uPIN_Result),
@@ -938,7 +910,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis2DResultByValue)
 
 	Zenith_GraphNode_ReadActionAxis2D xNode;
 	xNode.m_strAction = szINPUTPIN_ACTION_AXIS2D;
-	xNode.m_strResultVar = "";
 	ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 
 	const Zenith_Maths::Vector2 xSlot = InputPin_SlotVec2(
@@ -970,9 +941,7 @@ ZENITH_TEST(InputPinRuntime, Output_ReadActionAxis2DResultByValue)
 // own step 4 calls, and ResetTransientForTest is the teardown the shared instance
 // needs on EVERY exit.
 //
-// Tap and Count default to EMPTY var names, so their legs are PARITY rows: the
-// slot latches, the blackboard sees nothing - which is exactly what the old
-// per-write guards produced.
+// Each pointer result latches through its output slot.
 ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 {
 	Zenith_Pointers& xPointers = g_xEngine.Pointers();
@@ -996,10 +965,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 	// LEG A: the pointer is down.
 	{
 		Zenith_GraphNode_ReadPointer xNode;
-		xNode.m_strDownVar = "";
-		xNode.m_strPositionVar = "";
-		xNode.m_strTapVar = "";
-		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Down),
 			"ReadPointer.Down (down)"), "the pointer slot did not read as down");
@@ -1027,10 +992,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 		xTapCtx.m_pxBlackboard = &xTapBB;
 
 		Zenith_GraphNode_ReadPointer xNode;
-		xNode.m_strDownVar = "";
-		xNode.m_strPositionVar = "";
-		xNode.m_strTapVar = "";
-		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xTapCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_TRUE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Tap),
 			"ReadPointer.Tap (up)"), "a short, still gesture must report a tap");
@@ -1050,10 +1011,6 @@ ZENITH_TEST(InputPinRuntime, Output_ReadPointerCarriesValues)
 
 		Zenith_GraphNode_ReadPointer xNode;
 		xNode.m_iPointerIndex = 99;
-		xNode.m_strDownVar = "";
-		xNode.m_strPositionVar = "";
-		xNode.m_strTapVar = "";
-		xNode.m_strCountVar = "";
 		ZENITH_ASSERT_EQ(static_cast<int>(xNode.Execute(xBadCtx)), static_cast<int>(GRAPH_NODE_STATUS_SUCCESS));
 		ZENITH_ASSERT_FALSE(InputPin_SlotBool(xNode.GetOutputForTest(Zenith_GraphNode_ReadPointer::uPIN_Down),
 			"ReadPointer.Down (invalid slot)"));

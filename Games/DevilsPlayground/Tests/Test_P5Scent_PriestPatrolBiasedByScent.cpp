@@ -189,9 +189,6 @@ static bool Step_P5ScentBias(int iFrame)
 			if (pxGraph != nullptr)
 			{
 				DPNode_PriestPickPatrolTarget xNode;
-				xNode.m_strSuspicionRadiusVar = "";
-				xNode.m_strHighScentTargetVar = "";
-				xNode.m_strPatrolTargetVar = "";
 				Zenith_GraphContext xCtx;
 				xCtx.m_xSelf = xP;
 				xCtx.m_pxBlackboard = &pxGraph->GetBlackboard();
@@ -201,8 +198,6 @@ static bool Step_P5ScentBias(int iFrame)
 				xNode.SetInputForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget, xScentTarget);
 				const GraphNodeStatus eStatus = xNode.Execute(xCtx);
 				if (eStatus == GRAPH_NODE_STATUS_SUCCESS
-					&& xNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_SuspicionRadius) == 0u
-					&& xNode.GetFallbackUseCountForTest(DPNode_PriestPickPatrolTarget::uPIN_HighScentTarget) == 0u
 					&& xNode.GetBadAccessWarningCountForTest() == 0u)
 				{
 					const Zenith_PropertyValue* pxPatrol = xNode.GetOutputForTest(DPNode_PriestPickPatrolTarget::uPIN_PatrolTarget);

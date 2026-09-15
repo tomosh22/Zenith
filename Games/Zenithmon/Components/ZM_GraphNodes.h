@@ -55,12 +55,9 @@ class ZM_GraphNode_PushTrainerChallenge : public Zenith_GraphNode
 public:
 	ZENITH_PROPERTIES_BEGIN(ZM_GraphNode_PushTrainerChallenge)
 public:
-	// Legacy authored graphs may use this binding; the production builder clears it
-	// and drives TrainerId from GetVariable instead.
-	ZENITH_PROPERTY(std::string, m_strTrainerIdVar, szZM_GRAPH_VAR_TRAINER_ID)
 	ZENITH_PROPERTY(int32_t, m_iTrainerId, static_cast<int32_t>(ZM_TRAINER_NONE))
 
-	// The ONE pin Zenithmon's node library has. Its ordinary const fallback is
+	// The ONE pin Zenithmon's node library has. Its current const default is
 	// ZM_TRAINER_NONE, never zero: Rival Vesper is trainer zero.
 	//
 	// NOT a TARGET_REF: an id here is a data value the node maps to a roster row
@@ -68,7 +65,7 @@ public:
 	static constexpr u_int uPIN_TrainerId = 0u;
 
 	ZENITH_GRAPH_PINS_BEGIN(ZM_GraphNode_PushTrainerChallenge)
-	ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(TrainerId, "m_strTrainerIdVar", "m_iTrainerId", PROPERTY_TYPE_INT32)
+	ZENITH_GRAPH_PIN_INPUT_CONST(TrainerId, "m_iTrainerId", PROPERTY_TYPE_INT32)
 	ZENITH_GRAPH_PINS_END
 
 public:

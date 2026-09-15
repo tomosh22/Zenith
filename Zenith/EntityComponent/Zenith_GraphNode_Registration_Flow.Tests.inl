@@ -37,10 +37,10 @@ ZENITH_TEST(GraphPinTable, FlowRoleSpotCheck)
 	Zenith_CheckGraphPin("ForEach", "Index", GRAPH_PIN_ROLE_SELECTOR_WRITE, PROPERTY_TYPE_INT32, "m_strIndexVar");
 
 	// The two dispatchers read their key and never write it.
-	Zenith_CheckGraphPin("SwitchOnInt", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "m_strVar");
-	Zenith_CheckGraphPin("StateMachine", "State", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "m_strStateVar");
+	Zenith_CheckGraphPin("SwitchOnInt", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "");
+	Zenith_CheckGraphPin("StateMachine", "State", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_INT32, "");
 	// The string switch's scalar input had no spot check before B-6.10.
-	Zenith_CheckGraphPin("SwitchOnString", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_STRING, "m_strVar");
+	Zenith_CheckGraphPin("SwitchOnString", "Value", GRAPH_PIN_ROLE_INPUT, PROPERTY_TYPE_STRING, "");
 }
 
 //==============================================================================
@@ -60,11 +60,8 @@ ZENITH_TEST(GraphPinTable, FlowRoleSpotCheck)
 // direct-construction rows to the B-7.6 ledger: these rows are already
 // graph-instance rows and need no rewrite.
 //
-// ★ EVERY PROPERTY GOES THROUGH THE PARAM BLOB, BEFORE InitialiseFromDefinition,
-// and that is not a style choice. BuildPinStateFromTables latches the binding's
-// var NAME at build time, so a member assigned on the live node after FindNode
-// would leave the binding on the CLASS DEFAULT ("value" / "state") and every
-// var-leg below would pass for the wrong reason. SwitchOnString is worse still:
+// ★ EVERY CONFIGURATION PROPERTY GOES THROUGH THE PARAM BLOB, BEFORE
+// InitialiseFromDefinition. SwitchOnString is worse still:
 // its EnsureCasesParsed() latch is not reset by ApplyNodeParams, so a late
 // m_strCases leaves m_axCases EMPTY and every case routes to the default pin.
 //
@@ -74,12 +71,8 @@ ZENITH_TEST(GraphPinTable, FlowRoleSpotCheck)
 // clears the three BINDING arrays, not m_axTestOverrides - and is consulted
 // before the connected, var and const paths) -> fire.
 //
-// ★ NEVER THROUGH Zenith_GraphBuilder: all three var-name defaults are
-// non-empty, so Build() would latch UNDECLARED_READ on a fixture that is
-// deliberately reading an undeclared variable.
-//
 // ★ FRESH GRAPH PER LEG. m_iActivePin and m_iCurrentState are per-INSTANCE
-// state, and so are the once-per-(instance, pin) fallback counters.
+// state.
 //
 // ★ These fixtures never reach a counted census log: the per-game census parses
 // `zenith test <G> --headless` runs, which pass --skip-unit-tests.
@@ -117,20 +110,18 @@ namespace
 	// not re-read" from "the consumer re-read and got the same answer": a
 	// suspended SwitchOnInt must leave it exactly where it was.
 	//
-	// m_strValueVar defaults to "" so the slot never dual-writes - the wire is
-	// the ONLY path the value can take to the consumer.
+	// The output slot is the only path the value can take to the consumer.
 	class Test_FlowPinProducerNode : public Zenith_GraphNode
 	{
 	public:
 		ZENITH_PROPERTIES_BEGIN(Test_FlowPinProducerNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(int32_t, m_iValue, 0)
 
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Test_FlowPinProducerNode)
-		ZENITH_GRAPH_PIN_OUTPUT(Value, "m_strValueVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Value, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -345,11 +336,10 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntValueFromWire)
 		ZENITH_ASSERT_NE(uSwitch, 0u);
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },
 			{ "m_iCaseBase", FlowPin_Int(0) },
 			{ "m_iCaseCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 3u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 2u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
 		FlowPin_AddWitness(xDef, uSwitch, 0u, "case0Ran");
 		FlowPin_AddWitness(xDef, uSwitch, 1u, "case1Ran");
@@ -373,8 +363,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntValueFromWire)
 		FlowPin_AssertAbsent(xGraph, "case0Ran");
 		FlowPin_AssertAbsent(xGraph, "case1Ran");
 		FlowPin_AssertAbsent(xGraph, "defaultRan");
-		ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u,
-			"a wired pin must never reach the var-name fallback");
 		ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -386,11 +374,10 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntValueFromWire)
 		const u_int uSwitch = xDef.AddNode("SwitchOnInt");
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },
 			{ "m_iCaseBase", FlowPin_Int(0) },
 			{ "m_iCaseCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 3u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 2u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
 		FlowPin_AddWitness(xDef, uSwitch, 1u, "case1Ran");
 		FlowPin_AddWitness(xDef, uSwitch, 3u, "defaultRan");
@@ -408,7 +395,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntValueFromWire)
 
 		ZENITH_ASSERT_TRUE(FlowPin_Ran(xGraph, "defaultRan"), "an out-of-range wire must take the DEFAULT pin");
 		FlowPin_AssertAbsent(xGraph, "case1Ran");
-		ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u);
 		ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -431,10 +417,9 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnStringValueFromWire)
 		ZENITH_ASSERT_NE(uSwitch, 0u);
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },
 			{ "m_strCases", FlowPin_Str("a,b,c") },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnString", axParams, 2u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnString", axParams, 1u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
 		FlowPin_AddWitness(xDef, uSwitch, 0u, "caseARan");
 		FlowPin_AddWitness(xDef, uSwitch, 1u, "caseBRan");
@@ -457,7 +442,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnStringValueFromWire)
 		FlowPin_AssertAbsent(xGraph, "caseARan");
 		FlowPin_AssertAbsent(xGraph, "caseBRan");
 		FlowPin_AssertAbsent(xGraph, "defaultRan");
-		ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u);
 		ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -468,10 +452,9 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnStringValueFromWire)
 		const u_int uSwitch = xDef.AddNode("SwitchOnString");
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },
 			{ "m_strCases", FlowPin_Str("a,b,c") },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnString", axParams, 2u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnString", axParams, 1u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
 		FlowPin_AddWitness(xDef, uSwitch, 1u, "caseBRan");
 		FlowPin_AddWitness(xDef, uSwitch, 3u, "defaultRan");
@@ -489,7 +472,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnStringValueFromWire)
 
 		ZENITH_ASSERT_TRUE(FlowPin_Ran(xGraph, "defaultRan"), "an unknown label must take the DEFAULT pin");
 		FlowPin_AssertAbsent(xGraph, "caseBRan");
-		ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u);
 		ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -514,10 +496,9 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineStateFromWire)
 		ZENITH_ASSERT_NE(uMachine, 0u);
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strStateVar", FlowPin_Str("") },
 			{ "m_iStateCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 2u);
+		FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 1u);
 		xDef.AddEdge(uSource, 0u, uMachine);
 		FlowPin_AddWitness(xDef, uMachine, 0u, "state0Ran");
 		FlowPin_AddWitness(xDef, uMachine, 1u, "state1Ran");
@@ -548,7 +529,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineStateFromWire)
 		ZENITH_ASSERT_TRUE(FlowPin_Ran(xGraph, "state0Ran"), "a changed wire did not move the machine");
 		ZENITH_ASSERT_TRUE(FlowPin_Ran(xGraph, "state2Ran"));
 		FlowPin_AssertAbsent(xGraph, "state1Ran");
-		ZENITH_ASSERT_EQ(pxMachine->GetFallbackUseCountForTest(uStatePin), 0u);
 		ZENITH_ASSERT_EQ(pxMachine->GetBadAccessWarningCountForTest(), 0u);
 	}
 
@@ -564,10 +544,9 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineStateFromWire)
 			const u_int uMachine = xDef.AddNode("StateMachine");
 			const FlowPin_Param axParams[] =
 			{
-				{ "m_strStateVar", FlowPin_Str("") },
 				{ "m_iStateCount", FlowPin_Int(3) },
 			};
-			FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 2u);
+			FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 1u);
 			xDef.AddEdge(uSource, 0u, uMachine);
 			FlowPin_AddWitness(xDef, uMachine, 0u, "state0Ran");
 			FlowPin_AddWitness(xDef, uMachine, 1u, "state1Ran");
@@ -622,10 +601,9 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineStateFollowsAWiredProducer)
 	{
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strStateVar", FlowPin_Str("") },
 			{ "m_iStateCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 2u);
+		FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 1u);
 	}
 	{
 		const FlowPin_Param axParams[] = { { "m_strVariable", FlowPin_Str("smWired") } };
@@ -662,18 +640,12 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineStateFollowsAWiredProducer)
 		"State was not re-pulled: a wired StateMachine must read its producer EVERY fire");
 	FlowPin_AssertAbsent(xGraph, "state1Ran");
 
-	// A CONNECTED pin never reaches the transitional var-name fallback, so this
-	// instance contributes nothing to the census - which is what C-1 is waiting
-	// for every placed instance to look like.
-	ZENITH_ASSERT_EQ(pxMachine->GetFallbackUseCountForTest(uStatePin), 0u);
 	ZENITH_ASSERT_EQ(pxMachine->GetMismatchWarningCountForTest(uStatePin), 0u);
 	ZENITH_ASSERT_EQ(pxMachine->GetBadAccessWarningCountForTest(), 0u);
 }
 
-// ★ A SUSPENDED CASE DOES NOT RE-READ ITS KEY, and the FALLBACK COUNTER CANNOT
-// PROVE IT: the counter is latched once per (instance, pin), so "count stays 1"
-// is a property of the latch and would hold for a node that re-read on every
-// fire. The observable is the ROUTE.
+// ★ A SUSPENDED CASE DOES NOT RE-READ ITS KEY. The observable is the route and
+// the producer count.
 //
 // Case 1's chain suspends on a Wait (0.02 s against a 0.016 s dt: RUNNING on
 // fire 1, SUCCESS on fire 2). The key is flipped to case 2 in between. If the
@@ -681,7 +653,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineStateFollowsAWiredProducer)
 ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntSuspendedCaseDoesNotReread)
 {
 	FlowPin_EnsureRegistry();
-	const u_int uValuePin = Zenith_GraphNode_SwitchOnInt::uPIN_Value;
 
 	// (a) a wired pure producer begins at case 1, then changes to case 2 while
 	//     the Wait is suspended. Its counter proves the switch does not re-pull.
@@ -697,11 +668,10 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntSuspendedCaseDoesNotReread)
 		}
 		const FlowPin_Param axSwitch[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },
 			{ "m_iCaseBase", FlowPin_Int(0) },
 			{ "m_iCaseCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axSwitch, 3u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axSwitch, 2u);
 		const FlowPin_Param axProducer[] = { { "m_iValue", FlowPin_Int(1) } };
 		FlowPin_SetParams(xDef, uProducer, "Test_FlowPinProducer", axProducer, 1u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
@@ -747,7 +717,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntSuspendedCaseDoesNotReread)
 		ZENITH_ASSERT_NOT_NULL(pxSwitch);
 		if (pxSwitch != nullptr)
 		{
-			ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u);
 			ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 		}
 	}
@@ -768,11 +737,10 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntSuspendedCaseDoesNotReread)
 		}
 		const FlowPin_Param axSwitch[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },			// no var half at all: the wire is the only source
 			{ "m_iCaseBase", FlowPin_Int(0) },
 			{ "m_iCaseCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axSwitch, 3u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axSwitch, 2u);
 		const FlowPin_Param axProducer[] = { { "m_iValue", FlowPin_Int(1) } };
 		FlowPin_SetParams(xDef, uProducer, "Test_FlowPinProducer", axProducer, 1u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
@@ -811,7 +779,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntSuspendedCaseDoesNotReread)
 			"the suspended switch PULLED its producer again - the read left its `m_iActivePin < 0` branch");
 		ZENITH_ASSERT_TRUE(FlowPin_Ran(xGraph, "wiredCase1Tail"));
 		FlowPin_AssertAbsent(xGraph, "wiredCase2Ran");
-		ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u);
 		ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 	}
 }
@@ -823,7 +790,6 @@ ZENITH_TEST(FlowPinRuntime, Wired_SwitchOnIntSuspendedCaseDoesNotReread)
 ZENITH_TEST(FlowPinRuntime, Wired_StateMachineReadsEveryFire)
 {
 	FlowPin_EnsureRegistry();
-	const u_int uStatePin = Zenith_GraphNode_StateMachine::uPIN_State;
 
 	Zenith_GraphDefinition xDef;
 	const u_int uSource = xDef.AddNode("OnUpdate");
@@ -836,10 +802,9 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineReadsEveryFire)
 	}
 	const FlowPin_Param axParams[] =
 	{
-		{ "m_strStateVar", FlowPin_Str("") },
 		{ "m_iStateCount", FlowPin_Int(3) },
 	};
-	FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 2u);
+	FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 1u);
 	const FlowPin_Param axProducer[] = { { "m_iValue", FlowPin_Int(1) } };
 	FlowPin_SetParams(xDef, uProducer, "Test_FlowPinProducer", axProducer, 1u);
 	xDef.AddEdge(uSource, 0u, uMachine);
@@ -876,64 +841,12 @@ ZENITH_TEST(FlowPinRuntime, Wired_StateMachineReadsEveryFire)
 	ZENITH_ASSERT_NOT_NULL(pxMachine);
 	if (pxMachine != nullptr)
 	{
-		ZENITH_ASSERT_EQ(pxMachine->GetFallbackUseCountForTest(uStatePin), 0u);
 		ZENITH_ASSERT_EQ(pxMachine->GetBadAccessWarningCountForTest(), 0u);
 	}
 }
 
-// The CENSUS observable. Only a MIGRATED node reaches the transitional var-name
-// fallback, and it logs ONE line per (instance, pin) however hot the chain is -
-// which is what makes "zero FALLBACK lines in a SUITE boot log" C-1's
-// precondition rather than a guess.
-//
-// ★ THE SOLE NAMED INPUT IN THIS FILE: SwitchOnInt.Value deliberately names
-// "value" here so the transitional fallback path remains observable exactly once.
-ZENITH_TEST(FlowPinRuntime, Fallback_CountsOncePerPin)
-{
-	FlowPin_EnsureRegistry();
-	const u_int uValuePin = Zenith_GraphNode_SwitchOnInt::uPIN_Value;
-
-	Zenith_GraphDefinition xDef;
-	const u_int uSource = xDef.AddNode("OnUpdate");
-	const u_int uSwitch = xDef.AddNode("SwitchOnInt");
-	const FlowPin_Param axParams[] =
-	{
-		{ "m_strVar", FlowPin_Str("value") },
-		{ "m_iCaseBase", FlowPin_Int(0) },
-		{ "m_iCaseCount", FlowPin_Int(2) },
-	};
-	FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 3u);
-	xDef.AddEdge(uSource, 0u, uSwitch);
-	FlowPin_AddWitness(xDef, uSwitch, 0u, "onceCase0Ran");
-	FlowPin_AddWitness(xDef, uSwitch, 1u, "onceCase1Ran");
-	FlowPin_AddWitness(xDef, uSwitch, 2u, "onceDefaultRan");
-
-	Zenith_BehaviourGraph xGraph;
-	ZENITH_ASSERT_TRUE(xGraph.InitialiseFromDefinition(xDef));
-	xGraph.GetBlackboard().SetValue("value", FlowPin_Int(1));	// the CLASS DEFAULT var name
-
-	Zenith_GraphNode* pxSwitch = xGraph.FindNode(uSwitch);
-	ZENITH_ASSERT_NOT_NULL(pxSwitch);
-	if (pxSwitch == nullptr)
-	{
-		return;
-	}
-	ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 0u);
-
-	for (u_int u = 0; u < 3u; ++u)
-	{
-		FlowPin_FireOneUpdate(xGraph);
-	}
-	ZENITH_ASSERT_TRUE(FlowPin_Ran(xGraph, "onceCase1Ran"), "the default var name was not read");
-	FlowPin_AssertAbsent(xGraph, "onceCase0Ran");
-	FlowPin_AssertAbsent(xGraph, "onceDefaultRan");
-	ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(uValuePin), 1u,
-		"three reads must log ONE census line");
-	ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
-}
-
 // ★ THE TYPE ZERO, NOT A CONST. Neither dispatcher declares a const half, so an
-// unbound pin falls back to the type's zero. Both legs
+// unbound pin takes the type's zero. Both legs
 // choose a configuration where the zero is DISTINGUISHABLE from "the node did
 // something sensible".
 ZENITH_TEST(FlowPinRuntime, Unbound_DispatchInputTakesTheTypeZero)
@@ -950,11 +863,10 @@ ZENITH_TEST(FlowPinRuntime, Unbound_DispatchInputTakesTheTypeZero)
 		const u_int uSwitch = xDef.AddNode("SwitchOnInt");
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strVar", FlowPin_Str("") },
 			{ "m_iCaseBase", FlowPin_Int(10) },
 			{ "m_iCaseCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 3u);
+		FlowPin_SetParams(xDef, uSwitch, "SwitchOnInt", axParams, 2u);
 		xDef.AddEdge(uSource, 0u, uSwitch);
 		FlowPin_AddWitness(xDef, uSwitch, 0u, "absentCase0Ran");
 		FlowPin_AddWitness(xDef, uSwitch, 3u, "absentDefaultRan");
@@ -971,7 +883,6 @@ ZENITH_TEST(FlowPinRuntime, Unbound_DispatchInputTakesTheTypeZero)
 		ZENITH_ASSERT_NOT_NULL(pxSwitch);
 		if (pxSwitch != nullptr)
 		{
-			ZENITH_ASSERT_EQ(pxSwitch->GetFallbackUseCountForTest(Zenith_GraphNode_SwitchOnInt::uPIN_Value), 0u);
 			ZENITH_ASSERT_EQ(pxSwitch->GetBadAccessWarningCountForTest(), 0u);
 		}
 	}
@@ -984,10 +895,9 @@ ZENITH_TEST(FlowPinRuntime, Unbound_DispatchInputTakesTheTypeZero)
 		const u_int uMachine = xDef.AddNode("StateMachine");
 		const FlowPin_Param axParams[] =
 		{
-			{ "m_strStateVar", FlowPin_Str("") },
 			{ "m_iStateCount", FlowPin_Int(3) },
 		};
-		FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 2u);
+		FlowPin_SetParams(xDef, uMachine, "StateMachine", axParams, 1u);
 		xDef.AddEdge(uSource, 0u, uMachine);
 		FlowPin_AddWitness(xDef, uMachine, 0u, "absentState0Ran");
 		FlowPin_AddWitness(xDef, uMachine, 2u, "absentState2Ran");
@@ -1003,7 +913,6 @@ ZENITH_TEST(FlowPinRuntime, Unbound_DispatchInputTakesTheTypeZero)
 		ZENITH_ASSERT_NOT_NULL(pxMachine);
 		if (pxMachine != nullptr)
 		{
-			ZENITH_ASSERT_EQ(pxMachine->GetFallbackUseCountForTest(Zenith_GraphNode_StateMachine::uPIN_State), 0u);
 			ZENITH_ASSERT_EQ(pxMachine->GetBadAccessWarningCountForTest(), 0u);
 		}
 	}

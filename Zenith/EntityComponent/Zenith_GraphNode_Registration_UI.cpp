@@ -34,7 +34,6 @@
 // through TryGetInput - so a wire into any of them carries a value. There are
 // NO OUTPUT pins in this TU at all, so it takes none of B-6.1's `""`
 // output-name divergence. An UNCONNECTED node behaves byte-for-byte as it did:
-// the transitional var-name fallback IS the old
 // `var.empty() ? const : bb->GetX(var, const)` read. Each node that addresses
 // a pin declares `static constexpr u_int uPIN_<Name>` immediately before its
 // pin table (the INDEX is the runtime address; table order is the contract,
@@ -48,8 +47,6 @@
 //     brief-level exception to "a read sits in EXACTLY the branch its
 //     blackboard read occupied": the presence check is HOISTED above the
 //     format branch, whose condition becomes `bPresent || !m_strValueVar
-//     .empty()`. A wire must format the label even when the var name is
-//     empty. The var-name half is transitional and is C-1's deletion - the
 //     full three-outcome parity table is on the Execute below.
 //   - THE FAILURE SHAPES ARE TWO. Shape A - no Zenith_UIComponent on the
 //     target, element not found, element not a Rect (SetUIFillAmount),
@@ -57,7 +54,6 @@
 //     every accessor, so a failed instance builds NO pin state, reads no
 //     input and logs no census line. Shape B is SetUIText's "not a
 //     text-bearing element" FAILURE, which runs AFTER the hoisted read: on
-//     that path a var-bound Value has already logged its FALLBACK line and,
 //     in a graph, already pulled its producer. The read stays where it is.
 //------------------------------------------------------------------------------
 
@@ -132,7 +128,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strElement, "")
 		ZENITH_PROPERTY(std::string, m_strText, "")
-		ZENITH_PROPERTY(std::string, m_strValueVar, "")
 		ZENITH_PROPERTY(int32_t, m_iDecimals, -1)
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
@@ -145,7 +140,7 @@ namespace
 		static constexpr u_int uPIN_Value = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIText)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", eGRAPH_PIN_TYPE_ANY)
+		ZENITH_GRAPH_PIN_INPUT(Value, eGRAPH_PIN_TYPE_ANY)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -163,38 +158,14 @@ namespace
 				return GRAPH_NODE_STATUS_FAILURE;
 			}
 
-			// ★ THE HOISTED READ, and the only brief-level exception in the pin
-			// migration to "a read sits in EXACTLY the branch its blackboard read
-			// occupied" (B-6.1 amendment 6): the presence check runs ABOVE the
-			// format branch because a WIRE must format the label even when
-			// m_strValueVar is empty - which is exactly how a wired author leaves
-			// it.
-			//
-			// bPresent is AUTHORITATIVE. The `|| !m_strValueVar.empty()` half is
-			// TRANSITIONAL and is C-1's deletion: it exists only to reproduce
-			// today's bound-but-ABSENT behaviour, where a named variable holding
-			// nothing still CONSUMES the "{}" placeholder with "". After C-1 the
-			// condition is `bPresent` alone. The three outcomes are byte-identical
-			// to the old read (Fallback_SetUITextThreeOutcomes pins all three):
-			//   empty var, nothing wired -> TryGetInput returns false and logs
-			//     NOTHING (this pin has no const half, so the empty-var path falls
-			//     straight through), and m_strText is left literal - "Score: {}"
-			//     stays "Score: {}";
-			//   var bound but ABSENT     -> one [GraphPin] FALLBACK line, false,
-			//     and the placeholder is consumed with "" - "Score: ";
-			//   var bound and PRESENT    -> one FALLBACK line, the formatted value.
-			// ★ The binding latches the var NAME once, at the first accessor call,
-			// so a test that re-points m_strValueVar needs a FRESH node.
-			// ★ One stated divergence, deliberately not pinned: a context with a
-			// NULL blackboard and a bound var used to dereference null here (and in
-			// SetUIColor / SetUIFillAmount alike). Only SetUIText formats an empty
-			// string after its BADACCESS line; SetUIColor and SetUIFillAmount return
-			// their typed const defaults.
+			// Value is wire-only. Read it after the target and element guards so a
+			// failed UI lookup does not pull a producer. A present value replaces the
+			// first placeholder; an unconnected input leaves the configured text literal.
 			const Zenith_PropertyValue* pxValue = nullptr;
 			const bool bPresent = TryGetInput(xContext, uPIN_Value, pxValue);
 
 			std::string strText = m_strText;
-			if (bPresent || !m_strValueVar.empty())
+			if (bPresent)
 			{
 				const std::string strValue = (bPresent && pxValue != nullptr)
 					? PropertyValueToDisplayString(*pxValue, m_iDecimals) : "";
@@ -235,7 +206,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strElement, "")
 		ZENITH_PROPERTY(Zenith_Maths::Vector4, m_xColor, Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f))
-		ZENITH_PROPERTY(std::string, m_strColorVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// The var half wins when named, the inline vec4 otherwise - one pin
@@ -243,7 +213,7 @@ namespace
 		static constexpr u_int uPIN_Color = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIColor)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Color, "m_strColorVar", "m_xColor", PROPERTY_TYPE_VECTOR4)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Color, "m_xColor", PROPERTY_TYPE_VECTOR4)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 
@@ -328,7 +298,6 @@ namespace
 	public:
 		ZENITH_PROPERTY(std::string, m_strElement, "")
 		ZENITH_PROPERTY_RANGED(float, m_fAmount, 1.0f, 0.0f, 1.0f)
-		ZENITH_PROPERTY(std::string, m_strAmountVar, "")
 		ZENITH_PROPERTY(std::string, m_strTargetVar, "")
 
 		// Var-or-const, like SetUIColor.Color: one pin, both halves, read through
@@ -336,7 +305,7 @@ namespace
 		static constexpr u_int uPIN_Amount = 0u;
 
 		ZENITH_GRAPH_PINS_BEGIN(Zenith_GraphNode_SetUIFillAmount)
-		ZENITH_GRAPH_PIN_INPUT_VAR_OR_CONST(Amount, "m_strAmountVar", "m_fAmount", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT_CONST(Amount, "m_fAmount", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PIN_TARGET_ENTITY(Target, "m_strTargetVar")
 		ZENITH_GRAPH_PINS_END
 

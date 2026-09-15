@@ -59,7 +59,7 @@ namespace
 		ZENITH_PROPERTY(std::string, m_strValueVar, "editorPanelUndeclared")
 
 		ZENITH_GRAPH_PINS_BEGIN(GraphEditorTestReaderNode)
-		ZENITH_GRAPH_PIN_INPUT(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_SELECTOR_READ(Value, "m_strValueVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -83,12 +83,9 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(GraphEditorTestDataProducerNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strFloatVar, "")
-		ZENITH_PROPERTY(std::string, m_strIntVar, "")
-
 		ZENITH_GRAPH_PINS_BEGIN(GraphEditorTestDataProducerNode)
-		ZENITH_GRAPH_PIN_OUTPUT(F, "m_strFloatVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(I, "m_strIntVar", PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(F, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(I, PROPERTY_TYPE_INT32)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -108,14 +105,12 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(GraphEditorTestDataConsumerNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strAVar, "")
 		ZENITH_PROPERTY(std::string, m_strBVar, "")
-		ZENITH_PROPERTY(std::string, m_strOutVar, "")
-
 		ZENITH_GRAPH_PINS_BEGIN(GraphEditorTestDataConsumerNode)
-		ZENITH_GRAPH_PIN_INPUT(A, "m_strAVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_INPUT(B, "m_strBVar", PROPERTY_TYPE_INT32)
-		ZENITH_GRAPH_PIN_OUTPUT(Out, "m_strOutVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(A, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(B, PROPERTY_TYPE_INT32)
+		ZENITH_GRAPH_PIN_OUTPUT(Out, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_SELECTOR_READ(BSelector, "m_strBVar", PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -136,12 +131,9 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(GraphEditorTestPureRelayNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strInVar, "")
-		ZENITH_PROPERTY(std::string, m_strOutVar, "")
-
 		ZENITH_GRAPH_PINS_BEGIN(GraphEditorTestPureRelayNode)
-		ZENITH_GRAPH_PIN_INPUT(In, "m_strInVar", PROPERTY_TYPE_FLOAT)
-		ZENITH_GRAPH_PIN_OUTPUT(Out, "m_strOutVar", PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_INPUT(In, PROPERTY_TYPE_FLOAT)
+		ZENITH_GRAPH_PIN_OUTPUT(Out, PROPERTY_TYPE_FLOAT)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -161,11 +153,10 @@ namespace
 	public:
 		ZENITH_PROPERTIES_BEGIN(GraphEditorTestInstanceOutNode)
 	public:
-		ZENITH_PROPERTY(std::string, m_strOutVar, "")
 		ZENITH_PROPERTY(int32_t, m_iTypeCode, 0)
 
 		ZENITH_GRAPH_PINS_BEGIN(GraphEditorTestInstanceOutNode)
-		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Out, "m_strOutVar")
+		ZENITH_GRAPH_PIN_OUTPUT_INSTANCE(Out)
 		ZENITH_GRAPH_PINS_END
 
 	public:
@@ -955,7 +946,7 @@ ZENITH_TEST(GraphEditorPanel, GraphEditor_ExecIntoPureRefused)
 // ★ A WIRE WHOSE ENDPOINT PIN CANNOT BE LOCATED IS STILL DRAWN. A loaded asset
 // can carry one (the panel refuses to author it), and an invisible wire means the
 // canvas disagrees with the file while the findings panel names a pin the author
-// cannot see. The fallback is COUNTED so this is an observable rather than a
+// cannot see. The unresolvable-edge count makes this observable rather than a
 // claim about pixels.
 ZENITH_TEST(GraphEditorPanel, GraphEditor_UnresolvableDataEdgeStillDrawn)
 {
@@ -987,14 +978,14 @@ ZENITH_TEST(GraphEditorPanel, GraphEditor_UnresolvableDataEdgeStillDrawn)
 		ImGui::SetNextWindowCollapsed(false);
 		Zenith_GraphEditorPanel::Render();
 
-		// ...and the canvas DREW it, exactly once, as the fallback.
+		// ...and the canvas DREW it exactly once as an unresolvable edge.
 		ZENITH_ASSERT_EQ(Zenith_GraphEditorPanel::GetUnresolvableEdgeDrawCountForTest(), 1u);
 		// The nodes themselves rendered normally alongside it.
 		Zenith_Maths::Vector2 xPin;
 		ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::GetDataPinScreenPos(uProducer, "F", false, xPin));
 	}
 
-	// A RESOLVABLE wire uses no fallback, which is what stops the count above
+	// A RESOLVABLE wire has no unresolvable-edge draw, which stops the count above
 	// from being true of every frame.
 	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_DisconnectData("Test_EditorDataConsumer", 0, "PinThatMovedAway"));
 	ZENITH_ASSERT_TRUE(Zenith_GraphEditorPanel::Action_ConnectData(

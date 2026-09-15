@@ -212,12 +212,10 @@ ZENITH_TEST(ZM_Interaction, TrainerChallengeGraph_FiringTheEventReachesThePushNo
 		"firing \"%s\" did not reach ZMPushTrainerChallenge -- the .bgraph is "
 		"decoration rather than the owner of the beat",
 		szZM_GRAPH_EVENT_TRAINER_SPOTTED);
-	// ...and it arrived carrying the RIGHT trainer. A mis-named store-payload var
-	// leaves this at ZM_TRAINER_NONE while the attempt count still moves.
+	// ...and it arrived carrying the RIGHT trainer through the authored data edge.
 	ZENITH_ASSERT_EQ(ZM_GraphNodeTestCounters::s_eLastChallengeTrainer,
 		ZM_TRAINER_RIVAL_VESPER,
-		"the push node did not resolve the fired trainer id -- the source's "
-		"store-payload variable and the node's m_strTrainerIdVar must both be \"%s\"",
+		"the push node did not receive the fired trainer id through its data edge \"%s\"",
 		szZM_GRAPH_VAR_TRAINER_ID);
 
 	// How far this unit reaches, stated explicitly: there is no ZM_MenuRoot
