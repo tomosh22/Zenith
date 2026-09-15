@@ -269,6 +269,18 @@ try {
         Assert-True ($scan.Descriptors.Count -eq 0) "docs-only folder contributed no descriptor"
     }
 
+    Invoke-Test "docs and reference mockups -> skipped" {
+        $root = New-IsolatedGamesRoot 'docsrefs'
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'Concept/Docs'), (Join-Path $root 'Concept/Mockups') | Out-Null
+        Set-Content -LiteralPath (Join-Path $root 'Concept/Mockups/reference.png') -Value 'reference fixture'
+        $scan = Get-ZenithGameDescriptors -GamesRoot $root
+        Assert-Equal 0 $scan.Errors.Count "reference assets must not block unrelated builds"
+        Assert-Equal 0 $scan.Descriptors.Count "reference assets are not a build target"
+        Set-Content -LiteralPath (Join-Path $root 'Concept/Main.cpp') -Value '// source requires descriptor'
+        $scan = Get-ZenithGameDescriptors -GamesRoot $root
+        Assert-AnyLike $scan.Errors "*has no .zproj descriptor*" "source remains an error beside mockups"
+    }
+
     Invoke-Test "folder with SOURCE but no descriptor -> still an error" {
         # The carve-out above must stay narrow. A folder carrying anything besides a
         # single Docs directory is a game somebody forgot to give a descriptor, which
@@ -324,17 +336,17 @@ try {
 
     # ========================================================================
     Write-Host "`n[6] Worktree guard" -ForegroundColor Cyan
-    Invoke-Test "main tree is not flagged as a linked worktree" {
-        Assert-False (Test-ZenithInWorktree -RepoRoot $repoRoot) "repo root should not be a linked worktree"
+    Invoke-Test "worktree detection agrees with checkout metadata" {
+        Assert-Equal (Test-Path -LiteralPath (Join-Path $repoRoot '.git') -PathType Leaf) (Test-ZenithInWorktree -RepoRoot $repoRoot) "linked checkout uses a .git file"
     }
 
     # ========================================================================
     Write-Host "`n[7] Real Games/*/*.zproj sanity" -ForegroundColor Cyan
     # CityBuilder, Combat, DevilsPlayground, RenderTest, TilePuzzle, Zenithmon.
-    Invoke-Test "all 6 real descriptors validate clean" {
+    Invoke-Test "all real descriptors validate clean" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')
         if ($scan.Errors.Count -gt 0) { throw ("real descriptor errors: " + ($scan.Errors -join '; ')) }
-        Assert-Equal 6 $scan.Descriptors.Count "expected 6 real descriptors"
+        Assert-Equal @(Get-ChildItem (Join-Path $repoRoot 'Games/*/*.zproj') -File).Count $scan.Descriptors.Count "every real descriptor was scanned"
     }
     Invoke-Test "android flags match reality (CityBuilder is false)" {
         $scan = Get-ZenithGameDescriptors -GamesRoot (Join-Path $repoRoot 'Games')

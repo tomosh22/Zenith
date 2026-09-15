@@ -189,7 +189,7 @@ build bakes the graphs, meshes and prefab those scenes reference.
   Use the per-game sln or `zenith open <Name>`.
 - **`MSB8013` / "does not contain a project"** — you built a bare `.vcxproj`. Build the
   `.sln` with `/t:<Game>`.
-- **Refuses to regen "from a linked git worktree"** — run from the main checkout.
+- **Refuses to regen "from a linked git worktree"** — default safety behavior. An explicitly authorized worktree can use `Build/regen.ps1 -AllowLinkedWorktree`, which verifies the script/Git root and generated game roots.
 
 ## Rollback
 

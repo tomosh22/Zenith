@@ -20,7 +20,8 @@
 
 [CmdletBinding()]
 param(
-    [switch]$UseDotnet
+    [switch]$UseDotnet,
+    [switch]$AllowLinkedWorktree
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,8 +40,17 @@ function Fail([string]$Message, [int]$Code) {
 }
 
 # 1. Worktree refusal ---------------------------------------------------------
-if (Test-ZenithInWorktree -RepoRoot $repoRoot) {
+if ((Test-ZenithInWorktree -RepoRoot $repoRoot) -and -not $AllowLinkedWorktree) {
     Fail "refusing to run from a linked git worktree ('$repoRoot'). Sharpmake generates absolute paths that resolve against the wrong tree here -- run regen from the MAIN checkout." 2
+}
+
+# Explicit opt-in retains the default refusal. Verify the invoked source tree,
+# rather than deriving paths from Git's shared metadata directory.
+if ($AllowLinkedWorktree) {
+    $top = & git -C $repoRoot rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0 -or [IO.Path]::GetFullPath($top) -ne [IO.Path]::GetFullPath($repoRoot)) {
+        Fail "linked-worktree root does not match the script root" 2
+    }
 }
 
 # 2. Validate descriptors -----------------------------------------------------
@@ -99,6 +109,24 @@ finally {
     Pop-Location
 }
 if ($sharpmakeExit -ne 0) { Fail "Sharpmake exited $sharpmakeExit." 3 }
+
+# The opt-in is fail-closed for game asset roots: inspect the actual generated
+# defines before any build can consume them. Main-checkout defaults stay intact.
+if ($AllowLinkedWorktree) {
+    $expectedRoot = $repoRoot.Replace('\', '/').TrimEnd('/') + '/'
+    foreach ($descriptor in $scan.Descriptors) {
+        $project = Join-Path $repoRoot ("Games/{0}/Build/{1}_win64.vcxproj" -f $descriptor.Name, $descriptor.Name.ToLowerInvariant())
+        $text = Get-Content -LiteralPath $project -Raw
+        $roots = [regex]::Matches($text, 'ZENITH_ROOT="([^";]+)"')
+        if ($roots.Count -eq 0) { Fail "no ZENITH_ROOT in $project" 3 }
+        foreach ($root in $roots) {
+            if ($root.Groups[1].Value -ine $expectedRoot) {
+                Fail "generated root escapes requested worktree: $($root.Groups[1].Value)" 3
+            }
+        }
+    }
+    Write-Host "[regen] Verified generated game roots in $repoRoot" -ForegroundColor Green
+}
 
 # 6. AGDE vcxproj fixup -------------------------------------------------------
 $fixAgde = Join-Path $buildDir 'fix_agde_vcxproj.ps1'

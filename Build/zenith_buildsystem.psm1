@@ -309,7 +309,8 @@ function Get-ZenithGameDescriptors {
             # and it has no descriptor because there is nothing to generate.
             #
             # This carve-out is deliberately as narrow as it can be: the folder must
-            # contain a `Docs` directory and NOTHING else. An empty folder is still an
+            # contain a `Docs` directory and optionally reference `Mockups`.
+            # An empty folder is still an
             # error (it is ambiguous), and so is a folder with source in it -- which is
             # the mistake this check actually exists to catch.
             #
@@ -323,7 +324,8 @@ function Get-ZenithGameDescriptors {
             # gate moves by however many tests happened to live in files that already
             # existed, which looks exactly like an ordinary baseline bump.
             $children = @(Get-ChildItem -LiteralPath $dir.FullName -Force -ErrorAction SilentlyContinue)
-            $docsOnly = $children.Count -eq 1 -and $children[0].PSIsContainer -and $children[0].Name -eq 'Docs'
+            $otherChildren = @($children | Where-Object { -not $_.PSIsContainer -or $_.Name -notin @('Docs', 'Mockups') })
+            $docsOnly = (Test-Path -LiteralPath (Join-Path $dir.FullName 'Docs') -PathType Container) -and $otherChildren.Count -eq 0
             if ($docsOnly) { continue }
 
             $errs.Add("game folder '$($dir.Name)' has no .zproj descriptor")

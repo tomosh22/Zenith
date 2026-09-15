@@ -107,8 +107,9 @@ Consequences:
 
 **Worktree ban:** Sharpmake bakes ABSOLUTE paths (asset dirs, shader root,
 include paths) resolved from its own location, so running it from a linked git
-worktree generates projects that point at the wrong tree. `regen.ps1` refuses
-(exit 2). Run regen from the main checkout only.
+worktree can produce incorrect roots. `regen.ps1` refuses by default (exit 2).
+For an explicitly authorized linked checkout, `Build/regen.ps1 -AllowLinkedWorktree`
+checks the Git/script root and verifies every generated game root before succeeding.
 
 ## 4. Configurations, outputs, and the library structure
 
