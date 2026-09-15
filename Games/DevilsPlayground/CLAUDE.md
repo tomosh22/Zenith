@@ -746,3 +746,16 @@ skips, zero failures). The all-seven final2 census is green with zero FALLBACK,
 aliasing, and validator errors; DP retains six deliberate MISMATCH controls. The final asset audit found
 164 graphs, 881 obsolete parameters removed from 102 graphs, no unexpected removal
 or topology issue, and a 192-asset second boot with no path or byte changes.
+
+## B5 windowed graph-editor proof
+
+`Test_GraphEditorLiveAuthoring` is a graphics-required editor interaction
+contract. It palette-creates `OnUpdate`, `RotateEntity`, `ReadKeyState`, and
+`Branch`; draws the original exec edge and a real mouse drag from
+`ReadKeyState.Result` to `Branch.Condition`; then saves twice. The added BOOL
+pair is deliberately unreachable, so it proves authoring, persistence, and
+rendering without changing the established rotation proof. Each save is loaded
+independently from disk and checked for the exact four-node, one-exec,
+one-data-edge topology and rate. A normal close/reopen waits for rendered named
+endpoints and rejects an unresolvable wire; it never substitutes a cached asset
+for the independent disk proof, or `OpenAssetFresh` for reload proof.

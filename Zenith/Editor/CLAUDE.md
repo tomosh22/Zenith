@@ -977,6 +977,13 @@ is `Zenith/Scripting/` — see its CLAUDE.md):
   name no table declares, or an exec edge into a pure node's absent input, both
   from a loaded asset. Hiding it would leave the canvas disagreeing with the
   file while the findings panel names a pin the author cannot see.
+- **Windowed persistence proof (B5).** `Test_GraphEditorLiveAuthoring` uses
+  frame-separated simulated mouse down/move/up to draw
+  `ReadKeyState.Result -> Branch.Condition`; the atomic test action is not a
+  substitute. After each Save it loads the serialized asset independently and
+  checks exact endpoints, then a normal close/reopen waits for named data-pin
+  rects and zero unresolvable rendered wires. `OpenAssetFresh` is only the
+  per-run initial authoring reset, never the reload assertion.
 - **★ THE PIN CACHE, AND WHY IT MUST EXIST.**
   `Zenith_GraphDefinitionValidator::ResolvePinType` is a QUERY that **allocates
   a temp instance** per instance-resolved or from-variable pin, and the variadic

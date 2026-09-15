@@ -4,9 +4,9 @@
 // Test_GraphEditorLiveAuthoring - the Behaviour Graphs flagship test.
 //
 // The input SIMULATOR drives the Graph Editor panel in real time, windowed:
-//   1. clicks "OnUpdate" and "RotateEntity" in the palette (nodes appear),
+//   1. clicks OnUpdate, RotateEntity, ReadKeyState and Branch in the palette,
 //   2. drags from the OnUpdate output pin to the RotateEntity input pin
-//      (edge connects),
+//      and ReadKeyState.Result to Branch.Condition (both edges connect),
 //   3. selects the RotateEntity node and clicks the right edge of its
 //      m_fDegreesPerSecond slider (value -> max, +1080 deg/s),
 //   4. clicks Save (writes game:Graphs/LiveAuthoring_Test.bgraph),
@@ -36,12 +36,14 @@
 #include "EntityComponent/Components/Zenith_GraphComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_BehaviourGraphAsset.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "ZenithECS/Zenith_Scene.h"
 
 #include "imgui.h"
 
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 
 namespace
@@ -54,9 +56,14 @@ namespace
 		Zenith_EntityID m_xEntityID;
 		u_int m_uSourceNodeID = 0;
 		u_int m_uRotateNodeID = 0;
+		u_int m_uReadKeyNodeID = 0;
+		u_int m_uBranchNodeID = 0;
 
-		bool m_bGraphAuthored = false;		// 2 nodes + 1 edge present after authoring
+		bool m_bGraphAuthored = false;		// 4 nodes, 1 exec edge, 1 data edge after authoring
 		bool m_bAssetSaved = false;			// file exists after the first Save click
+		bool m_bFirstDiskSnapshot = false;
+		bool m_bSecondDiskSnapshot = false;
+		bool m_bReopenRenderedWire = false;
 		bool m_bGraphBound = false;
 		u_int m_uReloadCountAtBind = 0;
 		bool m_bReloadObserved = false;
@@ -183,6 +190,77 @@ namespace
 		return true;
 	}
 
+	bool MoveToDataPin(u_int uNodeID, const char* szPinName, bool bInput, const char* szFailure)
+	{
+		Zenith_Maths::Vector2 xPin;
+		if (!Zenith_GraphEditorPanel::GetDataPinScreenPos(uNodeID, szPinName, bInput, xPin))
+		{
+			FailHard(szFailure);
+			return false;
+		}
+		MouseTo(xPin);
+		return true;
+	}
+
+	bool VerifyDiskSnapshot(const char* szStage, float fExpectedRate)
+	{
+		Zenith_Result<Zenith_Asset*> xLoaded = LoadSerializableAsset(Zenith_AssetRegistry::ResolvePath(szGRAPH_ASSET_PATH));
+		if (!xLoaded.IsOk() || xLoaded.Value() == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "[GraphEditorLiveAuthoring] %s disk load failed", szStage);
+			return false;
+		}
+
+		Zenith_Asset* pxAsset = xLoaded.Value();
+		const bool bTypeOk = std::strcmp(pxAsset->GetTypeName(), Zenith_BehaviourGraphAsset::StaticTypeName()) == 0;
+		Zenith_BehaviourGraphAsset* pxGraphAsset = bTypeOk ? static_cast<Zenith_BehaviourGraphAsset*>(pxAsset) : nullptr;
+		bool bOk = pxGraphAsset != nullptr && pxGraphAsset->LoadedOk();
+		float fObservedRate = 0.0f;
+		if (bOk)
+		{
+			const Zenith_GraphDefinition& xDef = pxGraphAsset->GetDefinition();
+			bOk = xDef.GetNodeCount() == 4u && xDef.GetEdgeCount() == 1u && xDef.GetDataEdgeCount() == 1u;
+			const Zenith_GraphNodeDef* pxSourceDef = bOk ? xDef.FindNodeDef(g_xLiveAuthoring.m_uSourceNodeID) : nullptr;
+			const Zenith_GraphNodeDef* pxRotateDef = bOk ? xDef.FindNodeDef(g_xLiveAuthoring.m_uRotateNodeID) : nullptr;
+			const Zenith_GraphNodeDef* pxReadKeyDef = bOk ? xDef.FindNodeDef(g_xLiveAuthoring.m_uReadKeyNodeID) : nullptr;
+			const Zenith_GraphNodeDef* pxBranchDef = bOk ? xDef.FindNodeDef(g_xLiveAuthoring.m_uBranchNodeID) : nullptr;
+			bOk = bOk && pxSourceDef != nullptr && pxRotateDef != nullptr && pxReadKeyDef != nullptr && pxBranchDef != nullptr
+				&& pxSourceDef->m_strTypeName == "OnUpdate" && pxRotateDef->m_strTypeName == "RotateEntity"
+				&& pxReadKeyDef->m_strTypeName == "ReadKeyState" && pxBranchDef->m_strTypeName == "Branch";
+			const Zenith_GraphEdge& xExec = bOk ? xDef.GetEdgeAt(0u) : Zenith_GraphEdge();
+			bOk = bOk && xExec.m_uSrcNodeID == g_xLiveAuthoring.m_uSourceNodeID && xExec.m_uSrcPin == 0u
+				&& xExec.m_uDstNodeID == g_xLiveAuthoring.m_uRotateNodeID;
+			const Zenith_GraphDataEdge& xData = bOk ? xDef.GetDataEdgeAt(0u) : Zenith_GraphDataEdge();
+			bOk = bOk && xData.m_uSrcNodeID == g_xLiveAuthoring.m_uReadKeyNodeID
+				&& xData.m_strSrcPin == "Result" && xData.m_uDstNodeID == g_xLiveAuthoring.m_uBranchNodeID
+				&& xData.m_strDstPin == "Condition";
+
+			const Zenith_GraphNodeTypeInfo* pxRotateInfo = Zenith_GraphNodeRegistry::Get().Find("RotateEntity");
+			Zenith_GraphNode* pxRotate = pxRotateInfo ? pxRotateInfo->m_pfnCreate() : nullptr;
+			bOk = bOk && pxRotate != nullptr && xDef.ApplyNodeParams(g_xLiveAuthoring.m_uRotateNodeID, pxRotate, *pxRotateInfo);
+			if (bOk)
+			{
+				const Zenith_ReflectedProperty* pxRate = pxRotateInfo->m_pfnGetPropertyTable()->FindProperty("m_fDegreesPerSecond");
+				Zenith_PropertyValue xRate;
+				if (pxRate == nullptr || pxRate->m_eType != PROPERTY_TYPE_FLOAT)
+				{
+					bOk = false;
+				}
+				else
+				{
+					pxRate->m_pfnGet(pxRotate, xRate);
+					fObservedRate = xRate.GetFloat();
+					bOk = std::fabs(fObservedRate - fExpectedRate) < 0.1f;
+				}
+			}
+			delete pxRotate;
+		}
+		Zenith_Log(LOG_CATEGORY_CORE, "[GraphEditorLiveAuthoring] %s disk snapshot type=%d topology=%d rate=%.1f expected=%.1f",
+			szStage, bTypeOk ? 1 : 0, bOk ? 1 : 0, fObservedRate, fExpectedRate);
+		delete pxAsset;
+		return bOk;
+	}
+
 	//--------------------------------------------------------------------------
 	// Setup
 	//--------------------------------------------------------------------------
@@ -200,7 +278,7 @@ namespace
 		std::error_code xEC;
 		std::filesystem::remove(Zenith_AssetRegistry::ResolvePath(szGRAPH_ASSET_PATH), xEC);
 
-		Zenith_GraphEditorPanel::OpenAsset(szGRAPH_ASSET_PATH);
+		Zenith_GraphEditorPanel::OpenAssetFresh(szGRAPH_ASSET_PATH);
 	}
 
 	//--------------------------------------------------------------------------
@@ -241,7 +319,7 @@ namespace
 		}
 
 		// IO diagnostics at the two slider-click moments (authoring vs in-play).
-		if (iFrame == 91 || iFrame == 92 || iFrame == 220 || iFrame == 221)
+		if (iFrame == 136 || iFrame == 137 || iFrame == 265 || iFrame == 266)
 		{
 			LogImGuiMouseState(iFrame);
 		}
@@ -260,7 +338,7 @@ namespace
 			break;
 		}
 
-		// --- author: place the two nodes from the palette ------------------
+		// --- author: place four nodes from the palette ----------------------
 		case 27: RequestPaletteScroll("OnUpdate"); break;
 		case 30: MouseToPaletteEntry("OnUpdate"); LogClickDiagnostics("f30 moved-to-palette"); break;
 		case 33: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
@@ -272,12 +350,25 @@ namespace
 		case 45: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
 		case 48: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
+		case 51: RequestPaletteScroll("ReadKeyState"); break;
+		case 54: MouseToPaletteEntry("ReadKeyState"); break;
+		case 57: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 60: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+
+		case 63: RequestPaletteScroll("Branch"); break;
+		case 66: MouseToPaletteEntry("Branch"); break;
+		case 69: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 72: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+
 		// --- connect: drag output pin -> input pin -------------------------
-		case 54:
+		case 78:
 		{
 			g_xLiveAuthoring.m_uSourceNodeID = Zenith_GraphEditorPanel::FindNodeIDByType("OnUpdate");
 			g_xLiveAuthoring.m_uRotateNodeID = Zenith_GraphEditorPanel::FindNodeIDByType("RotateEntity");
-			if (g_xLiveAuthoring.m_uSourceNodeID == 0 || g_xLiveAuthoring.m_uRotateNodeID == 0)
+			g_xLiveAuthoring.m_uReadKeyNodeID = Zenith_GraphEditorPanel::FindNodeIDByType("ReadKeyState");
+			g_xLiveAuthoring.m_uBranchNodeID = Zenith_GraphEditorPanel::FindNodeIDByType("Branch");
+			if (g_xLiveAuthoring.m_uSourceNodeID == 0 || g_xLiveAuthoring.m_uRotateNodeID == 0
+				|| g_xLiveAuthoring.m_uReadKeyNodeID == 0 || g_xLiveAuthoring.m_uBranchNodeID == 0)
 			{
 				LogClickDiagnostics("f54 node-check");
 				// Splits the failure in half: Action_AddNode is documented to run
@@ -307,48 +398,86 @@ namespace
 			}
 			break;
 		}
-		case 57: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 60:
-		case 63:
-		case 66:
+		case 81: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 84:
+		case 87:
+		case 90:
 		{
 			// Glide toward the input pin across a few frames.
 			Zenith_Maths::Vector2 xTarget;
-			if (Zenith_GraphEditorPanel::GetPinScreenPos(g_xLiveAuthoring.m_uRotateNodeID, 0, true, xTarget))
+			Zenith_Maths::Vector2 xSource;
+			if (Zenith_GraphEditorPanel::GetPinScreenPos(g_xLiveAuthoring.m_uRotateNodeID, 0, true, xTarget)
+				&& Zenith_GraphEditorPanel::GetPinScreenPos(g_xLiveAuthoring.m_uSourceNodeID, 0, false, xSource))
 			{
-				Zenith_Maths::Vector2 xSource;
-				Zenith_GraphEditorPanel::GetPinScreenPos(g_xLiveAuthoring.m_uSourceNodeID, 0, false, xSource);
-				const float fT = (iFrame == 60) ? 0.4f : (iFrame == 63) ? 0.8f : 1.0f;
+				const float fT = (iFrame == 84) ? 0.4f : (iFrame == 87) ? 0.8f : 1.0f;
 				MouseTo(Zenith_Maths::Vector2(xSource.x + (xTarget.x - xSource.x) * fT, xSource.y + (xTarget.y - xSource.y) * fT));
+			}
+			else
+			{
+				FailHard("exec-wire pin disappeared during drag");
 			}
 			break;
 		}
-		case 69: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 93: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+
+		// --- connect: real DATA drag ReadKeyState.Result -> Branch.Condition --
+		case 99:
+			if (Zenith_GraphEditorPanel::GetDataEdgeCount() != 0u)
+			{
+				FailHard("data edge existed before the author drag");
+				break;
+			}
+			MoveToDataPin(g_xLiveAuthoring.m_uReadKeyNodeID, "Result", false, "ReadKeyState Result output pin not found");
+			break;
+		case 102: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 105:
+		case 108:
+		case 111:
+		{
+			Zenith_Maths::Vector2 xSource;
+			Zenith_Maths::Vector2 xTarget;
+			if (!Zenith_GraphEditorPanel::GetDataPinScreenPos(g_xLiveAuthoring.m_uReadKeyNodeID, "Result", false, xSource)
+				|| !Zenith_GraphEditorPanel::GetDataPinScreenPos(g_xLiveAuthoring.m_uBranchNodeID, "Condition", true, xTarget))
+			{
+				FailHard("data-wire pin disappeared during drag");
+				break;
+			}
+			const float fT = (iFrame == 105) ? 0.4f : (iFrame == 108) ? 0.8f : 1.0f;
+			MouseTo(Zenith_Maths::Vector2(xSource.x + (xTarget.x - xSource.x) * fT, xSource.y + (xTarget.y - xSource.y) * fT));
+			break;
+		}
+		case 114: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
 		// --- select the rotate node, set its rate slider to MAX ------------
-		case 75:
+		case 120:
 		{
 			Zenith_Maths::Vector2 xNode;
 			if (Zenith_GraphEditorPanel::GetNodeScreenPos(g_xLiveAuthoring.m_uRotateNodeID, xNode))
 			{
 				MouseTo(xNode);
 			}
+			else
+			{
+				FailHard("RotateEntity node not visible for first slider edit");
+			}
 			break;
 		}
-		case 78: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 81: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 123: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 126: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
-		case 87: MouseToSliderFraction("m_fDegreesPerSecond", 1.0f); break;
-		case 90: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 93: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 132: MouseToSliderFraction("m_fDegreesPerSecond", 1.0f); break;
+		case 135: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 138: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
-		case 98:
+		case 144:
 		{
 			g_xLiveAuthoring.m_bGraphAuthored =
-				(Zenith_GraphEditorPanel::GetNodeCount() == 2 && Zenith_GraphEditorPanel::GetEdgeCount() == 1);
+				(Zenith_GraphEditorPanel::GetNodeCount() == 4 && Zenith_GraphEditorPanel::GetEdgeCount() == 1
+					&& Zenith_GraphEditorPanel::GetDataEdgeCount() == 1 && Zenith_GraphEditorPanel::GetValidationErrorCount() == 0
+					&& Zenith_GraphEditorPanel::GetConnectRefusalText()[0] == '\0');
 			if (!g_xLiveAuthoring.m_bGraphAuthored)
 			{
-				FailHard("authored graph is not 2 nodes + 1 edge");
+				FailHard("authored graph is not 4 nodes + 1 exec edge + 1 data edge");
 			}
 			float fRate = 0.0f;
 			if (!Zenith_GraphEditorPanel::GetSelectedNodeParamFloat("m_fDegreesPerSecond", fRate) || fRate < 1000.0f)
@@ -359,26 +488,30 @@ namespace
 			break;
 		}
 
-		case 100:
+		case 146:
 			// Screenshot marker: authored graph on canvas, node selected,
 			// properties panel showing the maxed slider.
 			Zenith_Log(LOG_CATEGORY_CORE, "[GraphShot] marker1_authored");
 			break;
 
 		// --- save -----------------------------------------------------------
-		case 102:
+		case 148:
 		{
 			Zenith_Maths::Vector2 xSave;
 			if (Zenith_GraphEditorPanel::GetToolbarButtonScreenPos("Save", xSave))
 			{
 				MouseTo(xSave);
 			}
+			else
+			{
+				FailHard("first Save button not visible");
+			}
 			break;
 		}
-		case 105: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 108: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 151: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 154: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
-		case 114:
+		case 160:
 		{
 			std::error_code xEC;
 			g_xLiveAuthoring.m_bAssetSaved = std::filesystem::exists(Zenith_AssetRegistry::ResolvePath(szGRAPH_ASSET_PATH), xEC);
@@ -386,11 +519,16 @@ namespace
 			{
 				FailHard("Save click did not write the .bgraph file");
 			}
+			g_xLiveAuthoring.m_bFirstDiskSnapshot = VerifyDiskSnapshot("first Save", 1080.0f);
+			if (!g_xLiveAuthoring.m_bFirstDiskSnapshot)
+			{
+				FailHard("first Save disk snapshot did not preserve data wire and rate");
+			}
 			break;
 		}
 
 		// --- bind + play -----------------------------------------------------
-		case 118:
+		case 164:
 		{
 			Zenith_Entity xEntity = GetTestEntity();
 			if (xEntity.IsValid() && xEntity.HasComponent<Zenith_GraphComponent>())
@@ -405,42 +543,46 @@ namespace
 			g_xLiveAuthoring.m_uReloadCountAtBind = Zenith_GraphReload::GetReloadCount();
 			break;
 		}
-		case 120:
+		case 166:
 			// Select the entity in the editor so the panel's live execution
 			// highlighting has a target while playing.
 			g_xEngine.Editor().SelectEntityByName("GraphAuthorTarget");
 			break;
-		case 122: g_xEngine.Editor().SetEditorMode(EditorMode::Playing); break;
+		case 168: g_xEngine.Editor().SetEditorMode(EditorMode::Playing); break;
 
 		// --- measure rate 1 (~ +1080 deg/s) ---------------------------------
-		case 140: BeginRateMeasurement(); break;
-		case 170:
+		case 186: BeginRateMeasurement(); break;
+		case 216:
 			// Screenshot marker: playing, live execution highlight on the
 			// OnUpdate -> RotateEntity chain.
 			Zenith_Log(LOG_CATEGORY_CORE, "[GraphShot] marker2_playing");
 			break;
-		case 200:
+		case 246:
 			g_xLiveAuthoring.m_fMeasuredRate1 = FinishRateMeasurement();
 			break;
 
 		// --- live edit DURING play: slider to MIN, save, hot reload ---------
-		case 205:
+		case 251:
 		{
 			Zenith_Maths::Vector2 xNode;
 			if (Zenith_GraphEditorPanel::GetNodeScreenPos(g_xLiveAuthoring.m_uRotateNodeID, xNode))
 			{
 				MouseTo(xNode);
 			}
+			else
+			{
+				FailHard("RotateEntity node not visible for second slider edit");
+			}
 			break;
 		}
-		case 208: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 211: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 254: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 257: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
-		case 216: MouseToSliderFraction("m_fDegreesPerSecond", 0.0f); break;
-		case 219: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 222: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 262: MouseToSliderFraction("m_fDegreesPerSecond", 0.0f); break;
+		case 265: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 268: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
-		case 225:
+		case 271:
 		{
 			float fRate = 0.0f;
 			if (!Zenith_GraphEditorPanel::GetSelectedNodeParamFloat("m_fDegreesPerSecond", fRate) || fRate > -1000.0f)
@@ -450,40 +592,67 @@ namespace
 			}
 			break;
 		}
-		case 226:
+		case 272:
 		{
 			Zenith_Maths::Vector2 xSave;
 			if (Zenith_GraphEditorPanel::GetToolbarButtonScreenPos("Save", xSave))
 			{
 				MouseTo(xSave);
 			}
+			else
+			{
+				FailHard("second Save button not visible");
+			}
 			break;
 		}
-		case 229: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
-		case 232: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
+		case 275: Zenith_InputSimulator::SimulateMouseButtonDown(ZENITH_MOUSE_BUTTON_1); break;
+		case 278: Zenith_InputSimulator::SimulateMouseButtonUp(ZENITH_MOUSE_BUTTON_1); break;
 
-		case 240:
+		case 286:
 			g_xLiveAuthoring.m_bReloadObserved = Zenith_GraphReload::GetReloadCount() > g_xLiveAuthoring.m_uReloadCountAtBind;
 			if (!g_xLiveAuthoring.m_bReloadObserved)
 			{
 				FailHard("hot reload did not fire after the in-play Save");
 			}
+			g_xLiveAuthoring.m_bSecondDiskSnapshot = VerifyDiskSnapshot("second Save", -1080.0f);
+			if (!g_xLiveAuthoring.m_bSecondDiskSnapshot)
+			{
+				FailHard("second Save disk snapshot did not preserve data wire and rate");
+			}
 			break;
+		case 289: Zenith_GraphEditorPanel::Close(); break;
+		case 292: Zenith_GraphEditorPanel::OpenAsset(szGRAPH_ASSET_PATH); break;
+		case 298:
+		{
+			Zenith_Maths::Vector2 xResult(0.0f, 0.0f);
+			Zenith_Maths::Vector2 xCondition(0.0f, 0.0f);
+			g_xLiveAuthoring.m_bReopenRenderedWire = Zenith_GraphEditorPanel::GetDataEdgeCount() == 1u
+				&& Zenith_GraphEditorPanel::GetUnresolvableEdgeDrawCountForTest() == 0u
+				&& Zenith_GraphEditorPanel::GetDataPinScreenPos(g_xLiveAuthoring.m_uReadKeyNodeID, "Result", false, xResult)
+				&& Zenith_GraphEditorPanel::GetDataPinScreenPos(g_xLiveAuthoring.m_uBranchNodeID, "Condition", true, xCondition);
+			Zenith_Log(LOG_CATEGORY_CORE, "[GraphEditorLiveAuthoring] reopened data wire=%d result=(%.0f,%.0f) condition=(%.0f,%.0f)",
+				g_xLiveAuthoring.m_bReopenRenderedWire ? 1 : 0, xResult.x, xResult.y, xCondition.x, xCondition.y);
+			if (!g_xLiveAuthoring.m_bReopenRenderedWire)
+			{
+				FailHard("normal reopen did not render the saved data wire");
+			}
+			break;
+		}
 
 		// --- measure rate 2 (~ -1080 deg/s, live-reversed) -------------------
-		case 245: BeginRateMeasurement(); break;
-		case 275:
+		case 303: BeginRateMeasurement(); break;
+		case 333:
 			// Screenshot marker: still playing, after the live hot reload
 			// (slider at min, reload status line in the toolbar).
 			Zenith_Log(LOG_CATEGORY_CORE, "[GraphShot] marker3_live_reloaded");
 			break;
-		case 305:
+		case 363:
 			g_xLiveAuthoring.m_fMeasuredRate2 = FinishRateMeasurement();
 			break;
 
 		// --- teardown ---------------------------------------------------------
-		case 310: g_xEngine.Editor().SetEditorMode(EditorMode::Stopped); break;
-		case 330:
+		case 368: g_xEngine.Editor().SetEditorMode(EditorMode::Stopped); break;
+		case 388:
 		{
 			Zenith_GraphEditorPanel::Close();
 			Zenith_Entity xEntity = GetTestEntity();
@@ -500,7 +669,7 @@ namespace
 		}
 
 		// Continuous measurement ticks between the boundary frames.
-		if ((iFrame > 140 && iFrame <= 200) || (iFrame > 245 && iFrame <= 305))
+		if ((iFrame > 186 && iFrame <= 246) || (iFrame > 303 && iFrame <= 363))
 		{
 			TickRateMeasurement();
 		}
@@ -525,22 +694,26 @@ namespace
 		const bool bRate2Ok = g_xLiveAuthoring.m_fMeasuredRate2 < -1080.0f * 0.8f && g_xLiveAuthoring.m_fMeasuredRate2 > -1080.0f * 1.2f;
 
 		Zenith_Log(LOG_CATEGORY_CORE,
-			"[GraphEditorLiveAuthoring] authored=%d saved=%d bound=%d reload=%d rate1=%.1f deg/s (expect ~+1080) rate2=%.1f deg/s (expect ~-1080)",
+			"[GraphEditorLiveAuthoring] authored=%d saved=%d disk1=%d disk2=%d reopened=%d bound=%d reload=%d rate1=%.1f deg/s (expect ~+1080) rate2=%.1f deg/s (expect ~-1080)",
 			g_xLiveAuthoring.m_bGraphAuthored ? 1 : 0,
 			g_xLiveAuthoring.m_bAssetSaved ? 1 : 0,
+			g_xLiveAuthoring.m_bFirstDiskSnapshot ? 1 : 0,
+			g_xLiveAuthoring.m_bSecondDiskSnapshot ? 1 : 0,
+			g_xLiveAuthoring.m_bReopenRenderedWire ? 1 : 0,
 			g_xLiveAuthoring.m_bGraphBound ? 1 : 0,
 			g_xLiveAuthoring.m_bReloadObserved ? 1 : 0,
 			g_xLiveAuthoring.m_fMeasuredRate1,
 			g_xLiveAuthoring.m_fMeasuredRate2);
 
-		return g_xLiveAuthoring.m_bGraphAuthored && g_xLiveAuthoring.m_bAssetSaved && g_xLiveAuthoring.m_bGraphBound
+		return g_xLiveAuthoring.m_bGraphAuthored && g_xLiveAuthoring.m_bAssetSaved && g_xLiveAuthoring.m_bFirstDiskSnapshot
+			&& g_xLiveAuthoring.m_bSecondDiskSnapshot && g_xLiveAuthoring.m_bReopenRenderedWire && g_xLiveAuthoring.m_bGraphBound
 			&& g_xLiveAuthoring.m_bReloadObserved && bRate1Ok && bRate2Ok;
 	}
 
-	// This test drives the mode BOTH ways (Stopped in Setup, Playing at Step 122,
-	// Stopped again at Step 310) and so ends Stopped -- GLOBAL editor state that
+	// This test drives the mode BOTH ways (Stopped in Setup, Playing at Step 168,
+	// Stopped again at Step 368) and so ends Stopped -- GLOBAL editor state that
 	// outlives it, and which an early-out (failed assert, timeout,
-	// --exit-after-frames short of 310) leaks even on the paths Step 310 covers.
+	// --exit-after-frames short of 368) leaks even on the paths Step 368 covers.
 	// Restored centrally in DevilsPlayground.cpp's between-tests hook, NOT in a
 	// Teardown here -- see Tests/CLAUDE.md, "Editor mode leaks between tests".
 	const Zenith_AutomatedTest g_xGraphEditorLiveAuthoringTest = {
@@ -548,7 +721,7 @@ namespace
 		&Setup_GraphEditorLiveAuthoring,
 		&Step_GraphEditorLiveAuthoring,
 		&Verify_GraphEditorLiveAuthoring,
-		/*maxFrames*/ 400,
+		/*maxFrames*/ 460,
 		/*requiresGraphics*/ true
 	};
 	ZENITH_AUTOMATED_TEST_REGISTER(g_xGraphEditorLiveAuthoringTest);
