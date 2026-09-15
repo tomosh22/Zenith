@@ -1,0 +1,174 @@
+[zenith test] Discovering tests...
+[zenith test] Found 73 test(s):
+    ZM_SeamRoundTrip_Test
+    ZM_PlayerHomeRoundTrip_Test
+    ZM_WarpInfrastructure_Test
+    ZM_S6UIGate_Test
+    ZM_CareCenterHeal_Test
+    ZM_ShopScreen_Test
+    ZM_BagScreen_Test
+    ZM_DexScreen_Test
+    ZM_PartyScreen_Test
+    ZM_DialogueTalk_Test
+    ZM_MenuOpenClose_Test
+    ZM_TrainerSightWalkUp_Test
+    ZM_TrainerBattle_Test
+    ZM_TouchSystemBack_Test
+    ZM_TouchCancelNeutralisesHeld_Test
+    ZM_TouchMultiTouch_Test
+    ZM_TouchDialogueConfirm_Test
+    ZM_TouchInteract_Test
+    ZM_TouchStick_Test
+    ZM_TerrainGrassResumeRegen_Test
+    ZM_GrassRegeneration_Test
+    ZM_TallGrassInteriorClear_Test
+    ZM_TallGrassEncounter_Test
+    ZM_ShellLighting_Test
+    ZM_QuitToFrontEnd_Test
+    ZM_ResumePlacement_Test
+    ZM_RootQuitAndBlockedSave_Test
+    ZM_SaveMenuFlow_Test
+    ZM_SaveContinue_Test
+    ZM_MilestoneAutosave_Test
+    ZM_ThornacreGroundTruth_Test
+    ZM_Route1GroundTruth_Test
+    ZM_RivalVesperWhiteout_Test
+    ZM_RivalVesperAuthored_Test
+    ZM_ProfLabWarp_Test
+    ZM_InteriorTintPixels_Test
+    ZM_PhotoTour_Test
+    ZM_DawnmerePlayerCamera_Test
+    ZM_ControllerHarness_Test
+    ZM_DawnmereNpcGroundTruth_Test
+    ZM_NpcTalk_Test
+    ZM_NpcWander_Test
+    ZM_S6InteractGate_Test
+    ZM_NpcHeal_Test
+    ZM_NpcShop_Test
+    ZM_NpcDispatch_Test
+    ZM_DawnmereHeadless_Test
+    ZM_NavmeshAsset_Test
+    ZM_LabRoundTrip_Test
+    ZM_IntroBeat_Test
+    ZM_InteriorTint_Test
+    ZM_ImportedPropShowcase_Test
+    ZM_GroundItemPropCapture_Test
+    ZM_GroundItemProp_Test
+    ZM_GameStatePersistence_Test
+    ZM_CreatureGallery_Test
+    ZM_DawnmereRouteSeamGroundTruth_Test
+    ZM_DawnmereLabGroundTruth_Test
+    ZM_DawnmereCameraClearance_Test
+    ZM_DawnmereHomeGroundTruth_Test
+    ZM_Boot_Test
+    ZM_BattleRoundTrip_Test
+    ZM_BattleEncounterLatch_Test
+    ZM_BattleMenuWhiteout_Test
+    ZM_BattleMenuCatch_Test
+    ZM_BattleMenuRun_Test
+    ZM_BattleMenuWin_Test
+    ZM_BattleHUD_Test
+    ZM_BattleDirectorRoundTrip_Test
+    ZM_BattleArenaOwnScene_Test
+    ZM_BattleArena_Test
+    ZM_AssetGallery_Test
+    ZM_AnimEditorShowcase
+
+[zenith test] Running 1 named test(s) in one process, in order: ZM_ImportedPropShowcase_Test
+[zenith test] Named run finished in 136s (exit=-1)
+[zenith test] Last 80 lines of engine output:
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+    [Gameplay] [ZM Save] corrupt Header.moduleLength
+[zenith test] Engine exited non-zero -- flagging batch as failed even if individual JSONs pass.
+    MISSING ZM_ImportedPropShowcase_Test (no JSON written)
+
+[zenith test] Summary: 0 passed, 2 failed
+Failed tests:
+    <batch:exit=-1>
+    ZM_ImportedPropShowcase_Test
+[zenith test] Save sandbox kept for triage: C:\dev\Zenith\Build\artifacts\savedata\f15aa576830d
+
+Passed      : 0
+Failed      : 2
+FailedNames : {<batch:exit=-1>, ZM_ImportedPropShowcase_Test}
+EngineExit  : -1
+Tests       : {ZM_ImportedPropShowcase_Test}
+

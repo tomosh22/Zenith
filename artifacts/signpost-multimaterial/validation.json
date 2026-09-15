@@ -1,0 +1,117 @@
+{
+  "asset": {
+    "sha256": "87637ead2a25d87de2d2cc0542988c7ea5ded2995b29680fbc343123cd4c720a",
+    "meshCount": 1,
+    "primitiveCount": 2,
+    "materialCount": 2,
+    "materials": [
+      {
+        "name": "Weathered oak.004",
+        "maps": {
+          "baseColor": {
+            "size": [
+              1024,
+              1024
+            ],
+            "embedded": true
+          },
+          "normal": {
+            "size": [
+              1024,
+              1024
+            ],
+            "embedded": true
+          },
+          "metallicRoughness": {
+            "size": [
+              1024,
+              1024
+            ],
+            "embedded": true
+          }
+        }
+      },
+      {
+        "name": "Forged iron.004",
+        "maps": {
+          "baseColor": {
+            "size": [
+              1024,
+              1024
+            ],
+            "embedded": true
+          },
+          "normal": {
+            "size": [
+              1024,
+              1024
+            ],
+            "embedded": true
+          },
+          "metallicRoughness": {
+            "size": [
+              1024,
+              1024
+            ],
+            "embedded": true
+          }
+        }
+      }
+    ],
+    "primitives": [
+      {
+        "material": 0,
+        "indexCount": 1980
+      },
+      {
+        "material": 1,
+        "indexCount": 12324
+      }
+    ]
+  },
+  "unitSuites": {
+    "Combat": {
+      "registered": 2496,
+      "passed": 2495,
+      "failed": 0,
+      "skipped": 1
+    },
+    "RenderTest": {
+      "registered": 2601,
+      "passed": 2600,
+      "failed": 0,
+      "skipped": 1
+    },
+    "Zenithmon": {
+      "registered": 4355,
+      "passed": 4353,
+      "failed": 0,
+      "skipped": 2
+    }
+  },
+  "graphicsShowcase": {
+    "name": "ZM_ImportedPropShowcase_Test",
+    "passed": true,
+    "frames": 3939,
+    "durationMs": 79753.023,
+    "failures": [],
+    "skipped": false,
+    "skipReason": ""
+  },
+  "screenshots": [
+    "prop_signpost_home_detail.png",
+    "prop_signpost_home_three_quarter.png",
+    "prop_signpost_route_detail.png",
+    "prop_signpost_route_three_quarter.png"
+  ],
+  "inWorldIndexRanges": [
+    [
+      0,
+      1980
+    ],
+    [
+      1980,
+      14304
+    ]
+  ]
+}

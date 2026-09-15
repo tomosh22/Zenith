@@ -1,0 +1,7 @@
+Fix imported mesh material sections and author Dawnmere signpost
+
+Render each mesh section with its local material and index range, sharing geometry across opaque, skinned, shadow and supported translucent draws. Preserve per-binding material offsets.
+
+Author the signpost with separate oak and iron PBR materials, integrate both Dawnmere placements, and add renderer and in-world regression coverage. Retain the reproducible Blender script; source-art binaries remain gitignored.
+
+Validation: Vulkan showcase passed; Null suites completed with zero failures in Zenithmon, Combat and RenderTest. These runs included preexisting local Scripting work; this commit excludes it and includes only the three new renderer tests in the baseline delta.

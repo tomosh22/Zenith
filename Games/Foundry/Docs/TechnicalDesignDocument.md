@@ -1,7 +1,7 @@
 # Foundry — Technical Design Document
 
 **Status:** DRAFT for review · **Date:** 2026-08-21
-**Companion:** [Game Design Document](GDD.md) — vision, systems, touch UX, scope.
+**Companion:** [Game Design Document](GameDesignDocument.md) — vision, systems, touch UX, scope.
 **Ground truth:** every engine capability or limit stated here was verified against the tree on 2026-08-21 and carries its source path. Line numbers drift; symbol names are the durable reference.
 
 ---

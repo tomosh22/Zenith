@@ -1,7 +1,7 @@
 # Foundry — Game Design Document
 
 **Status:** DRAFT for review · **Date:** 2026-08-21 · **Working title:** Foundry (rename freely; roster-style single word)
-**Companion:** [Technical Design Document](TDD.md) — architecture, engine-change register, milestones.
+**Companion:** [Technical Design Document](TechnicalDesignDocument.md) — architecture, engine-change register, milestones.
 **Placement note:** these docs live at `Docs/Foundry/` because a `Games/Foundry/` directory may not exist until it carries a valid `.zproj` (the descriptor scan hard-errors on a game folder without one). When the game is scaffolded, move this folder to `Games/Foundry/Docs/`.
 
 ---

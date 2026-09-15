@@ -1,0 +1,46 @@
+{
+  "head": "cd22927943f8d7b09a375d429c2fee0473ef2920",
+  "scripting": {
+    "index": "8359d9d45ddf26a36a35f8667713434d99b8165c282c35a80972f093f563e088",
+    "working": {
+      "Zenith/Scripting/CLAUDE.md": "b290d84f26dcc073fe9aa929e76bc2a9f277ab8944e7a53914adb3db184656e1",
+      "Zenith/Scripting/Zenith_BehaviourGraph.cpp": "880d545213438a21087a9b9bd94550400184ed15a5323ca1b0916da10eba891c",
+      "Zenith/Scripting/Zenith_BehaviourGraph.h": "7c4042e135e3827467909107cdf9184a9c62f094f1e98ceca26d5b5c10e4d455",
+      "Zenith/Scripting/Zenith_GraphBlackboard.cpp": "b63ce39419daf0a7d60c217add7ad1fd0c7154a253fd76704dd18da4c01d4075",
+      "Zenith/Scripting/Zenith_GraphBlackboard.h": "268bf051ff7911c0c88c69dadcad131170015da53c976558ca9109dc6ab0e6ee",
+      "Zenith/Scripting/Zenith_GraphBuilder.cpp": "f5164653982273c4eacfb13f26c3b87a6b34fcf3e9bf532d9f1bbe0ddcfa2c26",
+      "Zenith/Scripting/Zenith_GraphBuilder.h": "54237e69b7753775e471232385efb0c8dde75e21d487a9fe03e3d014e321c9bd",
+      "Zenith/Scripting/Zenith_GraphChain.h": "1182a21d1a13545018b9857dc290a306e441abd025bbc18b4a72b02fea192960",
+      "Zenith/Scripting/Zenith_GraphDefinitionValidator.Tests.inl": "625bd8107f3aaea87df8919b08bf57260973f50ff381500af6b71e976f3f9117",
+      "Zenith/Scripting/Zenith_GraphDefinitionValidator.cpp": "85645f758df0ea49cf6204b4c82acf9a8f7f2da21901ab8e2b353c03a1ee0f5c",
+      "Zenith/Scripting/Zenith_GraphDefinitionValidator.h": "2e9e42b18161d0c4e4b67ba8313e23d1bfb0b74e50b9bad0fcd6eb9dd4df2917",
+      "Zenith/Scripting/Zenith_GraphNode.h": "399114ad80980b29d47af744320ccfffd4dd22b3849099d9c9e0120d9f28540d",
+      "Zenith/Scripting/Zenith_GraphNodeRegistry.cpp": "8a648b063f2ecb2b59b690c4f50edbfd25aa36cddc339a7360959506fa75e58d",
+      "Zenith/Scripting/Zenith_GraphNodeRegistry.h": "c22103c7d3d881fc4b829c622cf2ceb71e0c9a7d2f57101e6a0274605a852428",
+      "Zenith/Scripting/Zenith_GraphPinTable.h": "e1afee5b9744856a330c1543fcba95f44dd1e3779cf9a575fdecba51cae1bba1",
+      "Zenith/Scripting/Zenith_Scripting.Tests.inl": "a79b124ea564ebab8fdd0c9836b5616feef4b824968b507b930572d9b8889c46"
+    }
+  },
+  "baselineWorking": "fec8a8acce3b84bd8e1ddec04fe4e222f3d2c3cd7015d336f4f6813e2b9ec100",
+  "paths": [
+    "Games/Zenithmon/Assets/Scenes/Dawnmere.zscen",
+    "Games/Zenithmon/Docs/ArtBrief.md",
+    "Games/Zenithmon/Source/World/ZM_DawnmereDressing.h",
+    "Games/Zenithmon/Tests/ZM_AutoTests_ImportedPropShowcase.cpp",
+    "Games/Zenithmon/Zenithmon.cpp",
+    "Tools/unit_baselines.json",
+    "Tools/Art/README.md",
+    "Tools/Art/create_signpost.py",
+    "Zenith/Flux/Flux_GPUScene.Tests.inl",
+    "Zenith/Flux/Flux_GPUScene.cpp",
+    "Zenith/Flux/Flux_GPUScene.h",
+    "Zenith/Flux/Flux_GPUSceneBuilder.cpp",
+    "Zenith/Flux/Flux_ModelInstance.cpp",
+    "Zenith/Flux/Flux_ModelInstance.h",
+    "Zenith/Flux/Shaders/UnifiedMesh/Flux_UnifiedMesh_Reset.slang",
+    "Zenith/Flux/Translucency/Flux_Translucency.cpp",
+    "Zenith/Flux/Translucency/Flux_TranslucencyImpl.h",
+    "Zenith/Flux/UnifiedMesh/Flux_UnifiedMesh.cpp",
+    "Zenith/Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "source": "Games\\Zenithmon\\Assets\\Props\\SignPost\\SignPost.glb",
+  "sha256": "6904e9ac81ddea3acea6d592475d0b49343171e1c71cdac13f27f75c7bb94e7f",
+  "triangles": 4768,
+  "materials": 1,
+  "embedded_images": 3,
+  "all_materials_have_PBR_maps": true,
+  "all_primitives_have_tangents": true
+}

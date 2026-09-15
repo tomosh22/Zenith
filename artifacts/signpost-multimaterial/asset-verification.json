@@ -1,0 +1,70 @@
+{
+  "sha256": "87637ead2a25d87de2d2cc0542988c7ea5ded2995b29680fbc343123cd4c720a",
+  "meshCount": 1,
+  "primitiveCount": 2,
+  "materialCount": 2,
+  "materials": [
+    {
+      "name": "Weathered oak.004",
+      "maps": {
+        "baseColor": {
+          "size": [
+            1024,
+            1024
+          ],
+          "embedded": true
+        },
+        "normal": {
+          "size": [
+            1024,
+            1024
+          ],
+          "embedded": true
+        },
+        "metallicRoughness": {
+          "size": [
+            1024,
+            1024
+          ],
+          "embedded": true
+        }
+      }
+    },
+    {
+      "name": "Forged iron.004",
+      "maps": {
+        "baseColor": {
+          "size": [
+            1024,
+            1024
+          ],
+          "embedded": true
+        },
+        "normal": {
+          "size": [
+            1024,
+            1024
+          ],
+          "embedded": true
+        },
+        "metallicRoughness": {
+          "size": [
+            1024,
+            1024
+          ],
+          "embedded": true
+        }
+      }
+    }
+  ],
+  "primitives": [
+    {
+      "material": 0,
+      "indexCount": 1980
+    },
+    {
+      "material": 1,
+      "indexCount": 12324
+    }
+  ]
+}

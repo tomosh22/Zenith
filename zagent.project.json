@@ -153,6 +153,8 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+        "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
         "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
       ],
@@ -278,9 +280,16 @@
     },
     "Foundry": {
       "$comment": [
-        "Project FD. Same bootstrap state as Undervault: docs, no .zproj. The",
-        "TDD's L0-only + no-float lint (section 2) is the convention the scaffold",
-        "must install as CLAUDE.md before any SimCore code lands."
+        "Project FD. Games/Foundry carries a .zproj (the static visual study,",
+        "commit 84e2fd12), so these gates compile; `test Foundry --headless` is",
+        "RED on a fresh checkout because the study's assets are Blender output",
+        "and gitignored. The board's first ticket (M0-01) replaces the study with",
+        "the TDD architecture skeleton and turns the gates green. The TDD's",
+        "L0-only + no-float lint (section 2) is the convention that scaffold",
+        "installs as CLAUDE.md before any SimCore code lands. The unit-gate,",
+        "doc-lint and SimCore-lint lines join this list by the human edit the",
+        "board's M0-16 ticket describes, once the scaffold has landed.",
+        "Roadmap: Games/Foundry/Docs/Roadmap.md carries every board key."
       ],
       "project": "FD",
       "paths": [
@@ -297,6 +306,8 @@
         "title": "Foundry",
         "icon": "🔧",
         "order": [
+          "Roadmap.md",
+          "Board.md",
           "TechnicalDesignDocument.md",
           "GameDesignDocument.md"
         ]
