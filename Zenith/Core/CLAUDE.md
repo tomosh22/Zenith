@@ -285,3 +285,11 @@ platform entry point — so pre-engine timestamps reach the capture without any 
 storage.
 
 **Practical rule of thumb:** if you find yourself reaching for `static` for new mutable state, check this list. If your case isn't on it, the answer is probably "put it on an `*Impl` class held by `Zenith_Engine`" — see how any of the existing subsystems are wired up for the pattern.
+
+## Unit fixture lifetimes
+
+When a stack fixture retains an asset through an owning handle, end that fixture's
+lexical scope before manually deleting the asset or its instance. The handle's
+destructor releases its reference; manual deletion remains exactly once and must
+therefore happen after the retaining controller, layers, state machines, and
+blend nodes have been destroyed.

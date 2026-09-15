@@ -14597,18 +14597,20 @@ void Zenith_UnitTests::TestInitializeRetroactiveLayerPoses(){
 
 	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
-	Flux_AnimationController xController;
+	{
+		Flux_AnimationController xController;
 
-	// Add layer BEFORE Initialize
-	Flux_AnimationLayer* pxLayer = xController.AddLayer("Base");
+		// Add layer BEFORE Initialize
+		Flux_AnimationLayer* pxLayer = xController.AddLayer("Base");
 
-	// Layer pose should be uninitialized (0 bones)
-	ZENITH_ASSERT_EQ(pxLayer->GetOutputPose().GetNumBones(), 0, "Layer pose should be uninitialized before Initialize()");
+		// Layer pose should be uninitialized (0 bones)
+		ZENITH_ASSERT_EQ(pxLayer->GetOutputPose().GetNumBones(), 0, "Layer pose should be uninitialized before Initialize()");
 
-	// Initialize should retroactively initialize the layer pose
-	xController.Initialize(pxSkelInst);
+		// Initialize should retroactively initialize the layer pose
+		xController.Initialize(pxSkelInst);
 
-	ZENITH_ASSERT_EQ(pxLayer->GetOutputPose().GetNumBones(), 2, "Layer pose should have 2 bones after retroactive Initialize()");
+		ZENITH_ASSERT_EQ(pxLayer->GetOutputPose().GetNumBones(), 2, "Layer pose should have 2 bones after retroactive Initialize()");
+	}
 
 
 	delete pxSkelInst;
@@ -14709,64 +14711,68 @@ void Zenith_UnitTests::TestLayerCompositionOverrideBlend(){
 
 	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
-	Flux_AnimationController xController;
-	xController.Initialize(pxSkelInst);
-
-	// Create two clips with distinct root bone positions
-	Flux_AnimationClip* pxClipA = new Flux_AnimationClip();
-	pxClipA->SetName("PoseA");
-	pxClipA->SetDuration(1.0f);
-	pxClipA->SetLooping(true);
+	Flux_AnimationClip* pxClipA = nullptr;
+	Flux_AnimationClip* pxClipB = nullptr;
 	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Root");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
-		pxClipA->AddBoneChannel("Root", std::move(xChan));
+		Flux_AnimationController xController;
+		xController.Initialize(pxSkelInst);
+
+		// Create two clips with distinct root bone positions
+		pxClipA = new Flux_AnimationClip();
+		pxClipA->SetName("PoseA");
+		pxClipA->SetDuration(1.0f);
+		pxClipA->SetLooping(true);
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Root");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+			pxClipA->AddBoneChannel("Root", std::move(xChan));
+		}
+
+		pxClipB = new Flux_AnimationClip();
+		pxClipB->SetName("PoseB");
+		pxClipB->SetDuration(1.0f);
+		pxClipB->SetLooping(true);
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Root");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+			pxClipB->AddBoneChannel("Root", std::move(xChan));
+		}
+
+		// Base layer plays PoseA (root at 0,0,0)
+		Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
+		pxBaseLayer->SetWeight(1.0f);
+		Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
+		Flux_AnimationState* pxBaseState = pxBaseSM->AddState("PoseA");
+		Flux_BlendTreeNode_Clip* pxBaseClipNode = new Flux_BlendTreeNode_Clip(pxClipA);
+		pxBaseState->SetBlendTree(pxBaseClipNode);
+		pxBaseSM->SetDefaultState("PoseA");
+		pxBaseSM->SetState("PoseA");
+
+		// Override layer plays PoseB (root at 2,0,0) at weight 0.5
+		Flux_AnimationLayer* pxOverrideLayer = xController.AddLayer("Override");
+		pxOverrideLayer->SetWeight(0.5f);
+		pxOverrideLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+		Flux_AnimationStateMachine* pxOverrideSM = pxOverrideLayer->CreateStateMachine("OverrideSM");
+		Flux_AnimationState* pxOverrideState = pxOverrideSM->AddState("PoseB");
+		Flux_BlendTreeNode_Clip* pxOverrideClipNode = new Flux_BlendTreeNode_Clip(pxClipB);
+		pxOverrideState->SetBlendTree(pxOverrideClipNode);
+		pxOverrideSM->SetDefaultState("PoseB");
+		pxOverrideSM->SetState("PoseB");
+
+		// Update to evaluate both layers and compose
+		xController.Update(0.016f);
+
+		// Output should be a blend: base(0,0,0) blended with override(2,0,0) at weight 0.5
+		// Expected root position: lerp(0, 2, 0.5) = (1, 0, 0)
+		const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
+		const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
+
+		float fExpectedX = 1.0f;
+		float fTolerance = 0.01f;
+		ZENITH_ASSERT_LT(glm::abs(xRootPose.m_xPosition.x - fExpectedX), fTolerance, "Root X should be ~1.0 (blend of 0.0 and 2.0 at weight 0.5), got %.3f", xRootPose.m_xPosition.x);
 	}
-
-	Flux_AnimationClip* pxClipB = new Flux_AnimationClip();
-	pxClipB->SetName("PoseB");
-	pxClipB->SetDuration(1.0f);
-	pxClipB->SetLooping(true);
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Root");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
-		pxClipB->AddBoneChannel("Root", std::move(xChan));
-	}
-
-	// Base layer plays PoseA (root at 0,0,0)
-	Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
-	pxBaseLayer->SetWeight(1.0f);
-	Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
-	Flux_AnimationState* pxBaseState = pxBaseSM->AddState("PoseA");
-	Flux_BlendTreeNode_Clip* pxBaseClipNode = new Flux_BlendTreeNode_Clip(pxClipA);
-	pxBaseState->SetBlendTree(pxBaseClipNode);
-	pxBaseSM->SetDefaultState("PoseA");
-	pxBaseSM->SetState("PoseA");
-
-	// Override layer plays PoseB (root at 2,0,0) at weight 0.5
-	Flux_AnimationLayer* pxOverrideLayer = xController.AddLayer("Override");
-	pxOverrideLayer->SetWeight(0.5f);
-	pxOverrideLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
-	Flux_AnimationStateMachine* pxOverrideSM = pxOverrideLayer->CreateStateMachine("OverrideSM");
-	Flux_AnimationState* pxOverrideState = pxOverrideSM->AddState("PoseB");
-	Flux_BlendTreeNode_Clip* pxOverrideClipNode = new Flux_BlendTreeNode_Clip(pxClipB);
-	pxOverrideState->SetBlendTree(pxOverrideClipNode);
-	pxOverrideSM->SetDefaultState("PoseB");
-	pxOverrideSM->SetState("PoseB");
-
-	// Update to evaluate both layers and compose
-	xController.Update(0.016f);
-
-	// Output should be a blend: base(0,0,0) blended with override(2,0,0) at weight 0.5
-	// Expected root position: lerp(0, 2, 0.5) = (1, 0, 0)
-	const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
-	const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
-
-	float fExpectedX = 1.0f;
-	float fTolerance = 0.01f;
-	ZENITH_ASSERT_LT(glm::abs(xRootPose.m_xPosition.x - fExpectedX), fTolerance, "Root X should be ~1.0 (blend of 0.0 and 2.0 at weight 0.5), got %.3f", xRootPose.m_xPosition.x);
 
 
 	delete pxSkelInst;
@@ -14793,60 +14799,64 @@ void Zenith_UnitTests::TestLayerCompositionAdditiveBlend(){
 
 	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
-	Flux_AnimationController xController;
-	xController.Initialize(pxSkelInst);
-
-	// Base clip: root at (1, 0, 0)
-	Flux_AnimationClip* pxClipBase = new Flux_AnimationClip();
-	pxClipBase->SetName("Base");
-	pxClipBase->SetDuration(1.0f);
-	pxClipBase->SetLooping(true);
+	Flux_AnimationClip* pxClipBase = nullptr;
+	Flux_AnimationClip* pxClipAdd = nullptr;
 	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Root");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
-		pxClipBase->AddBoneChannel("Root", std::move(xChan));
+		Flux_AnimationController xController;
+		xController.Initialize(pxSkelInst);
+
+		// Base clip: root at (1, 0, 0)
+		pxClipBase = new Flux_AnimationClip();
+		pxClipBase->SetName("Base");
+		pxClipBase->SetDuration(1.0f);
+		pxClipBase->SetLooping(true);
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Root");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+			pxClipBase->AddBoneChannel("Root", std::move(xChan));
+		}
+
+		// Additive clip: root at (3, 0, 0) - delta from bind pose (0,0,0) = +3
+		pxClipAdd = new Flux_AnimationClip();
+		pxClipAdd->SetName("Additive");
+		pxClipAdd->SetDuration(1.0f);
+		pxClipAdd->SetLooping(true);
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Root");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+			pxClipAdd->AddBoneChannel("Root", std::move(xChan));
+		}
+
+		// Base layer plays Base clip
+		Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
+		pxBaseLayer->SetWeight(1.0f);
+		Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
+		Flux_AnimationState* pxBaseState = pxBaseSM->AddState("Base");
+		pxBaseState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipBase));
+		pxBaseSM->SetDefaultState("Base");
+		pxBaseSM->SetState("Base");
+
+		// Additive layer at weight 1.0
+		Flux_AnimationLayer* pxAddLayer = xController.AddLayer("Additive");
+		pxAddLayer->SetWeight(1.0f);
+		pxAddLayer->SetBlendMode(LAYER_BLEND_ADDITIVE);
+		Flux_AnimationStateMachine* pxAddSM = pxAddLayer->CreateStateMachine("AddSM");
+		Flux_AnimationState* pxAddState = pxAddSM->AddState("Additive");
+		pxAddState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipAdd));
+		pxAddSM->SetDefaultState("Additive");
+		pxAddSM->SetState("Additive");
+
+		xController.Update(0.016f);
+
+		// Additive blend adds delta on top of base: base(1) + additive(3) * weight(1) = 4
+		const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
+		const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
+
+		// Additive result should be greater than base alone
+		ZENITH_ASSERT_GT(xRootPose.m_xPosition.x, 1.0f + 0.01f, "Additive layer should increase root X beyond base (1.0), got %.3f", xRootPose.m_xPosition.x);
 	}
-
-	// Additive clip: root at (3, 0, 0) - delta from bind pose (0,0,0) = +3
-	Flux_AnimationClip* pxClipAdd = new Flux_AnimationClip();
-	pxClipAdd->SetName("Additive");
-	pxClipAdd->SetDuration(1.0f);
-	pxClipAdd->SetLooping(true);
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Root");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
-		pxClipAdd->AddBoneChannel("Root", std::move(xChan));
-	}
-
-	// Base layer plays Base clip
-	Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
-	pxBaseLayer->SetWeight(1.0f);
-	Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
-	Flux_AnimationState* pxBaseState = pxBaseSM->AddState("Base");
-	pxBaseState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipBase));
-	pxBaseSM->SetDefaultState("Base");
-	pxBaseSM->SetState("Base");
-
-	// Additive layer at weight 1.0
-	Flux_AnimationLayer* pxAddLayer = xController.AddLayer("Additive");
-	pxAddLayer->SetWeight(1.0f);
-	pxAddLayer->SetBlendMode(LAYER_BLEND_ADDITIVE);
-	Flux_AnimationStateMachine* pxAddSM = pxAddLayer->CreateStateMachine("AddSM");
-	Flux_AnimationState* pxAddState = pxAddSM->AddState("Additive");
-	pxAddState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipAdd));
-	pxAddSM->SetDefaultState("Additive");
-	pxAddSM->SetState("Additive");
-
-	xController.Update(0.016f);
-
-	// Additive blend adds delta on top of base: base(1) + additive(3) * weight(1) = 4
-	const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
-	const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
-
-	// Additive result should be greater than base alone
-	ZENITH_ASSERT_GT(xRootPose.m_xPosition.x, 1.0f + 0.01f, "Additive layer should increase root X beyond base (1.0), got %.3f", xRootPose.m_xPosition.x);
 
 
 	delete pxSkelInst;
@@ -14870,95 +14880,99 @@ void Zenith_UnitTests::TestLayerMaskedOverrideBlend(){
 
 	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel);
 
-	Flux_AnimationController xController;
-	xController.Initialize(pxSkelInst);
-
-	// Base clip: all bones at (0, 0, 0)
-	Flux_AnimationClip* pxClipBase = new Flux_AnimationClip();
-	pxClipBase->SetName("Base");
-	pxClipBase->SetDuration(1.0f);
-	pxClipBase->SetLooping(true);
+	Flux_AnimationClip* pxClipBase = nullptr;
+	Flux_AnimationClip* pxClipOverride = nullptr;
 	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Root");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
-		pxClipBase->AddBoneChannel("Root", std::move(xChan));
+		Flux_AnimationController xController;
+		xController.Initialize(pxSkelInst);
+
+		// Base clip: all bones at (0, 0, 0)
+		pxClipBase = new Flux_AnimationClip();
+		pxClipBase->SetName("Base");
+		pxClipBase->SetDuration(1.0f);
+		pxClipBase->SetLooping(true);
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Root");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+			pxClipBase->AddBoneChannel("Root", std::move(xChan));
+		}
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Upper");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+			pxClipBase->AddBoneChannel("Upper", std::move(xChan));
+		}
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Lower");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+			pxClipBase->AddBoneChannel("Lower", std::move(xChan));
+		}
+
+		// Override clip: all bones at (4, 0, 0)
+		pxClipOverride = new Flux_AnimationClip();
+		pxClipOverride->SetName("Override");
+		pxClipOverride->SetDuration(1.0f);
+		pxClipOverride->SetLooping(true);
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Root");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+			pxClipOverride->AddBoneChannel("Root", std::move(xChan));
+		}
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Upper");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+			pxClipOverride->AddBoneChannel("Upper", std::move(xChan));
+		}
+		{
+			Flux_BoneChannel xChan;
+			xChan.SetBoneName("Lower");
+			xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+			pxClipOverride->AddBoneChannel("Lower", std::move(xChan));
+		}
+
+		// Base layer
+		Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
+		pxBaseLayer->SetWeight(1.0f);
+		Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
+		Flux_AnimationState* pxBaseState = pxBaseSM->AddState("Base");
+		pxBaseState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipBase));
+		pxBaseSM->SetDefaultState("Base");
+		pxBaseSM->SetState("Base");
+
+		// Masked override layer: bone 1 (Upper) fully overridden, bone 2 (Lower) not affected
+		Flux_AnimationLayer* pxMaskLayer = xController.AddLayer("MaskedOverride");
+		pxMaskLayer->SetWeight(1.0f);
+		pxMaskLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+		Flux_BoneMask xMask;
+		xMask.SetBoneWeight(0, 0.0f);  // Root: no override
+		xMask.SetBoneWeight(1, 1.0f);  // Upper: full override
+		xMask.SetBoneWeight(2, 0.0f);  // Lower: no override
+		pxMaskLayer->SetAvatarMask(xMask);
+
+		Flux_AnimationStateMachine* pxMaskSM = pxMaskLayer->CreateStateMachine("MaskSM");
+		Flux_AnimationState* pxMaskState = pxMaskSM->AddState("Override");
+		pxMaskState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipOverride));
+		pxMaskSM->SetDefaultState("Override");
+		pxMaskSM->SetState("Override");
+
+		xController.Update(0.016f);
+
+		const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
+		float fTolerance = 0.01f;
+
+		// Root (mask weight 0): should remain at base (0, 0, 0)
+		ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(0).m_xPosition.x - 0.0f), fTolerance, "Root (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(0).m_xPosition.x);
+
+		// Upper (mask weight 1): should be fully overridden to (4, 0, 0)
+		ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(1).m_xPosition.x - 4.0f), fTolerance, "Upper (mask=1) should be overridden to 4.0, got %.3f", xOutput.GetLocalPose(1).m_xPosition.x);
+
+		// Lower (mask weight 0): should remain at base (0, 0, 0)
+		ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(2).m_xPosition.x - 0.0f), fTolerance, "Lower (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(2).m_xPosition.x);
 	}
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Upper");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
-		pxClipBase->AddBoneChannel("Upper", std::move(xChan));
-	}
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Lower");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
-		pxClipBase->AddBoneChannel("Lower", std::move(xChan));
-	}
-
-	// Override clip: all bones at (4, 0, 0)
-	Flux_AnimationClip* pxClipOverride = new Flux_AnimationClip();
-	pxClipOverride->SetName("Override");
-	pxClipOverride->SetDuration(1.0f);
-	pxClipOverride->SetLooping(true);
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Root");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
-		pxClipOverride->AddBoneChannel("Root", std::move(xChan));
-	}
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Upper");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
-		pxClipOverride->AddBoneChannel("Upper", std::move(xChan));
-	}
-	{
-		Flux_BoneChannel xChan;
-		xChan.SetBoneName("Lower");
-		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
-		pxClipOverride->AddBoneChannel("Lower", std::move(xChan));
-	}
-
-	// Base layer
-	Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
-	pxBaseLayer->SetWeight(1.0f);
-	Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
-	Flux_AnimationState* pxBaseState = pxBaseSM->AddState("Base");
-	pxBaseState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipBase));
-	pxBaseSM->SetDefaultState("Base");
-	pxBaseSM->SetState("Base");
-
-	// Masked override layer: bone 1 (Upper) fully overridden, bone 2 (Lower) not affected
-	Flux_AnimationLayer* pxMaskLayer = xController.AddLayer("MaskedOverride");
-	pxMaskLayer->SetWeight(1.0f);
-	pxMaskLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
-	Flux_BoneMask xMask;
-	xMask.SetBoneWeight(0, 0.0f);  // Root: no override
-	xMask.SetBoneWeight(1, 1.0f);  // Upper: full override
-	xMask.SetBoneWeight(2, 0.0f);  // Lower: no override
-	pxMaskLayer->SetAvatarMask(xMask);
-
-	Flux_AnimationStateMachine* pxMaskSM = pxMaskLayer->CreateStateMachine("MaskSM");
-	Flux_AnimationState* pxMaskState = pxMaskSM->AddState("Override");
-	pxMaskState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipOverride));
-	pxMaskSM->SetDefaultState("Override");
-	pxMaskSM->SetState("Override");
-
-	xController.Update(0.016f);
-
-	const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
-	float fTolerance = 0.01f;
-
-	// Root (mask weight 0): should remain at base (0, 0, 0)
-	ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(0).m_xPosition.x - 0.0f), fTolerance, "Root (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(0).m_xPosition.x);
-
-	// Upper (mask weight 1): should be fully overridden to (4, 0, 0)
-	ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(1).m_xPosition.x - 4.0f), fTolerance, "Upper (mask=1) should be overridden to 4.0, got %.3f", xOutput.GetLocalPose(1).m_xPosition.x);
-
-	// Lower (mask weight 0): should remain at base (0, 0, 0)
-	ZENITH_ASSERT_LT(glm::abs(xOutput.GetLocalPose(2).m_xPosition.x - 0.0f), fTolerance, "Lower (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(2).m_xPosition.x);
 
 
 	delete pxSkelInst;
