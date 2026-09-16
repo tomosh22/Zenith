@@ -37,3 +37,5 @@ npm --prefix Tools/Vault test
 npm --prefix Tools/Vault run test:e2e
 npm --prefix Tools/Vault run parity
 pwsh -NoProfile -File Tools/doc_lint.ps1
+## Production verification
+The local app observed the real launcher claim as In Progress. This note was entered and saved through the production Markdown editor on 2026-09-16.
