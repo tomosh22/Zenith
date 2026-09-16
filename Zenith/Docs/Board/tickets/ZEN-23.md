@@ -6,8 +6,8 @@ title: "Verify Vault production cutover"
 category: "Engine"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@saas.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,7 +16,8 @@ position: 23
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-16T01:30:44.431Z"
+updatedAt: "2026-09-16T01:31:00.878Z"
+claimAttempt: "a2f63f75-7a08-4b66-8578-52d432d16f59"
 ---
 ## Goal
 
