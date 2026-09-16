@@ -63,8 +63,12 @@ test('HTTP read model exposes session, state, documents and ETags', async () => 
 
     const state = await server.app.inject({ method: 'GET', url: '/api/state', headers });
     assert.equal(state.statusCode, 200);
-    assert.equal(state.json().tickets.length, 244);
-    assert.ok(state.json().files.some(file => file.path === 'FD/tickets/FD-1.md'));
+    const payload = state.json();
+    assert.equal(payload.tickets.length, 244);
+    assert.ok(payload.files.some(file => file.path === 'FD/tickets/FD-1.md'));
+    assert.deepEqual(payload.statusesByProject.FD, ['To Do', 'In Progress', 'In Review', 'Done', 'Blocked']);
+    assert.ok(!payload.statusesByProject.FD.includes('blocked-scope'));
+    assert.ok(!payload.statuses.includes('blocked-scope'));
 
     const document = await server.app.inject({ method: 'GET', url: '/api/document?path=FD%2Ftickets%2FFD-1.md', headers });
     assert.equal(document.statusCode, 200);

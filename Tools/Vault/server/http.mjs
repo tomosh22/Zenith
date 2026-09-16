@@ -131,21 +131,52 @@ function recordFor(record, index) {
   };
 }
 
+function workflowStatusesByProject(index) {
+  const projects = new Map();
+  let order = 0;
+  for (const record of index.configs?.values?.() ?? []) {
+    const kind = String(record.fields?.kind ?? record.metadata?.kind ?? '').trim().toLowerCase();
+    if (kind !== 'workflow' || !record.project) continue;
+    const entries = Array.isArray(record.fields?.statuses) ? record.fields.statuses : [];
+    if (!entries.length) continue;
+    const project = String(record.project).trim();
+    if (!project) continue;
+    if (!projects.has(project)) projects.set(project, new Map());
+    const statuses = projects.get(project);
+    for (const entry of entries) {
+      const value = entry?.name ?? entry?.status ?? entry?.status_name ?? entry?.title;
+      const name = value === undefined || value === null ? '' : String(value).trim();
+      if (!name) { order += 1; continue; }
+      const position = Number(entry?.position);
+      const candidate = {
+        name,
+        position: Number.isFinite(position) ? position : Number.POSITIVE_INFINITY,
+        order,
+      };
+      const previous = statuses.get(name);
+      if (!previous || candidate.position < previous.position
+        || (candidate.position === previous.position && candidate.order < previous.order)) {
+        statuses.set(name, candidate);
+      }
+      order += 1;
+    }
+  }
+  return Object.fromEntries([...projects.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([project, statuses]) => [project, [...statuses.values()]
+      .sort((left, right) => left.position - right.position || left.order - right.order || left.name.localeCompare(right.name))
+      .map(status => status.name)]));
+}
+
 function stateFor(index) {
   const files = index.records.map(record => recordFor(record, index));
   const tickets = files.filter(record => record.kind === 'ticket');
   const documents = files.filter(record => !['ticket', 'config', 'metadata', 'sprint'].includes(record.kind));
   const projects = [...new Set(files.map(record => record.project).filter(Boolean))].sort();
+  const statusesByProject = workflowStatusesByProject(index);
   const statusSet = new Set(tickets.map(record => record.status).filter(Boolean));
-  for (const record of index.configs?.values?.() ?? []) {
-    for (const row of [...(record.fields?.statuses ?? []), ...(record.fields?.rows ?? [])]) {
-      const value = row?.name ?? row?.status ?? row?.status_name;
-      if (value !== undefined && value !== null && String(value).trim()) statusSet.add(String(value));
-    }
-  }
-  for (const row of index.tables?.get?.('jira.workflow_statuses') ?? []) {
-    const value = row?.name ?? row?.status ?? row?.status_name;
-    if (value !== undefined && value !== null && String(value).trim()) statusSet.add(String(value));
+  for (const statuses of Object.values(statusesByProject)) {
+    for (const status of statuses) statusSet.add(status);
   }
   const statuses = [...statusSet].sort();
   return {
@@ -155,6 +186,7 @@ function stateFor(index) {
     boardRoots: jsonSafe(index.boardRoots ?? []),
     projects,
     statuses,
+    statusesByProject,
     files,
     tickets,
     documents,

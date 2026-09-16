@@ -42,6 +42,17 @@ function displayName(file) {
   return metadata.key || metadata.title || file?.path?.split('/').at(-1) || file?.path;
 }
 
+export function ticketStatusOptions(file, currentStatus, statusesByProject) {
+  const current = String(currentStatus ?? '').trim();
+  const configured = file?.project && statusesByProject && typeof statusesByProject === 'object'
+    ? statusesByProject[file.project]
+    : undefined;
+  const options = Array.isArray(configured)
+    ? [...new Set(configured.map(value => String(value ?? '').trim()).filter(Boolean))]
+    : [];
+  return options.length ? options : (current ? [current] : []);
+}
+
 function groupFiles(files) {
   const groups = new Map();
   for (const file of files) {
@@ -207,7 +218,7 @@ function Backlinks({ file, files, onOpen }) {
 
 export function App() {
   const [session, setSession] = useState(null);
-  const [data, setData] = useState({ files: [], tickets: [], documents: [], statuses: [], projects: [], diagnostics: [], valid: true });
+  const [data, setData] = useState({ files: [], tickets: [], documents: [], statuses: [], statusesByProject: {}, projects: [], diagnostics: [], valid: true });
   const [selectedPath, setSelectedPath] = useState(null);
   const [document, setDocument] = useState(null);
   const [text, setText] = useState('');
@@ -223,6 +234,7 @@ export function App() {
   const draftsRef = useRef(new Map());
 
   const selectedFile = useMemo(() => data.files.find(file => file.path === selectedPath) ?? document?.record ?? null, [data.files, document, selectedPath]);
+  const ticketStatuses = useMemo(() => ticketStatusOptions(selectedFile, status, data.statusesByProject), [selectedFile, status, data.statusesByProject]);
   const dirty = text !== savedText;
   const dirtyRef = useRef(dirty);
   const selectedPathRef = useRef(selectedPath);
@@ -353,7 +365,7 @@ export function App() {
       {data.diagnostics.length > 0 && <div className="diagnostic-count" title={data.diagnostics.map(item => item.message).join('\n')}>{data.diagnostics.length} index diagnostic{data.diagnostics.length === 1 ? '' : 's'}</div>}
     </aside>
     <main className="workspace">
-      <DocumentHeader file={view === 'files' ? selectedFile : null} title={view === 'board' ? 'Board' : view === 'backlog' ? 'Backlog' : view === 'roadmap' ? 'Roadmap' : undefined} mode={mode} setMode={setMode} dirty={dirty} conflict={conflict} onSave={save} onReload={() => openDocument(selectedPath, { discardDraft: true })} readOnly={Boolean(session?.readOnly)} saving={saving} status={status} setStatus={onStatusSelect} statuses={data.statuses} />
+      <DocumentHeader file={view === 'files' ? selectedFile : null} title={view === 'board' ? 'Board' : view === 'backlog' ? 'Backlog' : view === 'roadmap' ? 'Roadmap' : undefined} mode={mode} setMode={setMode} dirty={dirty} conflict={conflict} onSave={save} onReload={() => openDocument(selectedPath, { discardDraft: true })} readOnly={Boolean(session?.readOnly)} saving={saving} status={status} setStatus={onStatusSelect} statuses={ticketStatuses} />
       {view === 'board' ? <Board tickets={filteredTickets} statuses={data.statuses} onOpen={pathValue => { setView('files'); openDocument(pathValue); }} onStatus={changeStatus} /> : view === 'backlog' ? <Backlog tickets={filteredTickets} onOpen={pathValue => { setView('files'); openDocument(pathValue); }} /> : view === 'roadmap' ? <Roadmap tickets={filteredTickets} onOpen={pathValue => { setView('files'); openDocument(pathValue); }} /> : selectedFile && document ? <div className="document-workspace">
         <section className={`editor-pane ${mode === 'preview' ? 'hidden' : ''}`}><Editor value={text} onChange={setText} completions={wikiCompletions} /></section>
         <section className={`preview-pane ${mode === 'edit' ? 'compact' : ''}`}><div className="preview-label">Preview</div><article className="markdown" onClick={event => {

@@ -23,12 +23,12 @@ web app, runs Vitest and Playwright, then checks the frozen reference. The separ
 database fence test uses a disposable clone of the isolated snapshot database. It
 does not freeze the live database.
 
-Verification: **90 Vitest tests, 14 Playwright tests and 1,860 parity cases
+Verification: **94 Vitest tests, 14 Playwright tests and 1,860 parity cases
 passed**. The production web build succeeded, npm audit reported zero vulnerabilities,
 all eight documentation checks passed, and the isolated database fence passed seven
 checks. Chromium required permission to launch outside the Windows process sandbox;
 the permitted rerun passed all browser cases. Coverage is not exhaustive; these results
-do not certify the still-pending production cutover.
+are supplemented by the production verification below.
 
 ## Production cutover
 
@@ -51,11 +51,20 @@ The mutation engine rejects new In Progress epics, including raw editor saves
 and type conversions. Archived board roots refuse writes. All mutable project
 and category policy uses direct integration, including DevilsPlayground.
 
-A dedicated production verification ticket will exercise the real launcher,
-app save, Git history, tests and finish before the old local apps are stopped.
-Before the first new claim, true rollback remains possible. After any claim, use forward
-recovery; the thaw command refuses a journaled or committed claim even after a revert.
+Production verification ticket ZEN-23 completed Done through the real launcher.
+The app observed its claim and saved a note in commit `7ce66504`; CLI history
+reported that save. The real verify runner passed 93 Vitest tests, 14 Playwright
+tests, 1,860 parity cases and all eight documentation checks, with no skipped or
+deferred gates. Finish committed as `13a5a53c`. The completed checklist is recorded
+in `769911ca`. Recovery inspection found no pending operations.
+
+The first production claim has occurred: recovery is now forward-only. The thaw
+command refuses a journaled or committed claim even after a revert.
 There is no automatic reconciliation from Git back into PostgreSQL.
 
 Existing tick gate semantics are unchanged. The separate `inputsSha256` proposal and
 stronger certification of concurrent source changes are not implemented here.
+
+The production UI check also corrected the status picker: it now uses the selected
+project's workflow catalog and excludes labels and unrelated project statuses.
+The final Vitest regression run passed 94 tests.
