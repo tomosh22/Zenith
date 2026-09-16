@@ -30,34 +30,29 @@ checks. Chromium required permission to launch outside the Windows process sandb
 the permitted rerun passed all browser cases. Coverage is not exhaustive; these results
 do not certify the still-pending production cutover.
 
-## Not activated
+## Production cutover
 
-The real launcher has no `backend.json`, the repository has no root `vault.config.json`,
-and the main Git directory has no Vault authority registration. Legacy board/docs
-writers remain authoritative. No old source applications or shared services have been
-removed.
+The launcher now selects the local Vault through `Tools/zagent/backend.json`.
+The root `vault.config.json` enables Git-backed writes in the authoritative checkout.
+Legacy board/docs database writes are fenced; shared services remain available.
 
-The plan requires **no ticket In Progress** at cutover. The user directed that epics
-must not be In Progress and that the two test tickets should return to To Do. DP-1,
-ZM-9, ZM-10, ZM-14, WEB-8 and ATC047-1 were reset to To Do, preserving assignees.
-A live database check then confirmed zero tickets In Progress. The four epic resets
-used the legacy CLI, WEB-8 used the board UI, and ATC047-1 used an exact-match
-administrative transaction with a status history record.
+The six formerly In Progress items (DP-1, ZM-9, ZM-10, ZM-14, WEB-8 and
+ATC047-1) were reset to To Do with assignees preserved. The final frozen snapshot
+contains 244 tickets, zero In Progress, 157 activity rows and 196 links. Its
+1,860 read-command comparisons pass and the 36-table entity audit has no differences.
+Migration preserved 235 mapped tickets, nine read-only archived tickets, and
+68 existing living documents without overwriting them.
 
-The new Vault mutation engine refuses operations that introduce an epic in
-In Progress, including human moves and raw editor saves. Child tickets can still
-enter In Progress. Imported legacy epics can be corrected without changing the
-frozen compatibility reference.
+The backup is retained under `.zagent/cutover-20260916/saas.dump`; its SHA-256
+and the snapshot/freeze evidence are recorded in `migration/`. The pre-cutover
+recovery tag is `vault-pre-cutover-20260916` at `44f4f7a9`.
 
-The user explicitly approved the production write freeze after the initial automatic
-approval rejection. The database fence is now applied to legacy board/docs writes;
-unrelated shared consumers remain available. A fresh frozen snapshot is being captured.
+The mutation engine rejects new In Progress epics, including raw editor saves
+and type conversions. Archived board roots refuse writes. All mutable project
+and category policy uses direct integration, including DevilsPlayground.
 
-Live cutover still requires validating that snapshot, retaining the dump, tagging the
-pre-cutover SHA, installing the switch in one commit, and watching a small production ticket.
-Only then can the old board/docs applications be retired. PostgreSQL and realtime have
-other consumers and must not be removed wholesale.
-
+A dedicated production verification ticket will exercise the real launcher,
+app save, Git history, tests and finish before the old local apps are stopped.
 Before the first new claim, true rollback remains possible. After any claim, use forward
 recovery; the thaw command refuses a journaled or committed claim even after a revert.
 There is no automatic reconciliation from Git back into PostgreSQL.

@@ -4,10 +4,18 @@ A local Markdown board and document editor, with a disposable index, compatible 
 Git-backed mutations, and a localhost browser app. PostgreSQL and the old saas checkout
 are not runtime dependencies.
 
-**Deployment status:** the production launcher still uses the old backend. The frozen
-fixture is read-only. The new launcher adapter is dormant until a validated cutover
-installs `Tools/zagent/backend.json`. Implementation and isolated rehearsals do not
-constitute a production migration.
+**Deployment status:** the production launcher uses the local Vault through
+`Tools/zagent/backend.json`. Legacy board/docs writes are fenced in PostgreSQL.
+The pre-cutover recovery tag is `vault-pre-cutover-20260916`; migration evidence is in
+the repository root `migration/` directory. The frozen test fixture stays read-only.
+
+Start the production app from the repository root:
+
+```powershell
+node Tools/Vault/server/http.mjs --vault C:/dev/Zenith --port 4317
+```
+
+Open http://127.0.0.1:4317. The CLI remains `Tools/zagent/zagent.ps1`.
 
 ## Run
 

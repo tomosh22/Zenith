@@ -84,6 +84,22 @@ test('generated mutable policies use the canonical checkout for every project', 
   assert.equal(Object.hasOwn(value.resolved.projects.DP, 'branchPrefix'), false);
 });
 
+test('generated mutable policies clear legacy branching in resolved and client category maps', async () => {
+  const pinned = JSON.parse(await fs.readFile(new URL('../fixtures/snapshot/config.json', import.meta.url), 'utf8'));
+  const value = normalizeMutablePolicy(pinned);
+  const categoryMaps = [
+    value.client.file.categories,
+    ...Object.values(value.resolved.projects).map(project => project.categories),
+  ];
+  for (const categories of categoryMaps) {
+    const category = categories.DevilsPlayground;
+    assert.equal(category.branching, 'direct');
+    assert.equal(Object.hasOwn(category, 'branchPrefix'), false);
+  }
+  assert.equal(value.resolved.projects.DP.branching, 'direct');
+  assert.equal(Object.hasOwn(value.resolved.projects.DP, 'branchPrefix'), false);
+});
+
 test('dry-run is read-only and prepare maps six-style roots while archiving legacy tickets', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-migration-test-'));
   t.onTestFinished(() => fs.rm(root, { recursive: true, force: true }));

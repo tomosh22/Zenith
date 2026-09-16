@@ -164,7 +164,12 @@ function boardRootPath(root, entry, index) {
   const boardPath = entry.path ?? entry.root ?? entry.directory ?? entry.dir;
   if (typeof boardPath !== 'string' || boardPath.trim() === '') return null;
   const project = String(entry.project ?? entry.name ?? path.basename(boardPath) ?? `board-${index + 1}`);
-  return { project, path: boardPath };
+  return {
+    project,
+    path: boardPath,
+    ...(entry.readOnly === true ? { readOnly: true } : {}),
+    ...(entry.archive === true ? { archive: true } : {}),
+  };
 }
 
 function normalizeBoardRoots(root, config, options, diagnostics) {
@@ -209,7 +214,7 @@ function normalizeBoardRoots(root, config, options, diagnostics) {
     }
     seen.add(canonical);
     roots.push({
-      project: normalized.project,
+      ...normalized,
       path: toPosix(normalized.path === '.' ? '.' : normalized.path.replaceAll('\\', '/')),
       absolutePath,
     });

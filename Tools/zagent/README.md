@@ -1,16 +1,32 @@
-# `zagent` — the agent board's client
+# `zagent` — the Vault board client
 
-## Backend selection
+## Active backend: Zenith Vault
 
-Without `backend.json`, this launcher uses the legacy HTTP client described below.
-A validated Vault cutover installs `{"backend":"vault","vaultRoot":"../.."}`
-in this directory. Paths are relative to this directory. The Vault adapter requires
-Node 22 and the dependencies under `Tools/Vault`; it does not need a token or the
-old server. An invalid profile fails closed rather than falling back to HTTP.
+The 2026-09-16 cutover makes Zenith Vault the active local board backend. The
+repository-owned `Tools/zagent/backend.json` profile contains
+`{"backend":"vault","vaultRoot":"../.."}`; `zagent.ps1` resolves that profile to
+the checkout's Vault root and refuses to fall back to the retired writer when the
+profile is invalid. Vault uses this checkout as the single authoritative working
+tree, and `zagent.project.json` declares direct integration for every category,
+including DevilsPlayground.
 
-The switch has not been installed. See [Vault](../Vault/README.md) for the new app,
-tests, migration, and recovery boundary. Do not create the profile before cutover
-verification is complete. The remaining sections document the legacy backend.
+Start the local Vault app from the repository root:
+
+```powershell
+node Tools/Vault/server/http.mjs --vault . --port 4317
+```
+
+It listens at `http://127.0.0.1:4317`. The CLI and browser use the same Vault
+files and operation lock. Vault requires Node 22 and the dependencies under
+`Tools/Vault`; it needs no `ZAGENT_URL`, `ZAGENT_TOKEN`, board account, or other
+remote credentials. See [Vault](../Vault/README.md) for the app, tests, migration,
+and recovery boundary.
+
+The rest of this README retains the pre-cutover HTTP client and board protocol as
+historical reference for the legacy remainder. Those sections do not describe the
+active startup path or credential requirements.
+
+## Historical legacy backend
 
 The autonomous loop's board is a web application. It may run on **an
 entirely different machine**, and this repo does not know where its
@@ -22,7 +38,7 @@ to the board, plus a `.cmd` shim so `zagent …` works bare. No Node, no
 of every gate and every `zenith.ps1` command, so the client adds nothing
 new to a build machine.
 
-## Setup
+### Legacy setup (historical)
 
 Two environment variables, once per machine:
 
@@ -64,7 +80,7 @@ that walks off is one row, not a secret rotation.
 Verify with `zagent doctor`, which merges the board's checks with this
 machine's.
 
-## What lives where
+### Legacy layout (historical)
 
 | | Where | Why |
 |---|---|---|
@@ -77,7 +93,7 @@ machine's.
 registered once. A stored copy goes stale, and a stale gate list is
 exactly how a green run ratchets the wrong baseline.
 
-## The two commands that read your working tree
+### Legacy working-tree commands (historical)
 
 `guard` and `gates` are the only commands that look at the repo itself,
 and neither takes the file list from you:
@@ -102,7 +118,7 @@ with an entire area unverified. Both commands compute the changed set
 with `Get-WorkingTreeChanges`; do not hand-assemble one and pass
 `--file`.
 
-## Requests are bounded
+### Legacy request behavior (historical)
 
 There was no timeout at all, so a board that accepted the connection and
 then stopped answering hung the client forever — and an unattended
@@ -113,7 +129,7 @@ one because they ship a ~1 MB Markdown tree and write a CRDT per page.
 A timeout lands in the same `catch` as a refused connection and so exits
 **7**, which is exactly what it means: the board was never reached.
 
-## Exit codes are the interface
+### Legacy exit codes (historical)
 
 Branch on them, never on the text:
 
@@ -132,7 +148,7 @@ and "I never reached the board" demand opposite responses from an
 unattended loop, and collapsing them into `1` is how a network blip gets
 written into a ticket as a contract failure.
 
-## Layout, and running its tests
+### Legacy client layout and tests (historical)
 
 | File | |
 |---|---|
@@ -150,7 +166,7 @@ inside it untestable. A plain assert script rather than Pester, matching
 `Tools/Test_T0Harness_SessionCloseFlagsExist.ps1` — the only PowerShell
 this repo requires is the `pwsh` every gate already needs.
 
-## Sharp edges
+### Legacy client sharp edges (historical)
 
 - **`ConvertTo-Json` defaults to `-Depth 2`.** Anything deeper is
   serialised as a type name. Every call here passes `-Depth 100`.
@@ -187,7 +203,7 @@ this repo requires is the `pwsh` every gate already needs.
   `.gitattributes` pins `Tools/zagent/zagent.cmd text eol=crlf`, so every
   checkout puts CRLF on disk regardless of the cloner's setting.
 
-## The wire contract, and a local board
+### Legacy wire contract and local board (historical)
 
 `contract.json` (this directory, committed) is the golden fixture both
 sides of the protocol assert against — the path-valued flags, the

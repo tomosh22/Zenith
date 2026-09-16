@@ -2,6 +2,8 @@
 
 **Document purpose:** Records the branch-protection ruleset on `master`, the required status checks, and the policy for changing them. Authored 2026-05-12 for MVP-0.0.6. End-to-end gate verified by the MVP-0.0.7 smoke PR (this comment is the smoke change).
 
+> **Current Vault policy (2026-09-16):** Zenith Vault is the active board backend and uses this repository's single authoritative checkout. DevilsPlayground integrates directly in that checkout, as declared by `zagent.project.json`; the agent workflow does not create, switch, merge, or delete branches and does not open remote pull requests. The GitHub `master` branch-protection and squash-merge rules documented below remain a historical record of the remote policy. This document does not change GitHub settings, and the Vault workflow requires no remote credentials.
+
 ---
 
 ## Branch protection on `master`

@@ -188,3 +188,29 @@ test('commit hashing applies Git attributes while preserving raw working bytes',
   assert.equal(await git(root, ['show', `HEAD:${rawPath}`]), nextRaw.toString());
   assert.equal(await git(root, ['status', '--porcelain']), '');
 });
+
+test('read-only board roots reject edits to indexed files', async t => {
+  const root = await fixture(t);
+  const relative = 'archive/legacy/WEB/tickets/WEB-1.md';
+  const full = path.join(root, relative);
+  const original = Buffer.from('---\nkey: WEB-1\ntitle: Frozen\nstatus: To Do\n---\nBody\n');
+  await fs.mkdir(path.dirname(full), { recursive: true });
+  await fs.writeFile(full, original);
+  await fs.writeFile(path.join(root, 'vault.config.json'), JSON.stringify({
+    boardRoots: [
+      { project: 'FD', path: 'FD' },
+      { project: 'WEB', path: 'archive/legacy/WEB', readOnly: true, archive: true },
+    ],
+    writes: { enabled: true, testFaults: true },
+  }));
+  await git(root, ['add', 'vault.config.json', relative]);
+  await git(root, ['commit', '-qm', 'readonly archive']);
+  const head = await git(root, ['rev-parse', 'HEAD']);
+  const next = Buffer.from('---\nkey: WEB-1\ntitle: Must stay frozen\nstatus: To Do\n---\nBody\n');
+  await assert.rejects(saveDocument(root, relative, next, await readRevision(root, relative)), error => (
+    error.code === 'PATH' && /Read-only vault path/.test(error.message)
+  ));
+  assert.deepEqual(await fs.readFile(full), original);
+  assert.equal(await git(root, ['rev-parse', 'HEAD']), head);
+  assert.equal(await git(root, ['status', '--porcelain']), '');
+});

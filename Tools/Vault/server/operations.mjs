@@ -325,7 +325,12 @@ export async function executeOperation(root, options) {
       const relative = path.relative(ctx.root, target).replaceAll('\\', '/');
       if (seen.has(relative.toLowerCase())) fail('PATH', `Duplicate operation path: ${relative}`);
       seen.add(relative.toLowerCase());
-      const allowed = index.files.has(relative) || index.boardRoots.some(b => target.startsWith(b.absolutePath + path.sep));
+      const boardRoots = index.boardRoots.filter(board => {
+        const boardRelative = path.relative(board.absolutePath, target);
+        return boardRelative === '' || (boardRelative !== '..' && !boardRelative.startsWith(`..${path.sep}`) && !path.isAbsolute(boardRelative));
+      });
+      if (boardRoots.some(board => board.readOnly === true)) fail('PATH', `Read-only vault path: ${relative}`);
+      const allowed = index.files.has(relative) || boardRoots.length > 0;
       if (!allowed || !/\.(md|markdown)$/i.test(relative)) fail('PATH', `Not an editable Markdown vault path: ${relative}`);
       const before = await bytesAt(target), after = change.bytes === null ? null : Buffer.from(change.bytes);
       const scanned = index.getFile(relative);

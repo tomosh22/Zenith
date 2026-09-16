@@ -1,0 +1,214 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "path": "C:\\dev\\Zenith\\.zagent\\cutover-20260916\\source.json",
+    "sha256": "9b5b06680fb73d85bab8760f5abfb54fa952254cb50ff14bb8b6c37ec3cfda5e",
+    "issueCount": 244,
+    "counts": {
+      "jira.board_column_statuses": 130,
+      "jira.board_columns": 131,
+      "jira.board_quick_filters": 0,
+      "jira.boards": 27,
+      "jira.categories": 45,
+      "jira.comments": 46,
+      "jira.custom_field_options": 0,
+      "jira.custom_field_values": 0,
+      "jira.custom_fields": 0,
+      "jira.field_configurations": 0,
+      "jira.issue_activity": 157,
+      "jira.issue_labels": 145,
+      "jira.issue_links": 196,
+      "jira.issue_versions": 136,
+      "jira.issues": 244,
+      "jira.labels": 290,
+      "jira.permission_grants": 0,
+      "jira.permission_schemes": 0,
+      "jira.project_role_members": 0,
+      "jira.project_roles": 75,
+      "jira.projects": 29,
+      "jira.screen_fields": 0,
+      "jira.screens": 0,
+      "jira.sprints": 37,
+      "jira.versions": 8,
+      "jira.workflow_statuses": 140,
+      "jira.workflow_transition_rules": 0,
+      "jira.workflow_transitions": 268,
+      "jira.workflows": 28,
+      "notion.database_properties": 85,
+      "notion.database_rows": 50,
+      "notion.databases": 10,
+      "notion.projects": 2,
+      "public.users": 22,
+      "public.organizations": 22,
+      "public.memberships": 26
+    }
+  },
+  "mappedProjects": [
+    {
+      "project": "ZEN",
+      "destination": "Zenith/Docs/Board",
+      "issueCount": 21
+    },
+    {
+      "project": "ZM",
+      "destination": "Games/Zenithmon/Docs/Board",
+      "issueCount": 70
+    },
+    {
+      "project": "DP",
+      "destination": "Games/DevilsPlayground/Docs/Board",
+      "issueCount": 1
+    },
+    {
+      "project": "UV",
+      "destination": "Games/Undervault/Docs/Board",
+      "issueCount": 4
+    },
+    {
+      "project": "HE",
+      "destination": "Games/Hearth/Docs/Board",
+      "issueCount": 3
+    },
+    {
+      "project": "FD",
+      "destination": "Games/Foundry/Docs/Board",
+      "issueCount": 136
+    }
+  ],
+  "archivedProjects": [
+    {
+      "project": "WEB",
+      "destination": "archive/legacy/WEB",
+      "issueCount": 7
+    },
+    {
+      "project": "AT433D",
+      "destination": "archive/legacy/AT433D",
+      "issueCount": 1
+    },
+    {
+      "project": "ATC047",
+      "destination": "archive/legacy/ATC047",
+      "issueCount": 1
+    }
+  ],
+  "issueCount": 244,
+  "mappedIssueCount": 235,
+  "archivedIssueCount": 9,
+  "boardRoots": [
+    {
+      "project": "ZEN",
+      "path": "Zenith/Docs/Board"
+    },
+    {
+      "project": "ZM",
+      "path": "Games/Zenithmon/Docs/Board"
+    },
+    {
+      "project": "DP",
+      "path": "Games/DevilsPlayground/Docs/Board"
+    },
+    {
+      "project": "UV",
+      "path": "Games/Undervault/Docs/Board"
+    },
+    {
+      "project": "HE",
+      "path": "Games/Hearth/Docs/Board"
+    },
+    {
+      "project": "FD",
+      "path": "Games/Foundry/Docs/Board"
+    },
+    {
+      "project": "WEB",
+      "path": "archive/legacy/WEB",
+      "readOnly": true,
+      "archive": true
+    },
+    {
+      "project": "AT433D",
+      "path": "archive/legacy/AT433D",
+      "readOnly": true,
+      "archive": true
+    },
+    {
+      "project": "ATC047",
+      "path": "archive/legacy/ATC047",
+      "readOnly": true,
+      "archive": true
+    }
+  ],
+  "supportingFiles": [
+    "metadata.md",
+    "Docs/BootProfiling.md",
+    "Docs/BuildSystem.md",
+    "Docs/design/AnimationPoseAuthoring.md",
+    "Docs/design/EngineRefactor_Phase-1_Inventory.md",
+    "Docs/design/Photorealism.md",
+    "Docs/design/TerrainIndirectCountFallback.md",
+    "Docs/design/Zenith_HashMap.md",
+    "Docs/GameProjects.md",
+    "Docs/HumanoidImport.md",
+    "Docs/Onboarding/JuniorExplorationFollowup.md",
+    "Docs/Onboarding/NewcomerMap.md",
+    "Docs/TickProtocolHistory.md",
+    "Games/Zenithmon/Docs/AgentBriefing.md",
+    "Games/Zenithmon/Docs/ArtBrief.md",
+    "Games/Zenithmon/Docs/AssetManifest.md",
+    "Games/Zenithmon/Docs/Board.md",
+    "Games/Zenithmon/Docs/BuildEnvironment.md",
+    "Games/Zenithmon/Docs/CIPolicy.md",
+    "Games/Zenithmon/Docs/DecisionLog.md",
+    "Games/Zenithmon/Docs/GameDesignDocument.md",
+    "Games/Zenithmon/Docs/Glossary.md",
+    "Games/Zenithmon/Docs/History.md",
+    "Games/Zenithmon/Docs/ManualSetupChecklist.md",
+    "Games/Zenithmon/Docs/MapLayoutPlaybook.md",
+    "Games/Zenithmon/Docs/MasterPlan.md",
+    "Games/Zenithmon/Docs/OrchestratorPlaybook.md",
+    "Games/Zenithmon/Docs/Questions.md",
+    "Games/Zenithmon/Docs/Roadmap.md",
+    "Games/Zenithmon/Docs/SaveFormat.md",
+    "Games/Zenithmon/Docs/Scope.md",
+    "Games/Zenithmon/Docs/Shortfalls.md",
+    "Games/Zenithmon/Docs/StartPrompts.md",
+    "Games/Zenithmon/Docs/Status.md",
+    "Games/Zenithmon/Docs/TestPlan.md",
+    "Games/DevilsPlayground/Docs/AgentBriefing.md",
+    "Games/DevilsPlayground/Docs/AssetManifest.md",
+    "Games/DevilsPlayground/Docs/AssetTestPlan.md",
+    "Games/DevilsPlayground/Docs/BuildEnvironment.md",
+    "Games/DevilsPlayground/Docs/CIPolicy.md",
+    "Games/DevilsPlayground/Docs/DecisionLog.md",
+    "Games/DevilsPlayground/Docs/GameBalance_2026-05-22.md",
+    "Games/DevilsPlayground/Docs/GameDesignDocument.md",
+    "Games/DevilsPlayground/Docs/Glossary.md",
+    "Games/DevilsPlayground/Docs/ManualSetupChecklist.md",
+    "Games/DevilsPlayground/Docs/MetaSaveFormat.md",
+    "Games/DevilsPlayground/Docs/MvpRoadmap.md",
+    "Games/DevilsPlayground/Docs/MVPScope.md",
+    "Games/DevilsPlayground/Docs/OrchestratorPlaybook.md",
+    "Games/DevilsPlayground/Docs/PeerReviews/2026-05-11_three_reviews.md",
+    "Games/DevilsPlayground/Docs/PeerReviews/2026-05-12_four_reviews.md",
+    "Games/DevilsPlayground/Docs/PeerReviews/2026-05-12_round3_four_reviews.md",
+    "Games/DevilsPlayground/Docs/PeerReviews/2026-05-12_round4_four_reviews.md",
+    "Games/DevilsPlayground/Docs/PeerReviews/2026-05-12_round5_four_reviews.md",
+    "Games/DevilsPlayground/Docs/PersonalityMatrix_2026-05-21.md",
+    "Games/DevilsPlayground/Docs/Questions.md",
+    "Games/DevilsPlayground/Docs/SaveFormat.md",
+    "Games/DevilsPlayground/Docs/Shortfalls.md",
+    "Games/DevilsPlayground/Docs/StartPrompts.md",
+    "Games/DevilsPlayground/Docs/Status.md",
+    "Games/DevilsPlayground/Docs/TestPlan.md",
+    "Games/Undervault/Docs/GameDesignDocument.md",
+    "Games/Undervault/Docs/TechnicalDesignDocument.md",
+    "Games/Hearth/Docs/GameDesignDocument.md",
+    "Games/Hearth/Docs/TDD.md",
+    "Games/Foundry/Docs/Board.md",
+    "Games/Foundry/Docs/GameDesignDocument.md",
+    "Games/Foundry/Docs/Roadmap.md",
+    "Games/Foundry/Docs/TechnicalDesignDocument.md"
+  ],
+  "noOverwrite": true
+}

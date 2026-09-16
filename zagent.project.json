@@ -161,10 +161,9 @@
       "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
     },
     "DevilsPlayground": {
-      "$comment": "Overrides the project's `direct` branching — DP's Docs/CIPolicy.md is a squash-merge policy.",
+      "$comment": "Vault uses the project's direct single-checkout policy for DP. Docs/CIPolicy.md retains the historical remote branch-protection record; it does not require agent branches or PRs.",
       "project": "DP",
-      "branching": "branch",
-      "branchPrefix": "agent/",
+      "branching": "direct",
       "paths": [
         "Games/DevilsPlayground/**"
       ],

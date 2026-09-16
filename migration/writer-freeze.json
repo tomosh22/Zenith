@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "kind": "writer-freeze",
+  "frozen": true,
+  "writersFrozen": true,
+  "command": "node Tools/Vault/scripts/freeze-legacy.mjs saas-postgres-1 saas --freeze",
+  "container": "saas-postgres-1",
+  "database": "saas",
+  "exitCode": 0,
+  "result": "legacy board/docs writers frozen",
+  "recordedAt": "2026-09-16T01:17:48.5257761Z",
+  "verification": {
+    "verifiedAt": "2026-09-16T01:17:48.5257761Z",
+    "inProgressCount": 0,
+    "fencedTriggerCount": 37,
+    "scope": ["jira", "notion", "public.yjs_documents", "public.document_versions"],
+    "sourceStatement": "Freeze was applied by the parent task immediately before this evidence capture; these read-only checks confirm the frozen source state."
+  }
+}

@@ -101,13 +101,23 @@ function normalizePolicy(policy = {}) {
 export function normalizeMutablePolicy(policy = {}) {
   const normalized = normalizePolicy(policy);
   const resolved = normalized.resolved ?? {};
+  const direct = value => {
+    const result = clone(value);
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+    delete result.branchPrefix;
+    result.branching = 'direct';
+    if (result.categories && typeof result.categories === 'object' && !Array.isArray(result.categories)) {
+      result.categories = Object.fromEntries(Object.entries(result.categories).map(([name, category]) => [name, direct(category)]));
+    }
+    return result;
+  };
   const projects = Object.fromEntries(Object.entries(resolved.projects ?? {}).map(([key, value]) => {
-    const project = clone(value) ?? {};
-    delete project.branchPrefix;
-    project.branching = 'direct';
-    return [key, project];
+    return [key, direct(value)];
   }));
-  return { ...normalized, resolved: { ...resolved, projects } };
+  const client = normalized.client && typeof normalized.client === 'object' ? clone(normalized.client) : null;
+  if (client?.file && typeof client.file === 'object') client.file = direct(client.file);
+  else if (client && client.categories && typeof client.categories === 'object' && !Array.isArray(client.categories)) client.categories = Object.fromEntries(Object.entries(client.categories).map(([name, category]) => [name, direct(category)]));
+  return { ...normalized, ...(client ? { client } : {}), resolved: { ...resolved, projects } };
 }
 
 function resolveMappedProjects(snapshot, policy, requested) {

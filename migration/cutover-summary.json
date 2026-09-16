@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "evidenceRoot": ".zagent/cutover-20260916",
+  "snapshotContainer": "zenith-vault-snapshot-20260916",
+  "snapshotDatabase": "vault_snapshot",
+  "previousSnapshot": {
+    "container": "zenith-vault-snapshot-20260915",
+    "status": "stopped and preserved"
+  },
+  "liveSource": {
+    "container": "saas-postgres-1",
+    "database": "saas",
+    "writerFreezeEvidence": "writer-freeze.json",
+    "inProgressCount": 0
+  },
+  "counts": {
+    "tables": 36,
+    "issues": 244,
+    "history": 157,
+    "links": 196,
+    "comments": 46,
+    "projects": 29,
+    "exportedProjects": 9,
+    "referenceCases": 1860
+  },
+  "audit": {
+    "tables": 36,
+    "differences": 0,
+    "entityDigests": "entity-digests.json"
+  },
+  "parity": {
+    "total": 1860,
+    "passed": 1860,
+    "failed": 0,
+    "result": "parity-result.json"
+  },
+  "hashes": {
+    "saas.dump": "c2b608bb22142999d05523d0e35c6aef79a6dad16b5ea1dc0d94f138287bca24",
+    "source.json": "9b5b06680fb73d85bab8760f5abfb54fa952254cb50ff14bb8b6c37ec3cfda5e",
+    "reference.json": "f3ee6b8f2ce0e6a9ecc79a8484ec8bc9bfacd4d7f2adc34b8f462d92ec236181",
+    "ordering.json": "29cf957e6a5bd2454d694775f68cd534758966e186e972bdba6ec2859a1e42c6",
+    "config.json": "b0d84b53e9608bc0c4465bb33ae41517a607ac7c14372ad5fce6bcb641850257",
+    "entity-digests.json": "d1a9ae728117f93b6cbe1387ba57890e5bcab3c4bd33c6297d950924dc5a57c2",
+    "provenance.json": "36baf790f34d629a33bd99251e2411eef0bb0f19255cba6fa74bd29439bf3bb8"
+  },
+  "authContent": "Authentication table contents and credentials were not exported."
+}
