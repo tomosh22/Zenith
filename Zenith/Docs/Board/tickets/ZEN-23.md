@@ -25,11 +25,11 @@ Verify the production Vault cutover in the authoritative C:/dev/Zenith checkout 
 
 ## Definition of Done
 
-- [ ] The production doctor reports a valid index and all 244 migrated tickets are accounted for before this verification ticket is created.
-- [ ] The real launcher claims this ticket, preserves its attempt in scratch, and the local app observes the In Progress status.
-- [ ] A local app editor save creates a Git commit, and the launcher reports the saved body and new history.
-- [ ] Vitest, Playwright, frozen parity, and documentation lint checks pass.
-- [ ] The operation recovery inspection reports no unresolved operations and this ticket finishes Done through the launcher.
+- [x] The production doctor reports a valid index and all 244 migrated tickets are accounted for before this verification ticket is created.
+- [x] The real launcher claims this ticket, preserves its attempt in scratch, and the local app observes the In Progress status.
+- [x] A local app editor save creates a Git commit, and the launcher reports the saved body and new history.
+- [x] Vitest, Playwright, frozen parity, and documentation lint checks pass.
+- [x] The operation recovery inspection reports no unresolved operations and this ticket finishes Done through the launcher.
 
 ## Gates
 
