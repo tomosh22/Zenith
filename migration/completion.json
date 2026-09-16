@@ -1,0 +1,31 @@
+{
+  "verifiedAt": "2026-09-16T01:47:35.0826819Z",
+  "retiredLocalPorts": [
+    3001,
+    3004
+  ],
+  "retainedLocalPorts": [
+    3000,
+    3002,
+    3003,
+    3005,
+    5432
+  ],
+  "vaultUrl": "http://127.0.0.1:4317",
+  "verificationTicket": "ZEN-23",
+  "verificationStatus": "Done",
+  "migratedTickets": 244,
+  "currentTickets": 245,
+  "inProgress": 0,
+  "pendingRecoveryOperations": 0,
+  "tests": {
+    "parity": 1860,
+    "playwright": 14,
+    "vitest": 94
+  },
+  "preCutoverTag": "vault-pre-cutover-20260916",
+  "switchCommit": "3f7b3a59",
+  "sourceRetention": "Legacy source and shared schemas retained for historical audit and shared consumers.",
+  "remoteFly": "Not verified or changed; local cutover only.",
+  "recovery": "Forward-only after first production claim."
+}

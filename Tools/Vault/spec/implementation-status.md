@@ -68,3 +68,9 @@ stronger certification of concurrent source changes are not implemented here.
 The production UI check also corrected the status picker: it now uses the selected
 project's workflow catalog and excludes labels and unrelated project statuses.
 The final Vitest regression run passed 94 tests.
+
+Local Jira and Notion listeners (3001/3004) are stopped. Retained web, Figma,
+Mermaid, realtime and PostgreSQL listeners remain present (3000/3002/3003/3005/5432).
+The old repository disables normal startup/deploy paths and retains source and shared
+schemas for historical audit and other consumers. Remote Fly deployment state was
+not verified or changed. See migration/completion.json for final local checks.
