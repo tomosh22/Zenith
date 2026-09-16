@@ -1,0 +1,1532 @@
+{
+  "formatVersion": 1,
+  "boardRoots": [
+    {
+      "project": "DP",
+      "path": "DP"
+    },
+    {
+      "project": "WEB",
+      "path": "WEB"
+    },
+    {
+      "project": "AT433D",
+      "path": "AT433D"
+    },
+    {
+      "project": "ZM",
+      "path": "ZM"
+    },
+    {
+      "project": "FD",
+      "path": "FD"
+    },
+    {
+      "project": "ZEN",
+      "path": "ZEN"
+    },
+    {
+      "project": "ATC047",
+      "path": "ATC047"
+    },
+    {
+      "project": "UV",
+      "path": "UV"
+    },
+    {
+      "project": "HE",
+      "path": "HE"
+    }
+  ],
+  "supportingFiles": [
+    "metadata.md"
+  ],
+  "policy": {
+    "board": {
+      "agentEmail": "agent@saas.invalid",
+      "routing": {
+        "effortByComplexity": {
+          "TRIVIAL": "low",
+          "SIMPLE": "low",
+          "MODERATE": "medium",
+          "COMPLEX": "high"
+        },
+        "modelByComplexity": {
+          "TRIVIAL": "haiku",
+          "SIMPLE": "sonnet",
+          "MODERATE": "sonnet",
+          "COMPLEX": "opus"
+        },
+        "riskEscalation": {
+          "LOW": 0,
+          "MEDIUM": 0,
+          "HIGH": 1
+        }
+      },
+      "guardrails": {
+        "protectedPaths": [
+          ".github/**",
+          "packages/database/drizzle/**",
+          ".claude/**",
+          "agent.config*.json",
+          "zagent.project.json"
+        ],
+        "ticketTimeoutMinutes": {
+          "TRIVIAL": 15,
+          "SIMPLE": 15,
+          "MODERATE": 30,
+          "COMPLEX": 90
+        },
+        "fixForwardAttempts": 3,
+        "maxConsecutiveBlocked": 3
+      }
+    },
+    "client": {
+      "repo": "C:/dev/Zenith",
+      "file": {
+        "baseBranch": "master",
+        "branching": "direct",
+        "merge": {
+          "push": false
+        },
+        "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+        "cleanup": [
+          "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+        ],
+        "reviewOn": [
+          "HIGH",
+          "MEDIUM"
+        ],
+        "categories": {
+          "Zenithmon": {
+            "project": "ZM",
+            "gates": [
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+              "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+              "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+            ],
+            "paths": [
+              "Games/Zenithmon/**"
+            ],
+            "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+            "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+            "decisionIdPrefix": "ZM-D-",
+            "docs": {
+              "dir": "Games/Zenithmon/Docs",
+              "title": "Zenithmon",
+              "icon": "🐾",
+              "order": [
+                "Status.md",
+                "Roadmap.md",
+                "Board.md",
+                "AgentBriefing.md",
+                "TestPlan.md",
+                "DecisionLog.md",
+                "Questions.md",
+                "Shortfalls.md",
+                "GameDesignDocument.md",
+                "Scope.md",
+                "MasterPlan.md",
+                "OrchestratorPlaybook.md",
+                "CIPolicy.md",
+                "BuildEnvironment.md",
+                "History.md"
+              ],
+              "maxBytesPerPage": 80000
+            }
+          },
+          "Engine": {
+            "gates": [
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+              "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+            ],
+            "paths": [
+              "Zenith/**"
+            ],
+            "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+          },
+          "DevilsPlayground": {
+            "project": "DP",
+            "gates": [
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+            ],
+            "paths": [
+              "Games/DevilsPlayground/**"
+            ],
+            "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+            "branching": "branch",
+            "branchPrefix": "agent/",
+            "docs": {
+              "dir": "Games/DevilsPlayground/Docs",
+              "title": "DevilsPlayground",
+              "icon": "😈",
+              "order": [
+                "Status.md",
+                "MvpRoadmap.md",
+                "MVPScope.md",
+                "AgentBriefing.md",
+                "TestPlan.md",
+                "DecisionLog.md",
+                "Questions.md",
+                "Shortfalls.md",
+                "GameDesignDocument.md",
+                "OrchestratorPlaybook.md",
+                "CIPolicy.md",
+                "BuildEnvironment.md"
+              ],
+              "maxBytesPerPage": 80000
+            }
+          },
+          "ScriptTest": {
+            "gates": [
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+            ],
+            "paths": [
+              "Games/ScriptTest/**"
+            ],
+            "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+          },
+          "Undervault": {
+            "project": "UV",
+            "gates": [
+              "pwsh -NoProfile -File Build\\regen.ps1",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+            ],
+            "paths": [
+              "Games/Undervault/**"
+            ],
+            "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+            "docs": {
+              "dir": "Games/Undervault/Docs",
+              "title": "Undervault",
+              "icon": "⛏️",
+              "order": [
+                "TechnicalDesignDocument.md",
+                "GameDesignDocument.md"
+              ],
+              "maxBytesPerPage": 80000
+            }
+          },
+          "Hearth": {
+            "project": "HE",
+            "gates": [
+              "pwsh -NoProfile -File Build\\regen.ps1",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+            ],
+            "paths": [
+              "Games/Hearth/**"
+            ],
+            "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+            "docs": {
+              "dir": "Games/Hearth/Docs",
+              "title": "Hearth",
+              "icon": "🏠",
+              "order": [
+                "TDD.md",
+                "GameDesignDocument.md"
+              ],
+              "maxBytesPerPage": 80000
+            }
+          },
+          "Foundry": {
+            "project": "FD",
+            "gates": [
+              "pwsh -NoProfile -File Build\\regen.ps1",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+              "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+            ],
+            "paths": [
+              "Games/Foundry/**"
+            ],
+            "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+            "docs": {
+              "dir": "Games/Foundry/Docs",
+              "title": "Foundry",
+              "icon": "🔧",
+              "order": [
+                "Roadmap.md",
+                "Board.md",
+                "TechnicalDesignDocument.md",
+                "GameDesignDocument.md"
+              ],
+              "maxBytesPerPage": 80000
+            }
+          }
+        },
+        "conventionDocs": {
+          "title": "Conventions",
+          "icon": "📐",
+          "exclude": [],
+          "maxBytesPerPage": 80000
+        },
+        "project": "ZEN",
+        "protectedPaths": [
+          ".claude/**",
+          "zagent.project.json",
+          ".github/**"
+        ]
+      }
+    },
+    "resolved": {
+      "agentEmail": "agent@saas.invalid",
+      "routing": {
+        "effortByComplexity": {
+          "TRIVIAL": "low",
+          "SIMPLE": "low",
+          "MODERATE": "medium",
+          "COMPLEX": "high"
+        },
+        "modelByComplexity": {
+          "TRIVIAL": "haiku",
+          "SIMPLE": "sonnet",
+          "MODERATE": "sonnet",
+          "COMPLEX": "opus"
+        },
+        "riskEscalation": {
+          "LOW": 0,
+          "MEDIUM": 0,
+          "HIGH": 1
+        }
+      },
+      "guardrails": {
+        "protectedPaths": [
+          ".github/**",
+          "packages/database/drizzle/**",
+          ".claude/**",
+          "agent.config*.json",
+          "zagent.project.json"
+        ],
+        "ticketTimeoutMinutes": {
+          "TRIVIAL": 15,
+          "SIMPLE": 15,
+          "MODERATE": 30,
+          "COMPLEX": 90
+        },
+        "fixForwardAttempts": 3,
+        "maxConsecutiveBlocked": 3
+      },
+      "projects": {
+        "ZEN": {
+          "repo": "C:/dev/Zenith",
+          "baseBranch": "master",
+          "branching": "direct",
+          "branchPrefix": "agent/",
+          "gates": [],
+          "merge": {
+            "push": false
+          },
+          "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+          "cleanup": [
+            "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+          ],
+          "reviewOn": [
+            "HIGH",
+            "MEDIUM"
+          ],
+          "workerTools": "Read,Edit,Write,Grep,Glob",
+          "categories": {
+            "Zenithmon": {
+              "project": "ZM",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+                "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+              ],
+              "paths": [
+                "Games/Zenithmon/**"
+              ],
+              "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+              "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+              "decisionIdPrefix": "ZM-D-",
+              "docs": {
+                "dir": "Games/Zenithmon/Docs",
+                "title": "Zenithmon",
+                "icon": "🐾",
+                "order": [
+                  "Status.md",
+                  "Roadmap.md",
+                  "Board.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "Scope.md",
+                  "MasterPlan.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md",
+                  "History.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Engine": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+              ],
+              "paths": [
+                "Zenith/**"
+              ],
+              "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+            },
+            "DevilsPlayground": {
+              "project": "DP",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+              ],
+              "paths": [
+                "Games/DevilsPlayground/**"
+              ],
+              "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+              "branching": "branch",
+              "branchPrefix": "agent/",
+              "docs": {
+                "dir": "Games/DevilsPlayground/Docs",
+                "title": "DevilsPlayground",
+                "icon": "😈",
+                "order": [
+                  "Status.md",
+                  "MvpRoadmap.md",
+                  "MVPScope.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "ScriptTest": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+              ],
+              "paths": [
+                "Games/ScriptTest/**"
+              ],
+              "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+            },
+            "Undervault": {
+              "project": "UV",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+              ],
+              "paths": [
+                "Games/Undervault/**"
+              ],
+              "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+              "docs": {
+                "dir": "Games/Undervault/Docs",
+                "title": "Undervault",
+                "icon": "⛏️",
+                "order": [
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Hearth": {
+              "project": "HE",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+              ],
+              "paths": [
+                "Games/Hearth/**"
+              ],
+              "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Hearth/Docs",
+                "title": "Hearth",
+                "icon": "🏠",
+                "order": [
+                  "TDD.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Foundry": {
+              "project": "FD",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+              ],
+              "paths": [
+                "Games/Foundry/**"
+              ],
+              "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Foundry/Docs",
+                "title": "Foundry",
+                "icon": "🔧",
+                "order": [
+                  "Roadmap.md",
+                  "Board.md",
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            }
+          },
+          "conventionDocs": {
+            "title": "Conventions",
+            "icon": "📐",
+            "exclude": [],
+            "maxBytesPerPage": 80000
+          }
+        },
+        "ZM": {
+          "repo": "C:/dev/Zenith",
+          "baseBranch": "master",
+          "branching": "direct",
+          "branchPrefix": "agent/",
+          "gates": [],
+          "merge": {
+            "push": false
+          },
+          "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+          "cleanup": [
+            "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+          ],
+          "reviewOn": [
+            "HIGH",
+            "MEDIUM"
+          ],
+          "workerTools": "Read,Edit,Write,Grep,Glob",
+          "categories": {
+            "Zenithmon": {
+              "project": "ZM",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+                "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+              ],
+              "paths": [
+                "Games/Zenithmon/**"
+              ],
+              "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+              "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+              "decisionIdPrefix": "ZM-D-",
+              "docs": {
+                "dir": "Games/Zenithmon/Docs",
+                "title": "Zenithmon",
+                "icon": "🐾",
+                "order": [
+                  "Status.md",
+                  "Roadmap.md",
+                  "Board.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "Scope.md",
+                  "MasterPlan.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md",
+                  "History.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Engine": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+              ],
+              "paths": [
+                "Zenith/**"
+              ],
+              "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+            },
+            "DevilsPlayground": {
+              "project": "DP",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+              ],
+              "paths": [
+                "Games/DevilsPlayground/**"
+              ],
+              "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+              "branching": "branch",
+              "branchPrefix": "agent/",
+              "docs": {
+                "dir": "Games/DevilsPlayground/Docs",
+                "title": "DevilsPlayground",
+                "icon": "😈",
+                "order": [
+                  "Status.md",
+                  "MvpRoadmap.md",
+                  "MVPScope.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "ScriptTest": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+              ],
+              "paths": [
+                "Games/ScriptTest/**"
+              ],
+              "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+            },
+            "Undervault": {
+              "project": "UV",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+              ],
+              "paths": [
+                "Games/Undervault/**"
+              ],
+              "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+              "docs": {
+                "dir": "Games/Undervault/Docs",
+                "title": "Undervault",
+                "icon": "⛏️",
+                "order": [
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Hearth": {
+              "project": "HE",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+              ],
+              "paths": [
+                "Games/Hearth/**"
+              ],
+              "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Hearth/Docs",
+                "title": "Hearth",
+                "icon": "🏠",
+                "order": [
+                  "TDD.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Foundry": {
+              "project": "FD",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+              ],
+              "paths": [
+                "Games/Foundry/**"
+              ],
+              "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Foundry/Docs",
+                "title": "Foundry",
+                "icon": "🔧",
+                "order": [
+                  "Roadmap.md",
+                  "Board.md",
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            }
+          },
+          "conventionDocs": {
+            "title": "Conventions",
+            "icon": "📐",
+            "exclude": [],
+            "maxBytesPerPage": 80000
+          }
+        },
+        "DP": {
+          "repo": "C:/dev/Zenith",
+          "baseBranch": "master",
+          "branching": "direct",
+          "branchPrefix": "agent/",
+          "gates": [],
+          "merge": {
+            "push": false
+          },
+          "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+          "cleanup": [
+            "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+          ],
+          "reviewOn": [
+            "HIGH",
+            "MEDIUM"
+          ],
+          "workerTools": "Read,Edit,Write,Grep,Glob",
+          "categories": {
+            "Zenithmon": {
+              "project": "ZM",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+                "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+              ],
+              "paths": [
+                "Games/Zenithmon/**"
+              ],
+              "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+              "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+              "decisionIdPrefix": "ZM-D-",
+              "docs": {
+                "dir": "Games/Zenithmon/Docs",
+                "title": "Zenithmon",
+                "icon": "🐾",
+                "order": [
+                  "Status.md",
+                  "Roadmap.md",
+                  "Board.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "Scope.md",
+                  "MasterPlan.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md",
+                  "History.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Engine": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+              ],
+              "paths": [
+                "Zenith/**"
+              ],
+              "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+            },
+            "DevilsPlayground": {
+              "project": "DP",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+              ],
+              "paths": [
+                "Games/DevilsPlayground/**"
+              ],
+              "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+              "branching": "branch",
+              "branchPrefix": "agent/",
+              "docs": {
+                "dir": "Games/DevilsPlayground/Docs",
+                "title": "DevilsPlayground",
+                "icon": "😈",
+                "order": [
+                  "Status.md",
+                  "MvpRoadmap.md",
+                  "MVPScope.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "ScriptTest": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+              ],
+              "paths": [
+                "Games/ScriptTest/**"
+              ],
+              "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+            },
+            "Undervault": {
+              "project": "UV",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+              ],
+              "paths": [
+                "Games/Undervault/**"
+              ],
+              "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+              "docs": {
+                "dir": "Games/Undervault/Docs",
+                "title": "Undervault",
+                "icon": "⛏️",
+                "order": [
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Hearth": {
+              "project": "HE",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+              ],
+              "paths": [
+                "Games/Hearth/**"
+              ],
+              "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Hearth/Docs",
+                "title": "Hearth",
+                "icon": "🏠",
+                "order": [
+                  "TDD.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Foundry": {
+              "project": "FD",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+              ],
+              "paths": [
+                "Games/Foundry/**"
+              ],
+              "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Foundry/Docs",
+                "title": "Foundry",
+                "icon": "🔧",
+                "order": [
+                  "Roadmap.md",
+                  "Board.md",
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            }
+          },
+          "conventionDocs": {
+            "title": "Conventions",
+            "icon": "📐",
+            "exclude": [],
+            "maxBytesPerPage": 80000
+          }
+        },
+        "UV": {
+          "repo": "C:/dev/Zenith",
+          "baseBranch": "master",
+          "branching": "direct",
+          "branchPrefix": "agent/",
+          "gates": [],
+          "merge": {
+            "push": false
+          },
+          "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+          "cleanup": [
+            "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+          ],
+          "reviewOn": [
+            "HIGH",
+            "MEDIUM"
+          ],
+          "workerTools": "Read,Edit,Write,Grep,Glob",
+          "categories": {
+            "Zenithmon": {
+              "project": "ZM",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+                "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+              ],
+              "paths": [
+                "Games/Zenithmon/**"
+              ],
+              "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+              "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+              "decisionIdPrefix": "ZM-D-",
+              "docs": {
+                "dir": "Games/Zenithmon/Docs",
+                "title": "Zenithmon",
+                "icon": "🐾",
+                "order": [
+                  "Status.md",
+                  "Roadmap.md",
+                  "Board.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "Scope.md",
+                  "MasterPlan.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md",
+                  "History.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Engine": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+              ],
+              "paths": [
+                "Zenith/**"
+              ],
+              "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+            },
+            "DevilsPlayground": {
+              "project": "DP",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+              ],
+              "paths": [
+                "Games/DevilsPlayground/**"
+              ],
+              "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+              "branching": "branch",
+              "branchPrefix": "agent/",
+              "docs": {
+                "dir": "Games/DevilsPlayground/Docs",
+                "title": "DevilsPlayground",
+                "icon": "😈",
+                "order": [
+                  "Status.md",
+                  "MvpRoadmap.md",
+                  "MVPScope.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "ScriptTest": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+              ],
+              "paths": [
+                "Games/ScriptTest/**"
+              ],
+              "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+            },
+            "Undervault": {
+              "project": "UV",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+              ],
+              "paths": [
+                "Games/Undervault/**"
+              ],
+              "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+              "docs": {
+                "dir": "Games/Undervault/Docs",
+                "title": "Undervault",
+                "icon": "⛏️",
+                "order": [
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Hearth": {
+              "project": "HE",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+              ],
+              "paths": [
+                "Games/Hearth/**"
+              ],
+              "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Hearth/Docs",
+                "title": "Hearth",
+                "icon": "🏠",
+                "order": [
+                  "TDD.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Foundry": {
+              "project": "FD",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+              ],
+              "paths": [
+                "Games/Foundry/**"
+              ],
+              "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Foundry/Docs",
+                "title": "Foundry",
+                "icon": "🔧",
+                "order": [
+                  "Roadmap.md",
+                  "Board.md",
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            }
+          },
+          "conventionDocs": {
+            "title": "Conventions",
+            "icon": "📐",
+            "exclude": [],
+            "maxBytesPerPage": 80000
+          }
+        },
+        "HE": {
+          "repo": "C:/dev/Zenith",
+          "baseBranch": "master",
+          "branching": "direct",
+          "branchPrefix": "agent/",
+          "gates": [],
+          "merge": {
+            "push": false
+          },
+          "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+          "cleanup": [
+            "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+          ],
+          "reviewOn": [
+            "HIGH",
+            "MEDIUM"
+          ],
+          "workerTools": "Read,Edit,Write,Grep,Glob",
+          "categories": {
+            "Zenithmon": {
+              "project": "ZM",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+                "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+              ],
+              "paths": [
+                "Games/Zenithmon/**"
+              ],
+              "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+              "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+              "decisionIdPrefix": "ZM-D-",
+              "docs": {
+                "dir": "Games/Zenithmon/Docs",
+                "title": "Zenithmon",
+                "icon": "🐾",
+                "order": [
+                  "Status.md",
+                  "Roadmap.md",
+                  "Board.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "Scope.md",
+                  "MasterPlan.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md",
+                  "History.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Engine": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+              ],
+              "paths": [
+                "Zenith/**"
+              ],
+              "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+            },
+            "DevilsPlayground": {
+              "project": "DP",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+              ],
+              "paths": [
+                "Games/DevilsPlayground/**"
+              ],
+              "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+              "branching": "branch",
+              "branchPrefix": "agent/",
+              "docs": {
+                "dir": "Games/DevilsPlayground/Docs",
+                "title": "DevilsPlayground",
+                "icon": "😈",
+                "order": [
+                  "Status.md",
+                  "MvpRoadmap.md",
+                  "MVPScope.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "ScriptTest": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+              ],
+              "paths": [
+                "Games/ScriptTest/**"
+              ],
+              "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+            },
+            "Undervault": {
+              "project": "UV",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+              ],
+              "paths": [
+                "Games/Undervault/**"
+              ],
+              "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+              "docs": {
+                "dir": "Games/Undervault/Docs",
+                "title": "Undervault",
+                "icon": "⛏️",
+                "order": [
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Hearth": {
+              "project": "HE",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+              ],
+              "paths": [
+                "Games/Hearth/**"
+              ],
+              "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Hearth/Docs",
+                "title": "Hearth",
+                "icon": "🏠",
+                "order": [
+                  "TDD.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Foundry": {
+              "project": "FD",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+              ],
+              "paths": [
+                "Games/Foundry/**"
+              ],
+              "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Foundry/Docs",
+                "title": "Foundry",
+                "icon": "🔧",
+                "order": [
+                  "Roadmap.md",
+                  "Board.md",
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            }
+          },
+          "conventionDocs": {
+            "title": "Conventions",
+            "icon": "📐",
+            "exclude": [],
+            "maxBytesPerPage": 80000
+          }
+        },
+        "FD": {
+          "repo": "C:/dev/Zenith",
+          "baseBranch": "master",
+          "branching": "direct",
+          "branchPrefix": "agent/",
+          "gates": [],
+          "merge": {
+            "push": false
+          },
+          "conventions": "Root CLAUDE.md is binding. No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker). Never run Sharpmake in a worktree.",
+          "cleanup": [
+            "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+          ],
+          "reviewOn": [
+            "HIGH",
+            "MEDIUM"
+          ],
+          "workerTools": "Read,Edit,Write,Grep,Glob",
+          "categories": {
+            "Zenithmon": {
+              "project": "ZM",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+                "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
+              ],
+              "paths": [
+                "Games/Zenithmon/**"
+              ],
+              "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+              "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
+              "decisionIdPrefix": "ZM-D-",
+              "docs": {
+                "dir": "Games/Zenithmon/Docs",
+                "title": "Zenithmon",
+                "icon": "🐾",
+                "order": [
+                  "Status.md",
+                  "Roadmap.md",
+                  "Board.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "Scope.md",
+                  "MasterPlan.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md",
+                  "History.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Engine": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build engine",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build CityBuilder --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build RenderTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build TilePuzzle --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
+                "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+              ],
+              "paths": [
+                "Zenith/**"
+              ],
+              "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+            },
+            "DevilsPlayground": {
+              "project": "DP",
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build DevilsPlayground --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test DevilsPlayground --headless"
+              ],
+              "paths": [
+                "Games/DevilsPlayground/**"
+              ],
+              "conventions": "Games/DevilsPlayground/Docs are binding; no paid/external services.",
+              "branching": "branch",
+              "branchPrefix": "agent/",
+              "docs": {
+                "dir": "Games/DevilsPlayground/Docs",
+                "title": "DevilsPlayground",
+                "icon": "😈",
+                "order": [
+                  "Status.md",
+                  "MvpRoadmap.md",
+                  "MVPScope.md",
+                  "AgentBriefing.md",
+                  "TestPlan.md",
+                  "DecisionLog.md",
+                  "Questions.md",
+                  "Shortfalls.md",
+                  "GameDesignDocument.md",
+                  "OrchestratorPlaybook.md",
+                  "CIPolicy.md",
+                  "BuildEnvironment.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "ScriptTest": {
+              "gates": [
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build ScriptTest --config D3D12_vs2022_Debug_Win64_False",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
+              ],
+              "paths": [
+                "Games/ScriptTest/**"
+              ],
+              "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+            },
+            "Undervault": {
+              "project": "UV",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
+              ],
+              "paths": [
+                "Games/Undervault/**"
+              ],
+              "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+              "docs": {
+                "dir": "Games/Undervault/Docs",
+                "title": "Undervault",
+                "icon": "⛏️",
+                "order": [
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Hearth": {
+              "project": "HE",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Hearth --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Hearth --headless"
+              ],
+              "paths": [
+                "Games/Hearth/**"
+              ],
+              "conventions": "Games/Hearth/Docs (GDD + TDD) are binding for design; the TDD's testing strategy (section 13) binds code once the scaffold lands. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Hearth/Docs",
+                "title": "Hearth",
+                "icon": "🏠",
+                "order": [
+                  "TDD.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            },
+            "Foundry": {
+              "project": "FD",
+              "gates": [
+                "pwsh -NoProfile -File Build\\regen.ps1",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
+                "pwsh -NoProfile -File Tools\\zenith.ps1 test Foundry --headless"
+              ],
+              "paths": [
+                "Games/Foundry/**"
+              ],
+              "conventions": "Games/Foundry/Docs (GDD + TDD) are binding for design. The TDD's engine-change register (section 19) is the gate list for any engine-side work it names. Branching inherited: direct.",
+              "docs": {
+                "dir": "Games/Foundry/Docs",
+                "title": "Foundry",
+                "icon": "🔧",
+                "order": [
+                  "Roadmap.md",
+                  "Board.md",
+                  "TechnicalDesignDocument.md",
+                  "GameDesignDocument.md"
+                ],
+                "maxBytesPerPage": 80000
+              }
+            }
+          },
+          "conventionDocs": {
+            "title": "Conventions",
+            "icon": "📐",
+            "exclude": [],
+            "maxBytesPerPage": 80000
+          }
+        }
+      }
+    }
+  },
+  "snapshotHash": "4ebc792b290aa3fcd4380cdffb1e0b549441f1d146a6036511de79c70ffbb2a0"
+}

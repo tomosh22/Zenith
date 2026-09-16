@@ -74,6 +74,27 @@ $script:PROJECT_FILE = 'zagent.project.json'
 # other by contract.json, which both sides' tests assert against.
 $script:PROTOCOL_VERSION = 1
 
+# Cutover is explicit and repository-owned. An invalid Vault configuration must
+# never fall back to the legacy writer, which would create two authorities.
+$vaultBackendPath = Join-Path $PSScriptRoot 'backend.json'
+if (Test-Path -LiteralPath $vaultBackendPath) {
+    try {
+        $vaultBackend = Get-Content -LiteralPath $vaultBackendPath -Raw | ConvertFrom-Json
+        if ($vaultBackend.backend -eq 'vault') {
+            if (-not $vaultBackend.vaultRoot) { throw 'Vault backend requires vaultRoot.' }
+            $vaultRootPath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $vaultBackend.vaultRoot))
+            $vaultClientPath = Join-Path $PSScriptRoot '../Vault/cli/client.mjs'
+            if (-not (Test-Path -LiteralPath $vaultClientPath)) { throw 'Vault client is missing.' }
+            & node $vaultClientPath --vault $vaultRootPath @Arguments
+            exit $LASTEXITCODE
+        }
+        if ($vaultBackend.backend -ne 'legacy') { throw 'Unknown zagent backend; refusing writer fallback.' }
+    } catch {
+        [Console]::Error.WriteLine($_.Exception.Message)
+        exit 1
+    }
+}
+
 Import-Module (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Force
 
 # ─── ENVIRONMENT ─────────────────────────────────────

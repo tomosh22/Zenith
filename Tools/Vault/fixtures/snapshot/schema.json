@@ -1,0 +1,1507 @@
+[
+  {
+    "table_schema": "jira",
+    "table_name": "board_column_statuses",
+    "column_name": "column_id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_column_statuses",
+    "column_name": "status_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_column_statuses",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_columns",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_columns",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_columns",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_columns",
+    "column_name": "board_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_columns",
+    "column_name": "wip_limit",
+    "data_type": "integer",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_quick_filters",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_quick_filters",
+    "column_name": "board_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_quick_filters",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_quick_filters",
+    "column_name": "filter",
+    "data_type": "jsonb",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "board_quick_filters",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "swimlane_by",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "card_fields",
+    "data_type": "jsonb",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "boards",
+    "column_name": "filter",
+    "data_type": "jsonb",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "categories",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "categories",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "categories",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "categories",
+    "column_name": "color",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "comments",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "comments",
+    "column_name": "content",
+    "data_type": "bytea",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "comments",
+    "column_name": "issue_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "comments",
+    "column_name": "author_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "comments",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "comments",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_options",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_options",
+    "column_name": "field_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_options",
+    "column_name": "value",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_options",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_values",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_values",
+    "column_name": "issue_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_values",
+    "column_name": "field_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_field_values",
+    "column_name": "value",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "key",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "description",
+    "data_type": "text",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 8
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "custom_fields",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 9
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "field_configurations",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "field_configurations",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "field_configurations",
+    "column_name": "issue_type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "field_configurations",
+    "column_name": "builtin_field",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "field_configurations",
+    "column_name": "custom_field_id",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "field_configurations",
+    "column_name": "requirement",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "issue_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "actor_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "field",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "from_value",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "to_value",
+    "data_type": "text",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_activity",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_labels",
+    "column_name": "issue_id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_labels",
+    "column_name": "label_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "source_issue_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "target_issue_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "created_by_id",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_links",
+    "column_name": "reason",
+    "data_type": "text",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_versions",
+    "column_name": "issue_id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_versions",
+    "column_name": "version_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issue_versions",
+    "column_name": "kind",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "number",
+    "data_type": "integer",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "title",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "description",
+    "data_type": "bytea",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "priority",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "position",
+    "data_type": "real",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 8
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "status_id",
+    "data_type": "text",
+    "ordinal_position": 9
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "assignee_id",
+    "data_type": "text",
+    "ordinal_position": 10
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "reporter_id",
+    "data_type": "text",
+    "ordinal_position": 11
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "sprint_id",
+    "data_type": "text",
+    "ordinal_position": 12
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "parent_id",
+    "data_type": "text",
+    "ordinal_position": 13
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 14
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 15
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "complexity",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 16
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "risk",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 17
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "category_id",
+    "data_type": "text",
+    "ordinal_position": 18
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "story_points",
+    "data_type": "integer",
+    "ordinal_position": 19
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "resolution",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 20
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "resolved_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 21
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "due_date",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 22
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "flagged",
+    "data_type": "boolean",
+    "ordinal_position": 23
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "severity",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 24
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "reproducibility",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 25
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "issues",
+    "column_name": "environment",
+    "data_type": "text",
+    "ordinal_position": 26
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "labels",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "labels",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "labels",
+    "column_name": "color",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "labels",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_grants",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_grants",
+    "column_name": "scheme_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_grants",
+    "column_name": "permission",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_grants",
+    "column_name": "grant_type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_grants",
+    "column_name": "value",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_schemes",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_schemes",
+    "column_name": "organization_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_schemes",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "permission_schemes",
+    "column_name": "description",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "project_role_members",
+    "column_name": "role_id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "project_role_members",
+    "column_name": "user_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "project_roles",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "project_roles",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "project_roles",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "key",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "description",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "organization_id",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "projects",
+    "column_name": "permission_scheme_id",
+    "data_type": "text",
+    "ordinal_position": 8
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screen_fields",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screen_fields",
+    "column_name": "screen_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screen_fields",
+    "column_name": "builtin_field",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screen_fields",
+    "column_name": "custom_field_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screen_fields",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screens",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screens",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screens",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screens",
+    "column_name": "description",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "screens",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "goal",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "status",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "start_date",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "end_date",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "completed_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 8
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 9
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "continuous",
+    "data_type": "boolean",
+    "ordinal_position": 10
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "sprints",
+    "column_name": "gate_issue_id",
+    "data_type": "text",
+    "ordinal_position": 11
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "description",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "status",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "start_date",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "release_date",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "versions",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 8
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_statuses",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_statuses",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_statuses",
+    "column_name": "category",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_statuses",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_statuses",
+    "column_name": "workflow_id",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transition_rules",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transition_rules",
+    "column_name": "transition_id",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transition_rules",
+    "column_name": "kind",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transition_rules",
+    "column_name": "rule_type",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transition_rules",
+    "column_name": "config",
+    "data_type": "jsonb",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transition_rules",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "workflow_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "from_status_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "to_status_id",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflow_transitions",
+    "column_name": "screen_id",
+    "data_type": "text",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflows",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflows",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "jira",
+    "table_name": "workflows",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_properties",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_properties",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_properties",
+    "column_name": "type",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_properties",
+    "column_name": "options",
+    "data_type": "jsonb",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_properties",
+    "column_name": "position",
+    "data_type": "integer",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_properties",
+    "column_name": "database_id",
+    "data_type": "text",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_rows",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_rows",
+    "column_name": "values",
+    "data_type": "jsonb",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_rows",
+    "column_name": "database_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_rows",
+    "column_name": "page_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_rows",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "database_rows",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "databases",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "databases",
+    "column_name": "title",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "databases",
+    "column_name": "project_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "databases",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "databases",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "projects",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "projects",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "projects",
+    "column_name": "organization_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "notion",
+    "table_name": "projects",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "public",
+    "table_name": "memberships",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "public",
+    "table_name": "memberships",
+    "column_name": "role",
+    "data_type": "USER-DEFINED",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "public",
+    "table_name": "memberships",
+    "column_name": "user_id",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "public",
+    "table_name": "memberships",
+    "column_name": "organization_id",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "public",
+    "table_name": "memberships",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "public",
+    "table_name": "organizations",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "public",
+    "table_name": "organizations",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "public",
+    "table_name": "organizations",
+    "column_name": "slug",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "public",
+    "table_name": "organizations",
+    "column_name": "logo",
+    "data_type": "text",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "public",
+    "table_name": "organizations",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "public",
+    "table_name": "organizations",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "id",
+    "data_type": "text",
+    "ordinal_position": 1
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "name",
+    "data_type": "text",
+    "ordinal_position": 2
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "email",
+    "data_type": "text",
+    "ordinal_position": 3
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "email_verified",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 4
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "image",
+    "data_type": "text",
+    "ordinal_position": 5
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "password_hash",
+    "data_type": "text",
+    "ordinal_position": 6
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "created_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 7
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "updated_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 8
+  },
+  {
+    "table_schema": "public",
+    "table_name": "users",
+    "column_name": "password_changed_at",
+    "data_type": "timestamp without time zone",
+    "ordinal_position": 9
+  }
+]

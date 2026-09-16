@@ -1,0 +1,12 @@
+{
+  "source": "saas/packages/agent/src",
+  "hashes": {
+    "ticket.ts": "04c6f7b1ffa2bf0419cb3175048e73144ccd3e50577e921a14d03c04240a655f",
+    "routing.ts": "0f622a2629b22316c3d0e90b58912af7f48d56de90f453d80f9b65e21a981852",
+    "guardrails.ts": "89c99e645dc3e5d26d1fd67cfb1504d8ba7f2a363241099a10da917159fdbc11",
+    "flags.ts": "6448b59332ca1b506e814bcfff696b25c8d18cb9feb0cfc025fdf0c9b1c0786c",
+    "args.ts": "11174d278cddf7ee7215b0768b8342d52492858e75c5404a0fa62b2a21f0d14e",
+    "board.ts": "467335de6cdb0bce70d442ce38857f4151c8958c28f9fe5ab3031f6a3ba13226"
+  },
+  "notes": "ticket/routing/guardrails transpiled unchanged. evaluateContract and parseArgs extracted unchanged. flags uses a local Error subclass in place of the database module import. config shim only looks up already-resolved pinned policy. Regenerate with scripts/vendor-read-helpers.mjs; never imports legacy repo at runtime."
+}

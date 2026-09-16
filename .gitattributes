@@ -182,3 +182,11 @@ Tools/zagent/zagent.cmd text eol=crlf
 # (The .spv themselves are Git-LFS tracked -- see *.spv above; that gate failure is
 # fixed by fetching LFS in the workflow checkout, not here.)
 Zenith/Flux/Shaders/Generated/*.h  text eol=lf
+
+# Vault exports retain the exact Markdown bytes captured at migration.
+# Living documents keep their existing Git text policy.
+Tools/Vault/fixtures/**/*.md -text
+Zenith/Docs/Board/** -text
+Games/*/Docs/Board/** -text
+archive/legacy/** -text
+/metadata.md -text

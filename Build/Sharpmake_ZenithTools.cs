@@ -11,6 +11,12 @@ public class ZenithToolsProject : ZenithBaseProject
 		Name = "ZenithTools";
 		SourceRootPath = RootPath + "/Tools";
 
+		// Source discovery recursively walks SourceRootPath and filters by the
+		// configured C/C++ extensions; .gitignore does not constrain Sharpmake's
+		// walk. Vault is a separate Node/Markdown app, so exclude its whole tree
+		// before a dependency package can contribute native-looking sources.
+		SourceFilesExcludeRegex.Add(@".*[\\/]Vault[\\/].*");
+
 		// Tools are Windows-only
 		AddTargets(new ZenithTarget
 		{

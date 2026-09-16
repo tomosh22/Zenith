@@ -293,8 +293,20 @@ function Check-SupersededMarkers {
 # =============================================================================
 # Check 5: no false "X does not exist" claims for files that DO exist.
 # =============================================================================
+# Board exports are authoritative data, rather than living documentation. Their
+# ticket bodies and frozen history may accurately describe files as they existed
+# at export time, so C5/C6 must not lint the future Docs/Board/ subtree. Keep
+# Docs/Board.md (the current board guide) in scope: only the directory subtree
+# is excluded, so living docs elsewhere under Docs continue to be checked.
+function Get-LivingMarkdownFiles {
+    Get-ChildItem -Path $docsDir -Filter '*.md' -Recurse -File | Where-Object {
+        $relative = $_.FullName.Substring($docsDir.Length).TrimStart('\', '/')
+        $relative -notmatch '^(?i:Board)(?:[\\/]|$)'
+    }
+}
+
 function Check-StaleClaims {
-    Get-ChildItem -Path $docsDir -Filter '*.md' -Recurse | ForEach-Object {
+    Get-LivingMarkdownFiles | ForEach-Object {
         $name = $_.Name
         $lines = Get-Content $_.FullName
         for ($i = 0; $i -lt $lines.Length; $i++) {
@@ -327,7 +339,7 @@ function Check-StaleClaims {
 # Check 6: cross-references via markdown links resolve.
 # =============================================================================
 function Check-MarkdownLinks {
-    Get-ChildItem -Path $docsDir -Filter '*.md' -Recurse | ForEach-Object {
+    Get-LivingMarkdownFiles | ForEach-Object {
         $name = $_.Name
         $dir = $_.DirectoryName
         $lines = Get-Content $_.FullName

@@ -1,0 +1,1336 @@
+{
+  "formatVersion": 1,
+  "title": "Zenith Vault Stage 1 persisted field inventory",
+  "status": "stage-1-specification",
+  "source": {
+    "schemaIndex": "C:/dev/saas/packages/database/src/schema/index.ts",
+    "schemaFiles": [
+      "C:/dev/saas/packages/database/src/schema/public.ts",
+      "C:/dev/saas/packages/database/src/schema/agent.ts",
+      "C:/dev/saas/packages/database/src/schema/jira.ts",
+      "C:/dev/saas/packages/database/src/schema/notion.ts",
+      "C:/dev/saas/packages/database/src/schema/figma.ts",
+      "C:/dev/saas/packages/database/src/schema/mermaid.ts"
+    ],
+    "agentSources": [
+      "C:/dev/saas/packages/agent/src/board.ts",
+      "C:/dev/saas/packages/agent/src/agile.ts",
+      "C:/dev/saas/packages/agent/src/notion.ts",
+      "C:/dev/saas/packages/agent/src/dispatch.ts",
+      "C:/dev/saas/packages/agent/src/config.ts",
+      "C:/dev/saas/packages/agent/src/doctor.ts",
+      "C:/dev/saas/packages/agent/src/docs.ts",
+      "C:/dev/saas/packages/agent/src/routing.ts",
+      "C:/dev/saas/packages/agent/src/ticket.ts"
+    ],
+    "contract": "C:/dev/Zenith/Tools/zagent/contract.json",
+    "referenceFixture": "C:/dev/Zenith/Tools/Vault/fixtures/snapshot/reference.json",
+    "schemaTableCount": 56,
+    "capturedTableCount": 36,
+    "schemaEntityCount": 56,
+    "inventoryEntityCount": 58,
+    "capturedSourceTables": [
+      "jira.board_column_statuses", "jira.board_columns", "jira.board_quick_filters", "jira.boards",
+      "jira.categories", "jira.comments", "jira.custom_field_options", "jira.custom_field_values",
+      "jira.custom_fields", "jira.field_configurations", "jira.issue_activity", "jira.issue_labels",
+      "jira.issue_links", "jira.issue_versions", "jira.issues", "jira.labels", "jira.permission_grants",
+      "jira.permission_schemes", "jira.project_role_members", "jira.project_roles", "jira.projects",
+      "jira.screen_fields", "jira.screens", "jira.sprints", "jira.versions", "jira.workflow_statuses",
+      "jira.workflow_transition_rules", "jira.workflow_transitions", "jira.workflows",
+      "notion.database_properties", "notion.database_rows", "notion.databases", "notion.projects",
+      "public.users", "public.organizations", "public.memberships"
+    ],
+    "notCapturedSchemaTables": [
+      "agent.agent_project_configs", "agent.agent_tokens", "figma.assets", "figma.files", "figma.pages",
+      "figma.projects", "mermaid.diagrams", "mermaid.projects", "notion.pages", "notion.page_favorites",
+      "public.accounts", "public.activity_events", "public.document_versions", "public.email_verification_tokens",
+      "public.invitations", "public.notifications", "public.password_reset_tokens", "public.sessions",
+      "public.verification_tokens", "public.yjs_documents"
+    ],
+    "readAt": "2026-09-15"
+  },
+  "scope": {
+    "stages": [1, 2, 3],
+    "boardProjectKeys": ["ZEN", "ZM", "DP", "UV", "HE", "FD"],
+    "mappedIssueCount": 235,
+    "unmappedReferenceIssueCount": 9,
+    "unmappedReferenceIssueReason": "The snapshot includes test projects that are not declared by the Zenith client configuration; retain them in the frozen audit fixture, but do not place them under a Zenith board root.",
+    "readOnly": true,
+    "writesImplemented": false
+  },
+  "vaultLayout": {
+    "projectConfig": "Tools/Vault/vault.config.json",
+    "ticket": "<boardRoot>/tickets/<KEY>.md",
+    "draftTicket": "<boardRoot>/tickets/drafts/<KEY>.md",
+    "sprint": "<boardRoot>/sprints/<slug>.md",
+    "versions": "<boardRoot>/versions.md",
+    "labels": "<boardRoot>/labels.md",
+    "workflow": "<boardRoot>/workflow.md",
+    "preMigrationHistory": "<boardRoot>/history/pre-migration.md",
+    "knowledge": {
+      "decisions": "<boardRoot>/knowledge/decisions.md",
+      "questions": "<boardRoot>/knowledge/questions.md",
+      "shortfalls": "<boardRoot>/knowledge/shortfalls.md",
+      "changelog": "<boardRoot>/knowledge/changelog.md",
+      "suggestions": "<boardRoot>/knowledge/suggestions.md"
+    },
+    "ticketFrontmatter": [
+      "key", "type", "title", "category", "parent", "sprint", "status", "assignee", "reporter",
+      "priority", "complexity", "risk", "storyPoints", "position", "resolution", "resolvedAt", "dueDate",
+      "flagged", "severity", "reproducibility", "environment", "labels", "fixVersions", "affectsVersions",
+      "blocks", "links", "createdAt", "updatedAt"
+    ],
+    "ticketBodySections": ["Goal", "Definition of Done", "Notes", "Work Log", "Comments"],
+    "knowledgeRowRepresentation": {
+      "rowId": "A stable source row id in row frontmatter; this is the value accepted by resolve commands.",
+      "database": "The fixed knowledge database key is selected by the file name.",
+      "values": "A property-name map in row frontmatter. SELECT and MULTI_SELECT cells store option ids; readers resolve ids to labels using vault.config.json knowledge property options.",
+      "body": "Optional Markdown prose is retained in the row entry only when the source has no structured property for it."
+    }
+  },
+  "exportRepresentation": {
+    "actualSnapshot": {
+      "ticket": {
+        "path": "<boardRoot>/tickets/<KEY>.md",
+        "canonicalFrontmatter": [
+          "key", "type", "title", "category", "parent", "sprint", "status",
+          "assignee", "priority", "complexity", "risk", "storyPoints", "position", "labels",
+          "fixVersions", "blocks", "links", "source"
+        ],
+        "rawIssueRow": "ticket frontmatter.source contains every jira.issues column; for non-null description the exporter removes source.description and writes it as UTF-8 Markdown body, while a null description remains source.description=null.",
+        "relationRows": {
+          "jira.issue_labels": "metadata.md.tables.jira.issue_labels; canonical ticket.labels[] is a resolved projection",
+          "jira.issue_links": "metadata.md.tables.jira.issue_links; canonical ticket.blocks[]/links[] are resolved projections",
+          "jira.issue_versions": "metadata.md.tables.jira.issue_versions; canonical ticket.fixVersions[] is the current FIX projection (the captured source has no AFFECTS rows)",
+          "jira.comments": "metadata.md.tables.jira.comments; current exporter does not synthesize a body comment sentinel"
+        }
+      },
+      "sprint": {
+        "path": "<boardRoot>/sprints/<slug>.md",
+        "frontmatter": ["kind", "slug", "name", "status", "continuous", "source"],
+        "rawRow": "frontmatter.source is the complete jira.sprints row; goal and date fields are read from source until an ergonomic writer emits them directly."
+      },
+      "catalogs": {
+        "labels": "<boardRoot>/labels.md frontmatter.rows[]; rows are complete jira.labels records",
+        "versions": "<boardRoot>/versions.md frontmatter.rows[]; rows are complete jira.versions records",
+        "workflow": "<boardRoot>/workflow.md frontmatter.rows/statuses/transitions; rows are complete workflow records"
+      },
+      "history": {
+        "path": "<boardRoot>/history/pre-migration.md",
+        "rows": "frontmatter.rows[] is the complete jira.issue_activity subset for issues exported under that board root"
+      },
+      "supporting": {
+        "path": "metadata.md",
+        "tables": "All captured source tables except the per-board exported jira issue/sprint/catalog/workflow/history rows are retained under frontmatter.tables; rows belonging to non-mapped project/workflow scopes are retained under frontmatter.archivedTables.",
+        "knowledge": "notion.projects, notion.databases, notion.database_properties and notion.database_rows remain source rows here in the current fixture; notion.pages is not extracted because local Markdown documents replace the Notion page mirror. No board-specific knowledge/*.md files are emitted yet.",
+        "documents": "Local Markdown files are scanned directly as document records; they are not reconstructed from notion.pages rows.",
+        "identities": "public.users, public.organizations and public.memberships remain source rows here; vault.config.json carries local policy and board roots.",
+        "config": "agent.config.json and zagent.project.json policy is embedded under vault.config.json:policy. The current export does not synthesize the future identities/knowledge config sections; readers use metadata rows when present.",
+        "ordering": "metadata.md frontmatter.ordering.links and frontmatter.ordering.history map each source jira issue id to observed legacy link/activity row ids in capture order. These ids preserve display ordering only; they are not canonical relation or history state."
+      },
+      "fixtureScope": {
+        "capturedTables": 36,
+        "totalSchemaTables": 56,
+        "mappedBoardProjects": ["ZEN", "ZM", "DP", "UV", "HE", "FD"],
+        "isolatedProjects": "Reference-only projects (including AT433D and ATC047) remain in the audit fixture and are never treated as mapped Zenith boards."
+      }
+    },
+    "futureErgonomicLayout": {
+      "note": "The field-level vault paths in entities describe the stable target layout. A reader must accept actualSnapshot paths above during Stage 1 and must preserve source rows until a reviewed writer exists.",
+      "knowledge": "<boardRoot>/knowledge/<database>.md row entries",
+      "comments": "Ticket body ## Comments entries with source provenance",
+      "config": "vault.config.json organization, identities, projects, policy and knowledge schema"
+    }
+  },
+  "normalization": {
+    "note": "The rules below describe the implemented Stage 1 read-only exporter and readers. They deliberately do not turn future writer policies into current validation or silently normalize values that the legacy payloads compare exactly.",
+    "rules": [
+      {
+        "id": "ticket-key",
+        "rule": "The exporter persists key as <project.key>-<issue.number>; the source issue id remains provenance in ticket frontmatter.source.id and metadata tables. CLI lookup may use its case-insensitive fallback, but it does not rewrite the persisted key.",
+        "effect": "Project and issue surrogate ids are not vault addresses; the canonical key is the address used by read commands.",
+        "futureProposal": "Duplicate keys already cause repo-wide index diagnostics and claim refusal; future writers must preserve that invariant."
+      },
+      {
+        "id": "reference-by-name",
+        "rule": "The exporter projects known foreign keys to project keys, ticket keys, names, or user emails in canonical frontmatter and retains source ids in source/metadata. Readers resolve current joins through the index and preserve null or raw source values when a projection is absent.",
+        "effect": "The scanner rejects unresolved parent, sprint, block target, canonical link target, status, and fixVersion references, and checks assignees against retained identities. These diagnostics make the repository unclaimable.",
+        "futureProposal": "Future writers must reuse the scanner reference checks before persisting edits."
+      },
+      {
+        "id": "sprint-slug",
+        "rule": "The current exporter writes sprint slug as lowercase project key plus '-' plus the source sprint id: <project.key.toLowerCase()>-<sprint.id>. It does not derive the slug from sprint.name or apply Unicode NFKC/name slugging; name remains the display field and ticket sprint stores this id-based slug.",
+        "effect": "The id-based slug is the actual Stage 1 sprint file and reference identity.",
+        "futureProposal": "A name-derived Unicode slug and a collision policy may be designed for a future writer; neither is implemented in the snapshot."
+      },
+      {
+        "id": "version-slug",
+        "rule": "The current exporter writes complete jira.versions rows to <boardRoot>/versions.md. Ticket fixVersions is the captured array of FIX version names; version list readers derive membership from current canonical names scoped to the project, while jira.issue_versions remains audit provenance.",
+        "effect": "No version slug is generated or required in the actual snapshot; version ids are catalog provenance and names are the canonical ticket references.",
+        "futureProposal": "A stable version slug could be added by a future writer after its identity and collision rules are reviewed."
+      },
+      {
+        "id": "labels",
+        "rule": "The exporter writes ticket labels from snapshot.labelOrder[issue.id] when supplied, otherwise from jira.issue_labels traversal joined to jira.labels.name. The captured array order is preserved; labels are not sorted by normalization.",
+        "effect": "Readers preserve label order and retain label ids and catalog rows in metadata; no label is reordered or guessed.",
+        "futureProposal": "A future writer may choose a canonical sort order, but that would be a format change rather than current read behavior."
+      },
+      {
+        "id": "links",
+        "rule": "The exporter writes BLOCKS relations to frontmatter.blocks and other types to frontmatter.links with target key, type where applicable, and reason. The links reader always enumerates canonical outgoing links and derives incoming links from every canonical source ticket; metadata.ordering.links[issueSourceId] contains observed legacy link ids/order, and an edge absent from that capture has id null.",
+        "effect": "Canonical frontmatter edits to target, type, reason, additions, or removals are visible to reads; source relation rows supply stable ids/order for captured edges only. This rule does not assert duplicate-triple, dangling-target, or nonblank-reason validation.",
+        "futureProposal": "A future writer or scanner may add explicit relation validation once its diagnostic contract is defined."
+      },
+      {
+        "id": "timestamps",
+        "rule": "Exported source timestamp text is retained. Sprint and version payloads restore the legacy SQL text form by replacing the leading date/time 'T' with a space while preserving captured fractional precision; history compares parseable values at UTC microsecond precision (a missing offset defaults to UTC) and emits ISO UTC strings at millisecond precision. Null remains null.",
+        "effect": "Timestamp formatting is command-specific and exact: readers do not rewrite every surface to one RFC 3339 form or apply a broad equivalent-instant normalization.",
+        "futureProposal": "A future writer may choose one timestamp representation only after preserving the legacy payload contract explicitly."
+      },
+      {
+        "id": "bytes-and-lines",
+        "rule": "A description beginning with the captured \\x bytea form is hex-decoded; other descriptions are UTF-8 encoded, and a lossy UTF-8 decode causes export failure. The decoded text is written as the Markdown body without a general line-ending normalization.",
+        "effect": "Source.description stays in source when null; non-null description moves to the body in the captured decoded text. No editor-model no-op-save guarantee is implemented.",
+        "futureProposal": "A future writer may specify line-ending and byte-preservation behavior separately."
+      },
+      {
+        "id": "select-options",
+        "rule": "The read-only fixture retains captured notion.database_properties option records. For a SELECT property, a row reader resolves an exact option id to its captured label; an id with no matching option remains visible as the raw id. No option id is generated during export.",
+        "effect": "The reader does not guess labels and does not claim a doctor error for an orphaned option id; current handling is preservation for inspection.",
+        "futureProposal": "The optionId(label) algorithm and validation for missing ids, including MULTI_SELECT behavior, require a future writer/doctor contract."
+      },
+      {
+        "id": "ordering",
+        "rule": "Captured source/catalog order is retained in exported arrays. metadata.ordering.links[issueSourceId] and metadata.ordering.history[issueSourceId] retain observed legacy ids/order from the frozen capture. Readers use those observations only where required for legacy output: links sort captured ids and append new edges; history uses observed ids for equal-timestamp ties; sprint/version catalogs sort source position then name; rows/suggestions sort newest created_at and preserve stored order for ties; queue uses its command-specific priority/position/key order.",
+        "effect": "There is no broad array sorting or extra tie-break normalization. The observed ordering maps carry ids/order only and never override current canonical field edits.",
+        "futureProposal": "Any additional deterministic ordering must be added to the command matrix and captured metadata explicitly."
+      },
+      {
+        "id": "nulls",
+        "rule": "SQL NULL is retained in source rows. Canonical fields that the exporter explicitly projects with a null fallback are YAML null; optional values that are undefined may be omitted by YAML serialization. Empty text, false, and zero are not converted to null.",
+        "effect": "Unset, empty, false, zero, and null remain distinguishable wherever the source and payload contract expose them.",
+        "futureProposal": "A future writer may define omission rules per field, but it must not silently collapse these values."
+      }
+    ]
+  },
+  "enumSets": {
+    "jira.jira_board_type": ["KANBAN", "SCRUM"],
+    "jira.jira_status_category": ["TODO", "IN_PROGRESS", "DONE"],
+    "jira.jira_sprint_status": ["PLANNED", "ACTIVE", "COMPLETED"],
+    "jira.jira_issue_type": ["EPIC", "STORY", "TASK", "BUG", "SUBTASK"],
+    "jira.jira_priority": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "TRIVIAL"],
+    "jira.jira_complexity": ["TRIVIAL", "SIMPLE", "MODERATE", "COMPLEX"],
+    "jira.jira_risk": ["LOW", "MEDIUM", "HIGH"],
+    "jira.jira_link_type": ["BLOCKS", "RELATES_TO", "DUPLICATES", "CAUSES"],
+    "jira.jira_resolution": ["DONE", "WONT_DO", "DUPLICATE", "CANNOT_REPRODUCE", "DECLINED"],
+    "jira.jira_severity": ["S1_CRITICAL", "S2_MAJOR", "S3_MINOR", "S4_TRIVIAL"],
+    "jira.jira_reproducibility": ["ALWAYS", "INTERMITTENT", "ONCE", "CANNOT_REPRODUCE"],
+    "jira.jira_version_status": ["UNRELEASED", "RELEASED", "ARCHIVED"],
+    "jira.jira_version_kind": ["FIX", "AFFECTS"],
+    "jira.jira_grant_type": ["PROJECT_ROLE", "ORG_ROLE", "ANY_LOGGED_IN", "ASSIGNEE", "REPORTER"],
+    "jira.jira_board_swimlane": ["NONE", "EPIC", "ASSIGNEE"],
+    "jira.jira_transition_rule_kind": ["CONDITION", "VALIDATOR", "POST_FUNCTION"],
+    "jira.jira_custom_field_type": ["TEXT", "TEXTAREA", "NUMBER", "DATE", "SELECT", "MULTI_SELECT", "CHECKBOX", "USER", "URL"],
+    "jira.jira_field_requirement": ["HIDDEN", "OPTIONAL", "REQUIRED"],
+    "notion.notion_property_type": ["TEXT", "NUMBER", "SELECT", "MULTI_SELECT", "DATE", "CHECKBOX", "URL", "EMAIL", "PERSON", "RELATION"],
+    "public.membership_role": ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+    "public.notification_type": ["MENTION", "ASSIGNMENT", "COMMENT", "STATUS_CHANGE", "INVITATION"],
+    "public.document_type": ["NOTION_PAGE", "JIRA_ISSUE", "JIRA_COMMENT", "MERMAID_DIAGRAM", "FIGMA_PAGE", "FIGMA_FILE"],
+    "mermaid.mermaid_diagram_type": ["FLOWCHART", "SEQUENCE", "CLASS", "STATE", "ER", "GANTT", "PIE", "MINDMAP", "TIMELINE", "GITGRAPH", "C4", "ARCHITECTURE", "BLOCK"]
+  },
+  "entities": [
+    {
+      "id": "jira.projects",
+      "schema": "jira",
+      "sqlTable": "projects",
+      "sourceExport": "jiraProjects",
+      "disposition": "retained-config",
+      "path": "vault.config.json projects[]",
+      "identity": "key",
+      "consumers": ["show", "check", "queue", "blocked", "sprint list", "version list", "report", "board status", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Surrogate database identity; project key is the stable vault identity."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "vault.config.json:projects[].name"},
+        {"sql": "key", "type": "text", "nullable": false, "vault": "vault.config.json:projects[].key"},
+        {"sql": "description", "type": "text", "nullable": true, "vault": "vault.config.json:projects[].description"},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": "vault.config.json:projects[].organizationSlug", "note": "Resolved to organizations.slug."},
+        {"sql": "permission_scheme_id", "type": "text", "nullable": true, "vault": null, "reason": "Project permissions are dropped for the single-user vault; project access is local process access."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "vault.config.json:projects[].createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "vault.config.json:projects[].updatedAt"}
+      ]
+    },
+    {
+      "id": "jira.project_roles",
+      "schema": "jira",
+      "sqlTable": "project_roles",
+      "sourceExport": "jiraProjectRoles",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Authorization model removed."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Authorization model removed."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Authorization model removed."}
+      ],
+      "reason": "Project roles have no retained read command and the vault is single-user."
+    },
+    {
+      "id": "jira.project_role_members",
+      "schema": "jira",
+      "sqlTable": "project_role_members",
+      "sourceExport": "jiraProjectRoleMembers",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "role_id,user_id",
+      "consumers": [],
+      "fields": [
+        {"sql": "role_id", "type": "text", "nullable": false, "vault": null, "reason": "Authorization model removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Authorization model removed."}
+      ],
+      "reason": "Project role membership is authorization state with no retained read consumer."
+    },
+    {
+      "id": "jira.permission_schemes",
+      "schema": "jira",
+      "sqlTable": "permission_schemes",
+      "sourceExport": "jiraPermissionSchemes",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Permission schemes removed."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": null, "reason": "Permission schemes removed."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Permission schemes removed."},
+        {"sql": "description", "type": "text", "nullable": true, "vault": null, "reason": "Permission schemes removed."}
+      ],
+      "reason": "The schema has no live permissions rows and the vault has one local user."
+    },
+    {
+      "id": "jira.permission_grants",
+      "schema": "jira",
+      "sqlTable": "permission_grants",
+      "sourceExport": "jiraPermissionGrants",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Permission grants removed."},
+        {"sql": "scheme_id", "type": "text", "nullable": false, "vault": null, "reason": "Permission grants removed."},
+        {"sql": "permission", "type": "text", "nullable": false, "vault": null, "reason": "Permission grants removed."},
+        {"sql": "grant_type", "type": "enum:jira_grant_type", "nullable": false, "vault": null, "reason": "Permission grants removed."},
+        {"sql": "value", "type": "text", "nullable": true, "vault": null, "reason": "Permission grants removed."}
+      ],
+      "reason": "The authorization transport and its grant evaluator are removed."
+    },
+    {
+      "id": "jira.boards",
+      "schema": "jira",
+      "sqlTable": "boards",
+      "sourceExport": "jiraBoards",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Board UI state is derived from ticket frontmatter and workflow."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Board UI state is not persisted in the vault."},
+        {"sql": "type", "type": "enum:jira_board_type", "nullable": false, "default": "KANBAN", "vault": null, "reason": "Board UI state is not persisted in the vault."},
+        {"sql": "swimlane_by", "type": "enum:jira_board_swimlane", "nullable": false, "default": "NONE", "vault": null, "reason": "Board UI state is not persisted in the vault."},
+        {"sql": "card_fields", "type": "jsonb", "nullable": true, "vault": null, "reason": "Card rendering is an application concern."},
+        {"sql": "filter", "type": "jsonb", "nullable": true, "vault": null, "reason": "Saved board filters are removed with the board UI transport."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Board UI state is not persisted in the vault."}
+      ],
+      "reason": "The vault board is a query over ticket frontmatter; this saved board layout has no retained command consumer."
+    },
+    {
+      "id": "jira.board_quick_filters",
+      "schema": "jira",
+      "sqlTable": "board_quick_filters",
+      "sourceExport": "jiraBoardQuickFilters",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Board UI state removed."},
+        {"sql": "board_id", "type": "text", "nullable": false, "vault": null, "reason": "Board UI state removed."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Board UI state removed."},
+        {"sql": "filter", "type": "jsonb", "nullable": false, "default": "{}", "vault": null, "reason": "Board UI state removed."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": null, "reason": "Board UI state removed."}
+      ]
+    },
+    {
+      "id": "jira.workflows",
+      "schema": "jira",
+      "sqlTable": "workflows",
+      "sourceExport": "jiraWorkflows",
+      "disposition": "retained-config",
+      "path": "<boardRoot>/workflow.md",
+      "identity": "project key + workflow name",
+      "consumers": ["transitions", "show/check", "move/finish validation", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Workflow references use the project-scoped workflow file; the CUID is not a stable human address."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "workflow.md:frontmatter.name"},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "workflow.md:frontmatter.projectKey", "note": "Resolved to jira.projects.key."}
+      ]
+    },
+    {
+      "id": "jira.workflow_statuses",
+      "schema": "jira",
+      "sqlTable": "workflow_statuses",
+      "sourceExport": "jiraWorkflowStatuses",
+      "disposition": "retained-config",
+      "path": "<boardRoot>/workflow.md",
+      "identity": "workflow + name",
+      "consumers": ["show/check", "queue", "blocked", "transitions", "epic", "sprints", "reports"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "workflow.md:statuses[].sourceId", "note": "Retain only as migration provenance; all references use status name."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "workflow.md:statuses[].name"},
+        {"sql": "category", "type": "enum:jira_status_category", "nullable": false, "vault": "workflow.md:statuses[].category"},
+        {"sql": "position", "type": "integer", "nullable": false, "vault": "workflow.md:statuses[].position"},
+        {"sql": "workflow_id", "type": "text", "nullable": false, "vault": "workflow.md:frontmatter.workflowSourceId", "note": "Provenance only; project-scoped workflow file is the relation."}
+      ]
+    },
+    {
+      "id": "jira.workflow_transitions",
+      "schema": "jira",
+      "sqlTable": "workflow_transitions",
+      "sourceExport": "jiraWorkflowTransitions",
+      "disposition": "retained-config",
+      "path": "<boardRoot>/workflow.md",
+      "identity": "workflow + from status + to status",
+      "consumers": ["transitions", "show/check", "move/finish validation"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "workflow.md:transitions[].sourceId", "note": "Provenance only."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "workflow.md:transitions[].name"},
+        {"sql": "workflow_id", "type": "text", "nullable": false, "vault": "workflow.md:frontmatter.workflowSourceId"},
+        {"sql": "from_status_id", "type": "text", "nullable": true, "vault": "workflow.md:transitions[].from", "note": "Resolved to status.name; null remains the global transition marker."},
+        {"sql": "to_status_id", "type": "text", "nullable": false, "vault": "workflow.md:transitions[].to", "note": "Resolved to status.name."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": "workflow.md:transitions[].position"},
+        {"sql": "screen_id", "type": "text", "nullable": true, "vault": null, "reason": "Transition screens are dropped with the form/UI model; the edge itself remains."}
+      ]
+    },
+    {
+      "id": "jira.workflow_transition_rules",
+      "schema": "jira",
+      "sqlTable": "workflow_transition_rules",
+      "sourceExport": "jiraWorkflowTransitionRules",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "The workflow rules engine is out of scope and this table is empty in the source snapshot."},
+        {"sql": "transition_id", "type": "text", "nullable": false, "vault": null, "reason": "Workflow rules engine removed."},
+        {"sql": "kind", "type": "enum:jira_transition_rule_kind", "nullable": false, "vault": null, "reason": "Workflow rules engine removed."},
+        {"sql": "rule_type", "type": "text", "nullable": false, "vault": null, "reason": "Workflow rules engine removed."},
+        {"sql": "config", "type": "jsonb", "nullable": false, "default": "{}", "vault": null, "reason": "Workflow rules engine removed."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": null, "reason": "Workflow rules engine removed."}
+      ],
+      "reason": "Zero source rows; only the workflow graph is retained. A nonempty future source must fail export rather than be silently discarded."
+    },
+    {
+      "id": "jira.board_columns",
+      "schema": "jira",
+      "sqlTable": "board_columns",
+      "sourceExport": "jiraBoardColumns",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Board drawing is derived from workflow statuses."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Board drawing is derived from workflow statuses."},
+        {"sql": "position", "type": "integer", "nullable": false, "vault": null, "reason": "Board drawing is derived from workflow statuses."},
+        {"sql": "wip_limit", "type": "integer", "nullable": true, "vault": null, "reason": "WIP highlighting is UI state, not ticket state."},
+        {"sql": "board_id", "type": "text", "nullable": false, "vault": null, "reason": "Board drawing is removed."}
+      ]
+    },
+    {
+      "id": "jira.board_column_statuses",
+      "schema": "jira",
+      "sqlTable": "board_column_statuses",
+      "sourceExport": "jiraBoardColumnStatuses",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "column_id,status_id",
+      "consumers": [],
+      "fields": [
+        {"sql": "column_id", "type": "text", "nullable": false, "vault": null, "reason": "Board drawing is removed."},
+        {"sql": "status_id", "type": "text", "nullable": false, "vault": null, "reason": "Status order is retained in workflow.md, not a board column join."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": null, "reason": "Board drawing is removed."}
+      ]
+    },
+    {
+      "id": "jira.sprints",
+      "schema": "jira",
+      "sqlTable": "sprints",
+      "sourceExport": "jiraSprints",
+      "disposition": "retained",
+      "path": "<boardRoot>/sprints/<slug>.md",
+      "identity": "project key + slug",
+      "consumers": ["show/check", "queue", "blocked", "sprint list", "reports", "version aggregates"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "sprint.md:frontmatter.sourceId", "note": "Provenance; ticket references use slug."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "sprint.md:frontmatter.name"},
+        {"sql": "goal", "type": "text", "nullable": true, "vault": "sprint.md:body.goal", "note": "Body prose is retained exactly; a short frontmatter summary may be derived only if present."},
+        {"sql": "status", "type": "enum:jira_sprint_status", "nullable": false, "default": "PLANNED", "vault": "sprint.md:frontmatter.status"},
+        {"sql": "start_date", "type": "timestamp", "nullable": true, "vault": "sprint.md:frontmatter.startDate"},
+        {"sql": "end_date", "type": "timestamp", "nullable": true, "vault": "sprint.md:frontmatter.endDate"},
+        {"sql": "completed_at", "type": "timestamp", "nullable": true, "vault": "sprint.md:frontmatter.completedAt"},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": "sprint.md:frontmatter.position"},
+        {"sql": "continuous", "type": "boolean", "nullable": false, "default": false, "vault": "sprint.md:frontmatter.continuous"},
+        {"sql": "gate_issue_id", "type": "text", "nullable": true, "vault": "sprint.md:frontmatter.gate", "note": "Resolved to issue key."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "sprint.md:frontmatter.projectKey", "note": "Resolved to jira.projects.key."}
+      ]
+    },
+    {
+      "id": "jira.versions",
+      "schema": "jira",
+      "sqlTable": "versions",
+      "sourceExport": "jiraVersions",
+      "disposition": "retained",
+      "path": "<boardRoot>/versions.md",
+      "identity": "project key + slug",
+      "consumers": ["show/check", "version list", "version aggregates", "issue_versions"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "versions.md:entries[].sourceId", "note": "Provenance; references use slug."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "versions.md:frontmatter.projectKey"},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "versions.md:entries[].name"},
+        {"sql": "description", "type": "text", "nullable": true, "vault": "versions.md:entries[].description"},
+        {"sql": "status", "type": "enum:jira_version_status", "nullable": false, "default": "UNRELEASED", "vault": "versions.md:entries[].status"},
+        {"sql": "start_date", "type": "timestamp", "nullable": true, "vault": "versions.md:entries[].startDate"},
+        {"sql": "release_date", "type": "timestamp", "nullable": true, "vault": "versions.md:entries[].releaseDate"},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": "versions.md:entries[].position"}
+      ]
+    },
+    {
+      "id": "jira.labels",
+      "schema": "jira",
+      "sqlTable": "labels",
+      "sourceExport": "jiraLabels",
+      "disposition": "retained",
+      "path": "<boardRoot>/labels.md",
+      "identity": "project key + name",
+      "consumers": ["show/check", "queue", "create/update validation", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "labels.md:entries[].sourceId", "note": "Provenance; ticket labels use names."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "labels.md:entries[].name"},
+        {"sql": "color", "type": "text", "nullable": false, "vault": "labels.md:entries[].color"},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "labels.md:frontmatter.projectKey"}
+      ]
+    },
+    {
+      "id": "jira.categories",
+      "schema": "jira",
+      "sqlTable": "categories",
+      "sourceExport": "jiraCategories",
+      "disposition": "retained-config",
+      "path": "vault.config.json projects[].categories[]",
+      "identity": "project key + name",
+      "consumers": ["show/check", "queue", "create validation", "gates/routing", "doctor", "knowledge rows"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Category name scoped by project is the stable vault reference."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "vault.config.json:projects[].key"},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "vault.config.json:projects[].categories[].name"},
+        {"sql": "color", "type": "text", "nullable": true, "vault": "vault.config.json:projects[].categories[].color"}
+      ]
+    },
+    {
+      "id": "jira.issues",
+      "schema": "jira",
+      "sqlTable": "issues",
+      "sourceExport": "jiraIssues",
+      "disposition": "retained",
+      "path": "<boardRoot>/tickets/<key>.md",
+      "identity": "project key + number, exposed as key",
+      "consumers": ["next", "claim", "show", "check", "queue", "owns", "links", "transitions", "blocked", "epic", "history", "reports", "board status", "all deferred writes"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Opaque database identity; issue key is stable and is the only ticket address."},
+        {"sql": "number", "type": "integer", "nullable": false, "vault": "ticket frontmatter.key", "note": "Derived from key suffix; export validates exact equality."},
+        {"sql": "title", "type": "text", "nullable": false, "vault": "ticket frontmatter.title"},
+        {"sql": "description", "type": "bytea", "nullable": true, "vault": "ticket body", "note": "Decoded UTF-8 Markdown containing Goal/Definition of Done/Notes/Work Log/Comments sections."},
+        {"sql": "type", "type": "enum:jira_issue_type", "nullable": false, "default": "TASK", "vault": "ticket frontmatter.type"},
+        {"sql": "priority", "type": "enum:jira_priority", "nullable": false, "default": "MEDIUM", "vault": "ticket frontmatter.priority"},
+        {"sql": "complexity", "type": "enum:jira_complexity", "nullable": false, "default": "MODERATE", "vault": "ticket frontmatter.complexity"},
+        {"sql": "risk", "type": "enum:jira_risk", "nullable": false, "default": "LOW", "vault": "ticket frontmatter.risk"},
+        {"sql": "story_points", "type": "integer", "nullable": true, "vault": "ticket frontmatter.storyPoints"},
+        {"sql": "position", "type": "real", "nullable": false, "vault": "ticket frontmatter.position"},
+        {"sql": "resolution", "type": "enum:jira_resolution", "nullable": true, "vault": "ticket frontmatter.resolution"},
+        {"sql": "resolved_at", "type": "timestamp", "nullable": true, "vault": "ticket frontmatter.resolvedAt"},
+        {"sql": "due_date", "type": "timestamp", "nullable": true, "vault": "ticket frontmatter.dueDate"},
+        {"sql": "flagged", "type": "boolean", "nullable": false, "default": false, "vault": "ticket frontmatter.flagged"},
+        {"sql": "severity", "type": "enum:jira_severity", "nullable": true, "vault": "ticket frontmatter.severity"},
+        {"sql": "reproducibility", "type": "enum:jira_reproducibility", "nullable": true, "vault": "ticket frontmatter.reproducibility"},
+        {"sql": "environment", "type": "text", "nullable": true, "vault": "ticket frontmatter.environment"},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "ticket path boardRoot/projectKey", "note": "Resolved from containing board root to jira.projects.key."},
+        {"sql": "category_id", "type": "text", "nullable": true, "vault": "ticket frontmatter.category", "note": "Resolved to categories.name; null is uncategorized."},
+        {"sql": "status_id", "type": "text", "nullable": false, "vault": "ticket frontmatter.status", "note": "Resolved to workflow_statuses.name; status category comes from workflow.md."},
+        {"sql": "assignee_id", "type": "text", "nullable": true, "vault": "ticket frontmatter.assignee", "note": "Resolved to users.email; null remains null."},
+        {"sql": "reporter_id", "type": "text", "nullable": true, "vault": "ticket frontmatter.reporter", "note": "Resolved to users.email; null remains null."},
+        {"sql": "sprint_id", "type": "text", "nullable": true, "vault": "ticket frontmatter.sprint", "note": "Resolved to sprint slug; null remains null."},
+        {"sql": "parent_id", "type": "text", "nullable": true, "vault": "ticket frontmatter.parent", "note": "Resolved to issue key; null remains null."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "ticket frontmatter.createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "ticket frontmatter.updatedAt"}
+      ]
+    },
+    {
+      "id": "jira.issue_labels",
+      "schema": "jira",
+      "sqlTable": "issue_labels",
+      "sourceExport": "jiraIssueLabels",
+      "disposition": "retained",
+      "path": "ticket frontmatter labels[]",
+      "identity": "issue key + label name",
+      "consumers": ["show/check", "queue", "claim filters", "create/update"],
+      "fields": [
+        {"sql": "issue_id", "type": "text", "nullable": false, "vault": "ticket path key"},
+        {"sql": "label_id", "type": "text", "nullable": false, "vault": "ticket frontmatter.labels[]", "note": "Resolved to jira.labels.name; ids are not exposed."}
+      ]
+    },
+    {
+      "id": "jira.issue_links",
+      "schema": "jira",
+      "sqlTable": "issue_links",
+      "sourceExport": "jiraIssueLinks",
+      "disposition": "retained",
+      "path": "source ticket frontmatter blocks[] or links[]",
+      "identity": "source key + target key + type",
+      "consumers": ["links", "blocked", "queue", "show/check contract references", "epic", "deferred link/unlink"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "link entry sourceId", "note": "Retained as provenance so a migration can audit one-to-one rows."},
+        {"sql": "source_issue_id", "type": "text", "nullable": false, "vault": "containing ticket key"},
+        {"sql": "target_issue_id", "type": "text", "nullable": false, "vault": "blocks[].key or links[].key", "note": "Resolved to issue key."},
+        {"sql": "type", "type": "enum:jira_link_type", "nullable": false, "vault": "blocks[] for BLOCKS; links[].type otherwise"},
+        {"sql": "reason", "type": "text", "nullable": true, "vault": "blocks[].reason or links[].reason", "note": "BLOCKS requires a nonblank reason; other link types may be null."},
+        {"sql": "created_by_id", "type": "text", "nullable": true, "vault": "link entry.createdBy", "note": "Resolved to users.email when present."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "link entry.createdAt"}
+      ]
+    },
+    {
+      "id": "jira.issue_versions",
+      "schema": "jira",
+      "sqlTable": "issue_versions",
+      "sourceExport": "jiraIssueVersions",
+      "disposition": "retained",
+      "path": "ticket frontmatter fixVersions[] / affectsVersions[]",
+      "identity": "issue key + version slug + kind",
+      "consumers": ["show/check", "version list/aggregates", "deferred version set"],
+      "fields": [
+        {"sql": "issue_id", "type": "text", "nullable": false, "vault": "ticket path key"},
+        {"sql": "version_id", "type": "text", "nullable": false, "vault": "ticket frontmatter.fixVersions[] or affectsVersions[]", "note": "Resolved to versions.md slug."},
+        {"sql": "kind", "type": "enum:jira_version_kind", "nullable": false, "default": "FIX", "vault": "array selected by kind"}
+      ]
+    },
+    {
+      "id": "jira.issue_activity",
+      "schema": "jira",
+      "sqlTable": "issue_activity",
+      "sourceExport": "jiraIssueActivity",
+      "disposition": "retained-frozen",
+      "path": "<boardRoot>/history/pre-migration.md",
+      "identity": "sourceId, with issue key in each entry",
+      "consumers": ["history", "frozen reference audit"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "pre-migration.md:entries[].sourceId"},
+        {"sql": "issue_id", "type": "text", "nullable": false, "vault": "pre-migration.md:entries[].ticket", "note": "Resolved to issue key."},
+        {"sql": "actor_id", "type": "text", "nullable": true, "vault": "pre-migration.md:entries[].actor", "note": "Resolved to users.name, then users.email; null remains null."},
+        {"sql": "field", "type": "text", "nullable": false, "vault": "pre-migration.md:entries[].field"},
+        {"sql": "from_value", "type": "text", "nullable": true, "vault": "pre-migration.md:entries[].from"},
+        {"sql": "to_value", "type": "text", "nullable": true, "vault": "pre-migration.md:entries[].to"},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "pre-migration.md:entries[].createdAt"}
+      ],
+      "reason": "Issue activity before cutover is exported once and frozen. After cutover, history is git log; no mutable duplicate is created."
+    },
+    {
+      "id": "jira.custom_fields",
+      "schema": "jira",
+      "sqlTable": "custom_fields",
+      "sourceExport": "jiraCustomFields",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "project key + key",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Zero rows; arbitrary frontmatter keys are the vault custom-field mechanism."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; arbitrary frontmatter keys are project-local."},
+        {"sql": "key", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; an unrecognized frontmatter key is retained as-is."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; no separate custom-field definition is needed."},
+        {"sql": "type", "type": "enum:jira_custom_field_type", "nullable": false, "vault": null, "reason": "Zero rows; no custom-field type registry is retained."},
+        {"sql": "description", "type": "text", "nullable": true, "vault": null, "reason": "Zero rows; no custom-field definition is retained."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": null, "reason": "Zero rows; frontmatter order is file order."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Zero rows; no custom-field definition is retained."},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Zero rows; no custom-field definition is retained."}
+      ],
+      "reason": "The source table is empty. Export must assert emptiness; a future nonempty table requires a new reviewed mapping."
+    },
+    {
+      "id": "jira.custom_field_options",
+      "schema": "jira",
+      "sqlTable": "custom_field_options",
+      "sourceExport": "jiraCustomFieldOptions",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "field id + value",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Zero rows; custom field options are not retained."},
+        {"sql": "field_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; custom field options are not retained."},
+        {"sql": "value", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; custom field options are not retained."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": null, "reason": "Zero rows; custom field options are not retained."}
+      ]
+    },
+    {
+      "id": "jira.custom_field_values",
+      "schema": "jira",
+      "sqlTable": "custom_field_values",
+      "sourceExport": "jiraCustomFieldValues",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "issue id + field id + value",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Zero rows; custom field values are not retained."},
+        {"sql": "issue_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; arbitrary frontmatter keys replace the EAV table."},
+        {"sql": "field_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; arbitrary frontmatter keys replace the EAV table."},
+        {"sql": "value", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; arbitrary frontmatter values remain in the ticket file."}
+      ]
+    },
+    {
+      "id": "jira.field_configurations",
+      "schema": "jira",
+      "sqlTable": "field_configurations",
+      "sourceExport": "jiraFieldConfigurations",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "project + issue type + field",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Zero rows; field configuration UI is removed."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; field configuration UI is removed."},
+        {"sql": "issue_type", "type": "enum:jira_issue_type", "nullable": false, "vault": null, "reason": "Zero rows; field configuration UI is removed."},
+        {"sql": "builtin_field", "type": "text", "nullable": true, "vault": null, "reason": "Zero rows; ticket frontmatter is the field set."},
+        {"sql": "custom_field_id", "type": "text", "nullable": true, "vault": null, "reason": "Zero rows; custom field registry is removed."},
+        {"sql": "requirement", "type": "enum:jira_field_requirement", "nullable": false, "default": "OPTIONAL", "vault": null, "reason": "Zero rows; field configuration UI is removed."}
+      ]
+    },
+    {
+      "id": "jira.screens",
+      "schema": "jira",
+      "sqlTable": "screens",
+      "sourceExport": "jiraScreens",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "project + name",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Zero rows; transition forms are removed."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; transition forms are removed."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; transition forms are removed."},
+        {"sql": "description", "type": "text", "nullable": true, "vault": null, "reason": "Zero rows; transition forms are removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Zero rows; transition forms are removed."}
+      ]
+    },
+    {
+      "id": "jira.screen_fields",
+      "schema": "jira",
+      "sqlTable": "screen_fields",
+      "sourceExport": "jiraScreenFields",
+      "disposition": "dropped-empty",
+      "path": null,
+      "identity": "screen + field",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Zero rows; transition forms are removed."},
+        {"sql": "screen_id", "type": "text", "nullable": false, "vault": null, "reason": "Zero rows; transition forms are removed."},
+        {"sql": "builtin_field", "type": "text", "nullable": true, "vault": null, "reason": "Zero rows; ticket frontmatter is the field set."},
+        {"sql": "custom_field_id", "type": "text", "nullable": true, "vault": null, "reason": "Zero rows; custom field registry is removed."},
+        {"sql": "position", "type": "integer", "nullable": false, "default": 0, "vault": null, "reason": "Zero rows; transition forms are removed."}
+      ]
+    },
+    {
+      "id": "jira.comments",
+      "schema": "jira",
+      "sqlTable": "comments",
+      "sourceExport": "jiraComments",
+      "disposition": "retained",
+      "path": "ticket body ## Comments",
+      "identity": "sourceId",
+      "consumers": ["show/read ticket", "deferred comment/finish"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "ticket body comment sentinel sourceId"},
+        {"sql": "content", "type": "bytea", "nullable": true, "vault": "ticket body ## Comments entry content", "note": "UTF-8 bytes retained; no rich-text conversion."},
+        {"sql": "issue_id", "type": "text", "nullable": false, "vault": "containing ticket key"},
+        {"sql": "author_id", "type": "text", "nullable": true, "vault": "ticket body comment sentinel author", "note": "Resolved to users.email/name."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "ticket body comment sentinel createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "ticket body comment sentinel updatedAt"}
+      ],
+      "note": "The sentinel is metadata around a Markdown comment entry. A no-op save preserves it byte-for-byte."
+    },
+    {
+      "id": "notion.projects",
+      "schema": "notion",
+      "sqlTable": "projects",
+      "sourceExport": "notionProjects",
+      "disposition": "retained-config",
+      "path": "vault.config.json knowledge.project",
+      "identity": "organization slug",
+      "consumers": ["rows", "knowledge writes deferred", "docs legacy reads"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "vault.config.json:knowledge.project.sourceId", "note": "Provenance only."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "vault.config.json:knowledge.project.name"},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": "vault.config.json:organization.slug", "note": "Resolved to public.organizations.slug."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "vault.config.json:knowledge.project.createdAt"}
+      ]
+    },
+    {
+      "id": "notion.pages",
+      "schema": "notion",
+      "sqlTable": "pages",
+      "sourceExport": "notionPages",
+      "disposition": "retained-file",
+      "path": "living Markdown files under repo docs",
+      "identity": "repo-relative path",
+      "consumers": ["docs ls", "docs read", "docs search", "board status", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "file metadata sourceId", "note": "Retain if present in migration metadata; path is the stable address."},
+        {"sql": "title", "type": "text", "nullable": false, "vault": "filename stem or frontmatter.title"},
+        {"sql": "icon", "type": "text", "nullable": true, "vault": "file frontmatter.icon"},
+        {"sql": "cover_image", "type": "text", "nullable": true, "vault": null, "reason": "Notion cover assets have no vault equivalent and are not read by retained CLI commands."},
+        {"sql": "is_archived", "type": "boolean", "nullable": false, "default": false, "vault": "file frontmatter.archived", "note": "Archived files are hidden unless docs ls --archived is requested."},
+        {"sql": "parent_id", "type": "text", "nullable": true, "vault": "directory nesting / parent path", "note": "Resolved to a path; page ids are not used."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "repo docs root / vault.config.json projectKey"},
+        {"sql": "created_by_id", "type": "text", "nullable": true, "vault": "file frontmatter.createdBy", "note": "Resolved to identity email when present."},
+        {"sql": "position", "type": "real", "nullable": false, "vault": "vault.config.json docs order or file frontmatter.position"},
+        {"sql": "content", "type": "bytea", "nullable": true, "vault": "file body", "note": "The Markdown file replaces the Yjs/page projection."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "file frontmatter.createdAt or migration metadata"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "file frontmatter.updatedAt or file metadata"}
+      ],
+      "actualSnapshot": "No notion.pages rows are captured. Local Markdown documents are scanner inputs and have no source notion.pages identity; the field mappings above describe the retained-file replacement and future migration provenance only.",
+      "reason": "The Notion page mirror and transport are removed; notion.pages is not present in the snapshot export. Existing living docs are already vault files and are scanned directly as local documents."
+    },
+    {
+      "id": "notion.page_favorites",
+      "schema": "notion",
+      "sqlTable": "page_favorites",
+      "sourceExport": "notionPageFavorites",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "user_id,page_id",
+      "consumers": [],
+      "fields": [
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Per-user Notion sidebar state removed."},
+        {"sql": "page_id", "type": "text", "nullable": false, "vault": null, "reason": "Per-user Notion sidebar state removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Per-user Notion sidebar state removed."}
+      ]
+    },
+    {
+      "id": "notion.databases",
+      "schema": "notion",
+      "sqlTable": "databases",
+      "sourceExport": "notionDatabases",
+      "disposition": "retained-config",
+      "path": "vault.config.json knowledge.databases[]",
+      "identity": "fixed database key",
+      "consumers": ["rows", "knowledge record commands deferred", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "knowledge database sourceId", "note": "Provenance only; key is decisions/questions/shortfalls/changelog/suggestions."},
+        {"sql": "title", "type": "text", "nullable": false, "vault": "vault.config.json:knowledge.databases[].title"},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": "vault.config.json:knowledge.project.sourceId"},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "vault.config.json:knowledge.databases[].createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "vault.config.json:knowledge.databases[].updatedAt"}
+      ]
+    },
+    {
+      "id": "notion.database_properties",
+      "schema": "notion",
+      "sqlTable": "database_properties",
+      "sourceExport": "notionDatabaseProperties",
+      "disposition": "retained-config",
+      "path": "vault.config.json knowledge.databases[].properties[]",
+      "identity": "database key + name",
+      "consumers": ["rows read/write", "option id resolution", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "knowledge property.sourceId"},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "knowledge property.name"},
+        {"sql": "type", "type": "enum:notion_property_type", "nullable": false, "vault": "knowledge property.type"},
+        {"sql": "options", "type": "jsonb", "nullable": true, "vault": "knowledge property.options[]", "note": "Each option retains id and label; ids use optionId(label)."},
+        {"sql": "position", "type": "integer", "nullable": false, "vault": "knowledge property.position"},
+        {"sql": "database_id", "type": "text", "nullable": false, "vault": "knowledge property.databaseKey"}
+      ]
+    },
+    {
+      "id": "notion.database_rows",
+      "schema": "notion",
+      "sqlTable": "database_rows",
+      "sourceExport": "notionDatabaseRows",
+      "disposition": "retained",
+      "path": "<boardRoot>/knowledge/<databaseKey>.md row entries",
+      "identity": "row id",
+      "consumers": ["rows", "suggestions", "knowledge resolve deferred"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "row frontmatter.rowId"},
+        {"sql": "values", "type": "jsonb", "nullable": false, "default": "{}", "vault": "row frontmatter.values", "note": "Keys normalize to property names; SELECT values remain option ids and read output resolves labels."},
+        {"sql": "database_id", "type": "text", "nullable": false, "vault": "containing knowledge file databaseKey"},
+        {"sql": "page_id", "type": "text", "nullable": true, "vault": "row frontmatter.pagePath", "note": "Retain only as an optional path reference; no row page is created."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "row frontmatter.createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "row frontmatter.updatedAt"}
+      ]
+    },
+    {
+      "id": "public.users",
+      "schema": "public",
+      "sqlTable": "users",
+      "sourceExport": "users",
+      "disposition": "retained-config",
+      "path": "vault.config.json identities[]",
+      "identity": "email",
+      "consumers": ["assignee/reporter/actor resolution", "owns", "doctor", "transitions"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "identity.sourceId"},
+        {"sql": "name", "type": "text", "nullable": true, "vault": "identity.name"},
+        {"sql": "email", "type": "text", "nullable": false, "vault": "identity.email"},
+        {"sql": "email_verified", "type": "timestamp", "nullable": true, "vault": null, "reason": "Authentication state is removed."},
+        {"sql": "image", "type": "text", "nullable": true, "vault": null, "reason": "Profile presentation is not read by retained commands."},
+        {"sql": "password_hash", "type": "text", "nullable": true, "vault": null, "reason": "Authentication credential is removed."},
+        {"sql": "password_changed_at", "type": "timestamp", "nullable": true, "vault": null, "reason": "Authentication state is removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "identity.createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "identity.updatedAt"}
+      ]
+    },
+    {
+      "id": "public.accounts",
+      "schema": "public",
+      "sqlTable": "accounts",
+      "sourceExport": "accounts",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "type", "type": "text", "nullable": false, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "provider", "type": "text", "nullable": false, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "provider_account_id", "type": "text", "nullable": false, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "refresh_token", "type": "text", "nullable": true, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "access_token", "type": "text", "nullable": true, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "expires_at", "type": "integer", "nullable": true, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "token_type", "type": "text", "nullable": true, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "scope", "type": "text", "nullable": true, "vault": null, "reason": "OAuth/session transport removed."},
+        {"sql": "id_token", "type": "text", "nullable": true, "vault": null, "reason": "OAuth/session transport removed."}
+      ]
+    },
+    {
+      "id": "public.sessions",
+      "schema": "public",
+      "sqlTable": "sessions",
+      "sourceExport": "sessions",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "session_token", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "expires", "type": "timestamp", "nullable": false, "vault": null, "reason": "Authentication transport removed."}
+      ]
+    },
+    {
+      "id": "public.verification_tokens",
+      "schema": "public",
+      "sqlTable": "verification_tokens",
+      "sourceExport": "verificationTokens",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "identifier,token",
+      "consumers": [],
+      "fields": [
+        {"sql": "identifier", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "token", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "expires", "type": "timestamp", "nullable": false, "vault": null, "reason": "Authentication transport removed."}
+      ]
+    },
+    {
+      "id": "public.organizations",
+      "schema": "public",
+      "sqlTable": "organizations",
+      "sourceExport": "organizations",
+      "disposition": "retained-config",
+      "path": "vault.config.json organization",
+      "identity": "slug",
+      "consumers": ["project resolution", "knowledge row scope", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "organization.sourceId"},
+        {"sql": "name", "type": "text", "nullable": false, "vault": "organization.name"},
+        {"sql": "slug", "type": "text", "nullable": false, "vault": "organization.slug"},
+        {"sql": "logo", "type": "text", "nullable": true, "vault": null, "reason": "Branding is not read by retained CLI commands."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "organization.createdAt"},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "organization.updatedAt"}
+      ]
+    },
+    {
+      "id": "public.memberships",
+      "schema": "public",
+      "sqlTable": "memberships",
+      "sourceExport": "memberships",
+      "disposition": "retained-config",
+      "path": "vault.config.json identities[].memberships[]",
+      "identity": "user email + organization slug",
+      "consumers": ["transitions permission evaluation", "doctor"],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": "membership.sourceId"},
+        {"sql": "role", "type": "enum:membership_role", "nullable": false, "default": "MEMBER", "vault": "membership.role"},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": "membership.userEmail", "note": "Resolved to users.email."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": "membership.organizationSlug", "note": "Resolved to organizations.slug."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": "membership.createdAt"}
+      ]
+    },
+    {
+      "id": "public.invitations",
+      "schema": "public",
+      "sqlTable": "invitations",
+      "sourceExport": "invitations",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "email", "type": "text", "nullable": false, "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "role", "type": "enum:membership_role", "nullable": false, "default": "MEMBER", "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "token", "type": "text", "nullable": false, "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "invited_by_id", "type": "text", "nullable": false, "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "accepted_at", "type": "timestamp", "nullable": true, "vault": null, "reason": "Multi-user invitation flow removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Multi-user invitation flow removed."}
+      ]
+    },
+    {
+      "id": "public.activity_events",
+      "schema": "public",
+      "sqlTable": "activity_events",
+      "sourceExport": "activityEvents",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Org-wide web activity feed is removed; issue field history is retained separately."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": null, "reason": "Org-wide web activity feed is removed."},
+        {"sql": "kind", "type": "text", "nullable": false, "vault": null, "reason": "Org-wide web activity feed is removed."},
+        {"sql": "actor_id", "type": "text", "nullable": true, "vault": null, "reason": "Org-wide web activity feed is removed."},
+        {"sql": "title", "type": "text", "nullable": false, "vault": null, "reason": "Org-wide web activity feed is removed."},
+        {"sql": "body", "type": "text", "nullable": true, "vault": null, "reason": "Org-wide web activity feed is removed."},
+        {"sql": "link", "type": "text", "nullable": true, "vault": null, "reason": "Org-wide web activity feed is removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Org-wide web activity feed is removed."}
+      ]
+    },
+    {
+      "id": "public.password_reset_tokens",
+      "schema": "public",
+      "sqlTable": "password_reset_tokens",
+      "sourceExport": "passwordResetTokens",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "token_hash", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "expires_at", "type": "timestamp", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Authentication transport removed."}
+      ]
+    },
+    {
+      "id": "public.email_verification_tokens",
+      "schema": "public",
+      "sqlTable": "email_verification_tokens",
+      "sourceExport": "emailVerificationTokens",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "token_hash", "type": "text", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "expires_at", "type": "timestamp", "nullable": false, "vault": null, "reason": "Authentication transport removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Authentication transport removed."}
+      ]
+    },
+    {
+      "id": "public.notifications",
+      "schema": "public",
+      "sqlTable": "notifications",
+      "sourceExport": "notifications",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "type", "type": "enum:notification_type", "nullable": false, "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "title", "type": "text", "nullable": false, "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "body", "type": "text", "nullable": true, "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "link", "type": "text", "nullable": true, "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "read", "type": "boolean", "nullable": false, "default": false, "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Web notification UI is removed."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Web notification UI is removed."}
+      ]
+    },
+    {
+      "id": "public.document_versions",
+      "schema": "public",
+      "sqlTable": "document_versions",
+      "sourceExport": "documentVersions",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Document version blobs are superseded by Markdown files and git history."},
+        {"sql": "document_id", "type": "text", "nullable": false, "vault": null, "reason": "Document version blobs are superseded by Markdown files and git history."},
+        {"sql": "document_type", "type": "enum:document_type", "nullable": false, "vault": null, "reason": "Document version blobs are superseded by Markdown files and git history."},
+        {"sql": "content", "type": "bytea", "nullable": false, "vault": null, "reason": "Document version blobs are superseded by Markdown files and git history."},
+        {"sql": "created_by_id", "type": "text", "nullable": true, "vault": null, "reason": "Document version blobs are superseded by Markdown files and git history."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Document version blobs are superseded by Markdown files and git history."}
+      ]
+    },
+    {
+      "id": "public.yjs_documents",
+      "schema": "public",
+      "sqlTable": "yjs_documents",
+      "sourceExport": "yjsDocuments",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "document_id",
+      "consumers": [],
+      "fields": [
+        {"sql": "document_id", "type": "text", "nullable": false, "vault": null, "reason": "Yjs/CRDT transport removed; Markdown is the document."},
+        {"sql": "state", "type": "bytea", "nullable": false, "vault": null, "reason": "Yjs/CRDT transport removed; Markdown is the document."},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Yjs/CRDT transport removed; Markdown is the document."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Yjs/CRDT transport removed; Markdown is the document."}
+      ]
+    },
+    {
+      "id": "agent.agent_tokens",
+      "schema": "agent",
+      "sqlTable": "agent_tokens",
+      "sourceExport": "agentTokens",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "The HTTP bearer-token transport is removed."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "The HTTP bearer-token transport is removed."},
+        {"sql": "token_hash", "type": "text", "nullable": false, "vault": null, "reason": "The HTTP bearer-token transport is removed."},
+        {"sql": "user_id", "type": "text", "nullable": false, "vault": null, "reason": "Identity is resolved from local vault config."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "The HTTP bearer-token transport is removed."},
+        {"sql": "last_used_at", "type": "timestamp", "nullable": true, "vault": null, "reason": "The HTTP bearer-token transport is removed."},
+        {"sql": "revoked_at", "type": "timestamp", "nullable": true, "vault": null, "reason": "The HTTP bearer-token transport is removed."}
+      ]
+    },
+    {
+      "id": "agent.agent_project_configs",
+      "schema": "agent",
+      "sqlTable": "agent_project_configs",
+      "sourceExport": "agentProjectConfigs",
+      "disposition": "dropped",
+      "path": null,
+      "identity": "organization + project key",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Remote registered config mirror removed; vault.config.json is authoritative."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": null, "reason": "Remote registered config mirror removed."},
+        {"sql": "project_key", "type": "text", "nullable": false, "vault": null, "reason": "Remote registered config mirror removed."},
+        {"sql": "config", "type": "jsonb", "nullable": false, "vault": null, "reason": "Remote registered config mirror removed; local config is read directly."},
+        {"sql": "repo_path", "type": "text", "nullable": true, "vault": null, "reason": "A remote board must not resolve a client filesystem path."},
+        {"sql": "registered_by_token_id", "type": "text", "nullable": true, "vault": null, "reason": "Bearer-token transport removed."},
+        {"sql": "registered_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Remote registered config mirror removed."}
+      ]
+    },
+    {
+      "id": "figma.projects",
+      "schema": "figma",
+      "sqlTable": "projects",
+      "sourceExport": "figmaProjects",
+      "disposition": "out-of-scope-untouched",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."}
+      ],
+      "reason": "Apps/figma remains on its existing persistence until a separate migration."
+    },
+    {
+      "id": "figma.files",
+      "schema": "figma",
+      "sqlTable": "files",
+      "sourceExport": "figmaFiles",
+      "disposition": "out-of-scope-untouched",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "description", "type": "bytea", "nullable": true, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "thumbnail", "type": "text", "nullable": true, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "created_by_id", "type": "text", "nullable": true, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."}
+      ]
+    },
+    {
+      "id": "figma.pages",
+      "schema": "figma",
+      "sqlTable": "pages",
+      "sourceExport": "figmaPages",
+      "disposition": "out-of-scope-untouched",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "position", "type": "integer", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "file_id", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."}
+      ]
+    },
+    {
+      "id": "figma.assets",
+      "schema": "figma",
+      "sqlTable": "assets",
+      "sourceExport": "figmaAssets",
+      "disposition": "out-of-scope-untouched",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "file_id", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "mime_type", "type": "text", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "width", "type": "integer", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "height", "type": "integer", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "bytes", "type": "bytea", "nullable": false, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "created_by_id", "type": "text", "nullable": true, "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Figma app is explicitly untouched by the Vault stages."}
+      ]
+    },
+    {
+      "id": "mermaid.projects",
+      "schema": "mermaid",
+      "sqlTable": "projects",
+      "sourceExport": "mermaidProjects",
+      "disposition": "out-of-scope-untouched",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "organization_id", "type": "text", "nullable": false, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."}
+      ],
+      "reason": "Apps/mermaid remains on its existing persistence until a separate migration."
+    },
+    {
+      "id": "mermaid.diagrams",
+      "schema": "mermaid",
+      "sqlTable": "diagrams",
+      "sourceExport": "mermaidDiagrams",
+      "disposition": "out-of-scope-untouched",
+      "path": null,
+      "identity": "id",
+      "consumers": [],
+      "fields": [
+        {"sql": "id", "type": "text", "nullable": false, "default": "cuid2", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "name", "type": "text", "nullable": false, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "description", "type": "bytea", "nullable": true, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "type", "type": "enum:mermaid_diagram_type", "nullable": false, "default": "FLOWCHART", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "code", "type": "text", "nullable": false, "default": "", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "project_id", "type": "text", "nullable": false, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "created_by_id", "type": "text", "nullable": true, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "is_template", "type": "boolean", "nullable": false, "default": false, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "folder", "type": "text", "nullable": true, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "notes", "type": "text", "nullable": true, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "tags", "type": "text", "nullable": true, "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "created_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."},
+        {"sql": "updated_at", "type": "timestamp", "nullable": false, "default": "now", "vault": null, "reason": "Mermaid app is explicitly untouched by the Vault stages."}
+      ]
+    },
+    {
+      "id": "config.agent",
+      "schema": "config",
+      "sqlTable": null,
+      "sourceExport": "agent.config.json",
+      "disposition": "retained-config",
+      "path": "vault.config.json policy",
+      "identity": "singleton",
+      "consumers": ["show/check routing", "gates/guard", "doctor", "owns", "claim policy"],
+      "fields": [
+        {"name": "agentEmail", "type": "string", "vault": "vault.config.json:policy.agentEmail"},
+        {"name": "agentEmails", "type": "string[]", "vault": "vault.config.json:policy.agentEmails"},
+        {"name": "routing.effortByComplexity", "type": "object", "vault": "vault.config.json:policy.routing.effortByComplexity"},
+        {"name": "routing.modelByComplexity", "type": "object", "vault": "vault.config.json:policy.routing.modelByComplexity"},
+        {"name": "routing.riskEscalation", "type": "object", "vault": "vault.config.json:policy.routing.riskEscalation"},
+        {"name": "guardrails.protectedPaths", "type": "string[]", "vault": "vault.config.json:policy.guardrails.protectedPaths"},
+        {"name": "guardrails.ticketTimeoutMinutes", "type": "object", "vault": "vault.config.json:policy.guardrails.ticketTimeoutMinutes"},
+        {"name": "guardrails.fixForwardAttempts", "type": "integer", "vault": "vault.config.json:policy.guardrails.fixForwardAttempts"},
+        {"name": "guardrails.maxConsecutiveBlocked", "type": "integer", "vault": "vault.config.json:policy.guardrails.maxConsecutiveBlocked"}
+      ]
+    },
+    {
+      "id": "config.project-overlay",
+      "schema": "config",
+      "sqlTable": null,
+      "sourceExport": "zagent.project.json",
+      "disposition": "retained-config",
+      "path": "vault.config.json projects[] and categories[]",
+      "identity": "project key",
+      "consumers": ["show/check", "gates/guard", "doctor", "board status", "docs reads", "routing"],
+      "fields": [
+        {"name": "project", "type": "string", "vault": "vault.config.json:projects[].key"},
+        {"name": "protectedPaths", "type": "string[]", "vault": "vault.config.json:projects[].protectedPaths"},
+        {"name": "baseBranch", "type": "string", "vault": "vault.config.json:projects[].baseBranch"},
+        {"name": "branching", "type": "branch|direct", "vault": "vault.config.json:projects[].branching"},
+        {"name": "branchPrefix", "type": "string", "vault": "vault.config.json:projects[].branchPrefix"},
+        {"name": "gates", "type": "string[]", "vault": "vault.config.json:projects[].gates"},
+        {"name": "merge.strategy", "type": "string", "vault": "vault.config.json:projects[].merge.strategy"},
+        {"name": "merge.push", "type": "boolean", "vault": "vault.config.json:projects[].merge.push"},
+        {"name": "conventions", "type": "string", "vault": "vault.config.json:projects[].conventions"},
+        {"name": "cleanup", "type": "string[]", "vault": "vault.config.json:projects[].cleanup"},
+        {"name": "reviewOn", "type": "risk[]", "vault": "vault.config.json:projects[].reviewOn"},
+        {"name": "workerTools", "type": "string", "vault": "vault.config.json:projects[].workerTools"},
+        {"name": "decisionLog", "type": "string", "vault": "vault.config.json:projects[].decisionLog"},
+        {"name": "decisionIdPrefix", "type": "string", "vault": "vault.config.json:projects[].decisionIdPrefix"},
+        {"name": "categories.<name>", "type": "object", "vault": "vault.config.json:projects[].categories[]", "note": "Each category preserves project, gates, paths, conventions, branching, branchPrefix, cleanup, reviewOn, workerTools, decisionLog, decisionIdPrefix, and docs."},
+        {"name": "categories.<name>.docs", "type": "object", "vault": "vault.config.json:projects[].categories[].docs", "note": "Preserves dir, title, icon, order, maxBytesPerPage."},
+        {"name": "conventionDocs", "type": "object", "vault": "vault.config.json:projects[].conventionDocs", "note": "Preserves title, icon, exclude, maxBytesPerPage."},
+        {"name": "repo", "type": "string", "vault": "vault.config.json:projects[].repoRoot", "note": "The overlay omits repo; the resolved client path is represented only as the local vault root."}
+      ]
+    }
+  ],
+  "crossEntityRules": [
+    {"id": "repo-wide-fail-closed", "rule": "Any parse failure, duplicate key, dangling blocks target, dangling sprint, dangling parent, or unresolved reference in any board root refuses all claims until fixed."},
+    {"id": "source-owned-blocks", "rule": "A BLOCKS edge is stored only in the source ticket; incoming blockedBy is derived by index."},
+    {"id": "workflow-graph", "rule": "workflow.md preserves statuses and transitions; rules, screens, columns, and quick filters are not read by retained commands."},
+    {"id": "knowledge-option-cells", "rule": "Knowledge row SELECT cells use option ids internally and are resolved to labels for rows output and where matching."},
+    {"id": "history-boundary", "rule": "issue_activity is frozen under history/pre-migration.md; post-cutover history is git log."},
+    {"id": "transport-removal", "rule": "No HTTP contract, bearer token, docsTree upload, Yjs socket, or Notion URL is part of the vault CLI interface."},
+    {"id": "empty-table-assertions", "rule": "Entities marked dropped-empty must be checked empty by export; a nonempty source row is an export error requiring a reviewed mapping."},
+    {"id": "schema-coverage", "rule": "The 56 schema tables exported by database/schema/index.ts are listed above; figma and mermaid are explicitly out-of-scope-untouched rather than silently omitted."}
+  ]
+}

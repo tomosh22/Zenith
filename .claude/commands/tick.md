@@ -233,6 +233,18 @@ So:
 
 ## 0. Pre-flight (first firing after a restart only)
 
+**Vault backend:** if `Tools/zagent/backend.json` selects `backend: "vault"`,
+use the local Vault preflight below instead of the legacy board/client row-count
+check in this section. Resolve `zagent` to this repository's launcher, run
+`zagent doctor --json`, and require exit 0, `ok: true`, and no index diagnostics.
+Check the actual repository branch and cleanliness and that the configured gate
+executables resolve before claiming. There is no remote agent-account or token
+check. Claims persist a `claimAttempt` in `.zagent/run/<KEY>/ticket.json`; retain
+that scratch for the attempt. The client supplies its token to later mutations;
+never replace a stale token with the token from a fresh board read.
+
+The paragraphs below apply to the legacy HTTP backend.
+
 `zagent doctor`. A failing check here explains most "the loop did
 nothing for an hour" incidents. Report and stop if the agent account,
 the lanes, or a gate executable is missing.
@@ -1545,6 +1557,10 @@ order-dependence.
 
 **Docs mirror.** Only after a Green commit lands — never on a Blocked or
 abandoned ticket, whose edits may be half-done or uncommitted.
+
+With the Vault backend, the repository Markdown is already authoritative.
+Skip this remote-mirror section and proceed to step 8. Do not call `docs sync`;
+the mutable Vault guard returns `docsMirrorNeeded: false`.
 
 **`guard` already decided this: read `docsMirrorNeeded` off its payload.**
 False → skip, silently; a ticket that never touched a doc has nothing to

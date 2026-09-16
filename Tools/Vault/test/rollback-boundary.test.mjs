@@ -1,0 +1,30 @@
+import { test } from 'vitest';
+import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { git } from '../server/operations.mjs';
+import { assertBeforeFirstClaim } from '../scripts/freeze-legacy.mjs';
+
+test('legacy thaw refuses both journaled and committed claims, even after a revert', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-rollback-'));
+  t.onTestFinished(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.writeFile(path.join(root, 'vault.config.json'), '{}');
+  await git(root, ['init', '-q']);
+  await git(root, ['config', 'user.name', 'Rollback test']);
+  await git(root, ['config', 'user.email', 'test@example.invalid']);
+  await git(root, ['add', '.']); await git(root, ['commit', '-qm', 'Cutover']);
+  await assertBeforeFirstClaim(root);
+  await assert.rejects(assertBeforeFirstClaim(null), /requires --vault/);
+  const journals = path.join(root, '.git/vault/operations');
+  await fs.mkdir(journals, { recursive: true });
+  const journal = path.join(journals, 'claim.json');
+  await fs.writeFile(journal, JSON.stringify({ kind: 'next', phase: 'prepared' }));
+  await assert.rejects(assertBeforeFirstClaim(root), /journaled/);
+  await fs.rm(journal);
+  await fs.writeFile(path.join(root, 'ticket.md'), 'Claimed');
+  await git(root, ['add', 'ticket.md']);
+  await git(root, ['commit', '-qm', 'board: claim\n\nVault-Operation: first-claim']);
+  await git(root, ['revert', '--no-edit', 'HEAD']);
+  await assert.rejects(assertBeforeFirstClaim(root), /committed/);
+});

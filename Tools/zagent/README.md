@@ -1,5 +1,17 @@
 # `zagent` — the agent board's client
 
+## Backend selection
+
+Without `backend.json`, this launcher uses the legacy HTTP client described below.
+A validated Vault cutover installs `{"backend":"vault","vaultRoot":"../.."}`
+in this directory. Paths are relative to this directory. The Vault adapter requires
+Node 22 and the dependencies under `Tools/Vault`; it does not need a token or the
+old server. An invalid profile fails closed rather than falling back to HTTP.
+
+The switch has not been installed. See [Vault](../Vault/README.md) for the new app,
+tests, migration, and recovery boundary. Do not create the profile before cutover
+verification is complete. The remaining sections document the legacy backend.
+
 The autonomous loop's board is a web application. It may run on **an
 entirely different machine**, and this repo does not know where its
 source lives — there is deliberately no setting for that.

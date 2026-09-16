@@ -1,0 +1,146 @@
+{
+  "jira.board_column_statuses": {
+    "count": 130,
+    "sha256": "dabc23139f7ede9557016b9ebe4258ad01e30ee2576fed1d7e34b7ec83ba4dfe"
+  },
+  "jira.board_columns": {
+    "count": 131,
+    "sha256": "87bf199e4783a35b50ee48f50b1d2d1c271ff598dbc9b8a5dcb3917f21bab43d"
+  },
+  "jira.board_quick_filters": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.boards": {
+    "count": 27,
+    "sha256": "7d5fd808c7c21f27328d2b1e0c827700488387b8fa285c4333362c2a00681c2d"
+  },
+  "jira.categories": {
+    "count": 45,
+    "sha256": "b9e8ed84fee363b3c5aee0d96728fa704ebfddd8439e2862be5e627328aabd04"
+  },
+  "jira.comments": {
+    "count": 46,
+    "sha256": "3e9e5ea04a7e877941688d3bc2965e35b87bd7dab4a761cbd83c61d2da598475"
+  },
+  "jira.custom_field_options": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.custom_field_values": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.custom_fields": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.field_configurations": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.issue_activity": {
+    "count": 151,
+    "sha256": "9948db24b32223926efc5a1b549c67519aa3b6be070ce1deac8b3ef4ab228b37"
+  },
+  "jira.issue_labels": {
+    "count": 145,
+    "sha256": "2dee13e65c1b1d26e1fe081b45d0e4eb31193fd0a7f341d32ec135415b4b779c"
+  },
+  "jira.issue_links": {
+    "count": 196,
+    "sha256": "64ffa0f47a97358baf1828d9fe6ae02931c110f2662e640dac1395065a297252"
+  },
+  "jira.issue_versions": {
+    "count": 136,
+    "sha256": "963aa9ce77b2350515a9155d94ad85ef321c2be3e09436b793dca0ab20e9dac9"
+  },
+  "jira.issues": {
+    "count": 244,
+    "sha256": "fc20a7e0ccd04d9fd7ec6c067ea1b790cb7c53cb74d5f5d75cb0fb8460022427"
+  },
+  "jira.labels": {
+    "count": 290,
+    "sha256": "ebdaa5c4dc31c2d68ac65728101d1cf3c15f47dce14a27fbda1d0e0657d596ac"
+  },
+  "jira.permission_grants": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.permission_schemes": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.project_role_members": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.project_roles": {
+    "count": 75,
+    "sha256": "a083c72b60d9f4cf22bf4611dd568a0851443dac87bcc6965aa5deee506b39fe"
+  },
+  "jira.projects": {
+    "count": 29,
+    "sha256": "c379e1cb1a966e0d70cc538f0d7769f23d86131c1311a24ed36fdacb1927d1e4"
+  },
+  "jira.screen_fields": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.screens": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.sprints": {
+    "count": 37,
+    "sha256": "c0a7f396713ae85606fa99a658175391f9b485d6c0fd9aa8fea34f8b8773a9c1"
+  },
+  "jira.versions": {
+    "count": 8,
+    "sha256": "0dba0a18e1a9eaf020b51e27076be09d87abb43f46057d13ea3cff23d1c40512"
+  },
+  "jira.workflow_statuses": {
+    "count": 140,
+    "sha256": "c4f55beff3612c32efb9f3b41797aea887055d95d8ad522c56446e7b56491a62"
+  },
+  "jira.workflow_transition_rules": {
+    "count": 0,
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+  },
+  "jira.workflow_transitions": {
+    "count": 268,
+    "sha256": "d51337b465dabed140fb1f0a243008e9df179bac8434c4aa530c37352b1f7fb4"
+  },
+  "jira.workflows": {
+    "count": 28,
+    "sha256": "14c606c292ee441c227f464a09509c38a780a9005807cce294d0f63343581628"
+  },
+  "notion.database_properties": {
+    "count": 85,
+    "sha256": "72651aac8252e04808bfc92635a783fc7c630909f7184858f5774930622918cf"
+  },
+  "notion.database_rows": {
+    "count": 50,
+    "sha256": "db9d9988ba9aa8175ce7ec7b56fdd21c761aea913935db7edd6f2b27015526e4"
+  },
+  "notion.databases": {
+    "count": 10,
+    "sha256": "e8e85a16344ef614d9936af52ced69dc5151040a2cbdc37553d53daeef1bfaa0"
+  },
+  "notion.projects": {
+    "count": 2,
+    "sha256": "af889a062c715460508a1d1deaf2f6f3d1f38e628c8e789a3a83902983bdffec"
+  },
+  "public.users": {
+    "count": 22,
+    "sha256": "24a9afda11e58169f8b41e6894165fb27f51b6a327d8c2b156a01563bd2f00f5"
+  },
+  "public.organizations": {
+    "count": 22,
+    "sha256": "6b44771c497a0d9f1f67661de62f12f0b30b1e282ababf4cccb8fcc781cdaafb"
+  },
+  "public.memberships": {
+    "count": 26,
+    "sha256": "3cd575a851d49955b9700da6f52cade9432f54d4987d7bc4a91f0869380f5d05"
+  }
+}
