@@ -1412,6 +1412,296 @@ function Format-HelpStub {
     return ($lines -join [Environment]::NewLine)
 }
 
+# ─── TICK-WIRING HELPERS (the parts of the four TickChecks.psm1 refusals
+#      that are pure argv/text decisions rather than filesystem reads) ──
+#
+# Same reason every other predicate above lives here rather than inline in
+# zagent.ps1: that file runs a command the moment it is invoked, so
+# nothing inside it is reachable from a test. TickChecks.psm1 answers
+# "what happened" (which files excursed, whether the commit is complete,
+# whether a verdict is fresh); these answer the small textual/argv
+# questions zagent.ps1 asks ON TOP of that answer before it refuses
+# anything.
+
+function Get-LabelList {
+    <#
+    .SYNOPSIS
+      Splits a `--label` value into trimmed, non-empty names.
+    .DESCRIPTION
+      `--label` may carry a comma-separated list (`--label a,b`). One
+      home for the splitting rule, shared by the `blocked-scope` wiring
+      in zagent.ps1 and by this module's own tests.
+    #>
+    param([string]$Value)
+    if (-not $Value) { return , @() }
+    return , @($Value -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+}
+
+# ─── Durable findings (mirrors Tools/Vault/cli/tick-checks.mjs) ────────
+#
+# tick.md step 8 ("A FINDING THAT OUTLIVES THE TICKET IS A DECISION") asks
+# every tick to consider whether it learned something true of the CODEBASE
+# rather than of the ticket, and until the Vault backend added this check,
+# nothing verified that it actually answered. Worse: this rule used to live
+# ONLY here, in the legacy PowerShell client -- `.claude/commands/tick.md`
+# documented it as enforced, and it had not actually run in production
+# since `backend.json` cut over to Vault, because nothing on that side ever
+# grew an equivalent. A protection that exists on one backend and not the
+# other disappears the moment somebody flips that file, silently. This is
+# the port back the other way: read as a specification of intent (per that
+# file's own header) and translated faithfully rather than reinterpreted,
+# so the accepted shape is identical on both backends and a flip cannot
+# change what passes.
+$script:DURABLE_FINDINGS_LABEL = '^\s*(?:#{1,6}\s*|\*{0,2})\s*durable findings\s*\*{0,2}\s*:?\s*(.*)$'
+$script:DECISION_REFERENCE = '\b[A-Za-z][A-Za-z0-9]*-D-\d+\b'
+
+function Get-DurableFindingsAnswer {
+    <#
+    .SYNOPSIS
+      Whether a work log carries an explicit durable-findings answer:
+      "none", or one or more decision references (`PROJ-D-N`, the shape
+      `zagent decide` entries carry).
+    .DESCRIPTION
+      Nobody can verify the JUDGEMENT -- "was there really nothing
+      durable here" is not computable -- so, exactly like the work log's
+      own Coverage row, the mechanism is to make SILENCE illegal rather
+      than to grade the answer: "none" is a legal answer, an absent line
+      is not.
+
+      Accepted shape (must match Tools/Vault/cli/tick-checks.mjs's
+      `durableFindingsAnswer` exactly, so the two backends cannot
+      diverge): a `**Durable findings**:` bold run-in label (trailing
+      colon optional) or a `## Durable findings` heading at any level,
+      matched case-insensitively anywhere in the work log, with content
+      either inline or on the following non-blank line(s) -- collection
+      of the following lines stops at the next heading, at the next bold
+      run-in label (once something has already been collected), or at a
+      blank line (once something has already been collected).
+    .OUTPUTS
+      [PSCustomObject] with:
+        Present    [bool]   -- $false when no "Durable findings" line
+                   exists at all.
+        Answer     'none' | 'references' | $null -- $null means present
+                   but not a legal answer (or empty).
+        References [string[]] -- decision references found, e.g. ZM-D-208.
+        Reason     [string] or $null -- set whenever Answer is $null.
+    #>
+    param([string]$WorkLog)
+
+    $lines = @([string]$WorkLog -split "`r?`n")
+    $labelIndex = -1
+    $inline = ''
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $match = [regex]::Match($lines[$i], $script:DURABLE_FINDINGS_LABEL, 'IgnoreCase')
+        if ($match.Success) {
+            $labelIndex = $i
+            $inline = $match.Groups[1].Value
+            break
+        }
+    }
+    if ($labelIndex -eq -1) {
+        return [PSCustomObject]@{
+            Present = $false; Answer = $null; References = @()
+            Reason  = 'the work log carries no "Durable findings" line -- add `**Durable findings**: none` or name the decision reference(s) recorded via `zagent decide` (e.g. ZM-D-208)'
+        }
+    }
+
+    $content = $inline.Trim()
+    if (-not $content) {
+        $collected = [System.Collections.Generic.List[string]]::new()
+        for ($i = $labelIndex + 1; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+            if ($line -match '^\s*#{1,6}\s') { break }
+            if ($line -match '^\s*\*\*[^*]+\*\*\s*:?' -and $collected.Count -gt 0) { break }
+            if ($line.Trim() -eq '') {
+                if ($collected.Count -gt 0) { break } else { continue }
+            }
+            [void]$collected.Add($line.Trim())
+        }
+        $content = ($collected -join ' ').Trim()
+    }
+
+    if (-not $content) {
+        return [PSCustomObject]@{
+            Present = $true; Answer = $null; References = @()
+            Reason  = 'the "Durable findings" line has no content -- say "none" or name the decision reference(s)'
+        }
+    }
+
+    $references = @([regex]::Matches($content, $script:DECISION_REFERENCE) | ForEach-Object { $_.Value })
+    $isNone = $content.Trim() -match '^none\.?$'
+    if ($isNone -or $references.Count -gt 0) {
+        return [PSCustomObject]@{
+            Present    = $true
+            Answer     = if ($isNone) { 'none' } else { 'references' }
+            References = $references
+            Reason     = $null
+        }
+    }
+
+    return [PSCustomObject]@{
+        Present = $true; Answer = $null; References = @()
+        Reason  = "the `"Durable findings`" line (`"$content`") names neither `"none`" nor a decision reference like ZM-D-208 -- say one or the other"
+    }
+}
+
+# ─── needs-gpu companion (mirrors Tools/Vault/cli/tick-checks.mjs) ─────
+
+$script:GPU_REASON_LABELS = @(
+    'gpu-reason:render-capture',
+    'gpu-reason:visual-measure',
+    'gpu-reason:requires-graphics-test',
+    'gpu-reason:legacy-scene-reauthor'
+)
+
+function Get-GpuReasonLabels {
+    <#
+    .SYNOPSIS
+      The fixed `gpu-reason:*` vocabulary, as a single source both this
+      module and its tests read -- never re-typed at the call site.
+    #>
+    return , @($script:GPU_REASON_LABELS)
+}
+
+function Test-NeedsGpuCompanion {
+    <#
+    .SYNOPSIS
+      Whether the labels APPLIED BY ONE WRITE (never a ticket's whole,
+      already-saved label list) are defensible with respect to
+      `needs-gpu`: applying it demands exactly one companion
+      `gpu-reason:*` label in the SAME write.
+    .DESCRIPTION
+      `needs-gpu` means "build Vulkan_*_True and run windowed instead of
+      the headless Null_ config" -- WHY used to be free prose an agent
+      had to read and infer, and the commonest historical reason ("it
+      re-authors a committed scene") stopped being one at all once ZEN-6
+      removed the guard that made it true, leaving stale labels holding
+      tickets back for nothing. A fixed, machine-readable vocabulary
+      replaces the prose.
+
+      Deliberately NOT retroactive: a ticket that already carries
+      `needs-gpu` from before this rule existed is untouched until
+      somebody writes to its labels again -- this only ever judges the
+      labels THIS ONE write is applying, which is exactly what
+      `-LabelsApplied` (the parsed `--label` value, via Get-LabelList) is.
+
+      Mirrors `needsGpuCompanion` in Tools/Vault/cli/tick-checks.mjs.
+    .OUTPUTS
+      [PSCustomObject] with Ok [bool] and Reason [string] or $null.
+    #>
+    param([string[]]$LabelsApplied)
+
+    $labels = @($LabelsApplied | ForEach-Object { [string]$_ })
+    $hasNeedsGpu = (@($labels | Where-Object { $_.ToLowerInvariant() -eq 'needs-gpu' })).Count -gt 0
+    if (-not $hasNeedsGpu) { return [PSCustomObject]@{ Ok = $true; Reason = $null } }
+
+    $reasonSet = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]$script:GPU_REASON_LABELS, [System.StringComparer]::OrdinalIgnoreCase)
+    $companions = @($labels | Where-Object { $reasonSet.Contains($_) })
+    if ($companions.Count -eq 1) { return [PSCustomObject]@{ Ok = $true; Reason = $null } }
+
+    $vocabulary = $script:GPU_REASON_LABELS -join ', '
+    if ($companions.Count -eq 0) {
+        return [PSCustomObject]@{
+            Ok     = $false
+            Reason = "--label needs-gpu requires exactly one companion label naming why: $vocabulary"
+        }
+    }
+    return [PSCustomObject]@{
+        Ok     = $false
+        Reason = "--label needs-gpu requires exactly one companion label, not $($companions.Count) ($($companions -join ', ')) -- pick the one that actually applies: $vocabulary"
+    }
+}
+
+function Get-UnexplainedExcursions {
+    <#
+    .SYNOPSIS
+      Which excursion paths are NOT named anywhere in the finish
+      comment/work-log text about to be written to the ticket.
+    .DESCRIPTION
+      tick.md's rule is "every excursion must be explained on the
+      ticket", not "no excursions allowed" -- a worker may legitimately
+      need to reach outside its file list. `Test-FileListExcursion`
+      (TickChecks.psm1) answers WHICH changed paths were never on the
+      list; this answers which of THOSE still have no explanation, by a
+      plain case-insensitive substring search over whatever text is
+      about to land on the ticket's permanent record.
+
+      Deliberately format-free: an `## Excursions` heading is the
+      obvious place to put the explanation, but a mention anywhere in
+      either the `--comment` file or the `--worklog` file counts. The
+      goal is a written justification on the record, not a template a
+      worker has to reproduce exactly.
+
+      Returns an EMPTY array (never $null) when every excursion is
+      explained or there were none to begin with, so a caller can always
+      `.Count` it without a StrictMode throw.
+    #>
+    param([string[]]$Excursions, [string]$ExplanationText)
+    if (-not $Excursions -or $Excursions.Count -eq 0) { return , @() }
+    $text = if ($ExplanationText) { $ExplanationText } else { '' }
+    return , @($Excursions | Where-Object {
+        $text.IndexOf($_, [System.StringComparison]::OrdinalIgnoreCase) -lt 0
+    })
+}
+
+function Test-GuardNeedsFreshnessOverride {
+    <#
+    .SYNOPSIS
+      Should a `guard` result the BOARD reported as passing be overridden
+      into a failure, because the local gate verdict it never saw is not
+      fresh?
+    .DESCRIPTION
+      Only ever turns a would-be PASS into a failure -- never the
+      reverse, and never touches a result that was already non-zero. A
+      board-side guard refusal already carries its own exit code and
+      message naming what it refused; staleness has nothing useful to
+      add to a refusal that already fired, and overriding it would
+      REPLACE the board's specific reason with this check's generic one.
+      So this is gated on the board itself having answered 0 -- the case
+      where nothing about the diff's SELECTION was wrong, but the record
+      of having actually RUN it might still be stale or absent.
+    #>
+    param([int]$BoardExitCode, [bool]$Fresh)
+    return ($BoardExitCode -eq 0) -and (-not $Fresh)
+}
+
+function Get-ForbiddenAbandonFlags {
+    <#
+    .SYNOPSIS
+      Which of `--status`, `--assignee`, `--label` were passed to
+      `zagent abandon`.
+    .DESCRIPTION
+      `abandon` is client-composed and must have NO way to change status
+      or assignee -- tick.md step 9's ownership-lost path used to be
+      three negatives an agent had to hold under pressure ("use comment,
+      but do NOT change status, and do NOT clear the assignee"). This is
+      the structural version: it names every forbidden flag actually
+      present, in one pass, so the refusal can list all of them rather
+      than stopping at the first and leaving the rest to be discovered on
+      a second attempt.
+
+      Matches both `--name value` and `--name=value` spellings, the same
+      two `Get-FlagValue` already handles -- a flag present with no
+      following value must still be caught, which is why this scans
+      tokens rather than calling `Get-FlagValue` (which returns $null for
+      exactly that case and would silently let a bare trailing `--status`
+      through).
+
+      Returns an EMPTY array (never $null) when none are present.
+    #>
+    param([string[]]$Argv)
+    $present = [System.Collections.Generic.List[string]]::new()
+    foreach ($name in @('status', 'assignee', 'label')) {
+        $hit = $false
+        foreach ($token in @($Argv)) {
+            if ($token -eq "--$name" -or $token -like "--$name=*") { $hit = $true; break }
+        }
+        if ($hit) { [void]$present.Add($name) }
+    }
+    return , $present.ToArray()
+}
+
 Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annotations,
     Get-ClientProject, Get-FlagValue, Test-Flag, Get-FileFlags, Get-FileContents, Get-UnmetDoneCriteria, Get-WorkingTreeChanges,
     Test-NeedsDocsTree, Test-NeedsChangedSet, Get-RequestTimeout, Get-GuardTicketKey,
@@ -1421,4 +1711,6 @@ Export-ModuleMember -Function Find-ClientRepo, ConvertTo-PosixPath, Remove-Annot
     Get-ClientChecks, Get-AllGateLines, Write-StdErr,
     Test-HelpFlag, Get-HelpSubject, Format-HelpStub,
     Get-LivingDocDirs, Find-KeyCitations, Format-KeyCitations, Get-CreatedKey,
-    Test-ContractFixture
+    Test-ContractFixture,
+    Get-LabelList, Get-UnexplainedExcursions, Get-ForbiddenAbandonFlags, Test-GuardNeedsFreshnessOverride,
+    Get-DurableFindingsAnswer, Get-GpuReasonLabels, Test-NeedsGpuCompanion

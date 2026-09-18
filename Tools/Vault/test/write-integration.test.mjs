@@ -32,7 +32,7 @@ test('real frozen ticket can be claimed, finished and inspected through the shar
   const attempt = claimed.getTicket('ZEN-7').metadata.claimAttempt;
   assert.ok(attempt, 'Claim must persist its attempt identity');
   assert.equal(dispatchRead(claimed, ['owns', 'ZEN-7']).payload.owned, true);
-  const finish = await dispatchWrite(claimed, ['finish', 'ZEN-7', '--status', 'Done', '--attempt', attempt], { comment: 'Integration test completed.', worklog: 'Validated the isolated claim and finish path.' });
+  const finish = await dispatchWrite(claimed, ['finish', 'ZEN-7', '--status', 'Done', '--attempt', attempt], { comment: 'Integration test completed.', worklog: 'Validated the isolated claim and finish path.\n\n**Durable findings**: none.' });
   assert.equal(finish.exitCode, 0, JSON.stringify(finish.payload));
   assert.equal((await loadVault(root)).getTicket('ZEN-7').metadata.status, 'Done');
   assert.equal(await git(root, ['status', '--porcelain']), '');
@@ -51,11 +51,17 @@ test('the real launcher client carries claims, automatic gate inputs, and file-b
   const gates = await invoke(['gates', 'ZEN-7']);
   assert.equal(gates.exitCode, 0, JSON.stringify(gates.payload));
   assert.ok(gates.payload.changed.includes('worker-change.cpp'));
+  // `guard`'s freshness fold (tick-checks.mjs `gateVerdictFresh`) reads
+  // `.zagent/run/<KEY>/tick_gates.json` — a real tick writes it via
+  // `Tools/tick_gates.ps1` between `gates` and `guard`; reproduce that here
+  // so this integration test still exercises a realistic sequence.
+  const headSha = await git(root, ['rev-parse', 'HEAD']);
+  await fs.writeFile(path.join(scratch, 'tick_gates.json'), JSON.stringify({ state: 'complete', exitCode: 0, headSha, steps: [], skipped: [] }));
   const guard = await invoke(['guard', 'ZEN-7']);
   assert.equal(guard.exitCode, 0, JSON.stringify(guard.payload));
   assert.equal(guard.payload.docsMirrorNeeded, false);
   await fs.writeFile(path.join(scratch, 'result.md'), 'Real client integration completed.');
-  await fs.writeFile(path.join(scratch, 'worklog.md'), 'Isolated adapter and scratch test; no application gates claimed.');
+  await fs.writeFile(path.join(scratch, 'worklog.md'), 'Isolated adapter and scratch test; no application gates claimed.\n\n**Durable findings**: none.');
   const finish = await invoke(['finish', 'ZEN-7', '--status', 'Done', '--comment', '.zagent/run/ZEN-7/result.md', '--worklog', '.zagent/run/ZEN-7/worklog.md']);
   assert.equal(finish.exitCode, 0, JSON.stringify(finish.payload));
   const final = (await loadVault(root)).getTicket('ZEN-7');

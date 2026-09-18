@@ -351,7 +351,7 @@ can develop here and ignore it entirely, with three exceptions.
 |---|---|
 | `zagent.project.json` | Gate command lines, pinned unit baselines, per-category conventions, branching mode, living-doc directories. **Sent to the board with every request** |
 | `.claude/commands/tick.md` | The `/tick` protocol — nine steps, seven invariants |
-| `Tools/zagent/` | The client — `zagent.ps1` (argv/env/transport), `ZagentClient.psm1` (pure helpers), `Test-ZagentClient.ps1` (the assert script — it prints its own count; do not pin one here, this line has been stale twice), `zagent.cmd` shim, and `contract.json` — the golden wire contract (protocol version, path-valued flags, docs-tree commands) that BOTH sides' test suites assert against. **No Node, no `node_modules`** |
+| `Tools/zagent/` | `backend.json` selects the live backend — **`vault` today**: `zagent.ps1` execs `node Tools/Vault/cli/client.mjs` and exits, so nothing else in this directory runs in a default checkout. It still carries: `zagent.ps1` (argv/env/transport for the `legacy` backend), `ZagentClient.psm1` (pure helpers), `TickChecks.psm1` (the legacy backend's copy of the tick-protocol checks — excursions, commit completeness, `blocked-scope`, gate-verdict freshness; `Tools/Vault/cli/tick-checks.mjs` is the live equivalent, wired into `Tools/Vault/cli/write.mjs` and `client.mjs`), `build_prompt.ps1` (assembles a tick's worker prompt deterministically — invoked directly with `pwsh -File`, so it runs under either backend; see `tick.md` step 5), `zagent.cmd` shim, `contract.json` (the golden wire contract BOTH sides' test suites assert against), and four assert scripts — `Test-ZagentClient.ps1`, `Test-TickChecks.ps1`, `Test-BuildPrompt.ps1`, `Test-TickWiring.ps1` — each prints its own count; do not pin one here, this line has been stale twice. **No Node, no `node_modules` in this directory itself** — Vault, the live backend, is Node and lives in `Tools/Vault/` |
 | `.zagent/` | Run scratch (`last.json`, `run/<KEY>/`). **Gitignored**, so the dirty-tree precondition still holds |
 
 The board keeps only POLICY — the agent account, the complexity→model
@@ -500,10 +500,13 @@ A bare `claude` started in this repo is the whole setup:
 /loop /tick          # unattended, until the queues empty
 ```
 
-**No `--add-dir`, no second checkout.** The scratch is local, the client
-is local, and the board is reached over HTTP. What the machine does need
-is `ZAGENT_URL` and `ZAGENT_TOKEN` — see `Tools/zagent/README.md`;
-`zagent doctor` names either if it is missing.
+**No `--add-dir`, no second checkout.** The scratch is local, and the client
+is local. **`Tools/zagent/backend.json` picks which board it talks to** —
+`vault` (the live default) is this same checkout, so `zagent` needs no
+network credential at all; `legacy` is the historical remote HTTP board,
+which does need `ZAGENT_URL` and `ZAGENT_TOKEN` on the machine. Either way,
+`Tools/zagent/README.md` has the setup and `zagent doctor` names whichever
+piece is missing.
 
 ### The `zagent` CLI
 
@@ -862,12 +865,14 @@ unattended loop, and collapsing them is how a network blip gets written
 into a ticket as a contract failure. On a `7`, change no status and
 comment nothing.
 
-**Setting a machine up** (once): `ZAGENT_URL` and `ZAGENT_TOKEN` as user
-environment variables, and `Tools\zagent` on `PATH`. The token is minted
-**on the board machine** — `zagent auth mint --name <this-machine>` —
-shown exactly once, stored only as a SHA-256, and revocable per machine
-without disturbing anything else. `Tools/zagent/README.md` has the
-commands; `zagent doctor` names whichever piece is missing.
+**Setting a machine up** (once): put `Tools\zagent` on `PATH`. On the live
+`vault` backend that is the whole setup — no token, no URL, nothing to
+mint, because the board is this checkout. The paragraphs above about
+`ZAGENT_URL`/`ZAGENT_TOKEN` and minting a token **on the board machine**
+describe the `legacy` remote-HTTP backend (`backend.json: {"backend":
+"legacy"}`), kept as the historical/fallback path. `Tools/zagent/README.md`
+has the commands for either; `zagent doctor` names whichever piece is
+missing.
 
 `packages/agent/CLAUDE.md` in the other repo is the full reference for
 the dispatcher, `apps/jira/CLAUDE.md` for the HTTP surface.

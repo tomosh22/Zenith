@@ -32,6 +32,16 @@ import { databaseModel, rowsFor } from './queries.mjs';
 import { issueLinkError, issueParentError } from '../shared/jira/constants.js';
 import { isKnownHierarchyType } from '../shared/hierarchy.mjs';
 import { upsertWorklog } from './legacy-pure/ticket.mjs';
+import {
+  blockedScopeAllowed,
+  commitCompleteness,
+  durableFindingsAnswer,
+  fileListExcursion,
+  needsGpuCompanion,
+  unexplainedExcursions,
+  unmetDoneCriteria,
+} from './tick-checks.mjs';
+import { workingTreeChanges } from './working-tree.mjs';
 
 const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 const STATUS_TODO = 'To Do';
@@ -693,6 +703,92 @@ async function move(index, argv) {
   });
 }
 
+function repoRootOf(index) {
+  return index?.root ?? index?.vaultRoot;
+}
+
+/**
+ * The finish-time content refusals tick.md asks a human tick to remember and
+ * a check now enforces instead: an unticked Definition-of-Done box (Done
+ * only — Blocked/In Review legitimately carry one), an unexplained excursion
+ * outside the worker's file list, a `commit -am`-dropped file (Done only),
+ * and a missing durable-findings answer (every terminal status). Each is
+ * fail-open by *omission* if it silently returned nothing on a missing
+ * input, which is exactly the shape TickChecks.psm1's header warns about —
+ * so a missing filelist.txt/changed.txt WARNS on stderr and allows (older
+ * runs and a hand-run tick legitimately have neither), while a *present but
+ * violated* record refuses.
+ *
+ * Runs only after ownership/status/human-gate have already been confirmed
+ * (called from inside `finish`'s `prepare`, after `requireAgentOwnership`),
+ * so a ticket the agent no longer owns still fails with OWNERSHIP/HUMAN_GATE
+ * rather than a content refusal that would obscure the real reason.
+ */
+async function checkFinishContent(index, key, status, commentText, worklog) {
+  const repoRoot = repoRootOf(index);
+  const statusNorm = String(status ?? '').trim().toLowerCase();
+  const isDone = statusNorm === STATUS_DONE.toLowerCase();
+
+  if (isDone) {
+    const unmet = unmetDoneCriteria(worklog);
+    if (unmet.length) {
+      throw new WriteError(
+        `refusing to finish ${key} as Done — its work log leaves ${unmet.length} Definition-of-Done item(s) unticked: `
+        + unmet.map(item => `[ ] ${item}`).join('; ')
+        + '. A green gate says the tree compiles and the pinned count matches; it does not say the ticket was finished.'
+        + ' Either tick the box because the work IS done, or finish as Blocked / "In Review" — both accept an unmet DoD.',
+        'INVALID', 4,
+      );
+    }
+  }
+
+  if (!repoRoot) {
+    // No vault root to resolve `.zagent/run/<key>` or run git against — this
+    // is a synthetic/embedded index with no filesystem behind it (some unit
+    // fixtures). Nothing below can be verified; proceed rather than refuse a
+    // ticket for a repo that structurally cannot carry the scratch files.
+  } else {
+    const changed = await workingTreeChanges(repoRoot);
+    const excursion = await fileListExcursion({ repoRoot, key, changed });
+    if (!excursion.listFound) {
+      // A missing filelist.txt is NOT "no excursions" — folding the two
+      // together is the exact fail-open shape this check exists to remove.
+      // Warn rather than refuse: a hand-run tick legitimately has no list.
+      process.stderr.write(`zagent: finish ${key} — ${excursion.reason}. Proceeding, but nobody can tell from this run whether it stayed inside a file list.\n`);
+    } else if (excursion.excursions.length) {
+      const explanation = `${worklog}\n${commentText ?? ''}`;
+      const unexplained = unexplainedExcursions(excursion.excursions, explanation);
+      if (unexplained.length) {
+        throw new WriteError(
+          `refusing to finish ${key} — it touched ${unexplained.length} file(s) outside its recorded file list, and none is named in the comment or work log: ${unexplained.join(', ')}. `
+          + 'Excursions are PERMITTED — the work may genuinely need to reach outside the list — but every one must be explained on the ticket record.'
+          + ' Add the explanation to the comment or work log and finish again. Do not revert the work to dodge this.',
+          'INVALID', 4,
+        );
+      }
+    }
+
+    if (isDone) {
+      const commitCheck = await commitCompleteness({ repoRoot, key });
+      if (commitCheck.missingFromCommit === null) {
+        process.stderr.write(`zagent: finish ${key} as Done — ${commitCheck.reason}. Proceeding, but commit completeness could not be verified for this run.\n`);
+      } else if (commitCheck.missingFromCommit.length) {
+        throw new WriteError(
+          `refusing to finish ${key} as Done — HEAD is missing ${commitCheck.missingFromCommit.length} file(s) that changed.txt recorded as changed: ${commitCheck.missingFromCommit.join(', ')}. `
+          + "This is the 'commit -am' failure mode: a file the worker CREATED is untracked, so '-a' never stages it and the commit lands without it."
+          + ' Fix: git add -A, then a new commit (or amend the one that missed it), then finish again.',
+          'INVALID', 4,
+        );
+      }
+    }
+  }
+
+  const findings = durableFindingsAnswer(worklog);
+  if (!findings.present || findings.answer === null) {
+    throw new WriteError(`refusing to finish ${key} — ${findings.reason}`, 'INVALID', 4);
+  }
+}
+
 async function finish(index, argv, files) {
   const key = positional(argv, 1);
   if (!key) return errorResult('Usage: zagent finish <TICKET_KEY> --status … --comment … --worklog …', 1);
@@ -709,6 +805,7 @@ async function finish(index, argv, files) {
     ensureTransition(fresh, project, canonicalOf(current).status, status);
     ensureHumanGateCloseout(fresh, current, project, actor, status);
     requireAgentOwnership(fresh, current, actor, { attempt: attemptOf(argv) });
+    await checkFinishContent(fresh, keyFor(current), status, commentText, worklog);
     let body = bodyTextOf(current);
     body = appendSection(body, 'Comments', commentText);
     body = upsertWorklog(body, keyFor(current), worklog);
@@ -1052,6 +1149,35 @@ async function update(index, argv, files, shorthand = null) {
   const key = positional(argv, 1);
   if (!key) return errorResult(`Usage: zagent ${shorthand ?? 'update'} <TICKET_KEY> …`, 1);
   const actor = actorOf(index, argv);
+  const labelsApplied = listValue(argv, 'label');
+  if (labelsApplied?.length) {
+    // ★★ `needs-gpu` REQUIRES A MACHINE-READABLE REASON. Not retroactive —
+    // this only fires on a write that APPLIES the label, never on one a
+    // ticket already carries from before this rule existed.
+    const gpuCheck = needsGpuCompanion(labelsApplied);
+    if (!gpuCheck.ok) return errorResult(gpuCheck.reason, 4, 'INVALID');
+
+    // ★★ `blocked-scope` IS EXCLUDED FROM `maxConsecutiveBlocked`
+    // (tick.md:1457), SO MISLABELLING A GATE FAILURE AS A SCOPE PROBLEM LETS
+    // A THRASHING LOOP PAST ITS OWN CIRCUIT BREAKER. "Only label what you can
+    // defend" was a paragraph to remember; this reads the same
+    // `tick_gates.json` verdict a human would and refuses before the label
+    // ever lands.
+    if (labelsApplied.some(value => value.toLowerCase() === 'blocked-scope')) {
+      const repoRoot = repoRootOf(index);
+      if (repoRoot) {
+        const scopeCheck = await blockedScopeAllowed({ repoRoot, key });
+        if (!scopeCheck.allowed) {
+          return errorResult(
+            `refusing --label blocked-scope on ${key} — ${scopeCheck.reason}. `
+            + 'A scope block is for work that was not buildable AS FILED — a missing file list, an unmade ruling — not for a run that failed.'
+            + ' If a gate actually failed, this is a FAILURE block: leave it unlabelled (or label it accurately) and let the ticket re-run.',
+            4, 'INVALID',
+          );
+        }
+      }
+    }
+  }
   const record = findTicket(index, key);
   const expected = record ? { [record.relativePath]: expectedRevision(record) } : {};
   return runOperation(index, shorthand ?? 'update', argv, expected, async fresh => {

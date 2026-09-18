@@ -163,9 +163,10 @@ loop without it lies to itself.
 up for `zagent.project.json` the way git walks up for `.git`. If it is
 not on PATH, `Tools/zagent/README.md` has the one-time setup.
 
-Its scratch is HERE now: `.zagent/last.json` and `.zagent/run/<KEY>/`, at
-the repo root, gitignored so `git status --porcelain` stays empty while a
-ticket is in flight. The precondition check below depends on that.
+Its scratch is HERE now: `.zagent/last.json`, `.zagent/last.exit` and
+`.zagent/run/<KEY>/`, at the repo root, gitignored so `git status
+--porcelain` stays empty while a ticket is in flight. The precondition
+check below depends on that.
 
 Exits 3/4/5/6 are ordinary control flow, not failures. **Exit 7 is new
 and is not one of them**: it means the board was unreachable. Treat it as
@@ -173,57 +174,76 @@ infrastructure, not as a verdict on the ticket — comment nothing, change
 no status, and reschedule. A network blip written into a ticket as a
 contract failure is a lie that outlives the blip.
 
-So:
+**★★ READ `.zagent/last.exit`. That is the primary instruction in this
+section now — everything below it is what to do when nothing wrote one
+for you.** Every `zagent` call, on **either backend** (the live local
+Vault client in `Tools/Vault/cli/client.mjs` and the legacy PowerShell
+one in `Tools/zagent/zagent.ps1` alike), writes its own exit code to this
+one-line file (`"<code>\n"`) on every exit path, including the early
+ones, before the value ever has to pass back through a shell that could
+corrupt it. **Unlike `last.json`, which is only written when you pass
+`--json`, `last.exit` is written unconditionally, every call.** Read it
+the same way you read `last.json`:
+
+```
+zagent guard <KEY>
+$code = Get-Content .zagent/last.exit          # trust this, not $LASTEXITCODE
+```
+
+This is no longer a discipline to hold under pressure; it is a channel
+built because the discipline did not survive contact with an unattended
+loop. **The measured history, kept because it explains why the file
+exists:** three ordinary shell idioms broke this in one tick, and the
+third would have committed a RED ticket as Done with evidence claiming
+the gates passed:
+
+```
+zagent guard ZM-21 | head            # $? is HEAD's (0), not guard's (1)
+pwsh tick_gates.ps1 … ; echo "$?"    # the run had exited 10, and you read 0
+pwsh tick_gates.ps1 … ; echo "$?"    # …and here 4 — A GATE HAD FAILED
+```
+
+**★ THE MECHANISM, CORRECTED — it was stated wrongly here once and this is the
+one place a wrong explanation costs most.** It read *"in a POSIX shell `$?` is
+the LAST command's"*. That is true of a PIPELINE and false of a `;` suffix:
+`$?` is expanded BEFORE `echo` runs, so it holds your command's code. Measured
+twice, once synthetically and once on a live gate run:
+
+```
+( exit 42 ) ; echo "$?"              →  42        # the text is CORRECT
+
+pwsh tick_gates.ps1 -Phase measure   →  file:      10
+                                        JSON:      10
+                                        harness:    0   ← the notification
+```
+
+So **what lies is the harness's reported exit code**, not the shell's: the
+completion notification reports the COMPOUND statement's status, which is
+`echo`'s 0. *"completed (exit code 0)"* is never independent confirmation of
+anything for a command whose own exit code did not land in a file, and a
+pipeline additionally destroys `$?` at the source. That measure run was
+reporting `10 — MEASURED: a pin needs bumping`; an orchestrator branching on
+the notification reads *all gates green*, skips the pin, and commits a stale
+baseline.
+
+**This still leaves real cases with no `.exit` file at all — an ad-hoc
+command that isn't `zagent` or `tick_gates.ps1`, chiefly a bare `msbuild`
+invocation or a game `.exe` run outside the harness.** For those, the old
+discipline still applies in full, because nothing else will catch the same
+mistake for you:
 
 - **Branch on the exit code**, never on stdout prose.
-- **Read the JSON from a file**, not from the pipe: every `--json` call
-  writes `.zagent/last.json`, and a claim also writes
-  `.zagent/run/<KEY>/ticket.json` and `.zagent/run/<KEY>/body.md`. A
-  firing can crash between the call and the read, and a file survives
-  that where a pipe does not.
-- **★★ NEVER PIPE OR SUFFIX A CALL WHOSE EXIT CODE YOU INTEND TO READ.**
-  This is the single most-broken rule in the protocol — it failed three
-  times in one tick, through three different ordinary shell idioms, and
-  the third would have committed a RED ticket as Done with evidence
-  claiming the gates passed:
+- **Read the JSON from a file**, not from the pipe, when the command
+  writes one: every `zagent --json` call writes `.zagent/last.json`, and
+  a claim also writes `.zagent/run/<KEY>/ticket.json` and
+  `.zagent/run/<KEY>/body.md`. A firing can crash between the call and
+  the read, and a file survives that where a pipe does not.
+- **★★ NEVER PIPE OR SUFFIX A CALL WHOSE EXIT CODE YOU INTEND TO READ, WHEN
+  NOTHING WRITES IT TO A FILE FOR YOU.** Write the code to a file yourself
+  and read it in a separate step:
 
   ```
-  zagent guard ZM-21 | head            # $? is HEAD's (0), not guard's (1)
-  pwsh tick_gates.ps1 … ; echo "$?"    # the run had exited 10, and you read 0
-  pwsh tick_gates.ps1 … ; echo "$?"    # …and here 4 — A GATE HAD FAILED
-  ```
-
-  **★ THE MECHANISM, CORRECTED — it was stated wrongly here and this is the one
-  place a wrong explanation costs most.** It read *"in a POSIX shell `$?` is the
-  LAST command's"*. That is true of a PIPELINE and false of a `;` suffix:
-  `$?` is expanded BEFORE `echo` runs, so it holds your command's code. Measured
-  twice, once synthetically and once on a live gate run:
-
-  ```
-  ( exit 42 ) ; echo "$?"              →  42        # the text is CORRECT
-
-  pwsh tick_gates.ps1 -Phase measure   →  file:      10
-                                          JSON:      10
-                                          harness:    0   ← the notification
-  ```
-
-  So **what lies is the harness's reported exit code**, not the shell's: the
-  completion notification reports the COMPOUND statement's status, which is
-  `echo`'s 0. *"completed (exit code 0)"* is never independent confirmation of
-  anything, and a pipeline additionally destroys `$?` at the source.
-
-  That measure run was reporting `10 — MEASURED: a pin needs bumping`. An
-  orchestrator branching on the notification reads *all gates green*, skips the
-  pin, and commits a stale baseline. **Write the code to a file and read it in a
-  separate step, or read the JSON verdict** — the only channel neither a shell
-  nor the harness can corrupt:
-
-  ```
-  zagent guard <KEY> --json > out.json 2> err.txt ; echo "EXIT=$?"   # the TEXT is
-                                                                     # right; the
-                                                                     # notification
-                                                                     # is not
-  zagent guard <KEY> --json > out.json 2> err.txt
+  msbuild <sln> /t:<Game> ; echo $LASTEXITCODE > exit.txt
   echo $? > exit.txt                   # right: a separate step, then read the file
   ```
 
@@ -594,19 +614,38 @@ ticket — **a GPU is assumed available** and this label gates nothing. What it
 tells you is HOW to build: the deliverable needs a `Vulkan_*_True` build and a
 windowed run, not the `--headless` `Null_` config every gate line defaults to.
 
-**★★ AND SINCE ZEN-6, A TICKET LABELLED `needs-gpu` ONLY BECAUSE IT RE-AUTHORS A
-SCENE IS MISLABELLED.** That was the commonest reason for the label and it stopped
-being a reason on 2026-08-26 — a headless boot may now change a committed `.zscen`
-(see the guard note above). So when you claim one, **read WHY it carries the
-label**: if the deliverable genuinely needs a graphics driver — a rendered capture,
-a visual measurement, a `requiresGraphics` test — build Vulkan and boot windowed as
-below. If the only reason is "it re-authors a committed scene", do it headless, and
-say in the work log that you did.
+**★★ APPLYING THE LABEL NOW REQUIRES A MACHINE-READABLE REASON, IN THE SAME
+WRITE.** `zagent update <KEY> --label needs-gpu` without exactly one companion
+`gpu-reason:*` label refuses: *"--label needs-gpu requires exactly one
+companion label naming why: gpu-reason:render-capture, gpu-reason:visual-measure,
+gpu-reason:requires-graphics-test, gpu-reason:legacy-scene-reauthor"* — and two
+or more companions in the same write refuses the same way, naming which ones it
+saw. Not retroactive: a ticket that already carries `needs-gpu` from before this
+rule existed is untouched until somebody writes to its labels again. The four
+values, and what each asserts:
+
+| Label | Means |
+| --- | --- |
+| `gpu-reason:render-capture` | the deliverable IS a rendered image — a screenshot, a photo-tour frame |
+| `gpu-reason:visual-measure` | a human or a pixel-diff has to look at what rendered, not just that something did |
+| `gpu-reason:requires-graphics-test` | a `requiresGraphics` automated test is the only verification path |
+| `gpu-reason:legacy-scene-reauthor` | pre-ZEN-6 reasoning that no longer holds (below) — kept so an old ticket's label can be read without guessing why it was applied |
+
+**★★ AND SINCE ZEN-6, `gpu-reason:legacy-scene-reauthor` NAMES A REASON THAT NO
+LONGER APPLIES.** "It re-authors a committed scene" was the commonest reason for
+the label, and it stopped being one on 2026-08-26 — a headless boot may now
+change a committed `.zscen` (see the guard note above). So when you claim a
+ticket carrying `needs-gpu` + `gpu-reason:legacy-scene-reauthor`, **read WHY it
+was applied**: if the deliverable genuinely also needs a graphics driver for some
+other reason, relabel it with the companion that actually applies and build
+Vulkan/boot windowed as below. If scene re-authoring was the only reason, do it
+headless, say so in the work log, and remove both labels —
+`zagent update <KEY> --unlabel needs-gpu,gpu-reason:legacy-scene-reauthor`.
 
 Several open Zenithmon tickets predate ZEN-6 and still carry the label on the old
-reasoning. Removing it is `zagent update <KEY> --unlabel needs-gpu`, and it is worth
-doing when you notice one — six of the ten tickets on Zenithmon's S8 critical path
-sat behind that label, which is the cost ZEN-6 existed to remove.
+reasoning. It is worth removing when you notice one — six of the ten tickets on
+Zenithmon's S8 critical path sat behind that label, which is the cost ZEN-6
+existed to remove.
 
 **★★ DO NOT ASK PERMISSION TO RUN A VULKAN BUILD OR A WINDOWED BOOT.** They are
 ordinary steps of a `needs-gpu` tick, exactly as `zenith build --headless` is of
@@ -740,41 +779,67 @@ tree as fatal, not as something to work around.
 
 ## 5. Dispatch the worker
 
-You do **not** implement the ticket. Assemble
-`.zagent/run/<KEY>/prompt.md` and spawn a worker at the routed model.
+You do **not** implement the ticket. Run `Tools/zagent/build_prompt.ps1` to
+assemble `.zagent/run/<KEY>/prompt.md` (and `.zagent/run/<KEY>/filelist.txt`
+beside it — read by the excursion check below), then spawn a worker at the
+routed model with that file's contents:
 
-The prompt must open with these clauses, filled in from the payload:
+```
+pwsh -NoProfile -File Tools\zagent\build_prompt.ps1 -Key <KEY> `
+  -Files <file1>,<file2>,... -Boundary "<one-sentence stop condition>" `
+  [-Rulings <path1>,<path2>,...]
+```
 
-> **DO NOT** attempt to run **CI gate command lines**, build, test, commit,
-> push, or touch the board — you have no shell; the orchestrator does all of
-> that.
-> **Files you may edit:** \<exhaustive list\>.
-> **Conventions:** \<`conventions` from the payload, verbatim\>.
-> **Report back:** files changed, a one-paragraph summary, proposed
-> work-log text, and any decisions, questions, shortfalls or workflow
-> suggestions you want recorded.
-> **Boundary:** \<the known edge of this ticket, and: on reaching it, STOP and
-> report — do not improvise past it\>.
+**Six remembered rules for hand-assembling this prompt are now two
+judgement calls plus a deterministic slice of two files already on disk.**
+The script reads `.zagent/run/<KEY>/ticket.json` and `body.md` — written by
+`claim`, which must already have run — and does the mechanical half:
+the five fixed opening clauses (DO NOT run gates/build/test/commit/push;
+Files you may edit; Conventions, verbatim; Report back; Boundary), slicing
+the `## Goal` and `## Definition of Done` sections out of `body.md`
+(never the `definitionOfDone` array — below), quoting `conventions` from
+`ticket.json` verbatim, and inlining any `-Rulings` files verbatim under a
+`## Rulings that govern this work` heading. Exit codes: `0` ok, `1` on any
+failure (message on stderr, and recorded to `.zagent/last.exit` plus a
+per-ticket `.zagent/run/<KEY>/build_prompt.exit` — see "Running the CLI,
+and reading its output" above).
 
-Then inline (I3): the `## Goal`, the `## Definition of Done` items, the
-file list, any relevant repo conventions, and the recorded rulings that
-govern the subject matter. `bodyPath` is a supplement.
+Two inputs stay yours, because neither is mechanical — the script only
+formats and writes what you hand it:
 
-**★★ INLINE THE DoD FROM `body.md`, NEVER FROM THE `definitionOfDone` ARRAY.**
+- **`-Files`** — the exhaustive list of files the worker may edit.
+  Deriving it is everything in the section below; the script cannot do
+  this part.
+- **`-Boundary`** — the one-sentence stop condition. "The known edge of
+  this ticket" is a reading of the ticket, not a fact a script can
+  compute.
+
+I3 still applies — `bodyPath` is a supplement, never the carrier — the
+script is simply what does the carrying now.
+
+**★★ THE SCRIPT REFUSES RATHER THAN FALL BACK TO THE `definitionOfDone`
+ARRAY, WHICH IS THE ONE RULE IT EXISTS TO ENFORCE.**
 
 **The array holds the checkboxes and nothing else — never the prose that
 qualifies them.** ZM-23's body carries *"What the rulings changed about this
 slice's scope"* and *"★ ITEMS 1 AND 2 ARE ONE INDIVISIBLE COMMIT"* **outside**
 any checkbox, and both are load-bearing instructions. I3 says paste the ticket
-BODY; the array is for COUNTING boxes, not for quoting them, and `bodyPath` is
-the carrier.
+BODY; the array is for COUNTING boxes, not for quoting them. When `body.md`
+has no `## Definition of Done` heading (any level), the script exits 1 rather
+than silently reach for the array instead: *"Refusing to fall back to the
+ticket's definitionOfDone array — that array holds only checkbox text and
+drops any prose between or around the boxes (see ZM-23). Fix the body, or if
+this ticket genuinely has no DoD section, that is itself something to report
+rather than paper over."*
 
-A mutilated spec is invisible to the worker, which has no shell and no board and
-cannot tell it was cut — so nothing downstream reports it either.
-`Docs/TickProtocolHistory.md` keeps the worked example, from when `parseTicket`
-truncated every checkbox at its first newline.
+A mutilated spec used to be invisible to the worker, which has no shell and no
+board and cannot tell it was cut — so nothing downstream reported it either.
+Now nothing downstream gets the chance to receive one: the script has no code
+path that falls back to the array at all, which is a stronger guarantee than
+"prefers `body.md`". `Docs/TickProtocolHistory.md` keeps the worked example,
+from when `parseTicket` truncated every checkbox at its first newline.
 
-**How to derive "Files you may edit", because the list is load-bearing in
+**How to derive `-Files`, because the list is load-bearing in
 BOTH directions.** Start from the DoD's nouns and follow them into the
 repo — but **grep the SYMBOL, never the prose.**
 
@@ -961,6 +1026,28 @@ before you have read the code the ticket is about.
 disagreed with the ticket is indistinguishable, afterwards, from a
 worker that ignored it.
 
+**★ EXCURSIONS OUTSIDE THIS LIST ARE ALLOWED, AND NOW CHECKED, NOT JUST
+AVOIDED.** `build_prompt.ps1` writes `.zagent/run/<KEY>/filelist.txt` — the
+same list, one path per line — and `zagent finish` (step 8) diffs it
+against the working tree's changed set before it will close the ticket.
+Going outside the list is not forbidden: the survey above is done before
+you have read the code the ticket is about, and a worker with task context
+and a fresh budget may correctly find it needs a file the survey missed.
+What is not permitted is doing so *silently* — `finish` refuses when a
+changed file is neither on the list nor named (a plain, case-insensitive
+substring match) in the `--comment` or `--worklog` text: *"refusing to
+finish `<KEY>` — it touched N file(s) outside its recorded file list, and
+none is named in the comment or work log: `<paths>`. Excursions are
+PERMITTED — the work may genuinely need to reach outside the list — but
+every one must be explained on the ticket record. Add the explanation to
+the comment or work log and finish again. Do not revert the work to dodge
+this."* So when the worker's report says it reached outside the list (see
+`.claude/agents/zagent-worker.md`), carry that explanation into the work
+log verbatim — that is what satisfies the check, not reverting the
+excursion. (A missing `filelist.txt` — an older run, a hand-run tick —
+WARNS instead of refusing: there is nothing to compare the change set
+against, so the excursion state is UNVERIFIED, not clean.)
+
 **★★ A DoD THAT ASKS FOR *BEFORE* EVIDENCE ORDERS YOUR DISPATCHES. DECIDE THE
 STAGES BEFORE THE FIRST ONE.** This step reads as one dispatch per ticket, and
 nothing in it warns that an evidence-producing DoD item constrains the ORDER in
@@ -1119,21 +1206,30 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    compiler · `4` a gate line failed · `5` no gate list · **`10` MEASURED: a
    pin needs bumping — not a failure.**
 
-   Three fields exist because reading this file used to be ambiguous:
+   Three fields exist because reading this file used to be ambiguous — and
+   two of the three no longer have to be read *here*, because `guard` (step
+   6.4 below) now reads them for you before it will report a pass:
 
    - **`state`** is `running` while a phase is in flight. A killed run leaves
-     `running`, not the previous run's verdict.
+     `running`, not the previous run's verdict. **`guard` now folds this into
+     its own exit** — a would-be PASS whose verdict is not `state: complete`
+     is overridden into a failure. See 6.4 for the exact refusal text.
    - **`headSha`** is the commit the phase gated. **If it does not match
      current HEAD, the verdict describes a different tree — treat it as
      absent.** This directory has held a stale `all gates green` from an
      unrelated tree at claim time, and a superseded `exit 4` mid-run.
-   - **`skipped`** names the gate lines that never ran. A failing line stops
-     the list, and the remainder used to be silently absent — on one ticket
-     that meant the unit gate and `doc_lint` never ran, so a freshly-bumped
-     pin was unconfirmed and the linter had never seen the edited docs.
+     **Also folded into `guard` now**, for the same reason: a stale verdict
+     from a different tree must not read as "verified".
+   - **`skipped`** names the gate lines that never ran, and this one is
+     **still yours to read by eye** — the freshness fold answers "is the
+     verdict current", not "did every gate in it actually run". A failing
+     line stops the list, and the remainder used to be silently absent — on
+     one ticket that meant the unit gate and `doc_lint` never ran, so a
+     freshly-bumped pin was unconfirmed and the linter had never seen the
+     edited docs.
 
    **A red gate VOIDS every gate behind it.** Read `skipped` before concluding
-   anything about what was verified.
+   anything about what was verified — `guard` does not do this part for you.
 
    Four rules the script enforces, each added after it was forgotten once.
    Its header carries them; the failures are why:
@@ -1264,6 +1360,18 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    nothing else in the pipeline would have said so.
 4. `zagent guard <KEY>` — **with the key, and with no `--file`**.
    Non-zero → Blocked regardless of gate colour.
+
+   **★★ `guard` ALSO OVERRIDES A PASS WHOSE GATE VERDICT ISN'T FRESH.**
+   Before returning its own 0, it re-reads this key's `tick_gates.json`: if
+   `state` is not `complete`, or `headSha` does not match current HEAD, a
+   would-be PASS becomes a failure — on stderr, *"guard `<KEY>` — guard
+   passed, but its gate verdict is not fresh: `<reason>`. Treating this as a
+   guard failure — a stale or missing tick_gates.json cannot certify the tree
+   HEAD is on right now."* — with `gateVerdictFresh: false` and
+   `gateVerdictReason` on the JSON payload. It only ever turns a WOULD-BE PASS
+   into a failure, never the reverse: a guard refusal that already fired for
+   its own reason is untouched, because staleness has nothing to add to a
+   refusal that already exists.
 
    The key is what makes step 6.2 mechanical rather than remembered.
    `guard` re-derives the gate selection from the ticket and the CURRENT
@@ -1447,10 +1555,17 @@ when any is unticked:
 - **Green but a DoD box unmet** → commit anyway (the work is correct as far as
   it goes, and `direct` mode cannot leave it dirty), then `finish Blocked` with
   a work log naming which items are unmet and why, plus a Questions row for
-  whatever must be decided. `zagent finish --status Done` now REFUSES a work log
-  with an unticked DoD box and names it, so this is enforced rather than asked
-  for — but decide it here, because arriving at a refusal you did not expect is
-  how a tick starts editing checkboxes to get past a gate.
+  whatever must be decided. `zagent finish <KEY> --status Done` now REFUSES
+  when the work log's `## Definition of Done` section leaves any box unticked,
+  and names every one of them: *"refusing to finish `<KEY>` as Done — its work
+  log leaves N Definition-of-Done item(s) unticked: `[ ] item1; [ ] item2`. A
+  green gate says the tree compiles and the pinned count matches; it does not
+  say the ticket was finished. Either tick the box because the work IS done, or
+  finish as Blocked / "In Review" — both accept an unmet DoD."* The check is
+  **Done-only** — `Blocked` and `"In Review"` still accept an unticked box,
+  which is why the choice below still matters — so this is enforced rather
+  than asked for, but decide it here, because arriving at a refusal you did
+  not expect is how a tick starts editing checkboxes to get past a gate.
 - **Red** → the fix-forward path further down.
 
 **★★ AND WHEN YOU BLOCK, SAY WHICH KIND OF BLOCK IT IS.**
@@ -1470,6 +1585,20 @@ cannot be inferred — "it filed a Questions row" and "it committed nothing"
 are both true of a tick that simply failed, and both would let a thrashing
 loop past the breaker by accident. If the gates went red, it is a failure
 block whatever else is also true of it.
+
+**★★ AND NOW IT IS CHECKED, NOT JUST ASKED.** `zagent update <KEY> --label
+blocked-scope` reads the same `tick_gates.json` verdict a human would, before
+the label ever lands. A RED verdict (exit 2/3/4 — a gate actually ran and
+actually failed) refuses: *"refusing --label blocked-scope on `<KEY>` — the
+last gate run exited `<N>` — a gate actually failed, so this is a FAILURE
+block, not a scope block. A scope block is for work that was not buildable AS
+FILED — a missing file list, an unmade ruling — not for a run that failed. If
+a gate actually failed, this is a FAILURE block: leave it unlabelled (or label
+it accurately) and let the ticket re-run."* A green verdict, an absent one, a
+still-`running` one, or exit 10 (a pin needing a bump) all still permit the
+label — nothing on record contradicts it. An unparsable `tick_gates.json`
+refuses too, the other way: "cannot tell" must not read as permission any more
+than as refusal.
 
 ZM-69 is the worked example: claimed, surveyed, found to be missing
 `ZM_SceneRegistry.h` — without which the authored door stalls in
@@ -1503,6 +1632,20 @@ tree where the file existed. Nothing downstream catches it: the tree is
 clean afterwards, `finish` records Done, and the break surfaces on
 somebody else's next clone. `add -A` is what the guard at step 6.4 already
 listed, so the two stay consistent.
+
+**★★ AND NOW IT IS CAUGHT AT `finish --status Done`, NOT LEFT TO SURFACE
+LATER.** The check reads `.zagent/run/<KEY>/changed.txt` — the same list
+`guard` (step 6.4) recorded from the pre-commit working tree — and diffs it
+against `git diff-tree --no-commit-id --name-only -r HEAD`. Anything recorded
+as changed but absent from `HEAD` refuses: *"refusing to finish `<KEY>` as
+Done — HEAD is missing N file(s) that changed.txt recorded as changed:
+`<paths>`. This is the 'commit -am' failure mode: a file the worker CREATED
+is untracked, so '-a' never stages it and the commit lands without it. Fix:
+git add -A, then a new commit (or amend the one that missed it), then finish
+again."* Like the DoD check, this fires only on a Done finish — Blocked and
+In Review are unaffected — and a missing or empty `changed.txt` (an older
+run, a hand-run tick) WARNS rather than refuses: nothing was recorded, so
+completeness is UNVERIFIED, not confirmed.
 
 Then:
 
@@ -1646,18 +1789,50 @@ the fact. The work log's shape:
 
 - [x] …
 
+**Durable findings**
+
+- none, or: `<PROJ-D-N>`[, `<PROJ-D-N>` …] — the decision reference(s)
+  `zagent decide` recorded for anything learned here that outlives this ticket.
+
 **Deviations / follow-ups**
 
 - None, or: what was assumed, what was left undone and why.
 - Every correction you made to the ticket's own text before inlining it.
 ```
 
-**★★ A FINDING THAT OUTLIVES THE TICKET IS A DECISION, NOT A WORK-LOG LINE.**
-I3 tells every tick to grep `decisionLog` for the rulings that govern its
-subject — and no step in this file has ever told you to WRITE one. So a worker's
-durable discovery lands in **Deviations / follow-ups**, on a ticket that is about
-to close, which the next worker never reads. The grep and the thing it greps for
-were never connected.
+**★★ A FINDING THAT OUTLIVES THE TICKET IS A DECISION, NOT A WORK-LOG LINE, AND
+THE ANSWER IS NOW REQUIRED, NOT JUST INVITED.** I3 tells every tick to grep
+`decisionLog` for the rulings that govern its subject — and no step in this
+file used to tell you to WRITE one. So a worker's durable discovery landed in
+**Deviations / follow-ups**, on a ticket that is about to close, which the
+next worker never reads. The grep and the thing it greps for were never
+connected.
+
+**`zagent finish` now refuses any terminal status — Done, Blocked, In
+Review — whose work log carries no `Durable findings` answer.** Nobody can
+verify the JUDGEMENT — "was there really nothing durable here" is not
+computable — so, exactly like the **Coverage** row below, the mechanism is
+to make SILENCE illegal rather than to grade the answer. The required
+shape, read from the work log text itself:
+
+- a line reading `**Durable findings**: none` (or naming decision
+  reference(s), e.g. `**Durable findings**: ZM-D-208, ZM-D-209`), OR
+- a `## Durable findings` heading (any level) with the answer inline on
+  that same line or on the next non-blank line(s) beneath it.
+
+The label may be a heading or a bold run-in label with an optional
+trailing colon (`Durable findings:`), matched case-insensitively. The
+answer must be exactly `none` or one or more references shaped like
+`PROJ-D-N` (e.g. `ZM-D-208`) — anything else refuses by name:
+
+- no line at all: *"the work log carries no "Durable findings" line — add
+  `**Durable findings**: none` or name the decision reference(s) recorded
+  via `zagent decide` (e.g. ZM-D-208)"*
+- a label with nothing after it: *"the "Durable findings" line has no
+  content — say "none" or name the decision reference(s)"*
+- content that is neither "none" nor a decision reference: *"the "Durable
+  findings" line ("`<text>`") names neither "none" nor a decision reference
+  like ZM-D-208 — say one or the other"*
 
 ZM-28's worker found that **appending a move is not inert**: `ZM_Learnsets.cpp`
 rebuilds every species' level-up list by scanning the WHOLE move table and
@@ -1713,14 +1888,25 @@ to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
   asked for one specific ticket, not for a loop; rescheduling would
   re-run the same key forever.
 - **Abandon path** (ownership lost at any checkpoint): write the work log
-  as far as it got, post it as a **comment only** — the human owns the
-  description now — leave the branch, change no status, sweep, then
+  as far as it got, then
+  `zagent abandon <KEY> --comment .zagent/run/<KEY>/worklog.md`, sweep, then
   `ScheduleWakeup{noop:false}`.
 
-  Change no status, and **do not clear the assignee either** — somebody
-  else holds it now, and unassigning would take the card away from them.
-  That is the one release where the assignee must stay put; every other
-  one needs `--assignee none` (see step 2).
+  **This used to be three negatives to hold under pressure — "use comment,
+  do NOT change status, do NOT clear the assignee" — and is now a verb that
+  cannot do any of the three even by accident.** `abandon` is
+  client-composed: it has no `--status`, `--assignee` or `--label` flag at
+  all, and posts the text through the ordinary `comment` mutation. Passing
+  any of the forbidden flags refuses outright: *"zagent abandon does not
+  accept --status[, --assignee][, --label]. Ownership was lost, not
+  resolved: the assignee stays put and the status stays untouched (tick.md
+  step 9). Post the work log with `zagent abandon <KEY> --comment <file>`;
+  use `zagent update` yourself, deliberately, if you actually mean to change
+  any of them."* Somebody else holds the ticket now — the human owns the
+  description, and leaves with the assignee and status exactly where they
+  were. Use `zagent update` yourself, deliberately, only if you actually
+  mean to reassign or reopen it — that is the one release where "deliberate"
+  matters more than "fast".
 
 `ScheduleWakeup` only exists when the session is driven by `/loop`; a
 bare `/tick` invocation simply ends instead of scheduling.

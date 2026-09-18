@@ -34,6 +34,12 @@ transitions:
 ---
 `;
 
+// tick-checks.mjs requires an explicit durable-findings answer on every
+// `finish`, terminal status or not (see write.mjs's checkFinishContent).
+// "none" is the legal, common answer for a test fixture that has nothing to
+// hand to `zagent decide`.
+const NO_FINDINGS = '\n\n**Durable findings**: none.';
+
 const BODY = `## Goal
 Exercise the local writer.
 
@@ -148,7 +154,7 @@ test('claim, attempt CAS, human takeover comments, and mutable breaker are durab
 
   const stale = await write(root, ['finish', 'FD-1', '--status', 'Done', '--attempt', 'old-attempt'], { comment: 'x', worklog: 'x' });
   assert.equal(stale.exitCode, 5);
-  const valid = await write(root, ['finish', 'FD-1', '--status', 'Done', '--attempt', attempt], { comment: 'done', worklog: 'measured' });
+  const valid = await write(root, ['finish', 'FD-1', '--status', 'Done', '--attempt', attempt], { comment: 'done', worklog: `measured${NO_FINDINGS}` });
   assert.equal(valid.exitCode, 0, JSON.stringify(valid.payload));
   assert.equal((await indexAt(root)).getTicket('FD-1').metadata.status, 'Done');
 
@@ -206,11 +212,11 @@ test('human-gate tickets stop agents at In Review and require a human to close',
   assert.equal(updateDone.exitCode, 4, JSON.stringify(updateDone.payload));
   assert.deepEqual(await fs.readFile(path.join(root, gated.relativePath)), before, 'refused closeout must not write');
 
-  const review = await write(root, ['finish', 'FD-4', '--status', 'In Review', '--attempt', attempt], { comment: 'ready for sign-off', worklog: 'all checks green' });
+  const review = await write(root, ['finish', 'FD-4', '--status', 'In Review', '--attempt', attempt], { comment: 'ready for sign-off', worklog: `all checks green${NO_FINDINGS}` });
   assert.equal(review.exitCode, 0, JSON.stringify(review.payload));
   current = await indexAt(root);
   assert.equal(current.getTicket('FD-4').metadata.status, 'In Review');
-  const human = await write(root, ['finish', 'FD-4', '--status', 'Done', '--human'], { comment: 'approved', worklog: 'human sign-off' });
+  const human = await write(root, ['finish', 'FD-4', '--status', 'Done', '--human'], { comment: 'approved', worklog: `human sign-off${NO_FINDINGS}` });
   assert.equal(human.exitCode, 0, JSON.stringify(human.payload));
   assert.equal((await indexAt(root)).getTicket('FD-4').metadata.status, 'Done');
 });
@@ -277,7 +283,7 @@ test('ticket field, relation, parent, and all status mutation families use the o
   assert.equal(current.getTicket('FD-1').metadata.title, 'Updated');
   assert.equal(current.getTicket('FD-1').metadata.parent, 'FD-9');
   assert.deepEqual(current.getTicket('FD-1').metadata.source.title, 'source One');
-  assert.equal((await write(root, ['finish', 'FD-1', '--status', 'Blocked', '--attempt', current.getTicket('FD-1').metadata.claimAttempt], { comment: 'blocked', worklog: 'work' })).exitCode, 0);
+  assert.equal((await write(root, ['finish', 'FD-1', '--status', 'Blocked', '--attempt', current.getTicket('FD-1').metadata.claimAttempt], { comment: 'blocked', worklog: `work${NO_FINDINGS}` })).exitCode, 0);
 
   const invalid = await write(root, ['move', 'FD-2', 'In Review']);
   assert.equal(invalid.exitCode, 4);
@@ -376,7 +382,7 @@ test('an agent move onward from In Progress keeps its claim and can still finish
   // Progress.  The agent's ORIGINAL attempt token must still finish the work.
   const resumed = await write(root, ['move', 'FD-1', 'In Progress', '--human']);
   assert.equal(resumed.exitCode, 0, JSON.stringify(resumed.payload));
-  const finished = await write(root, ['finish', 'FD-1', '--status', 'Done', '--attempt', attempt], { comment: 'done', worklog: 'measured' });
+  const finished = await write(root, ['finish', 'FD-1', '--status', 'Done', '--attempt', attempt], { comment: 'done', worklog: `measured${NO_FINDINGS}` });
   assert.equal(finished.exitCode, 0, JSON.stringify(finished.payload));
   assert.equal((await indexAt(root)).getTicket('FD-1').metadata.status, 'Done');
 });

@@ -152,17 +152,29 @@ written into a ticket as a contract failure.
 
 | File | |
 |---|---|
-| `zagent.ps1` | argv, environment, transport, main flow |
+| `zagent.ps1` | argv, environment, transport, main flow — and, first, the `backend.json` dispatch: on `vault` it execs `node Tools/Vault/cli/client.mjs` and exits before any of the rest of this table runs |
 | `ZagentClient.psm1` | the pure helpers — path resolution, JSON shaping, payload assembly, applying the board's writes, the client half of `doctor` |
-| `Test-ZagentClient.ps1` | the assertions over the module — it prints its own count, which is why one is not pinned here |
+| `TickChecks.psm1` | this backend's copy of the four tick-protocol checks — file-list excursions, commit completeness, `blocked-scope` defensibility, gate-verdict freshness. `Tools/Vault/cli/tick-checks.mjs` is the LIVE equivalent, wired into `Tools/Vault/cli/write.mjs` and `client.mjs`; this module is a specification of intent for the legacy backend, not a line-for-line port |
+| `build_prompt.ps1` | assembles `.zagent/run/<KEY>/prompt.md` and `filelist.txt` for step 5 of `/tick`, deterministically. Invoked directly with `pwsh -File`, never through `zagent.ps1`, so it runs the same way under either backend |
+| `Test-ZagentClient.ps1` | the assertions over `ZagentClient.psm1` |
+| `Test-TickChecks.ps1` | the assertions over `TickChecks.psm1`'s own filesystem/git behaviour |
+| `Test-TickWiring.ps1` | the assertions over how `zagent.ps1` WIRES those four checks into `finish`/`update`/`guard`/`abandon` — a separate file on purpose, since a second agent may be running `Test-ZagentClient.ps1` or `Test-TickChecks.ps1` concurrently |
+| `Test-BuildPrompt.ps1` | the assertions over `build_prompt.ps1`, run as a real `pwsh -File` child process per assertion (never dot-sourced), because `exit` inside the script under test would otherwise tear down the test runner too |
+
+Each of the four test scripts **prints its own count** — do not pin one
+here, this line has been stale twice:
 
 ```
 pwsh -NoProfile -File Tools/zagent/Test-ZagentClient.ps1
+pwsh -NoProfile -File Tools/zagent/Test-TickChecks.ps1
+pwsh -NoProfile -File Tools/zagent/Test-TickWiring.ps1
+pwsh -NoProfile -File Tools/zagent/Test-BuildPrompt.ps1
 ```
 
-The split exists so the helpers are reachable from a test: `zagent.ps1`
-runs a command the moment it is invoked, which makes every function
-inside it untestable. A plain assert script rather than Pester, matching
+The `zagent.ps1`/`ZagentClient.psm1` split exists so the helpers are
+reachable from a test: `zagent.ps1` runs a command the moment it is
+invoked, which makes every function inside it untestable. Plain assert
+scripts rather than Pester, matching
 `Tools/Test_T0Harness_SessionCloseFlagsExist.ps1` — the only PowerShell
 this repo requires is the `pwsh` every gate already needs.
 

@@ -234,7 +234,7 @@ test('write commands persist durable claim scratch inside the vault', async t =>
 
   const finish = await capture(() => runCli([
     'finish', 'FD-1', '--status', 'Done', '--attempt', claim.response.payload.claimAttempt,
-    '--comment', 'measured', '--worklog', 'done', '--vault', root,
+    '--comment', 'measured', '--worklog', 'done\n\nDurable findings: none.', '--vault', root,
   ]));
   assert.equal(finish.response.exitCode, 0, finish.output);
 

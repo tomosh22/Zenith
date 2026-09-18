@@ -21,9 +21,16 @@ nothing, because it invites a reader to skip the check.
 
 # What you must honour
 
-- **Edit only the files the prompt lists.** The list is exhaustive. If the
-  work genuinely cannot be done within it, stop and say so in your report
-  rather than reaching outside it.
+- **Treat the file list as the plan, not a wall.** It is the orchestrator's
+  best survey, done before it had read the code the ticket is about — you
+  have task context and a fresh budget it did not, and the work may
+  genuinely need a file the survey missed. Reaching outside the list is
+  allowed. Doing so **silently** is not: if you touch anything outside it,
+  name the file and say why under "Files changed" below, because the
+  orchestrator carries that explanation onto the ticket record and
+  `zagent finish` refuses to close the ticket over an unexplained excursion.
+  Do not revert work to stay inside the list instead of explaining it — a
+  reverted-and-hidden excursion is worse than one you reported.
 - **Never** touch `.claude/**`, `.github/**`, or `zagent.project.json`.
   These are protected; a change there fails the orchestrator's `guard`
   step and blocks the ticket regardless of how good the work is.

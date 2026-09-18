@@ -95,6 +95,28 @@ if (Test-Path -LiteralPath $vaultBackendPath) {
     }
 }
 
+# ★★ ORDER IS LOAD-BEARING. TickChecks.psm1 imports ZagentClient.psm1
+# INTERNALLY, as a nested module, while it loads. Importing ZagentClient
+# first and TickChecks second leaves ZagentClient's exports invisible: the
+# nested `-Force` reload replaces the earlier top-level module entry
+# entirely, and TickChecks' own `Export-ModuleMember` never re-exports
+# ZagentClient's functions, so every one of them -- `Test-HelpFlag`,
+# `Get-ClientProject`, `Get-FlagValue`, all of it -- comes back "not
+# recognized" the moment this script actually runs. `--help` and `doctor`
+# both went straight from a green parse check and a green unit suite to
+# a hard crash on the first real invocation, which is the exact shape
+# this repo's own CLAUDE.md names by incident: a parse check plus green
+# tests is not proof the client runs. Importing TickChecks FIRST and
+# ZagentClient SECOND leaves both loaded and both exporting, because the
+# second, top-level import re-establishes ZagentClient globally after
+# the nested one. Test-TickWiring.ps1 pins this ordering.
+#
+# The four checks TickChecks.psm1 exports turn tick.md's "remember
+# to..." paragraphs into something that actually fails -- see its own
+# header for which rule each one closes. Pure and read-only; the
+# refusals they feed live here, at the calls that already write
+# status/labels/guard verdicts.
+Import-Module (Join-Path $PSScriptRoot 'TickChecks.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'ZagentClient.psm1') -Force
 
 # ─── ENVIRONMENT ─────────────────────────────────────
@@ -228,6 +250,42 @@ $repoPath = Find-ClientRepo
 # (no ZAGENT_URL, `--help`) write nothing rather than guessing a location.
 $script:RepoForExit = $repoPath
 $client = Get-ClientProject -Repo $repoPath
+
+# ★★ `abandon` IS CLIENT-COMPOSED, NOT A BOARD COMMAND -- IT DOES NOT
+# EXIST IN contract.json AND MUST NOT BE ADDED THERE.
+#
+# tick.md step 9's ownership-lost path used to be three negatives an
+# agent has to hold under pressure: "use comment, but do NOT change
+# status, and do NOT clear the assignee -- this is the one release
+# where the assignee must stay put." A rule that only says what NOT to
+# do is exactly the shape this repo keeps finding does not survive an
+# unattended loop, so it is removed structurally: `abandon` has no
+# `--status`, `--assignee` or `--label` flag at all, so there is no way
+# to spell the mistake, and it dispatches the board's own `comment`
+# rather than inventing a new endpoint.
+if ($argv[0] -eq 'abandon') {
+    if ($argv.Count -lt 2) {
+        Write-StdErr 'usage: zagent abandon <KEY> --comment <file> [--json]'
+        Exit-Zagent $script:EXIT_ERROR
+    }
+    $forbiddenFlags = Get-ForbiddenAbandonFlags -Argv $argv
+    if ($forbiddenFlags.Count -gt 0) {
+        foreach ($forbidden in $forbiddenFlags) {
+            Write-StdErr "zagent abandon: --$forbidden is not accepted here."
+        }
+        Write-StdErr '        Ownership was lost, not resolved: the assignee stays put and the status stays'
+        Write-StdErr '        untouched (tick.md step 9). Post the work log with `zagent abandon <KEY> --comment <file>`;'
+        Write-StdErr '        use `zagent update` yourself, deliberately, if you actually mean to change any of them.'
+        Exit-Zagent $script:EXIT_ERROR
+    }
+    # Rewrite in place and fall through the rest of this script exactly as
+    # though `comment` had been typed -- `--comment <file>` is already a
+    # universal path-valued flag (Get-FileFlags), so nothing downstream
+    # needs to know `abandon` was ever the verb typed.
+    $abandonKey = $argv[1]
+    $argv = @('comment', $abandonKey) + @($argv | Select-Object -Skip 2)
+}
+
 $asJson = Test-Flag -Argv $argv -Name 'json'
 
 $body = @{ argv = $argv }
@@ -276,7 +334,60 @@ if ($gateKey) {
 
 if ($fileMap.Count -gt 0) { $body.files = $fileMap }
 
-# ★★ DONE IS THE ONE STATUS THE DoD GETS A VOTE ON.
+# ★★ `blocked-scope` IS EXCLUDED FROM `maxConsecutiveBlocked` (tick.md:1457
+# onward), SO MISLABELLING A GATE FAILURE AS A SCOPE PROBLEM LETS A
+# THRASHING LOOP PAST ITS OWN CIRCUIT BREAKER.
+#
+# "Only label what you can defend" was a paragraph an agent had to
+# remember under pressure -- exactly the shape this repo keeps finding
+# does not hold. Test-BlockedScopeAllowed reads the SAME tick_gates.json
+# verdict a human would (a RED exit code -- 2, 3 or 4 -- means a gate
+# actually failed, which is a failure block whatever else is true of the
+# ticket) and this refuses before the label ever reaches the board.
+#
+# `--label` may carry a comma-separated list (`--label a,b`); only
+# `blocked-scope`'s presence in it triggers the check, and only THAT
+# label is what tick.md:1457 is about.
+if ($argv[0] -eq 'update' -and $argv.Count -ge 2) {
+    $labelValue = Get-FlagValue -Argv $argv -Name 'label'
+    if ($labelValue) {
+        $labels = Get-LabelList -Value $labelValue
+        if ($labels -contains 'blocked-scope') {
+            $scopeCheck = Test-BlockedScopeAllowed -Key $argv[1] -Repo $repoPath
+            if (-not $scopeCheck.Allowed) {
+                Write-StdErr "zagent: refusing --label blocked-scope on $($argv[1]) -- $($scopeCheck.Reason)"
+                Write-StdErr '        A scope block is for work that was not buildable AS FILED -- a missing file list,'
+                Write-StdErr '        an unmade ruling -- not for a run that failed. If a gate actually failed, this is a'
+                Write-StdErr '        FAILURE block: leave it unlabelled (or label it accurately) and let the ticket re-run.'
+                Exit-Zagent $script:EXIT_ERROR
+            }
+        }
+
+        # ★★ `needs-gpu` NOW REQUIRES A MACHINE-READABLE REASON, NOT FREE
+        # PROSE AN AGENT HAS TO READ AND INFER.
+        #
+        # `needs-gpu` means "build Vulkan_*_True and run windowed instead
+        # of the headless Null_ config". Since ZEN-6 removed the guard
+        # that made "it re-authors a committed scene" true, that used to
+        # be the COMMONEST reason a ticket carried the label -- and it
+        # stopped being a reason at all, leaving stale labels holding
+        # tickets back for nothing. A fixed vocabulary replaces the
+        # prose: applying `needs-gpu` now requires exactly one
+        # `gpu-reason:*` companion in the SAME write. Deliberately NOT
+        # retroactive -- $labels is only what THIS write is applying, per
+        # Get-LabelList, never the ticket's already-saved label list, so
+        # a ticket that already carries `needs-gpu` from before this rule
+        # existed is untouched until somebody writes to its labels again.
+        $gpuCheck = Test-NeedsGpuCompanion -LabelsApplied $labels
+        if (-not $gpuCheck.Ok) {
+            Write-StdErr "zagent: refusing --label $labelValue on $($argv[1]) -- $($gpuCheck.Reason)"
+            Exit-Zagent $script:EXIT_ERROR
+        }
+    }
+}
+
+# ★★ DONE IS THE ONE STATUS THE DoD GETS A VOTE ON, AND (with the two
+# checks below) THE ONE CALL WHERE THE FILE LIST AND THE COMMIT ALSO DO.
 #
 # `/tick` step 7 branches on GATE COLOUR and nothing else, so a worker that
 # returns a correct partial with a verified impossibility -- gates green on
@@ -289,11 +400,122 @@ if ($fileMap.Count -gt 0) { $body.files = $fileMap }
 # Blocked and In Review pass untouched -- an unmet DoD is the normal state for
 # both, and a Blocked log saying how far it got is exactly what a human picks up.
 if ($argv[0] -eq 'finish' -and $fileMap.Contains('worklog')) {
+    $finishKey = $argv[1]
     $claimedStatus = Get-FlagValue -Argv $argv -Name 'status'
-    if ($claimedStatus -and $claimedStatus.Trim().ToLowerInvariant() -eq 'done') {
+    $statusNorm = if ($claimedStatus) { $claimedStatus.Trim().ToLowerInvariant() } else { $null }
+
+    # ★★ AN EXCURSION IS ALLOWED. AN UNEXPLAINED ONE IS NOT.
+    #
+    # A worker's file list bounds what it may touch, but the work sometimes
+    # genuinely needs to reach outside it (tick.md:852-854 -- ZM-69's worker
+    # had to READ a file its own list forbade editing, to find what was
+    # missing). Nothing has ever checked either half: not that an excursion
+    # happened, and not that it was explained. Test-FileListExcursion
+    # answers the first; this answers the second, at the call that writes
+    # the permanent record.
+    $excursion = Test-FileListExcursion -Key $finishKey -Repo $repoPath
+    if (-not $excursion.ListFound) {
+        # A missing filelist.txt is NOT "no excursions" -- it is
+        # "unverified", and folding the two together is the exact fail-open
+        # shape this check exists to remove. Warn rather than refuse: older
+        # runs and a hand-run tick legitimately have no list at all.
+        Write-StdErr "zagent: finish $finishKey -- $($excursion.Reason)."
+        Write-StdErr '        Proceeding, but nobody can tell from this run whether it stayed inside a file list.'
+    } elseif (@($excursion.Excursions).Count -gt 0) {
+        # Accept the path appearing ANYWHERE in the comment or the work
+        # log -- an `## Excursions` section is the obvious place to put
+        # it, but the goal is a written justification on the permanent
+        # record, not a format a worker has to get exactly right.
+        $explanationText = $fileMap['worklog']
+        if ($fileMap.Contains('comment')) { $explanationText += "`n" + $fileMap['comment'] }
+        $unexplained = Get-UnexplainedExcursions -Excursions $excursion.Excursions -ExplanationText $explanationText
+        if ($unexplained.Count -gt 0) {
+            Write-StdErr "zagent: refusing to finish $finishKey -- it touched $($unexplained.Count) file(s) outside its recorded file list, and none of them is named in the comment or work log:"
+            foreach ($path in $unexplained) { Write-StdErr "  $path" }
+            Write-StdErr ''
+            Write-StdErr 'Excursions are PERMITTED -- the work may genuinely need to reach outside the list --'
+            Write-StdErr 'but every one must be explained on the ticket record. Add the explanation to the'
+            Write-StdErr 'comment or work log and finish again. Do not revert the work to dodge this.'
+            Exit-Zagent $script:EXIT_ERROR
+        }
+    }
+
+    # ★★ A FINDING THAT OUTLIVES THE TICKET IS A DECISION, NOT A WORK-LOG
+    # LINE (tick.md step 8, "A FINDING THAT OUTLIVES THE TICKET IS A
+    # DECISION"). Nobody can verify the JUDGEMENT -- "was there really
+    # nothing durable here" is not computable -- so, exactly like the
+    # work log's own Coverage row, silence is made illegal instead of the
+    # answer being graded.
+    #
+    # This rule used to live ONLY in this client: `.claude/commands/
+    # tick.md` documented it as enforced, and it had quietly stopped
+    # running in production the moment `backend.json` cut over to the
+    # Vault backend, because nothing there grew an equivalent. A
+    # protection that exists on one backend and not the other disappears
+    # the instant somebody flips that file, and nothing said so. Now both
+    # sides carry it -- Get-DurableFindingsAnswer is a faithful port of
+    # Tools/Vault/cli/tick-checks.mjs's `durableFindingsAnswer`, matched
+    # shape for shape, so a backend flip cannot change what passes.
+    #
+    # Checked on EVERY terminal status. Done, Blocked and "In Review" can
+    # all discover something durable about the codebase; none of them
+    # gets a pass on saying so.
+    $durable = Get-DurableFindingsAnswer -WorkLog $fileMap['worklog']
+    if (-not $durable.Present -or $null -eq $durable.Answer) {
+        Write-StdErr "zagent: refusing to finish $finishKey -- $($durable.Reason)"
+        Exit-Zagent $script:EXIT_ERROR
+    }
+
+    # ★★ `commit -am` SILENTLY DROPS A CREATED FILE (tick.md:1496). The
+    # gates that certified this ticket green ran against a working tree
+    # where the file existed; the break surfaces on somebody else's next
+    # clone, with the tree already clean and the ticket already Done.
+    #
+    # Checked only at Done. A Blocked finish may legitimately carry no
+    # commit that covers changed.txt at all: `direct` mode commits before
+    # parking on a RED gate (tick.md:1544 "COMMIT BEFORE YOU PARK"), but a
+    # disputed-value ticket is explicitly REVERTED to a clean tree instead
+    # and the diff preserved only in run scratch (tick.md:1480-1487) -- so
+    # checking Blocked here would refuse a ticket that did exactly what
+    # the protocol asked of it. Done is the one status where "committed
+    # everything recorded as changed" is unconditionally true if the
+    # protocol was followed, so it is the one status this can check
+    # without a false refusal.
+    if ($statusNorm -eq 'done') {
+        $commitCheck = Test-CommitCompleteness -Key $finishKey -Repo $repoPath
+        if ($null -eq $commitCheck.MissingFromCommit) {
+            # `MissingFromCommit` is $null (never an empty array) when
+            # `changed.txt` is missing or empty -- TickChecks.psm1's own
+            # contract for "nothing to compare against". `@($null)` is NOT
+            # an empty array (it wraps $null into a ONE-ELEMENT array), so
+            # this state has to be checked for explicitly before this ever
+            # calls `.Count` on it -- conflating it with "zero missing
+            # files" both crashes on the next line (StrictMode: `.Count`
+            # on $null throws) and would have refused a ticket that has
+            # nothing wrong with it. `changed.txt` is written by step 6.4
+            # (`guard`), which always runs before a Done finish in the
+            # normal protocol, so this should not happen -- warn rather
+            # than silently pass or refuse a ticket this check cannot
+            # actually verify.
+            Write-StdErr "zagent: finish $finishKey as Done -- $($commitCheck.Reason)."
+            Write-StdErr '        Proceeding, but commit completeness could not be verified for this run.'
+        } elseif (@($commitCheck.MissingFromCommit).Count -gt 0) {
+            Write-StdErr "zagent: refusing to finish $finishKey as Done -- HEAD is missing $(@($commitCheck.MissingFromCommit).Count) file(s) that changed.txt recorded as changed:"
+            foreach ($path in $commitCheck.MissingFromCommit) { Write-StdErr "  $path" }
+            Write-StdErr ''
+            Write-StdErr "This is the 'commit -am' failure mode: a file the worker CREATED is untracked, so"
+            Write-StdErr "'-a' never stages it and the commit lands without it -- compiling from a clean"
+            Write-StdErr 'checkout will fail even though every gate here ran green against a tree that still'
+            Write-StdErr 'had the file on disk. Fix: git add -A, then a new commit (or amend the one that'
+            Write-StdErr 'missed it), then finish again.'
+            Exit-Zagent $script:EXIT_ERROR
+        }
+    }
+
+    if ($claimedStatus -and $statusNorm -eq 'done') {
         $unmet = Get-UnmetDoneCriteria -WorkLog $fileMap['worklog']
         if (@($unmet).Count -gt 0) {
-            Write-StdErr "zagent: refusing to finish $($argv[1]) as Done -- its work log leaves $(@($unmet).Count) Definition-of-Done item(s) unticked:"
+            Write-StdErr "zagent: refusing to finish $finishKey as Done -- its work log leaves $(@($unmet).Count) Definition-of-Done item(s) unticked:"
             foreach ($item in @($unmet)) { Write-StdErr "  [ ] $item" }
             Write-StdErr ''
             Write-StdErr 'A green gate says the tree compiles and the pinned count matches. It does not'
@@ -319,6 +541,35 @@ $amend = Get-AmendContents -Client $client -Argv $argv
 if ($amend) { $body.amend = $amend }
 
 $result = Invoke-Board -Body $body -TimeoutSec (Get-RequestTimeout -Argv $argv)
+
+# ★★ STEP 6.4's FRESHNESS QUESTION FOLDS INTO THIS CALL, BECAUSE `guard`
+# IS ALREADY THE MANDATORY MERGE-BLOCKING STEP (tick.md:1107-1136,
+# tick.md:1265-1273 -- "a rule enforced at a check that already fails is
+# a rule, and the same rule in this paragraph is a hope").
+#
+# The board's guard answers "does the recorded gate selection still
+# cover this diff" -- it has never seen `tick_gates.json` and cannot
+# answer "did the run that produced that selection actually finish,
+# against the tree HEAD is on RIGHT NOW". Reading state/headSha/skipped
+# correctly "by eye" is exactly the shape this repo keeps finding does
+# not survive an unattended loop, and this directory has held a stale
+# "all gates green" from an unrelated tree before (tick.md:1128-1129).
+#
+# Only turns a WOULD-BE PASS into a failure -- never the reverse. A
+# board-side guard refusal already carries its own exit code and
+# message, and a stale local verdict has nothing useful to add to a
+# refusal that already fired, so this is gated on the board itself
+# having said 0.
+if ($argv[0] -eq 'guard' -and $gateKey) {
+    $verdict = Test-GateVerdictFresh -Key $gateKey -Repo $repoPath
+    if (Test-GuardNeedsFreshnessOverride -BoardExitCode $result.exitCode -Fresh $verdict.Fresh) {
+        Write-StdErr "zagent: guard $gateKey -- the board's guard passed, but its gate verdict is not fresh: $($verdict.Reason)"
+        Write-StdErr '        Treating this as a guard failure -- a stale or missing tick_gates.json cannot certify the tree HEAD is on right now.'
+        $result | Add-Member -NotePropertyName exitCode -NotePropertyValue $script:EXIT_ERROR -Force
+        $result | Add-Member -NotePropertyName error -NotePropertyValue $true -Force
+        $result | Add-Member -NotePropertyName text -NotePropertyValue "guard $gateKey refused locally: gate verdict not fresh -- $($verdict.Reason)" -Force
+    }
+}
 
 # ★ THE HANDSHAKE'S OTHER HALF. The board echoes `protocolVersion` on
 # every answered request. A response WITHOUT one means the board that

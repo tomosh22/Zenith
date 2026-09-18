@@ -11,16 +11,14 @@
  */
 
 import { constants, promises as fs } from 'node:fs';
-import { execFile as execFileCallback } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { promisify } from 'node:util';
 
 import { inspectArguments } from './arguments.mjs';
 import { dispatchWrite } from './write.mjs';
-
-const execFile = promisify(execFileCallback);
+import { forbiddenAbandonFlags, gateVerdictFresh, guardNeedsFreshnessOverride } from './tick-checks.mjs';
+import { workingTreeChanges } from './working-tree.mjs';
 
 export const PROTOCOL_VERSION = 1;
 export const FILE_FLAGS = Object.freeze(['file', 'comment', 'worklog', 'body', 'goal', 'dod']);
@@ -89,31 +87,12 @@ async function readInput(pathValue, cwd, flag) {
   catch (error) { throw new Error(`Cannot read --${flag} ${pathValue}: ${error.message}`); }
 }
 
-function parseWorkingTreeChanges(stdout) {
-  const paths = [];
-  for (const line of String(stdout ?? '').split(/\r?\n/)) {
-    if (line.length <= 3) continue;
-    for (const part of line.slice(3).split(' -> ')) {
-      let value = part.trim();
-      if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-      if (value && !paths.includes(value)) paths.push(value);
-    }
-  }
-  return paths;
-}
-
-/** Return modified, deleted, renamed, and untracked files in the client repo. */
-export async function workingTreeChanges(repoRoot) {
-  try {
-    const { stdout } = await execFile('git', ['-C', path.resolve(repoRoot), 'status', '--porcelain', '-uall'], { encoding: 'utf8' });
-    return parseWorkingTreeChanges(stdout);
-  } catch {
-    // A gates call may legitimately run before the first edit. A guard call
-    // handles the empty result explicitly; neither path falls back to a
-    // commit range which would hide newly-created files.
-    return [];
-  }
-}
+// `workingTreeChanges` moved to working-tree.mjs (with its parser) so
+// tick-checks.mjs can derive the same changed-file set for the excursion and
+// commit-completeness checks without importing this module and closing an
+// import cycle through write.mjs. Re-exported here because it is already
+// part of this module's public surface (tests import it from here).
+export { workingTreeChanges };
 
 async function addWorkingTreeInput(commandArgs, files, repoRoot) {
   const command = String(commandArgs[0] ?? '').toLowerCase();
@@ -370,6 +349,42 @@ async function persistLast(root, result, json) {
   await atomicWrite(path.join(root, 'last.exit'), Buffer.from(`${result.exitCode}\n`));
 }
 
+// The sentinel `.zagent/last.exit` carries between "this invocation has not
+// recorded yet" and "this invocation recorded 0" — a NON-NUMERIC token, so a
+// reader that parses it as an integer gets a clear non-answer rather than a
+// number that happens to mean success. Mirrors `tick_gates.json`'s own
+// `state: "running"`, which exists for the identical reason on the gate
+// side: a killed run must not leave behind a verdict indistinguishable from
+// a completed one.
+const LAST_EXIT_RUNNING = 'running';
+
+/**
+ * Invalidate this invocation's slot BEFORE any command-specific logic —
+ * including a pre-dispatch usage refusal — gets a chance to return without
+ * recording. `.zagent/last.exit` exists precisely so a caller can read an
+ * exit code no shell or harness can corrupt; a stale value left over from an
+ * earlier command is worse than none; it is indistinguishable from a fresh,
+ * current answer, and nothing downstream ever double-checks it. `last.json`
+ * gets the same treatment for the same reason — a stale payload sitting
+ * next to a fresh exit code (or the reverse) is its own trap, and
+ * `persistLast` itself only ever rewrites `last.json` when `--json` was
+ * passed, so a stale one otherwise survives forever untouched.
+ *
+ * Best-effort: a filesystem that cannot be written to here will also fail
+ * the real persist later (surfaced there as `scratchError`), so silently
+ * proceeding to run the actual command is strictly better than refusing an
+ * otherwise-working invocation over its own bookkeeping write.
+ */
+async function markRunning(root) {
+  try {
+    await fs.mkdir(root, { recursive: true });
+    await atomicWrite(path.join(root, 'last.exit'), Buffer.from(`${LAST_EXIT_RUNNING}\n`));
+    await fs.rm(path.join(root, 'last.json'), { force: true });
+  } catch {
+    /* best-effort; see doc comment above */
+  }
+}
+
 async function dynamicDispatcher(context) {
   const [{ loadVault }, { resolveAuthority, withAuthoritativeIndex }, { dispatchRead }, { appendGitHistory }] = await Promise.all([
     import('../server/main.js'),
@@ -399,6 +414,42 @@ async function dynamicDispatcher(context) {
       return { ...read, payload };
     }
   }
+  // ★★ STEP 6.4's FRESHNESS QUESTION FOLDS INTO `guard`, BECAUSE GUARD IS
+  // ALREADY THE MANDATORY MERGE-BLOCKING STEP (tick.md:1107-1136,
+  // tick.md:1274 — "a rule enforced at a check that already fails is a rule,
+  // and the same rule in this paragraph is a hope").
+  //
+  // `guard`'s own logic (dispatchLocal, via dispatchRead) answers "does the
+  // recorded gate selection still cover this diff" — it never reads
+  // `tick_gates.json` and cannot answer "did the run that produced that
+  // selection actually finish, against the tree HEAD is on right now".
+  // Reading state/headSha/skipped correctly "by eye" is exactly the shape
+  // this repo keeps finding does not survive an unattended loop.
+  //
+  // Only ever turns a WOULD-BE PASS into a failure — never the reverse. A
+  // guard refusal that already fired carries its own specific reason, and a
+  // stale local verdict has nothing to add to it, so this is gated on guard
+  // itself having answered 0.
+  if (command === 'guard') {
+    const key = ticketKeyForGate(context.args);
+    if (key) {
+      const repoRoot = context.repoRoot ?? context.vaultRoot;
+      const verdict = await gateVerdictFresh({ repoRoot, key });
+      if (guardNeedsFreshnessOverride(read.exitCode, verdict.fresh)) {
+        process.stderr.write(`zagent: guard ${key} — guard passed, but its gate verdict is not fresh: ${verdict.reason}. Treating this as a guard failure — a stale or missing tick_gates.json cannot certify the tree HEAD is on right now.\n`);
+        return {
+          ...read,
+          exitCode: 1,
+          payload: {
+            ...(read.payload && typeof read.payload === 'object' && !Array.isArray(read.payload) ? read.payload : {}),
+            error: true,
+            gateVerdictFresh: false,
+            gateVerdictReason: verdict.reason,
+          },
+        };
+      }
+    }
+  }
   return read;
 }
 
@@ -418,14 +469,85 @@ function usage() {
  */
 export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
   const parsed = parseClientArgs(rawArgs, options);
-  if (parsed.commandArgs.includes('--help') || parsed.commandArgs[0] === 'help' || !parsed.commandArgs[0]) {
-    const result = { exitCode: 0, payload: usage(), writes: [] };
-    if (parsed.vaultRoot) await persistLast(path.join(options.repoRoot ?? parsed.vaultRoot, SCRATCH_ROOT), result, parsed.json);
-    return result;
+
+  // The scratch root is resolvable exactly when `--vault` (or an injected
+  // `options.repoRoot`) is present — the same condition every persist call
+  // below already needs. Resolve it ONCE, before ANY command-specific
+  // branching runs (including a pre-dispatch usage refusal, like
+  // `abandon`'s forbidden-flag check, that returns before ever reaching the
+  // vault), and route every return through `finish()` — the single choke
+  // point every exit from this function now funnels through, mirroring
+  // zagent.ps1's `Exit-Zagent` ("every exit in this file goes through
+  // here"). A return that bypasses it is exactly the defect this exists to
+  // remove: a stale `.zagent/last.exit` left over from a PREVIOUS
+  // invocation, indistinguishable from a fresh, current answer.
+  const scratchRoot = parsed.vaultRoot ? path.join(path.resolve(options.repoRoot ?? parsed.vaultRoot), SCRATCH_ROOT) : null;
+  if (scratchRoot) await markRunning(scratchRoot);
+
+  async function finish(result) {
+    if (!scratchRoot) return result;
+    try {
+      await persistLast(scratchRoot, result, parsed.json);
+      return result;
+    } catch (error) {
+      // A scratch failure must be visible, but must not turn a successfully
+      // completed board operation into an ambiguous result, and must not
+      // throw out of the one function every exit path relies on to record
+      // anything at all.
+      const withError = {
+        ...result,
+        scratchError: error.message ?? String(error),
+        payload: {
+          ...(result.payload && typeof result.payload === 'object' && !Array.isArray(result.payload) ? result.payload : {}),
+          scratchError: error.message ?? String(error),
+        },
+      };
+      try { await persistLast(scratchRoot, withError, parsed.json); } catch { /* no further durable path is available */ }
+      return withError;
+    }
   }
-  if (!parsed.vaultRoot) return { exitCode: 1, payload: { error: 'Missing required --vault ROOT' }, writes: [] };
+
+  if (parsed.commandArgs.includes('--help') || parsed.commandArgs[0] === 'help' || !parsed.commandArgs[0]) {
+    return finish({ exitCode: 0, payload: usage(), writes: [] });
+  }
+  // ★★ `abandon` IS CLIENT-COMPOSED, NOT A BOARD/WRITE COMMAND. tick.md step
+  // 9's ownership-lost path used to be three negatives an agent had to hold
+  // under pressure: "use comment, but do NOT change status, and do NOT
+  // clear the assignee — this is the one release where the assignee must
+  // stay put." A rule that only says what NOT to do does not survive an
+  // unattended loop, so it is removed structurally: `abandon` has no
+  // `--status`, `--assignee` or `--label` flag at all, and it dispatches
+  // the existing `comment` mutation rather than inventing a new one.
+  if (parsed.command === 'abandon') {
+    const forbidden = forbiddenAbandonFlags(parsed.commandArgs);
+    if (forbidden.length) {
+      return finish({
+        exitCode: 1,
+        payload: {
+          error: `zagent abandon does not accept ${forbidden.map(name => `--${name}`).join(', ')}. `
+            + 'Ownership was lost, not resolved: the assignee stays put and the status stays untouched (tick.md step 9). '
+            + 'Post the work log with `zagent abandon <KEY> --comment <file>`; use `zagent update` yourself, deliberately, if you actually mean to change any of them.',
+        },
+        writes: [],
+      });
+    }
+    const key = parsed.commandArgs[1];
+    if (!key) return finish({ exitCode: 1, payload: { error: 'Usage: zagent abandon <KEY> --comment <file> [--json]' }, writes: [] });
+    // `comment` reads its text from `--file`/`--text` (see COMMAND_FLAGS in
+    // legacy-pure/flags.mjs), not `--comment` — remap the one flag abandon's
+    // own signature uses so the rest of this file never has to know
+    // `abandon` was ever the verb typed.
+    const rest = parsed.commandArgs.slice(2).map(token => {
+      if (token === '--comment') return '--file';
+      if (typeof token === 'string' && token.startsWith('--comment=')) return `--file=${token.slice('--comment='.length)}`;
+      return token;
+    });
+    parsed.commandArgs = ['comment', key, ...rest];
+    parsed.command = 'comment';
+  }
+  if (!parsed.vaultRoot) return finish({ exitCode: 1, payload: { error: 'Missing required --vault ROOT' }, writes: [] });
   const cwd = path.resolve(options.cwd ?? process.cwd());
-  const scratch = path.join(path.resolve(options.repoRoot ?? parsed.vaultRoot), SCRATCH_ROOT);
+  const scratch = scratchRoot;
   let result;
   try {
     const inspected = inspectArguments(withoutWriterProtocolOptions(parsed.commandArgs));
@@ -449,6 +571,7 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
         protocol: parsed.protocol,
         cwd,
         rawArgs: parsed.rawArgs,
+        repoRoot: path.resolve(options.repoRoot ?? parsed.vaultRoot),
       };
       const dispatch = options.dispatch ?? dynamicDispatcher;
       const value = await dispatch(context);
@@ -470,19 +593,18 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
       return record ? { ticket: record.metadata, body: record.bodyText } : null;
     });
     await writeCompatibilityScratch(scratch, parsed.command, result, { ...options, ticketProvider });
-    await persistLast(scratch, result, parsed.json);
   } catch (error) {
     // A scratch failure must be visible, but must not turn a successfully
-    // completed board operation into an ambiguous result.  Preserve the
-    // operation exit code and attach a diagnostic for callers.
+    // completed board operation into an ambiguous result. Preserve the
+    // operation exit code and attach a diagnostic for callers; `finish()`
+    // still records the real exit code below regardless.
     result = {
       ...result,
       scratchError: error.message ?? String(error),
       payload: { ...(result.payload && typeof result.payload === 'object' ? result.payload : {}), scratchError: error.message ?? String(error) },
     };
-    try { await persistLast(scratch, result, parsed.json); } catch { /* no further durable path is available */ }
   }
-  return result;
+  return finish(result);
 }
 
 function outputResult(result, json) {

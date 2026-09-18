@@ -707,7 +707,7 @@ test('dispatchWrite context plumbing and read-only refusal', async t => {
   assert.equal(claim.exitCode, 0, codeOf(claim));
 
   // The scratch runner passes the attempt out of band through context.
-  const contextAttempt = dispatchWrite(await indexAt(root), ['finish', 'FD-1', '--status', 'Done'], { comment: 'c', worklog: 'w' }, { attempt: claim.payload.claimAttempt });
+  const contextAttempt = dispatchWrite(await indexAt(root), ['finish', 'FD-1', '--status', 'Done'], { comment: 'c', worklog: 'w\n\n**Durable findings**: none.' }, { attempt: claim.payload.claimAttempt });
   assert.equal((await contextAttempt).exitCode, 0, codeOf(await contextAttempt));
 
   const humanMove = dispatchWrite(await indexAt(root), ['move', 'FD-2', 'In Progress'], {}, { actor: 'human' });
