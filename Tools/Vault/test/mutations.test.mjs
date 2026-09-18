@@ -283,6 +283,20 @@ test('ticket field, relation, parent, and all status mutation families use the o
   assert.equal(invalid.exitCode, 4);
 });
 
+test('parent accepts a typeless ticket on either side of the relation', async t => {
+  const root = await makeVault(t);
+  await fs.writeFile(path.join(root, 'FD', 'tickets', 'FD-5.md'), '---\nkey: FD-5\ntitle: Typeless\nstatus: To Do\n---\nBody\n');
+  // A typeless child parented onto a typed EPIC is not refused.
+  const typelessChild = await write(root, ['parent', 'FD-5', 'FD-9']);
+  assert.equal(typelessChild.exitCode, 0, JSON.stringify(typelessChild.payload));
+  // The mirror case: a typed child parented onto a typeless ticket.
+  const typelessParent = await write(root, ['parent', 'FD-1', 'FD-5']);
+  assert.equal(typelessParent.exitCode, 0, JSON.stringify(typelessParent.payload));
+  const index = await indexAt(root);
+  assert.equal(index.getTicket('FD-5').metadata.parent, 'FD-9');
+  assert.equal(index.getTicket('FD-1').metadata.parent, 'FD-5');
+});
+
 test('create, sprint, version, knowledge, rows, and suggestions mutations cover catalog families', async t => {
   const root = await makeVault(t);
   const created = await write(root, ['create', '--project', 'FD', '--title', 'New ticket', '--text', BODY, '--fix-version', '1.0']);
@@ -342,4 +356,44 @@ test('concurrent targeted claims have one winner and one stale loser', async t =
   assert.equal(final.metadata.status, 'In Progress');
   assert.equal(final.metadata.assignee, 'agent@example.test');
   assert.ok(final.metadata.claimAttempt);
+});
+
+test('an agent move onward from In Progress keeps its claim and can still finish', async t => {
+  const root = await makeVault(t);
+  const claimed = await write(root, ['claim', 'FD-1']);
+  assert.equal(claimed.exitCode, 0, JSON.stringify(claimed.payload));
+  const attempt = claimed.payload.claimAttempt;
+
+  const moved = await write(root, ['move', 'FD-1', 'In Review', '--attempt', attempt]);
+  assert.equal(moved.exitCode, 0, JSON.stringify(moved.payload));
+  const record = (await indexAt(root)).getTicket('FD-1');
+  assert.equal(record.metadata.status, 'In Review');
+  assert.equal(record.metadata.assignee, 'agent@example.test', 'agent progress keeps ownership');
+  assert.equal(record.metadata.claimAttempt, attempt, 'agent progress keeps the attempt token');
+
+  // Only a human can act on a ticket parked at In Review; moving it back to
+  // In Progress clears nothing because it is not a handbrake out of In
+  // Progress.  The agent's ORIGINAL attempt token must still finish the work.
+  const resumed = await write(root, ['move', 'FD-1', 'In Progress', '--human']);
+  assert.equal(resumed.exitCode, 0, JSON.stringify(resumed.payload));
+  const finished = await write(root, ['finish', 'FD-1', '--status', 'Done', '--attempt', attempt], { comment: 'done', worklog: 'measured' });
+  assert.equal(finished.exitCode, 0, JSON.stringify(finished.payload));
+  assert.equal((await indexAt(root)).getTicket('FD-1').metadata.status, 'Done');
+});
+
+test('a human move out of In Progress clears assignee and claimAttempt and revokes the claim', async t => {
+  const root = await makeVault(t);
+  const claimed = await write(root, ['claim', 'FD-2']);
+  assert.equal(claimed.exitCode, 0, JSON.stringify(claimed.payload));
+  const attempt = claimed.payload.claimAttempt;
+
+  const moved = await write(root, ['move', 'FD-2', 'In Review', '--human']);
+  assert.equal(moved.exitCode, 0, JSON.stringify(moved.payload));
+  const record = (await indexAt(root)).getTicket('FD-2');
+  assert.equal(record.metadata.status, 'In Review');
+  assert.equal(record.metadata.assignee, null, 'human handbrake returns ownership to the queue');
+  assert.equal(record.metadata.claimAttempt, null, 'human handbrake clears the attempt token');
+
+  const stale = await write(root, ['finish', 'FD-2', '--status', 'Done', '--attempt', attempt], { comment: 'lost', worklog: 'lost' });
+  assert.equal(stale.exitCode, 5, JSON.stringify(stale.payload));
 });

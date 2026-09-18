@@ -1,0 +1,105 @@
+.planning-surface { display: grid; gap: 18px; min-width: 0; }
+.planning-surface-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; padding-bottom: 15px; border-bottom: 1px solid #dfe3eb; }
+.planning-eyebrow { margin: 0; color: #3368d6; font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.planning-surface h2 { margin: 4px 0 0; color: #172b4d; font-size: 22px; }
+.planning-surface h3 { margin: 0; color: #172b4d; font-size: 14px; }
+.planning-subtitle { margin: 4px 0 0; color: #718096; font-size: 12px; }
+.planning-primary { border-color: #3368d6 !important; background: #3368d6 !important; color: white !important; }
+.planning-primary:hover { background: #2455bd !important; }
+.planning-toolbar { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+.planning-toolbar label, .planning-create-row label, .planning-create-panel label, .planning-inline-editor label { display: grid; gap: 4px; color: #64748b; font-size: 11px; }
+.planning-toolbar input { min-width: 230px; }
+.planning-toolbar select { min-width: 105px; }
+.planning-toolbar input, .planning-toolbar select, .planning-create-row input, .planning-create-panel input, .planning-inline-editor input, .planning-inline-editor textarea { padding: 7px 8px; border: 1px solid #bac5d6; border-radius: 4px; background: white; color: #172b4d; }
+.planning-create-row, .planning-create-panel { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.planning-create-panel { padding: 12px; border: 1px solid #dfe3eb; border-radius: 6px; background: #f8faff; }
+.planning-error { padding: 8px 10px; border: 1px solid #e59a92; border-radius: 5px; background: #fff0ef; color: #9b2c2c; font-size: 12px; }
+.planning-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); align-items: start; gap: 14px; min-width: 0; }
+.planning-column { min-width: 0; overflow: hidden; border: 1px solid #dfe3eb; border-radius: 8px; background: #f7f8fb; }
+.planning-column > header { display: flex; justify-content: space-between; gap: 8px; padding: 12px; border-bottom: 1px solid #dfe3eb; color: #718096; }
+.planning-column > header span, .planning-release-count, .planning-roadmap-count { color: #718096; font-size: 11px; }
+.planning-column { min-width: 0; }
+.planning-column.is-drop-target { outline: 2px solid #7aa5ff; outline-offset: -2px; }
+.planning-column-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; padding: 9px; }
+.planning-card { display: grid; gap: 7px; min-width: 0; overflow: hidden; padding: 10px; border: 1px solid #d9e1ec; border-radius: 6px; background: white; box-shadow: 0 1px 2px #1720330b; }
+.planning-card:hover { border-color: #7aa5ff; }
+.planning-card-topline { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.planning-card-topline > * { min-width: 0; }
+.planning-card-topline select { max-width: 130px; padding: 3px 5px; font-size: 10px; }
+.planning-issue-key, .planning-card-title, .planning-backlog-title, .planning-roadmap-child-title, .planning-roadmap-epic-title { padding: 0; border: 0 !important; background: transparent !important; color: #1d70a8 !important; text-align: left; }
+.planning-issue-key { flex: 0 0 auto; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; font-weight: 700; }
+.planning-card-title { min-width: 0; overflow-wrap: anywhere; color: #172b4d !important; font-size: 12px; }
+.planning-card-meta { display: flex; gap: 7px; flex-wrap: wrap; color: #718096; font-size: 10px; }
+.planning-chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.planning-chip { padding: 3px 6px; border-radius: 999px; background: #e5edff; color: #2455bd; font-size: 10px; }
+.planning-chip-warning { background: #fff0d7; color: #9b5d00; }
+.planning-empty { margin: 0; padding: 20px 8px; color: #8b98aa; font-size: 12px; text-align: center; }
+.planning-backlog { gap: 14px; }
+.planning-sprint { overflow: hidden; border: 1px solid #dfe3eb; border-radius: 8px; background: white; }
+.planning-sprint-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #e7ebf2; background: #f8faff; }
+.planning-sprint-header > button:first-child { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; padding: 0; border: 0; background: transparent; text-align: left; }
+.planning-sprint-header strong { color: #172b4d; font-size: 13px; }
+.planning-sprint-header button span { color: #718096; font-size: 11px; }
+.planning-sprint-header em { overflow: hidden; color: #718096; font-size: 11px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.planning-sprint-header small { color: #718096; font-size: 10px; white-space: nowrap; }
+.planning-sprint-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: end; }
+.planning-sprint-actions button, .planning-release-actions button { padding: 5px 8px; font-size: 10px; }
+.planning-danger-link { color: #a13b3b !important; }
+.planning-sprint-body { display: grid; gap: 0; }
+.planning-backlog-row { display: grid; grid-template-columns: 76px minmax(160px, 1fr) 75px 120px 110px 145px; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 1px solid #eef1f5; font-size: 11px; }
+.planning-backlog-row:last-child { border-bottom: 0; }
+.planning-backlog-detail { overflow: hidden; color: #718096; text-overflow: ellipsis; white-space: nowrap; }
+.planning-backlog-row select { min-width: 0; padding: 4px; font-size: 10px; }
+.planning-inline-editor { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; padding: 12px; border-bottom: 1px solid #e7ebf2; background: #fbfcfe; }
+.planning-inline-editor textarea { resize: vertical; }
+.planning-inline-actions { display: flex; align-items: center; gap: 6px; }
+.planning-confirm-backdrop { position: fixed; inset: 0; z-index: 110; display: grid; place-items: center; padding: 20px; background: #172b4d66; }
+.planning-confirm { width: min(460px, 100%); padding: 20px; border-radius: 8px; background: white; box-shadow: 0 20px 70px #101c3644; }
+.planning-confirm h3 { margin: 0 0 9px; }
+.planning-confirm-copy { color: #526176; font-size: 12px; line-height: 1.55; }
+.planning-confirm .planning-inline-actions { justify-content: end; margin-top: 18px; }
+.planning-danger { border-color: #b45353 !important; background: #a13b3b !important; color: white !important; }
+.planning-release-list { display: grid; gap: 12px; max-width: 980px; }
+.planning-release-card { display: grid; gap: 9px; padding: 14px; border: 1px solid #dfe3eb; border-radius: 8px; background: white; }
+.planning-release-card.is-archived { border-style: dashed; background: #f8f9fb; opacity: .68; }
+.planning-release-header { display: flex; align-items: center; gap: 9px; }
+.planning-release-mark { color: #3368d6; font-size: 16px; }
+.planning-release-heading { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.planning-release-heading h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-status-badge { padding: 2px 6px; border-radius: 999px; background: #eef3fc; color: #526176; font-size: 10px; white-space: nowrap; }
+.planning-release-count { margin-left: auto; white-space: nowrap; }
+.planning-release-description, .planning-release-date, .planning-report-copy { margin: 0; color: #718096; font-size: 12px; }
+.planning-release-actions { display: flex; gap: 5px; justify-content: end; flex-wrap: wrap; }
+.planning-release-issue-count { justify-self: start; padding: 0; border: 0; background: transparent; color: #1d70a8; font-size: 10px; text-decoration: underline; }
+.planning-progress { display: flex; align-items: center; gap: 8px; min-height: 7px; }
+.planning-progress > span { display: block; height: 7px; min-width: 0; border-radius: 999px; background: #32a18c; }
+.planning-progress::before { content: ''; position: absolute; }
+.planning-progress { position: relative; overflow: visible; padding-right: 38px; background: #e8edf4; border-radius: 999px; }
+.planning-progress > span { position: relative; z-index: 1; }
+.planning-progress small { position: absolute; right: 0; color: #718096; font-size: 10px; }
+.planning-roadmap { gap: 14px; }
+.planning-roadmap-summary { color: #718096; font-size: 11px; }
+.planning-roadmap-list { display: grid; gap: 12px; }
+.planning-roadmap-epic, .planning-roadmap-orphans { overflow: hidden; border: 1px solid #dfe3eb; border-radius: 8px; background: white; }
+.planning-roadmap-epic-header, .planning-roadmap-orphans > header { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #e7ebf2; background: #fbfaff; }
+.planning-roadmap-epic-header > button:first-child { padding: 0; border: 0; background: transparent; color: #718096; }
+.planning-roadmap-epic-mark { color: #8b5cf6; }
+.planning-roadmap-epic-title { min-width: 0; flex: 1; color: #172b4d !important; font-size: 13px; font-weight: 700; }
+.planning-roadmap-count { margin-left: auto; }
+.planning-roadmap-epic > .planning-progress { margin: 12px; }
+.planning-roadmap-children ul, .planning-roadmap-orphans ul { display: grid; margin: 0; padding: 0; list-style: none; }
+.planning-roadmap-child { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-bottom: 1px solid #eef1f5; font-size: 11px; }
+.planning-roadmap-child:last-child { border-bottom: 0; }
+.planning-roadmap-child-title { min-width: 0; flex: 1; color: #172b4d !important; font-size: 12px; }
+.planning-roadmap-child-title.is-done { color: #8b98aa !important; text-decoration: line-through; }
+.planning-roadmap-type, .planning-roadmap-priority, .planning-roadmap-assignee, .planning-roadmap-points { color: #718096; font-size: 10px; white-space: nowrap; }
+.planning-roadmap-status { padding: 2px 5px; border-radius: 999px; font-size: 10px; white-space: nowrap; }
+.planning-roadmap-status.is-done { background: #d9f3e8; color: #207457; }.planning-roadmap-status.is-progress { background: #e5edff; color: #2455bd; }.planning-roadmap-status.is-todo { background: #eef1f5; color: #526176; }
+.planning-roadmap-orphans > header { justify-content: space-between; background: #fffdfa; }.planning-roadmap-orphans > header span { color: #718096; font-size: 11px; }
+.planning-reports { gap: 18px; }
+.planning-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.planning-report-card { display: grid; gap: 12px; min-width: 0; padding: 16px; border: 1px solid #dfe3eb; border-radius: 8px; background: white; }
+.planning-chart-wrap { min-width: 0; margin: 0; overflow-x: auto; }.planning-chart { display: block; width: 100%; min-width: 500px; height: auto; }.planning-chart-axis { stroke: #dfe3eb; stroke-width: 1; }.planning-chart-scope { fill: none; stroke: #60a5fa; stroke-width: 1.5; }.planning-chart-ideal { fill: none; stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 4 4; }.planning-chart-remaining { fill: none; stroke: #8b5cf6; stroke-width: 2.5; }.planning-chart-label { fill: #718096; font-size: 10px; }.planning-chart-wrap figcaption { display: flex; gap: 12px; color: #718096; font-size: 10px; }.planning-legend-remaining { color: #8b5cf6; }.planning-legend-scope { color: #60a5fa; }
+.planning-velocity ul, .planning-epic-report ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }.planning-velocity li { display: grid; grid-template-columns: minmax(95px, 135px) minmax(80px, 1fr) 80px; align-items: center; gap: 8px; color: #526176; font-size: 11px; }.planning-velocity-bars { display: grid; gap: 2px; min-width: 0; }.planning-velocity-bars i, .planning-velocity-bars b { display: block; height: 6px; min-width: 2px; border-radius: 3px; background: #cbd5e1; }.planning-velocity-bars b { background: #8b5cf6; }.planning-velocity li small { color: #718096; text-align: right; }.planning-velocity-legend { display: flex; gap: 12px; color: #718096; font-size: 10px; }.planning-velocity-legend i, .planning-velocity-legend b { display: inline-block; width: 9px; height: 6px; margin-right: 3px; border-radius: 2px; background: #cbd5e1; }.planning-velocity-legend b { background: #8b5cf6; }
+.planning-epic-report { max-width: 980px; }.planning-epic-report li > button { display: grid; width: 100%; grid-template-columns: minmax(130px, 1fr) minmax(140px, 1fr); align-items: center; gap: 12px; padding: 8px; border: 0; border-radius: 5px; background: transparent; text-align: left; }.planning-epic-report li > button:hover { background: #f7f8fb; }.planning-epic-report li > button > div:first-child { display: flex; align-items: baseline; gap: 8px; min-width: 0; }.planning-epic-report li > button strong { color: #1d70a8; font-family: ui-monospace, monospace; font-size: 10px; }.planning-epic-report li > button span { overflow: hidden; color: #172b4d; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.planning-epic-report li > button small { margin-left: auto; color: #718096; font-size: 10px; white-space: nowrap; }
+@media (max-width: 800px) { .planning-report-grid { grid-template-columns: 1fr; }.planning-backlog-row { grid-template-columns: 65px minmax(130px, 1fr) 70px 100px 90px; }.planning-backlog-row select { grid-column: 2 / -1; }.planning-roadmap-child { flex-wrap: wrap; }.planning-roadmap-child-title { min-width: 40%; }.planning-release-count { margin-left: 0; }.planning-release-header { flex-wrap: wrap; } }

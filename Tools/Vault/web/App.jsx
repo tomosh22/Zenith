@@ -216,7 +216,7 @@ function Backlinks({ file, files, onOpen }) {
   </section>;
 }
 
-export function App() {
+export function App({ initialPath = null } = {}) {
   const [session, setSession] = useState(null);
   const [data, setData] = useState({ files: [], tickets: [], documents: [], statuses: [], statusesByProject: {}, projects: [], diagnostics: [], valid: true });
   const [selectedPath, setSelectedPath] = useState(null);
@@ -232,6 +232,9 @@ export function App() {
   const [status, setStatus] = useState('');
   const [connected, setConnected] = useState(false);
   const draftsRef = useRef(new Map());
+  const openRequestRef = useRef(0);
+  const documentPathRef = useRef(document?.path);
+  documentPathRef.current = document?.path;
 
   const selectedFile = useMemo(() => data.files.find(file => file.path === selectedPath) ?? document?.record ?? null, [data.files, document, selectedPath]);
   const ticketStatuses = useMemo(() => ticketStatusOptions(selectedFile, status, data.statusesByProject), [selectedFile, status, data.statusesByProject]);
@@ -252,15 +255,23 @@ export function App() {
   }, []);
 
   const openDocument = useCallback(async (pathValue, { discardDraft = false } = {}) => {
-    const previousPath = selectedPathRef.current;
+    const requestId = ++openRequestRef.current;
+    const previousPath = documentPathRef.current;
     if (previousPath && dirtyRef.current) draftsRef.current.set(previousPath, textRef.current);
     if (discardDraft) draftsRef.current.delete(pathValue);
     setSelectedPath(pathValue);
+    setDocument(null);
+    setText('');
+    setSavedText('');
     setConflict(false);
     setMessage('Loading…');
-    const response = await fetch(`/api/document?path=${encodeURIComponent(pathValue)}`);
-    if (!response.ok) { setMessage('Document could not be loaded.'); return; }
-    const next = await response.json();
+    let next;
+    try {
+      const response = await fetch(`/api/document?path=${encodeURIComponent(pathValue)}`);
+      if (!response.ok) throw new Error('Document could not be loaded.');
+      next = await response.json();
+    } catch (error) { if (requestId === openRequestRef.current) setMessage(error.message); return; }
+    if (requestId !== openRequestRef.current) return;
     const draft = discardDraft ? undefined : draftsRef.current.get(pathValue);
     setDocument(next);
     setText(draft ?? next.text);
@@ -269,6 +280,12 @@ export function App() {
     setStatus(next.record?.status ?? '');
     setMessage('');
   }, []);
+
+  useEffect(() => () => { openRequestRef.current++; }, []);
+
+  useEffect(() => {
+    if (initialPath) openDocument(initialPath).catch(error => setMessage(error.message));
+  }, [initialPath, openDocument]);
 
   useEffect(() => {
     let active = true;

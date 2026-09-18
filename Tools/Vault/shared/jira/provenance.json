@@ -1,0 +1,86 @@
+{
+  "sourceRepository": "saas",
+  "description": "Pure Jira domain rules and their original assertions. TypeScript is transpiled and optional process.env reads are guarded for browsers; domain semantics are unchanged. Runtime is entirely local to Vault.",
+  "files": [
+    {
+      "source": "constants.ts",
+      "target": "shared/jira/constants.js",
+      "sha256": "3d3b374874bebe74acdece3cffacd0e766e87b92076d5fd254a3501a5e409060"
+    },
+    {
+      "source": "fields.ts",
+      "target": "shared/jira/fields.js",
+      "sha256": "fee26a66c23fb67e0e99cd0f9024e1b918acac64b5689e4cc8d806a693d1b4c6"
+    },
+    {
+      "source": "workflow.ts",
+      "target": "shared/jira/workflow.js",
+      "sha256": "32648b8f56fa794f4979e8dae585d79dcbeefcc905ec9117e332b95ffd4cb17f"
+    },
+    {
+      "source": "board.ts",
+      "target": "shared/jira/board.js",
+      "sha256": "a1132e45e68d463b64648a17156394740d16159b3005010e274f66a9126b8110"
+    },
+    {
+      "source": "permissions.ts",
+      "target": "shared/jira/permissions.js",
+      "sha256": "3c896ce27d14a9b530108a538d7c050f9aaaa312e45ca115fec7467f0aeda79f"
+    },
+    {
+      "source": "utils/mentions.ts",
+      "target": "shared/jira/utils/mentions.js",
+      "sha256": "91e83c9266e2d2a5e837b0de4bb30be794fa2e4cbeb65c33e515a31c5b441579"
+    },
+    {
+      "source": "utils/references.ts",
+      "target": "shared/jira/utils/references.js",
+      "sha256": "a864bc783a7c742830a37754abab42d5b0d5cc12c5aebec21be2de7505e5fdfb"
+    },
+    {
+      "source": "__tests__/agile.test.ts",
+      "target": "test/jira-domain/agile.test.js",
+      "sha256": "5f2ce2744126f678608762bd77bc1e5a070d5aa85283caef5f086a84699007dc"
+    },
+    {
+      "source": "__tests__/fields.test.ts",
+      "target": "test/jira-domain/fields.test.js",
+      "sha256": "e8acff386d03cb97fa8781c588e4696527a559f9172a76db998dd7d729a97809"
+    },
+    {
+      "source": "__tests__/workflow.test.ts",
+      "target": "test/jira-domain/workflow.test.js",
+      "sha256": "2f1d8be7e51f197f1cbc91714e859a8eb46590eb8c778effcb5c50d3d5e892fd"
+    },
+    {
+      "source": "__tests__/board.test.ts",
+      "target": "test/jira-domain/board.test.js",
+      "sha256": "c9a9859ac7be5830cb38894577e9f5f5340e0b25e04fe2619418a0bfdee5e30a"
+    },
+    {
+      "source": "__tests__/permissions.test.ts",
+      "target": "test/jira-domain/permissions.test.js",
+      "sha256": "88bde8e881f3d48b326a1bbeeac68fbc1cb1b7b646a8e646bacf579310b9b6d7"
+    },
+    {
+      "source": "__tests__/mentions.test.ts",
+      "target": "test/jira-domain/mentions.test.js",
+      "sha256": "43b131fe2f8885ac5758fc99ca0f5999c5563877a7fa5fe8d4f37b33a222ca51"
+    },
+    {
+      "source": "__tests__/references.test.ts",
+      "target": "test/jira-domain/references.test.js",
+      "sha256": "3e5c2a8511c50e5e046f5476b276d6db2eee756d21a4e100c7eddbc9aa5984b9"
+    },
+    {
+      "source": "../../../apps/jira/src/lib/reports.ts",
+      "target": "shared/jira/reports.js",
+      "sha256": "e9694b64e8e99ca66854dbc94a3d2b173e5c3b776f024643ea21d15fa89688f8"
+    },
+    {
+      "source": "../../../apps/jira/src/lib/reports.test.ts",
+      "target": "test/jira-domain/reports.test.js",
+      "sha256": "72486a1b08f1fca00227032815683dc0f10e055535bc482056a81a61f72aa328"
+    }
+  ]
+}

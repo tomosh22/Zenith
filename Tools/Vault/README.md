@@ -1,8 +1,8 @@
 # Zenith Vault
 
-A local Markdown board and document editor, with a disposable index, compatible CLI,
-Git-backed mutations, and a localhost browser app. PostgreSQL and the old saas checkout
-are not runtime dependencies.
+A local Markdown board and document editor with a local project workspace, a
+disposable index, compatible CLI, Git-backed mutations, and a localhost browser
+app. PostgreSQL and the old saas checkout are not runtime dependencies.
 
 **Deployment status:** the production launcher uses the local Vault through
 `Tools/zagent/backend.json`. Legacy board/docs writes are fenced in PostgreSQL.
@@ -16,6 +16,22 @@ node Tools/Vault/server/http.mjs --vault C:/dev/Zenith --port 4317
 ```
 
 Open http://127.0.0.1:4317. The CLI remains `Tools/zagent/zagent.ps1`.
+
+## Project workspace
+
+The browser app serves a project workspace beside the document editor: per-project
+Board, Backlog, Roadmap, Releases, Reports, Workflow, Fields, and Board settings
+sections, plus an issue panel with comments, directed links, parent/children
+family, and history. Issue and project creation, sprint and version controls,
+and workflow/field/board settings all submit through the same operation engine.
+Writes go through `POST /api/commands` and the allowlisted `POST /api/actions`
+surface; both enforce the per-launch CSRF token, opened revisions, read-only
+projects, and Git-backed atomic commits. The browser client retries 423 LOCKED
+writes automatically and recovers a 409 STALE response by reloading the issue
+while preserving the draft. `--web-root` selects the served web bundle
+(`web/dist` by default; pass another directory for a different build). The API
+contract is in `spec/project-ui-api.md`; tracked UI gaps are in
+`spec/jira-ui-parity.md`.
 
 ## Run
 

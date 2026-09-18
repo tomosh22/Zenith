@@ -1,10 +1,11 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
+import { removeTempVault } from './helpers/vault-app.mjs';
 
 const execFile = promisify(execFileCallback);
 const here = path.resolve(new URL('.', import.meta.url).pathname.replace(/^\/(?:[A-Za-z]:)/, match => match.slice(1)));
@@ -51,13 +52,13 @@ async function withFullReadOnlyApp(callback) {
   finally {
     server.child.kill();
     await new Promise(resolve => server.child.once('close', resolve));
-    await rm(root, { recursive: true, force: true });
+    await removeTempVault(root);
   }
 }
 
 async function startServer(root) {
   const port = await freePort();
-  const child = spawn(process.execPath, [httpScript, '--vault', root, '--port', String(port)], {
+  const child = spawn(process.execPath, [httpScript, '--vault', root, '--port', String(port), '--web-root', path.resolve(here, '..', 'artifacts', 'project-web')], {
     cwd: path.dirname(httpScript),
     env: { ...process.env, NODE_NO_WARNINGS: '1' },
     windowsHide: true,
@@ -88,14 +89,14 @@ async function withApp(options, callback) {
   finally {
     server.child.kill();
     await new Promise(resolve => server.child.once('close', resolve));
-    await rm(root, { recursive: true, force: true });
+    await removeTempVault(root);
   }
 }
 
 test.describe('Vault browser app', () => {
   test('loads the read model, searches the tree, previews Markdown, and shows the board', async ({ page }) => {
     await withApp({ writes: false }, async ({ url }) => {
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await expect(page.getByText('Zenith Vault', { exact: true })).toBeVisible();
       await expect(page.getByText('Read only')).toBeVisible();
       await expect(page.getByRole('button', { name: 'Board' })).toBeVisible();
@@ -122,7 +123,7 @@ test.describe('Vault browser app', () => {
 
   test('edits through CodeMirror and saves through the managed writer', async ({ page }) => {
     await withApp({ writes: true }, async ({ root, url }) => {
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await expect(page.locator('.health-row')).toContainText('Live');
       await page.locator('button[title="FD/tickets/FD-1.md"]').click();
       const editor = page.getByTestId('editor').locator('.cm-content');
@@ -143,7 +144,7 @@ test.describe('Vault browser app', () => {
     await withApp({ writes: true, crlf: true }, async ({ root, url }) => {
       const file = path.join(root, 'FD', 'tickets', 'FD-1.md');
       const before = await readFile(file);
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       const session = await page.request.get(`${url}/api/session`).then(response => response.json());
       const document = await page.request.get(`${url}/api/document?path=${encodeURIComponent('FD/tickets/FD-1.md')}`).then(response => response.json());
       const noOp = await page.request.put(`${url}/api/document`, {
@@ -169,7 +170,7 @@ test.describe('Vault browser app', () => {
 
   test('keeps local edits during an external change and offers a disk reload', async ({ page }) => {
     await withApp({ writes: true }, async ({ root, url }) => {
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await page.locator('button[title="FD/tickets/FD-1.md"]').click();
       const editor = page.getByTestId('editor').locator('.cm-content');
       await editor.click();
@@ -195,7 +196,7 @@ test.describe('Vault browser app', () => {
         if (route.request().method() === 'PUT') await held;
         await route.continue();
       });
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await page.locator('button[title="FD/tickets/FD-1.md"]').click();
       const editor = page.getByTestId('editor').locator('.cm-content');
       await editor.click();
@@ -213,9 +214,27 @@ test.describe('Vault browser app', () => {
     });
   });
 
+  test('opens document deep links and ignores an older read after selecting another document', async ({ page }) => {
+    await withApp({ writes: false, links: true }, async ({ url }) => {
+      let release;
+      const held = new Promise(resolve => { release = resolve; });
+      await page.route('**/api/document?path=FD%2Ftickets%2FFD-1.md', async route => { await held; await route.continue(); });
+      try {
+        await page.goto(`${url}?workspace=documents&path=FD%2Ftickets%2FFD-1.md`);
+        await page.locator('button[title="FD/tickets/FD-2.md"]').click();
+        await expect(page.getByTestId('editor').locator('.cm-content')).toContainText('Linked ticket');
+        const delayedResponse = page.waitForResponse(response => response.url().includes('path=FD%2Ftickets%2FFD-1.md'));
+        release();
+        await delayedResponse;
+        await expect(page.getByTestId('editor').locator('.cm-content')).toContainText('Linked ticket');
+        await expect(page.getByText('FD/tickets/FD-2.md')).toBeVisible();
+      } finally { release(); }
+    });
+  });
+
   test('follows wiki links, shows backlinks, and offers CodeMirror completions', async ({ page }) => {
     await withApp({ writes: false, links: true }, async ({ url }) => {
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await page.locator('button[title="FD/tickets/FD-1.md"]').click();
       await expect(page.getByTestId('backlinks')).toContainText('FD-2');
       const firstEditor = page.getByTestId('editor').locator('.cm-content');
@@ -239,7 +258,7 @@ test.describe('Vault browser app', () => {
 
   test('read-only board drag is refused without changing the ticket', async ({ page }) => {
     await withApp({ writes: false, twoStatuses: true }, async ({ root, url }) => {
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await page.getByRole('button', { name: 'Board' }).click();
       await expect(page.locator('.board-column')).toHaveCount(2);
       const card = page.getByTestId('ticket-card').filter({ hasText: 'FD-1' });
@@ -252,7 +271,7 @@ test.describe('Vault browser app', () => {
   test('writable board drag uses the managed transition and records a commit', async ({ page }) => {
     await withApp({ writes: true, twoStatuses: true, commit: true }, async ({ root, url }) => {
       const beforeHead = (await execFile('git', ['-C', root, 'rev-parse', 'HEAD'], { windowsHide: true })).stdout.trim();
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await page.getByRole('button', { name: 'Board' }).click();
       await expect(page.locator('.board-column')).toHaveCount(2);
       const card = page.getByTestId('ticket-card').filter({ hasText: 'FD-1' });
@@ -267,7 +286,7 @@ test.describe('Vault browser app', () => {
 
   test('full read-only vault renders multiple board lanes for visual review', async ({ page }) => {
     await withFullReadOnlyApp(async ({ url }) => {
-      await page.goto(url);
+      await page.goto(`${url}?workspace=documents`);
       await page.getByRole('button', { name: 'Board' }).click();
       await expect(page.getByTestId('board')).toBeVisible();
       const lanes = await page.locator('.board-column').count();
@@ -276,3 +295,4 @@ test.describe('Vault browser app', () => {
     });
   });
 });
+

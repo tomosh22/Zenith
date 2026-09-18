@@ -330,8 +330,21 @@ export async function executeOperation(root, options) {
         return boardRelative === '' || (boardRelative !== '..' && !boardRelative.startsWith(`..${path.sep}`) && !path.isAbsolute(boardRelative));
       });
       if (boardRoots.some(board => board.readOnly === true)) fail('PATH', `Read-only vault path: ${relative}`);
-      const allowed = index.files.has(relative) || boardRoots.length > 0;
-      if (!allowed || !/\.(md|markdown)$/i.test(relative)) fail('PATH', `Not an editable Markdown vault path: ${relative}`);
+      // Most mutations edit an indexed ticket/config or a configured board
+      // root. A project-create operation is the one intentional exception:
+      // it adds a new board root and its first catalogs in the same atomic
+      // journal, so those paths cannot be found in the pre-operation index.
+      const extraPaths = Array.isArray(options.allowPaths)
+        ? options.allowPaths.map(value => String(value).replaceAll('\\', '/').replace(/\/+$/, ''))
+        : [];
+      const explicitlyAllowed = extraPaths.some(prefix => relative === prefix
+        || relative.startsWith(prefix + '/'));
+      const allowed = index.files.has(relative) || boardRoots.length > 0 || explicitlyAllowed;
+      const configPath = String(index.configPath ?? 'vault.config.json').replaceAll('\\', '/').replace(/^\.\//, '');
+      const editableConfig = options.kind === 'project.create' && relative === configPath;
+      if (!allowed || (!editableConfig && !/\.(md|markdown)$/i.test(relative))) {
+        fail('PATH', 'Not an editable vault path: ' + relative);
+      }
       const before = await bytesAt(target), after = change.bytes === null ? null : Buffer.from(change.bytes);
       const scanned = index.getFile(relative);
       if (scanned?.hash && scanned.hash !== hashBytes(before)) fail('STALE', `File changed during preparation: ${relative}`);

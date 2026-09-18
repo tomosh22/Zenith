@@ -29,6 +29,9 @@ import {
   dispatchQueue,
 } from './read.js';
 import { databaseModel, rowsFor } from './queries.mjs';
+import { issueLinkError, issueParentError } from '../shared/jira/constants.js';
+import { isKnownHierarchyType } from '../shared/hierarchy.mjs';
+import { upsertWorklog } from './legacy-pure/ticket.mjs';
 
 const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 const STATUS_TODO = 'To Do';
@@ -52,6 +55,17 @@ const LINK_TYPES = Object.freeze({
   'relates-to': 'RELATES_TO',
   duplicates: 'DUPLICATES',
   causes: 'CAUSES',
+});
+
+// Keep the Jira issue hierarchy in the shared writer. Epics contain
+// STORY/TASK/BUG work; only those leaf work types can contain SUBTASKs. In
+// particular, an EPIC cannot be parented by a SUBTASK and a SUBTASK cannot be
+// attached directly to an EPIC.
+const PARENT_TYPES = Object.freeze({
+  STORY: Object.freeze(['EPIC']),
+  TASK: Object.freeze(['EPIC']),
+  BUG: Object.freeze(['EPIC']),
+  SUBTASK: Object.freeze(['STORY', 'TASK', 'BUG']),
 });
 
 const KNOWLEDGE_FILES = Object.freeze({
@@ -163,6 +177,18 @@ function requireTicket(index, requested) {
   return record;
 }
 
+function ensureParentTarget(child, target, parentKey) {
+  const childType = String(canonicalOf(child).type ?? '').toUpperCase();
+  const parentType = String(canonicalOf(target).type ?? '').toUpperCase();
+  // issueParentError reports a bogus hierarchy violation for a
+  // missing/unknown type, so only consult it when both types are
+  // recognised; a typeless ticket is not refused here.
+  const error = isKnownHierarchyType(childType) && isKnownHierarchyType(parentType)
+    ? issueParentError(childType, parentType)
+    : null;
+  if (error) throw new WriteError(String(parentKey) + ': ' + error, 'INVALID', 4);
+}
+
 function projectOf(index, record, requested) {
   const key = projectKeyOf(record, requested);
   if (key) return String(key).toUpperCase();
@@ -270,6 +296,7 @@ function changedFields(argv, current, files = {}) {
   const reproducibility = enumValue(argv, 'repro', REPRODUCIBILITIES);
   const points = pointsValue(argv);
   const due = dateValue(argv, 'due');
+  const category = valueOf(argv, 'category');
   const assignee = valueOf(argv, 'assignee');
   const environment = scalarValue(argv, 'environment');
 
@@ -282,6 +309,7 @@ function changedFields(argv, current, files = {}) {
   if (reproducibility !== undefined) updates.reproducibility = reproducibility;
   if (points !== undefined) updates.storyPoints = points;
   if (due !== undefined) updates.dueDate = due;
+  if (category !== undefined) updates.category = String(category).toLowerCase() === 'none' ? null : String(category);
   if (environment !== undefined) updates.environment = environment;
   if (hasFlag(argv, 'flag')) updates.flagged = !hasFlag(argv, 'clear');
   if (assignee !== undefined) updates.assignee = String(assignee).toLowerCase() === 'none' ? null : String(assignee);
@@ -501,6 +529,14 @@ async function runOperation(index, kind, argv, expected, prepare, fingerprintInp
   if (!writeEnabled(index)) return disabledResult();
   try {
     const { executeOperation } = await engine();
+    // Browser/API callers supply a revision map for the exact files they
+    // opened. Command handlers also derive a ticket/catalog revision for CLI
+    // callers, so require both sets when they overlap and preserve every
+    // caller-supplied path through the shared operation lock.
+    const suppliedRevisions = operationInputs.get(index)?.context?.revisions;
+    const operationExpected = suppliedRevisions && typeof suppliedRevisions === 'object'
+      ? { ...expected, ...suppliedRevisions }
+      : expected;
     const id = operationId(kind, argv, expected);
     const fingerprint = valueOf(argv, 'operation-id') ?? valueOf(argv, 'op-id')
       ? createHash('sha256').update(JSON.stringify({ kind, argv, input: fingerprintInput ?? operationInputs.get(index) ?? null })).digest('hex')
@@ -508,7 +544,7 @@ async function runOperation(index, kind, argv, expected, prepare, fingerprintInp
     const response = await executeOperation(index.root ?? index.vaultRoot, {
       id,
       kind,
-      expected,
+      expected: operationExpected,
       fingerprint,
       commit: undefined,
       prepare,
@@ -640,7 +676,19 @@ async function move(index, argv) {
     ensureHumanGateCloseout(fresh, current, project, actor, status);
     requireAgentOwnership(fresh, current, actor, { allowUnassigned: status === STATUS_TODO || status === STATUS_BLOCKED, attempt: attemptOf(argv) });
     const updates = { status };
-    if (status === STATUS_TODO && String(canonicalOf(current).assignee ?? '').toLowerCase() === actor.email.toLowerCase()) updates.assignee = null;
+    const currentFields = canonicalOf(current);
+    const leavingInProgress = String(currentFields.status ?? '').toLowerCase() === STATUS_IN_PROGRESS.toLowerCase()
+      && String(status).toLowerCase() !== STATUS_IN_PROGRESS.toLowerCase();
+    // A HUMAN move out of In Progress is a handbrake: it returns ownership to
+    // the queue, and the token goes with the assignee so a stale worker cannot
+    // resume the abandoned attempt.  An AGENT moving its own ticket onward
+    // (In Progress -> In Review) is ordinary progress and keeps its claim.
+    if (actor.kind === 'human' && leavingInProgress) {
+      updates.assignee = null;
+      updates.claimAttempt = null;
+    } else if (status === STATUS_TODO && String(currentFields.assignee ?? '').toLowerCase() === actor.email.toLowerCase()) {
+      updates.assignee = null;
+    }
     return { changes: [{ path: current.relativePath, bytes: patchRecord(current, updates) }], result: { key: keyFor(current), status } };
   });
 }
@@ -663,7 +711,7 @@ async function finish(index, argv, files) {
     requireAgentOwnership(fresh, current, actor, { attempt: attemptOf(argv) });
     let body = bodyTextOf(current);
     body = appendSection(body, 'Comments', commentText);
-    body = appendSection(body, 'Work Log', worklog);
+    body = upsertWorklog(body, keyFor(current), worklog);
     return { changes: [{ path: current.relativePath, bytes: patchRecord(current, { status, claimAttempt: null }, body) }], result: { key: keyFor(current), status } };
   });
 }
@@ -718,6 +766,11 @@ async function create(index, argv, files) {
   const sprintRaw = valueOf(argv, 'sprint');
   const sprint = sprintRaw === undefined || ['none', 'off', 'null'].includes(String(sprintRaw).toLowerCase()) ? null : String(sprintRaw);
   const fixVersion = valueOf(argv, 'fix-version');
+  const severity = enumValue(argv, 'severity', SEVERITIES) ?? null;
+  const reproducibility = enumValue(argv, 'repro', REPRODUCIBILITIES) ?? null;
+  const due = dateValue(argv, 'due') ?? null;
+  const environment = scalarValue(argv, 'environment') ?? null;
+  const flagged = hasFlag(argv, 'flag') ? !hasFlag(argv, 'clear') : false;
   return runOperation(index, 'create', argv, {}, async fresh => {
     const number = nextIssueNumber(fresh, project);
     const key = `${project}-${number}`;
@@ -727,14 +780,14 @@ async function create(index, argv, files) {
     const status = ensureStatus(fresh, project, valueOf(argv, 'status') ?? STATUS_TODO);
     if (parent) {
       const parentRecord = requireTicket(fresh, parent);
-      if (String(canonicalOf(parentRecord).type ?? '').toUpperCase() !== 'EPIC') throw new WriteError(`${parent} is not an EPIC`, 'INVALID', 4);
+      ensureParentTarget({ metadata: { type, key } }, parentRecord, parent);
     }
     for (const target of blocks) requireTicket(fresh, target);
     for (const target of blockedBy) requireTicket(fresh, target);
     const fields = {
       id: randomUUID(), key, type, title: String(title), category, parent, sprint, status, assignee,
       priority, complexity, risk, storyPoints: points, position: number, labels,
-      fixVersions: fixVersion ? [fixVersion] : [],
+      fixVersions: fixVersion ? [fixVersion] : [], flagged, severity, reproducibility, dueDate: due, environment,
       updatedAt: new Date().toISOString(),
       blocks: blocks.map(target => ({ key: target, reason })),
     };
@@ -761,6 +814,8 @@ function linkOperands(argv) {
 
 async function link(index, argv, unlink = false) {
   const { source: sourceKey, target: targetKey, verb, type } = linkOperands(argv);
+  const selfLinkError = issueLinkError(String(sourceKey).toUpperCase(), String(targetKey).toUpperCase());
+  if (selfLinkError) throw new WriteError(selfLinkError, 'INVALID', 4);
   const reason = valueOf(argv, 'reason');
   if (!unlink && type === 'BLOCKS' && !String(reason ?? '').trim()) return errorResult('A blocks link needs --reason "…".', 4, 'INVALID');
   const source = findTicket(index, sourceKey);
@@ -807,7 +862,7 @@ async function parent(index, argv) {
     if (value) {
       if (value.toUpperCase() === keyFor(current).toUpperCase()) throw new WriteError('A ticket cannot be its own parent', 'INVALID', 4);
       const target = requireTicket(fresh, value);
-      if (String(canonicalOf(target).type ?? '').toUpperCase() !== 'EPIC') throw new WriteError(`${value} is not an EPIC`, 'INVALID', 4);
+      ensureParentTarget(current, target, value);
     }
     return { changes: [{ path: current.relativePath, bytes: patchRecord(current, { parent: value }) }], result: { key: keyFor(current), parent: value } };
   });
@@ -824,6 +879,22 @@ function sprintRecord(index, project, name) {
   return [...(index?.sprints?.values?.() ?? [])].find(record => String(record.project ?? '').toUpperCase() === owner
     && (String(canonicalOf(record).name ?? '').trim().toLowerCase() === wanted
     || String(canonicalOf(record).slug ?? '').trim().toLowerCase() === wanted));
+}
+
+function sprintStatusOf(record) {
+  return String(canonicalOf(record).status ?? 'PLANNED').trim().toUpperCase();
+}
+
+function sprintSlugOf(record) {
+  const fields = canonicalOf(record);
+  return String(fields.slug ?? fields.key ?? fields.name ?? '').trim();
+}
+
+function ticketInSprint(ticket, sprint) {
+  const value = String(canonicalOf(ticket).sprint ?? '').trim().toLowerCase();
+  if (!value) return false;
+  const fields = canonicalOf(sprint);
+  return [fields.slug, fields.key, fields.name].some(item => String(item ?? '').trim().toLowerCase() === value);
 }
 
 function configRecord(index, project, kind) {
@@ -860,28 +931,54 @@ async function sprint(index, argv) {
     const current = sprintRecord(fresh, project, name);
     if (!current) throw new WriteError(`No sprint called "${name}" in ${project}.`, 'EMPTY', 3);
     const fields = canonicalOf(current);
-    if (sub === 'start') return { changes: [{ path: current.relativePath, bytes: patchRecord(current, { status: 'ACTIVE', startDate: new Date().toISOString() }) }], result: { name: fields.name ?? name, status: 'ACTIVE' } };
+    if (sub === 'start') {
+      const status = sprintStatusOf(current);
+      if (status !== 'PLANNED') {
+        throw new WriteError(status === 'COMPLETED'
+          ? `Sprint ${fields.name ?? name} is already completed.`
+          : `Sprint ${fields.name ?? name} is already active.`, 'INVALID', 4);
+      }
+      const active = [...(fresh?.sprints?.values?.() ?? [])].find(record => String(record.project ?? '').toUpperCase() === project
+        && sprintStatusOf(record) === 'ACTIVE');
+      if (active) throw new WriteError(`Sprint ${canonicalOf(active).name ?? active.relativePath} is already active — complete it first.`, 'INVALID', 4);
+      const startDate = fields.startDate ?? fields.start_date ?? new Date().toISOString();
+      return { changes: [{ path: current.relativePath, bytes: patchRecord(current, { status: 'ACTIVE', startDate }) }], result: { name: fields.name ?? name, status: 'ACTIVE', startDate } };
+    }
     if (sub === 'complete') {
-      const changes = [{ path: current.relativePath, bytes: patchRecord(current, { status: 'COMPLETED', completedAt: new Date().toISOString() }) }];
-      let movedToBacklog = 0;
+      if (sprintStatusOf(current) !== 'ACTIVE') {
+        throw new WriteError(`Only an active sprint can be completed (current status: ${sprintStatusOf(current)}).`, 'INVALID', 4);
+      }
       const unfinished = allTicketRecords(fresh).filter(ticket => {
-        if (String(canonicalOf(ticket).sprint ?? '') !== String(fields.slug ?? fields.key ?? '')) return false;
-        if (String(canonicalOf(ticket).statusCategory ?? '').toUpperCase() === 'DONE' || String(canonicalOf(ticket).status ?? '').toUpperCase() === STATUS_DONE.toUpperCase()) return false;
-        return true;
+        if (String(ticket.project ?? '').toUpperCase() !== project || !ticketInSprint(ticket, current)) return false;
+        return !isDoneStatus(fresh, project, canonicalOf(ticket).status);
       });
-      if (unfinished.length && !hasFlag(argv, 'force')) {
+      const destinationRaw = valueOf(argv, 'destination-sprint') ?? valueOf(argv, 'move-incomplete-to');
+      const destinationRequested = destinationRaw === undefined ? undefined : String(destinationRaw).trim();
+      const forceBacklog = destinationRequested === undefined && hasFlag(argv, 'force');
+      if (unfinished.length && destinationRequested === undefined && !hasFlag(argv, 'force')) {
         throw new WriteError(`Sprint ${fields.name ?? name} has unfinished tickets: ${unfinished.map(ticket => keyFor(ticket)).join(', ')}; pass --force to carry them to the backlog`, 'INVALID', 4);
       }
-      for (const ticket of unfinished) {
-        changes.push({ path: ticket.relativePath, bytes: patchRecord(ticket, { sprint: null }) });
-        movedToBacklog += 1;
+      let destination = null;
+      if (destinationRequested !== undefined && !['', 'backlog', 'none', 'null'].includes(destinationRequested.toLowerCase())) {
+        destination = sprintRecord(fresh, project, destinationRequested);
+        if (!destination) throw new WriteError(`No sprint called "${destinationRequested}" in ${project}.`, 'EMPTY', 3);
+        if (destination.relativePath === current.relativePath) throw new WriteError('A sprint cannot carry unfinished tickets into itself.', 'INVALID', 4);
+        if (sprintStatusOf(destination) !== 'PLANNED') throw new WriteError('Incomplete issues can only move to a planned sprint.', 'INVALID', 4);
       }
-      return { changes, result: { name: fields.name ?? name, status: 'COMPLETED', movedToBacklog } };
+      if (forceBacklog || destinationRequested === undefined || ['backlog', 'none', 'null', ''].includes(destinationRequested?.toLowerCase())) destination = null;
+      const destinationRef = destination ? sprintSlugOf(destination) : null;
+      const changes = [{ path: current.relativePath, bytes: patchRecord(current, { status: 'COMPLETED', completedAt: new Date().toISOString() }) }];
+      for (const ticket of unfinished) changes.push({ path: ticket.relativePath, bytes: patchRecord(ticket, { sprint: destinationRef }) });
+      return { changes, result: { name: fields.name ?? name, status: 'COMPLETED', movedToBacklog: destination ? 0 : unfinished.length, movedToSprint: destinationRef } };
     }
     if (sub === 'add' || sub === 'remove') {
       const key = positional(argv, 3);
       if (!key) throw new WriteError(`Usage: zagent sprint ${sub} <NAME> <TICKET_KEY>`, 'USAGE', 1);
       const ticket = requireTicket(fresh, key);
+      const ticketProject = projectOf(fresh, ticket, keyFor(ticket));
+      if (ticketProject !== project) throw new WriteError(`${keyFor(ticket)} belongs to ${ticketProject}, not ${project}; cross-project sprint membership is not allowed`, 'INVALID', 4);
+      if (sub === 'add' && sprintStatusOf(current) === 'COMPLETED') throw new WriteError(`Sprint ${fields.name ?? name} is completed — its scope is a historical record now.`, 'INVALID', 4);
+      if (sub === 'add' && String(canonicalOf(ticket).type ?? '').toUpperCase() === 'EPIC') throw new WriteError(`${keyFor(ticket)} is an EPIC — a container, not sprint work.`, 'INVALID', 4);
       const sprint = sub === 'add' ? (fields.slug ?? fields.key ?? name) : null;
       return { changes: [{ path: ticket.relativePath, bytes: patchRecord(ticket, { sprint }) }], result: { key: keyFor(ticket), sprint } };
     }
@@ -922,7 +1019,9 @@ async function version(index, argv) {
         if (!catalog || !versionRows(catalog).some(row => versionMatch(row, versionName))) throw new WriteError(`No version called "${versionName}" in ${project}.`, 'EMPTY', 3);
       }
       const field = String(valueOf(argv, 'kind') ?? 'FIX').toUpperCase() === 'AFFECTS' ? 'affectsVersions' : 'fixVersions';
-      const values = array(canonicalOf(current)[field]).filter(value => String(value).toLowerCase() !== String(versionName ?? '').toLowerCase());
+      const values = versionName
+        ? array(canonicalOf(current)[field]).filter(value => String(value).toLowerCase() !== String(versionName).toLowerCase())
+        : [];
       if (versionName) values.push(versionName);
       return { changes: [{ path: current.relativePath, bytes: patchRecord(current, { [field]: values }) }], result: { key: keyFor(current), version: versionName, kind: field } };
     });
@@ -1171,24 +1270,28 @@ export async function dispatchWrite(index, argv = [], files = {}, context = {}) 
   const contextEmail = context?.actorEmail ?? contextActor?.email;
   if (contextHuman && !hasFlag(effectiveArgv, 'human') && valueOf(effectiveArgv, 'actor') === undefined) effectiveArgv.push('--human');
   if (contextEmail !== undefined && valueOf(effectiveArgv, 'actor-email') === undefined) effectiveArgv.push('--actor-email', String(contextEmail));
+  if (context?.operationId !== undefined && valueOf(effectiveArgv, 'operation-id') === undefined
+    && valueOf(effectiveArgv, 'op-id') === undefined) {
+    effectiveArgv.push('--operation-id', String(context.operationId));
+  }
   if (index && typeof index === 'object') operationInputs.set(index, clone({ files, context }));
   try {
     const command = String(effectiveArgv[0] ?? '').toLowerCase();
-    if (command === 'next') return claim(index, effectiveArgv, files, true);
-    if (command === 'claim') return claim(index, effectiveArgv, files, false);
-    if (command === 'comment') return comment(index, effectiveArgv, files);
-    if (command === 'move') return move(index, effectiveArgv);
-    if (command === 'finish') return finish(index, effectiveArgv, files);
-    if (command === 'create') return create(index, effectiveArgv, files);
-    if (command === 'link') return link(index, effectiveArgv, false);
-    if (command === 'unlink') return link(index, effectiveArgv, true);
-    if (command === 'parent') return parent(index, effectiveArgv);
-    if (command === 'sprint') return sprint(index, effectiveArgv);
-    if (command === 'version') return version(index, effectiveArgv);
-    if (command === 'update') return update(index, effectiveArgv, files);
-    if (command === 'estimate' || command === 'flag' || command === 'resolve') return update(index, effectiveArgv, files, command);
-    if (['ask', 'decide', 'shortfall', 'changelog', 'suggest'].includes(command)) return knowledge(index, effectiveArgv, files, command);
-    if (command === 'rows' || command === 'suggestions') return resolveRow(index, effectiveArgv);
+    if (command === 'next') return await claim(index, effectiveArgv, files, true);
+    if (command === 'claim') return await claim(index, effectiveArgv, files, false);
+    if (command === 'comment') return await comment(index, effectiveArgv, files);
+    if (command === 'move') return await move(index, effectiveArgv);
+    if (command === 'finish') return await finish(index, effectiveArgv, files);
+    if (command === 'create') return await create(index, effectiveArgv, files);
+    if (command === 'link') return await link(index, effectiveArgv, false);
+    if (command === 'unlink') return await link(index, effectiveArgv, true);
+    if (command === 'parent') return await parent(index, effectiveArgv);
+    if (command === 'sprint') return await sprint(index, effectiveArgv);
+    if (command === 'version') return await version(index, effectiveArgv);
+    if (command === 'update') return await update(index, effectiveArgv, files);
+    if (command === 'estimate' || command === 'flag' || command === 'resolve') return await update(index, effectiveArgv, files, command);
+    if (['ask', 'decide', 'shortfall', 'changelog', 'suggest'].includes(command)) return await knowledge(index, effectiveArgv, files, command);
+    if (command === 'rows' || command === 'suggestions') return await resolveRow(index, effectiveArgv);
     return null;
   } catch (error) {
     if (error instanceof WriteError) return errorResult(error.message, error.exitCode, error.code);

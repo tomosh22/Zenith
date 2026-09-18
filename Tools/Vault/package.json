@@ -9,9 +9,10 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "npm run build && playwright test",
+    "test:e2e": "npm run build:test && playwright test",
     "test:all": "npm test && npm run test:e2e && npm run parity",
     "build": "vite build",
+    "build:test": "vite build --outDir artifacts/project-web",
     "serve": "node server/http.mjs",
     "parity": "node scripts/parity.mjs",
     "vault": "node cli/zagent.mjs"

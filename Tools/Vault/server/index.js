@@ -1,6 +1,8 @@
 import { dedupeDiagnostics, diagnostic, isErrorDiagnostic } from './diagnostics.js';
 import { canonicalLinkTarget } from './parser.js';
 import { scanVault } from './scanner.js';
+import { issueParentError } from '../shared/jira/constants.js';
+import { isKnownHierarchyType } from '../shared/hierarchy.mjs';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -376,6 +378,29 @@ export class VaultIndex {
         const parent = normalizeReference(metadata.parent);
         if (parent && !this.tickets.has(parent)) {
           diagnostics.push(this._missingReference(record, 'parent', parent));
+        } else if (parent) {
+          const parentRecord = this.tickets.get(parent);
+          const childType = String(metadata.type ?? metadata.issue_type ?? metadata.issueType ?? '').toUpperCase();
+          const parentMetadata = parentRecord?.metadata ?? parentRecord?.fields ?? {};
+          const parentType = String(parentMetadata.type ?? parentMetadata.issue_type ?? parentMetadata.issueType ?? '').toUpperCase();
+          // issueParentError reports a bogus hierarchy violation for a
+          // missing/unknown type, so only consult it when both types are
+          // recognised; a typeless ticket must not fail the index closed.
+          const parentError = isKnownHierarchyType(childType) && isKnownHierarchyType(parentType)
+            ? issueParentError(childType, parentType)
+            : null;
+          if (parentError) {
+            diagnostics.push(diagnostic('INVALID_PARENT', `Ticket ${metadata.key ?? record.relativePath} has an invalid parent: ${parentError}`, {
+              path: record.path,
+              relativePath: record.relativePath,
+              project: record.project,
+              reference: 'parent',
+              target: parent,
+              childType,
+              parentType,
+              origin: 'index',
+            }));
+          }
         }
         const sprint = normalizeReference(metadata.sprint);
         if (sprint && !this.sprints.has(sprint)) {

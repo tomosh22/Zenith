@@ -1,0 +1,374 @@
+.settings-surface {
+  display: grid;
+  gap: 1rem;
+}
+
+.settings-header,
+.settings-card > header,
+.settings-column-heading,
+.settings-transition-heading,
+.settings-simple-list li,
+.settings-status-list li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.settings-header h2,
+.settings-card h3 {
+  margin: 0;
+}
+
+.settings-card {
+  border: 1px solid var(--project-border, #dbe3ef);
+  border-radius: .75rem;
+  background: var(--project-card, #fff);
+  padding: 1rem;
+  box-shadow: 0 2px 7px rgb(15 23 42 / 4%);
+}
+
+.settings-card > header {
+  margin-bottom: .75rem;
+}
+
+.settings-card > header p,
+.settings-header p,
+.settings-column-heading span,
+.settings-simple-list span,
+.settings-simple-list small,
+.settings-status-category,
+.settings-transition-heading span,
+.settings-option-grid small {
+  color: var(--project-muted, #64748b);
+}
+
+.settings-card > header p,
+.settings-header p {
+  margin: .25rem 0 0;
+  font-size: .82rem;
+}
+
+.settings-status-list,
+.settings-column-list,
+.settings-simple-list,
+.settings-transition-list,
+.settings-rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.settings-status-list > li,
+.settings-column-list > li,
+.settings-simple-list > li,
+.settings-transition-list > li {
+  border-top: 1px solid var(--project-border, #e5e7eb);
+  padding: .75rem 0;
+}
+
+.settings-status-list > li:first-child,
+.settings-column-list > li:first-child,
+.settings-simple-list > li:first-child,
+.settings-transition-list > li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-status-list > li:last-child,
+.settings-column-list > li:last-child,
+.settings-simple-list > li:last-child,
+.settings-transition-list > li:last-child {
+  padding-bottom: 0;
+}
+
+.settings-status-list strong,
+.settings-simple-list strong,
+.settings-column-heading strong {
+  display: block;
+}
+
+.settings-status-category,
+.settings-column-heading span,
+.settings-simple-list span,
+.settings-simple-list small,
+.settings-transition-heading span {
+  display: block;
+  font-size: .76rem;
+  margin-top: .18rem;
+}
+
+.settings-row-actions,
+.settings-create-row,
+.settings-inline-actions,
+.settings-column-mapping,
+.settings-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem;
+}
+
+.settings-row-actions button,
+.settings-create-row button,
+.settings-inline-actions button,
+.settings-column-mapping button,
+.settings-transition-heading button,
+.settings-simple-list button,
+.settings-status-list button {
+  border: 1px solid var(--project-border, #cbd5e1);
+  border-radius: .4rem;
+  background: var(--project-card, #fff);
+  padding: .32rem .55rem;
+  font: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+}
+
+.settings-row-actions button:disabled,
+.settings-create-row button:disabled,
+.settings-inline-actions button:disabled,
+.settings-column-mapping button:disabled,
+.settings-transition-heading button:disabled,
+.settings-simple-list button:disabled,
+.settings-status-list button:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+.settings-create-row {
+  margin-top: .75rem;
+}
+
+.settings-create-row input,
+.settings-create-row select,
+.settings-option-grid select,
+.settings-option-grid input,
+.settings-inline-actions input,
+.settings-create-panel input,
+.settings-create-panel select,
+.settings-row-actions input,
+.settings-row-actions select,
+.settings-column-mapping select,
+.settings-rule-editor select,
+.settings-rule-editor input,
+.settings-status-list select,
+.settings-field-table select {
+  min-height: 2rem;
+  border: 1px solid var(--project-border, #cbd5e1);
+  border-radius: .4rem;
+  background: var(--project-card, #fff);
+  padding: .3rem .5rem;
+  font: inherit;
+  font-size: .8rem;
+}
+
+.settings-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: .75rem;
+}
+
+.settings-option-grid label,
+.settings-create-panel label,
+.settings-rule-editor label {
+  display: grid;
+  gap: .3rem;
+  color: var(--project-muted, #475569);
+  font-size: .75rem;
+}
+
+.settings-option-grid small {
+  font-size: .7rem;
+}
+
+.settings-column-heading > div:first-child,
+.settings-simple-list li > div:first-child {
+  min-width: 0;
+}
+
+.settings-column-mapping {
+  margin-top: .65rem;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  border: 1px solid var(--project-border, #cbd5e1);
+  border-radius: 999px;
+  padding: .22rem .5rem;
+  font-size: .73rem;
+}
+
+.settings-chip button {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  line-height: 1;
+}
+
+.settings-wip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  color: var(--project-muted, #64748b);
+  font-size: .75rem;
+}
+
+.settings-wip input {
+  width: 4.25rem;
+}
+
+.settings-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: .6rem .8rem;
+}
+
+.settings-checkbox-grid label,
+.settings-screen-fields label {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .78rem;
+}
+
+.settings-table-wrap {
+  overflow-x: auto;
+}
+
+.settings-field-table,
+.settings-transition-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .78rem;
+}
+
+.settings-field-table th,
+.settings-field-table td,
+.settings-transition-table th,
+.settings-transition-table td {
+  border-top: 1px solid var(--project-border, #e5e7eb);
+  padding: .5rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.settings-field-table thead th,
+.settings-transition-table thead th {
+  border-top: 0;
+  color: var(--project-muted, #64748b);
+  font-size: .72rem;
+  font-weight: 600;
+}
+
+.settings-field-table th:first-child {
+  min-width: 11rem;
+}
+
+.settings-field-table th small {
+  display: block;
+  color: var(--project-muted, #64748b);
+  font-size: .68rem;
+  font-weight: 400;
+}
+
+.settings-create-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: .6rem;
+  margin-bottom: 1rem;
+  padding: .75rem;
+  border-radius: .5rem;
+  background: color-mix(in srgb, var(--project-border, #e2e8f0) 28%, transparent);
+}
+
+.settings-create-panel .settings-inline-actions,
+.settings-create-panel .settings-inline-error {
+  grid-column: 1 / -1;
+}
+
+.settings-screen-row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.settings-screen-fields {
+  flex-basis: 100%;
+  margin-top: .75rem;
+  padding: .75rem;
+  border-radius: .5rem;
+  background: color-mix(in srgb, var(--project-border, #e2e8f0) 25%, transparent);
+}
+
+.settings-screen-fields p {
+  margin: 0 0 .6rem;
+  color: var(--project-muted, #64748b);
+  font-size: .76rem;
+}
+
+.settings-screen-fields > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: .5rem;
+  margin-bottom: .7rem;
+}
+
+.settings-transition-list {
+  display: grid;
+  gap: .65rem;
+}
+
+.settings-transition-list > li {
+  border: 1px solid var(--project-border, #e5e7eb);
+  border-radius: .5rem;
+  padding: .7rem;
+}
+
+.settings-rule-list {
+  margin: .5rem 0;
+}
+
+.settings-rule-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .25rem 0;
+  font-size: .75rem;
+}
+
+.settings-rule-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .5rem;
+  margin-top: .6rem;
+  padding-top: .6rem;
+  border-top: 1px solid var(--project-border, #e5e7eb);
+}
+
+.settings-rule-editor > label {
+  min-width: 9rem;
+}
+
+.settings-inline-error,
+.settings-inline-error[role='alert'] {
+  color: #b91c1c;
+  font-size: .75rem;
+}
+
+.planning-danger-link {
+  color: #b91c1c;
+}
+
+@media (max-width: 700px) {
+  .settings-header,
+  .settings-column-heading,
+  .settings-transition-heading,
+  .settings-simple-list li,
+  .settings-status-list li {
+    flex-direction: column;
+  }
+}

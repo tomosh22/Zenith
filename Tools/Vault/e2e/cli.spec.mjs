@@ -6,7 +6,6 @@ import {
   mkdtemp,
   readFile,
   readdir,
-  rm,
   writeFile,
 } from 'node:fs/promises';
 import os from 'node:os';
@@ -14,6 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { expect, test } from '@playwright/test';
+
+import { removeTempVault } from './helpers/vault-app.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const vaultFixture = path.resolve(here, '..', 'fixtures', 'snapshot', 'vault');
@@ -89,7 +90,7 @@ async function withVault(callback) {
   try {
     return await callback(root);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await removeTempVault(root);
   }
 }
 

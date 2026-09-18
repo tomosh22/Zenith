@@ -1,0 +1,39 @@
+.project-app { min-height:100vh; background:#f7f8fb; color:#172b4d; font:14px/1.5 system-ui,sans-serif; }
+.project-header { display:flex; align-items:center; gap:20px; padding:18px 24px; background:white; border-bottom:1px solid #dfe3eb; flex-wrap:wrap; }
+.project-brand { font-size:20px; font-weight:750; color:#172b4d; text-decoration:none; margin-right:auto; }
+.project-search { position:relative; }
+.project-search-results { position:absolute; top:100%; right:0; z-index:30; width:min(450px,85vw); max-height:400px; overflow:auto; background:white; border:1px solid #cbd3e1; box-shadow:0 8px 25px #172b4d22; padding:8px; }
+.project-search-results button { display:block; width:100%; text-align:left; margin:4px 0; }
+:where(.project-app) button,:where(.project-app) input,:where(.project-app) select,:where(.project-app) textarea { font:inherit; }
+:where(.project-app) button { cursor:pointer; border:1px solid #cbd3e1; border-radius:5px; padding:7px 12px; background:white; color:#172b4d; }
+:where(.project-app) button:hover { background:#eef3fc; }
+:where(.project-app) button:disabled { opacity:.5; cursor:not-allowed; }
+.project-app :focus-visible { outline:3px solid #7aa5ff; outline-offset:2px; }
+:where(.project-app) input,:where(.project-app) select,:where(.project-app) textarea { padding:7px; border:1px solid #bac5d6; border-radius:4px; background:white; color:#172b4d; }
+.project-navigation { display:flex; gap:8px; padding:14px 24px; border-bottom:1px solid #dfe3eb; overflow:auto; }
+.project-navigation [aria-current=page] { background:#e5edff; border-color:#3368d6; color:#174cae; }
+.project-main { padding:24px; }
+.project-main h1 { margin:0 0 20px; font-size:24px; }
+.project-grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
+.project-grid button { text-align:left; padding:20px; }
+.project-grid strong,.project-grid span { display:block; }
+.project-grid strong { font-size:18px; }
+.project-grid span { color:#5b6b85; }
+.project-error { margin:20px; padding:14px; background:#fff0ef; border:1px solid #e59a92; }
+.project-error button { margin-left:16px; }
+.project-overlay { position:fixed; inset:0; background:#172b4d88; z-index:100; overflow:auto; display:flex; justify-content:center; align-items:flex-start; padding:5vh 20px; }
+.project-dialog { width:min(1050px,100%); background:white; border-radius:10px; padding:24px; box-shadow:0 20px 80px #101c3644; }
+.workspace-switch { padding:8px 20px; background:#e5edff; }
+.create-project-form { display:grid; gap:10px; max-width:600px; margin:auto; }
+.create-project-form textarea { min-height:100px; }
+.create-project-form p { margin:0 0 10px; }
+body:has(.project-app) { min-width:320px; }
+.project-app[data-theme=dark] { color-scheme:dark; background:#111827; color:#e5eaf3; }
+.project-app[data-theme=dark] :is(.project-header,.project-dialog,.project-search-results,.planning-card,.settings-card,.planning-report-card,.planning-release-card,.planning-sprint,.planning-create-panel,.planning-inline-editor,.vault-issue-panel,.vault-issue-form,.vault-issue-properties) { background:#1b2536; color:#e5eaf3; border-color:#3b4960; }
+.project-app[data-theme=dark] :is(button,input,select,textarea) { background:#253249; color:#e5eaf3; border-color:#52617a; }
+.project-app[data-theme=dark] :is(h1,h2,h3,.project-brand,.planning-card-title,.planning-backlog-title,.planning-roadmap-child-title,.planning-roadmap-epic-title) { color:#e5eaf3 !important; }
+.project-app[data-theme=dark] :is(.planning-column,.settings-transition-table th,.settings-field-table th) { background:#162033; color:#e5eaf3; border-color:#3b4960; }
+.project-app[data-theme=dark] :is(.planning-subtitle,.planning-card-meta,.planning-toolbar label,.settings-card p,.vault-issue-hint,.project-grid span) { color:#adbad0; }
+.project-app[data-theme=dark] :is(.planning-issue-key,a) { color:#94bdff !important; }
+.project-app[data-theme=dark] [aria-current=page] { background:#264577; color:#e4eeff; }
+@media(max-width:640px) { .project-header,.project-main { padding:14px; } .project-dialog { padding:14px; } .project-header { gap:10px; } }

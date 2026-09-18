@@ -97,6 +97,31 @@ test('canonical field shape and workflow status/category mismatches fail closed'
   assert.equal(index.valid, false);
 });
 
+test('parent hierarchy diagnostics only fire for recognised types on both sides', async t => {
+  const root = await fixture();
+  t.onTestFinished(() => dispose(root));
+  await writeFile(path.join(root, 'FD', 'tickets', 'FD-9.md'), ticket('FD-9', 'type: EPIC\n'));
+  // A TASK under an EPIC is legal and must stay silent.
+  await writeFile(path.join(root, 'FD', 'tickets', 'FD-1.md'), ticket('FD-1', 'type: TASK\nparent: FD-9\n'));
+  // An EPIC under an EPIC is a real error-severity INVALID_PARENT.
+  await writeFile(path.join(root, 'FD', 'tickets', 'FD-2.md'), ticket('FD-2', 'type: EPIC\nparent: FD-9\n'));
+  const index = await loadVault(root);
+  const invalid = index.diagnostics.filter(item => item.code === 'INVALID_PARENT');
+  assert.equal(invalid.length, 1);
+  assert.equal(invalid[0].severity, 'error');
+  assert.equal(invalid[0].relativePath, 'FD/tickets/FD-2.md');
+});
+
+test('a ticket with no type and a parent produces no INVALID_PARENT and the index stays valid', async t => {
+  const root = await fixture();
+  t.onTestFinished(() => dispose(root));
+  await writeFile(path.join(root, 'FD', 'tickets', 'FD-9.md'), ticket('FD-9', 'type: EPIC\n'));
+  await writeFile(path.join(root, 'FD', 'tickets', 'FD-1.md'), ticket('FD-1', 'parent: FD-9\n'));
+  const index = await loadVault(root);
+  assert.equal(index.diagnostics.some(item => item.code === 'INVALID_PARENT'), false);
+  assert.equal(index.valid, true);
+});
+
 test('statusCategory is derived from the workflow when omitted and recomputed after a status edit', async t => {
   const root = await fixture();
   t.onTestFinished(() => dispose(root));

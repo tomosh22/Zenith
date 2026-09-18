@@ -1,0 +1,71 @@
+.vault-issue-panel{box-sizing:border-box;display:flex;flex-direction:column;gap:1rem;min-width:0;padding:1rem;color:#172033}
+.vault-issue-panel-header,.vault-issue-section-header,.vault-issue-form-actions{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+.vault-issue-panel-header{border-bottom:1px solid #d9dee8;padding-bottom:.75rem}
+.vault-issue-key{margin:0;color:#64748b;font:600 .78rem ui-monospace,SFMono-Regular,Consolas,monospace}
+.vault-issue-heading{margin:.2rem 0 0;font-size:1.4rem;line-height:1.25}
+.vault-issue-updated,.vault-issue-hint,.vault-issue-saving{margin:.3rem 0 0;color:#64748b;font-size:.75rem}
+.vault-issue-form{display:flex;flex-direction:column;gap:1rem}
+.vault-issue-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(14rem,20rem);gap:1rem}
+.vault-issue-form-main,.vault-issue-form-side{display:flex;flex-direction:column;gap:.75rem;min-width:0}
+.vault-issue-field{display:flex;flex-direction:column;gap:.3rem;min-width:0}
+.vault-issue-label{font-size:.78rem;font-weight:600;color:#475569}
+.vault-issue-control{box-sizing:border-box;width:100%;border:1px solid #cbd5e1;border-radius:.4rem;background:#fff;color:#172033;padding:.45rem .55rem;font:inherit;font-size:.86rem}
+.vault-issue-control:focus{outline:2px solid #93c5fd;outline-offset:1px}
+.vault-issue-title-control{font-size:1.1rem;font-weight:600}
+.vault-issue-body-control{min-height:14rem;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.45;white-space:pre}
+.vault-issue-control:disabled{cursor:not-allowed;opacity:.65;background:#f8fafc}
+.vault-issue-control[multiple]{min-height:5.5rem}
+.vault-issue-custom-fields{display:flex;flex-direction:column;gap:.65rem;border-top:1px solid #e2e8f0;padding-top:.75rem}
+.vault-issue-subheading{margin:0;font-size:.86rem;color:#334155}
+.vault-issue-custom-options{display:flex;flex-wrap:wrap;gap:.35rem .75rem;border:0;margin:0;padding:0}
+.vault-issue-custom-options .vault-issue-checkbox{font-size:.78rem;font-weight:400}
+.vault-issue-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.vault-issue-markdown-preview{display:flex;flex-direction:column;gap:.45rem;border:1px solid #e2e8f0;border-radius:.4rem;background:#f8fafc;padding:.65rem .75rem}
+.vault-issue-markdown{font-size:.86rem;line-height:1.5;overflow-wrap:anywhere}
+.vault-issue-markdown>:first-child{margin-top:0}
+.vault-issue-markdown>:last-child{margin-bottom:0}
+.vault-issue-markdown h1,.vault-issue-markdown h2,.vault-issue-markdown h3{margin:.8rem 0 .35rem;font-size:1rem}
+.vault-issue-markdown p{margin:.35rem 0}
+.vault-issue-markdown ul,.vault-issue-markdown ol{margin:.35rem 0;padding-left:1.25rem}
+.vault-issue-markdown code{border-radius:.2rem;background:#e2e8f0;padding:.08rem .22rem;font-size:.8em}
+.vault-issue-markdown pre{overflow:auto;border-radius:.35rem;background:#0f172a;color:#e2e8f0;padding:.55rem;font-size:.78rem}
+.vault-issue-markdown pre code{background:transparent;padding:0}
+.vault-issue-markdown a,.vault-issue-reference-card a{color:#1d4ed8;text-decoration:underline}
+.vault-issue-mentions{margin:0;color:#64748b;font-size:.75rem}
+.vault-issue-reference-list{display:flex;flex-wrap:wrap;gap:.45rem;margin:0;padding:0;list-style:none}
+.vault-issue-reference-card{display:flex;flex-direction:column;gap:.1rem;border:1px solid #cbd5e1;border-radius:.35rem;background:#fff;padding:.35rem .5rem;font-size:.78rem}
+.vault-issue-reference-card small{color:#64748b;font-size:.7rem}
+.vault-issue-button{border:1px solid #cbd5e1;border-radius:.4rem;background:#fff;color:#334155;padding:.4rem .7rem;font:inherit;font-size:.82rem;cursor:pointer}
+.vault-issue-button:hover:not(:disabled){background:#f1f5f9}
+.vault-issue-button:disabled{cursor:not-allowed;opacity:.55}
+.vault-issue-button-primary{border-color:#2563eb;background:#2563eb;color:#fff}
+.vault-issue-button-primary:hover:not(:disabled){background:#1d4ed8}
+.vault-issue-button-danger{border-color:#dc2626;color:#b91c1c}
+.vault-issue-button-danger:hover:not(:disabled){background:#fef2f2}
+.vault-issue-button-small{padding:.2rem .45rem;font-size:.72rem}
+.vault-issue-error{margin:0;border-radius:.4rem;background:#fef2f2;color:#b91c1c;padding:.5rem .65rem;font-size:.82rem}
+.vault-issue-readonly{margin:0;color:#64748b;font-size:.78rem;font-style:italic}
+.vault-issue-panel-lower{display:flex;flex-direction:column;gap:1rem}
+.vault-issue-section{display:flex;flex-direction:column;gap:.65rem;border-top:1px solid #e2e8f0;padding-top:1rem}
+.vault-issue-section-heading{margin:0;font-size:1rem}
+.vault-issue-empty{margin:0;color:#64748b;font-size:.84rem}
+.vault-issue-comment-list,.vault-issue-link-list,.vault-issue-family-list,.vault-issue-history-list{display:flex;flex-direction:column;gap:.55rem;margin:0;padding:0;list-style:none}
+.vault-issue-comment,.vault-issue-link-row,.vault-issue-family-list li{border:1px solid #e2e8f0;border-radius:.45rem;padding:.55rem .65rem}
+.vault-issue-comment-meta{display:flex;gap:.6rem;align-items:baseline;color:#475569;font-size:.76rem}
+.vault-issue-comment-meta time,.vault-issue-history-list time{margin-left:auto;color:#94a3b8;font-size:.7rem}
+.vault-issue-comment-body,.vault-issue-link-title{margin:.35rem 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem}
+.vault-issue-comment-form,.vault-issue-link-form{display:flex;flex-direction:column;gap:.55rem}
+.vault-issue-link-form label{display:flex;flex-direction:column;gap:.25rem;color:#475569;font-size:.78rem;font-weight:600}
+.vault-issue-link-row{display:flex;align-items:baseline;gap:.55rem;flex-wrap:wrap}
+.vault-issue-link-label{color:#475569;font-size:.78rem;font-weight:600}
+.vault-issue-link-key,.vault-issue-family-parent,.vault-issue-family-list button{border:0;background:transparent;color:#1d4ed8;padding:0;font:600 .78rem ui-monospace,SFMono-Regular,Consolas,monospace;cursor:pointer}
+.vault-issue-link-title{flex:1;min-width:10rem;margin:0}
+.vault-issue-link-reason{flex-basis:100%;color:#64748b;font-size:.75rem}
+.vault-issue-family-parent{align-self:flex-start;font-size:.82rem}
+.vault-issue-family-summary{margin:0;color:#64748b;font-size:.78rem}
+.vault-issue-family-list li{display:flex;align-items:baseline;gap:.55rem;font-size:.82rem}
+.vault-issue-family-list li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vault-issue-family-list li small{color:#64748b}
+.vault-issue-history-list li{display:flex;align-items:baseline;gap:.35rem;flex-wrap:wrap;font-size:.82rem}
+.vault-issue-history-list code{border-radius:.2rem;background:#f1f5f9;padding:.1rem .25rem;font-size:.75rem}
+@media (max-width:760px){.vault-issue-form-grid{grid-template-columns:1fr}.vault-issue-panel{padding:.7rem}.vault-issue-link-title{flex-basis:100%;order:3}.vault-issue-link-row .vault-issue-button{margin-left:auto}}

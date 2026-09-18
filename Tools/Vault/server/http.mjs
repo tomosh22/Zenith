@@ -8,8 +8,10 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 
 import { loadVault, watchVault } from './main.js';
-import { readDocument, resolveAuthority, saveDocument } from './operations.mjs';
+import { git, readDocument, resolveAuthority, saveDocument } from './operations.mjs';
 import { dispatchWrite } from '../cli/write.mjs';
+import { projectList, projectDetail, issueDetailAsync } from './project-api.mjs';
+import { browserCommand } from './browser-protocol.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const defaultWebRoot = path.resolve(here, '..', 'web', 'dist');
@@ -200,7 +202,8 @@ function errorPayload(error) {
     : code === 'READ_ONLY' ? 403
       : code === 'PATH' || code === 'ID' ? 400
         : code === 'LOCKED' ? 423
-          : code === 'INVALID' ? 422
+          : code === 'NOT_FOUND' || code === 'EMPTY' ? 404
+            : code === 'INVALID' || code === 'USAGE' ? 422
             : 500;
   return { status, body: { error: { code, message: error?.message ?? String(error) } } };
 }
@@ -228,6 +231,12 @@ export async function createVaultServer(options = {}) {
   const index = await loadVault(root);
   const csrfToken = randomBytes(24).toString('hex');
   const sockets = new Set();
+  const identity = options.actor ?? {
+    name: await git(root, ['config', 'user.name']).catch(() => 'Local user'),
+    email: await git(root, ['config', 'user.email']).catch(() => 'local@vault.invalid'),
+  };
+  const knownUser = (index.tables.get('public.users') ?? []).find(user => String(user.email).toLowerCase() === String(identity.email).toLowerCase());
+  const actor = { id: identity.id ?? knownUser?.id ?? `local:${identity.email}`, name: identity.name, email: identity.email, role: 'OWNER' };
   const context = {
     root,
     index,
@@ -257,7 +266,44 @@ export async function createVaultServer(options = {}) {
     readOnly: !context.writesEnabled,
     writeEnabled: context.writesEnabled,
     vault: path.basename(root),
+    actor,
+    operatingMode: 'local',
   }));
+  const readProject = reader => async (request, reply) => {
+    try { return await reader(context.index, request); }
+    catch (error) { const result = errorPayload(error); return reply.code(result.status).send(result.body); }
+  };
+  app.get('/api/projects', readProject(index => projectList(index)));
+  app.get('/api/projects/:project', readProject(async (index, request) => ({ ...await projectDetail(index, request.params.project), actor })));
+  app.get('/api/issues/:key', readProject((index, request) => issueDetailAsync(index, request.params.key, { root, actor })));
+
+  async function projectMutation(request, reply, action) {
+    if (!csrfRequired(request, reply, csrfToken)) return;
+    try {
+      const current = await loadVault(root);
+      if (current.vaultConfig?.writes?.enabled !== true) throw Object.assign(new Error('Vault writes are disabled'), { code: 'READ_ONLY' });
+      let result;
+      if (action) {
+        const { dispatchProjectAction } = await import('./project-actions.mjs');
+        const operation = await dispatchProjectAction(current, request.body, { actor });
+        result = { ...operation.result, operationId: operation.operationId, commit: operation.commit };
+      } else {
+        const command = browserCommand(request.body, current);
+        const response = await dispatchWrite(current, command.args, command.files, { actor: 'human', actorEmail: actor.email, revisions: command.revisions, operationId: command.operationId });
+        if (!response || response.exitCode !== 0) throw Object.assign(new Error(response?.payload?.error || 'Command was rejected'), { code: response?.payload?.code || 'INVALID' });
+        result = response.payload;
+      }
+      context.index = await loadVault(root);
+      context.writesEnabled = context.index.vaultConfig?.writes?.enabled === true;
+      for (const socket of sockets) { try { socket.send(JSON.stringify({ type: 'update', version: context.index.version })); } catch { sockets.delete(socket); } }
+      return { result, state: stateFor(context.index) };
+    } catch (error) {
+      const result = errorPayload(error);
+      return reply.code(result.status).send(result.body);
+    }
+  }
+  app.post('/api/commands', (request, reply) => projectMutation(request, reply, false));
+  app.post('/api/actions', (request, reply) => projectMutation(request, reply, true));
   app.get('/api/state', async () => stateFor(context.index));
   app.get('/api/search', async request => {
     const query = String(request.query?.q ?? '').trim();
@@ -362,7 +408,7 @@ export async function createVaultServer(options = {}) {
         error.code = 'INVALID';
         throw error;
       }
-      const result = await dispatchWrite(current, ['move', ticketKey, nextStatus, '--human']);
+      const result = await dispatchWrite(current, ['move', ticketKey, nextStatus], {}, { actor: 'human', actorEmail: actor.email, revisions: { [relative]: expected } });
       if (!result || result.exitCode !== 0) {
         const error = new Error(result?.payload?.error ?? 'Status change was rejected');
         error.code = result?.payload?.code ?? 'INVALID';
@@ -456,12 +502,14 @@ async function main() {
   const vaultRoot = vaultIndex >= 0 ? argv[vaultIndex + 1] : undefined;
   const portIndex = argv.findIndex(arg => arg === '--port');
   const port = portIndex >= 0 ? Number(argv[portIndex + 1]) : 0;
+  const webRootIndex = argv.findIndex(arg => arg === '--web-root');
+  const webRoot = webRootIndex >= 0 ? argv[webRootIndex + 1] : undefined;
   if (!vaultRoot) {
     console.error('Usage: node server/http.mjs --vault ROOT [--port PORT]');
     process.exitCode = 1;
     return;
   }
-  const server = await createVaultServer({ vaultRoot, port });
+  const server = await createVaultServer({ vaultRoot, port, webRoot });
   const address = await server.start();
   console.log(JSON.stringify({ ok: true, url: address, readOnly: !server.context.writesEnabled }));
   const stop = async () => { await server.close(); process.exit(0); };
