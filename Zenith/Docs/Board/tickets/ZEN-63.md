@@ -15,8 +15,8 @@ storyPoints: 13
 position: 63
 labels: ["engine-gap","deferred","question"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:21.854Z"
+blocks: [{"key":"HE-46","reason":"Billing needs the JNI seam"}]
+updatedAt: "2026-09-19T19:29:43.418Z"
 flagged: false
 severity: null
 reproducibility: null
