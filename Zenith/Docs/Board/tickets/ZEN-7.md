@@ -10,7 +10,7 @@ assignee: null
 priority: HIGH
 complexity: MODERATE
 risk: HIGH
-storyPoints: null
+storyPoints: 5
 position: 3
 labels:
   - tech-debt
@@ -43,7 +43,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: ALWAYS
-updatedAt: "2026-09-19T17:37:13.704Z"
+updatedAt: "2026-09-19T17:37:17.816Z"
 ---
 ## Goal
 
