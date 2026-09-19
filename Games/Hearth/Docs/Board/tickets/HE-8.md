@@ -15,8 +15,8 @@ storyPoints: 5
 position: 8
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T19:19:37.269Z"
+blocks: [{"key":"HE-11","reason":"needs decay on the sim clock"}]
+updatedAt: "2026-09-19T19:24:18.627Z"
 flagged: false
 severity: null
 reproducibility: null
