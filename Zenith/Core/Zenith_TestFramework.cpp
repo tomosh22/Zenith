@@ -321,16 +321,51 @@ void Zenith_TestRunner::AssertStrEq(const char* strA, const char* strB, const ch
 	}
 }
 
+// ★ NaN IS THE ONE VALUE THAT MAKES `fabs(a - b) > eps` USELESS, AND IT HAS TO BE
+// TESTED SEPARATELY.
+//
+// Every comparison involving a NaN is FALSE, so `NaN > fEps` is false at EVERY
+// epsilon including 0.0f — the magnitude test below could never take the failure
+// branch, and the assertion passed unconditionally. A test whose only guard on a
+// float was ZENITH_ASSERT_EQ_FLOAT / ZENITH_ASSERT_NEAR_VEC3 therefore could not
+// tell a correct value from a degenerate one, which is the case such an assertion
+// is most often reached for. The two functions below test for NaN FIRST, and say
+// so in their own words: reporting "-nan(ind) != 3.000000 within 0.000100" would
+// describe a magnitude comparison that did not decide anything.
+//
+// `std::isnan` and not `f != f`: a self-comparison is exactly the idiom a relaxed
+// floating-point model is permitted to fold away, and this guard's whole value is
+// that it holds when the arithmetic around it does not.
+static const char* TestNaNOperandLabel(const bool bLeftIsNaN, const bool bRightIsNaN)
+{
+	if (bLeftIsNaN && bRightIsNaN) { return "both operands are"; }
+	return bLeftIsNaN ? "the left operand is" : "the right operand is";
+}
+
 void Zenith_TestRunner::AssertEqFloat(float fA, float fB, float fEps,
 	const char* strExprA, const char* strExprB, const char* strFile, int iLine, const char* strFormat, ...)
 {
-	if (std::fabs(fA - fB) > fEps)
+	const bool bLeftIsNaN  = std::isnan(fA);
+	const bool bRightIsNaN = std::isnan(fB);
+	const bool bNaN        = bLeftIsNaN || bRightIsNaN;
+
+	if (bNaN || std::fabs(fA - fB) > fEps)
 	{
 		char acUser[512]; va_list args; va_start(args, strFormat);
 		FormatUserMsg(acUser, sizeof(acUser), strFormat, args); va_end(args);
 		char acFull[1024];
-		snprintf(acFull, sizeof(acFull), "%s (%f) != %s (%f) within %f%s%s",
-			strExprA, fA, strExprB, fB, fEps, acUser[0] ? " - " : "", acUser);
+		if (bNaN)
+		{
+			snprintf(acFull, sizeof(acFull),
+				"%s (%f) != %s (%f): %s NaN, which satisfies no comparison -- no epsilon (not even 0.0f) can make this hold%s%s",
+				strExprA, fA, strExprB, fB, TestNaNOperandLabel(bLeftIsNaN, bRightIsNaN),
+				acUser[0] ? " - " : "", acUser);
+		}
+		else
+		{
+			snprintf(acFull, sizeof(acFull), "%s (%f) != %s (%f) within %f%s%s",
+				strExprA, fA, strExprB, fB, fEps, acUser[0] ? " - " : "", acUser);
+		}
 		HandleFailure("ZENITH_ASSERT_EQ_FLOAT", acFull, strFile, iLine);
 	}
 }
@@ -338,17 +373,37 @@ void Zenith_TestRunner::AssertEqFloat(float fA, float fB, float fEps,
 void Zenith_TestRunner::AssertNearVec3(const Zenith_Maths::Vector3& xA, const Zenith_Maths::Vector3& xB, float fEps,
 	const char* strExprA, const char* strExprB, const char* strFile, int iLine, const char* strFormat, ...)
 {
-	if (glm::abs(xA.x - xB.x) > fEps ||
+	// Per COMPONENT, because the per-component magnitude test is what the NaN
+	// defeats: a NaN in x alone leaves y and z deciding the comparison, so a
+	// vector that is degenerate in exactly one axis passed just as silently as
+	// one that was degenerate in all three.
+	const bool bLeftIsNaN  = std::isnan(xA.x) || std::isnan(xA.y) || std::isnan(xA.z);
+	const bool bRightIsNaN = std::isnan(xB.x) || std::isnan(xB.y) || std::isnan(xB.z);
+	const bool bNaN        = bLeftIsNaN || bRightIsNaN;
+
+	if (bNaN ||
+		glm::abs(xA.x - xB.x) > fEps ||
 		glm::abs(xA.y - xB.y) > fEps ||
 		glm::abs(xA.z - xB.z) > fEps)
 	{
 		char acUser[512]; va_list args; va_start(args, strFormat);
 		FormatUserMsg(acUser, sizeof(acUser), strFormat, args); va_end(args);
 		char acFull[1024];
-		snprintf(acFull, sizeof(acFull),
-			"%s (%.3f,%.3f,%.3f) != %s (%.3f,%.3f,%.3f) within %f%s%s",
-			strExprA, xA.x, xA.y, xA.z, strExprB, xB.x, xB.y, xB.z, fEps,
-			acUser[0] ? " - " : "", acUser);
+		if (bNaN)
+		{
+			snprintf(acFull, sizeof(acFull),
+				"%s (%.3f,%.3f,%.3f) != %s (%.3f,%.3f,%.3f): %s NaN in at least one component, which satisfies no comparison -- no epsilon (not even 0.0f) can make this hold%s%s",
+				strExprA, xA.x, xA.y, xA.z, strExprB, xB.x, xB.y, xB.z,
+				TestNaNOperandLabel(bLeftIsNaN, bRightIsNaN),
+				acUser[0] ? " - " : "", acUser);
+		}
+		else
+		{
+			snprintf(acFull, sizeof(acFull),
+				"%s (%.3f,%.3f,%.3f) != %s (%.3f,%.3f,%.3f) within %f%s%s",
+				strExprA, xA.x, xA.y, xA.z, strExprB, xB.x, xB.y, xB.z, fEps,
+				acUser[0] ? " - " : "", acUser);
+		}
 		HandleFailure("ZENITH_ASSERT_NEAR_VEC3", acFull, strFile, iLine);
 	}
 }

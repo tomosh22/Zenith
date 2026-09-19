@@ -290,6 +290,37 @@ ZENITH_DEFINE_COMPARE_ASSERT(Le, !(xA <= xB), "ZENITH_ASSERT_LE", ">")
 #define ZENITH_ASSERT_LT(a, b, ...)        Zenith_TestAssertLt((a), (b), #a, #b, __FILE__, __LINE__, "" __VA_ARGS__)
 #define ZENITH_ASSERT_GE(a, b, ...)        Zenith_TestAssertGe((a), (b), #a, #b, __FILE__, __LINE__, "" __VA_ARGS__)
 #define ZENITH_ASSERT_LE(a, b, ...)        Zenith_TestAssertLe((a), (b), #a, #b, __FILE__, __LINE__, "" __VA_ARGS__)
+// ★ THE TWO EPSILON ASSERTIONS FAIL ON NaN, AT EVERY EPSILON INCLUDING 0.0f.
+// They used to PASS on one: the test is `fabs(a - b) > eps`, and every comparison
+// involving a NaN is false, so the failure branch was unreachable whenever either
+// side was degenerate. A float guarded only by one of these could not be told
+// apart from a correct one. Both now check for NaN first and report it as the
+// reason; see the rationale block above AssertEqFloat in the .cpp.
+//
+// They are the ONLY two assertions here with an epsilon, so they are the only two
+// that needed it. ZENITH_ASSERT_EQ/NE/GT/LT/GE/LE are template comparisons on the
+// operand type with no magnitude test and no float-specific behaviour, and are
+// deliberately left alone. FIVE of the six already fail closed on a NaN, because
+// each is spelled as the NEGATION of the relation it asserts (`!(a == b)`,
+// `!(a > b)`, …) and every comparison against a NaN is false, so the negation is
+// true and the assertion fails. ZENITH_ASSERT_EQ on two NaNs therefore FAILS,
+// which is the right answer for an equality assertion.
+//
+// ★ ZENITH_ASSERT_NE IS THE ONE EXCEPTION, AND IT FAILS **OPEN**. It is spelled
+// `(a == b)` — not a negation — so it fails only when the two are EQUAL, and a
+// NaN is equal to nothing. `ZENITH_ASSERT_NE(fSpeed, 0.0f)` therefore PASSES when
+// fSpeed is NaN. That is literally correct (a NaN is indeed not zero) and is
+// almost never what the author meant, which is usually "this is a real number and
+// it is not zero". It is left as-is because tightening it would change the
+// meaning of the assertion rather than fix a hole in it — but if you are reaching
+// for NE to prove a float is healthy, it will not do that for you.
+//
+// ★ AND THE **EPSILON** IS NOT COVERED EITHER. The two fixed assertions test
+// their OPERANDS; a NaN passed as the epsilon still makes any finite comparison
+// pass, because `fabs(a - b) > NaN` is false. Epsilons are near-always literals,
+// so this is a remark rather than a known defect.
+//
+// A deliberate NaN check wants ZENITH_ASSERT_TRUE(std::isnan(x)) and says so.
 #define ZENITH_ASSERT_EQ_FLOAT(a, b, e, ...) Zenith_TestRunner::Instance().AssertEqFloat (static_cast<float>(a), static_cast<float>(b), static_cast<float>(e), #a, #b, __FILE__, __LINE__, "" __VA_ARGS__)
 #define ZENITH_ASSERT_NEAR_VEC3(a, b, e, ...) Zenith_TestRunner::Instance().AssertNearVec3((a), (b), static_cast<float>(e), #a, #b, __FILE__, __LINE__, "" __VA_ARGS__)
 

@@ -729,6 +729,162 @@ ZENITH_TEST(Core, UnitTestTimingReport) {
 	}
 }
 
+// ★ Read the NaN through a volatile so it is a RUNTIME value. A quiet_NaN()
+// folded at compile time can be reasoned about by the optimiser; a value that came
+// out of memory cannot, so what these tests hand the assertion is the same thing a
+// real degenerate computation would. (Precedent: AnimTimelineNaN() in
+// Zenith_AnimTimelineMath.Tests.inl, and for the same reason.)
+static float TestFrameworkRuntimeNaN()
+{
+	volatile float fSource = std::numeric_limits<float>::quiet_NaN();
+	return fSource;
+}
+
+// ZENITH_ASSERT_EQ_FLOAT used to PASS on a NaN at every epsilon: the comparison is
+// `fabs(a - b) > eps`, and every comparison involving a NaN is false, so the
+// failure branch was unreachable. A float whose only guard was this assertion was
+// therefore indistinguishable from a degenerate one.
+//
+// ★ THE HIT COUNT IS READ INSIDE THE CAPTURE SCOPE AND ASSERTED OUTSIDE IT.
+// Zenith_TestRunner::HandleFailure counts and returns for EVERY framework
+// assertion while a Zenith_AssertCaptureScope is alive — including the one
+// checking the count — so an assertion written inside the scope fails OPEN and
+// proves nothing. The scope's ctor zeroes the counter and its dtor restores the
+// previous value, so each scope's count is its own.
+ZENITH_TEST(Core, AssertEqFloatFailsOnNaN)
+{
+	const float fNaN = TestFrameworkRuntimeNaN();
+
+	// --- A NaN on either side FAILS, at the widest epsilon and at 0.0f alike ----
+	u_int32 uLeftWideEps = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_EQ_FLOAT(fNaN, 3.0f, 1.0e6f, "deliberate: a NaN on the LEFT must fail");
+		uLeftWideEps = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uLeftWideEps, 1u, "a NaN on the left must fail even at an absurdly wide epsilon");
+
+	u_int32 uLeftZeroEps = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_EQ_FLOAT(fNaN, 3.0f, 0.0f, "deliberate: a NaN on the LEFT must fail at eps 0");
+		uLeftZeroEps = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uLeftZeroEps, 1u, "a NaN on the left must fail at epsilon 0.0f");
+
+	u_int32 uRightWideEps = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_EQ_FLOAT(3.0f, fNaN, 1.0e6f, "deliberate: a NaN on the RIGHT must fail");
+		uRightWideEps = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uRightWideEps, 1u, "a NaN on the right must fail even at an absurdly wide epsilon");
+
+	// Both sides NaN is the case an equality assertion is MOST likely to be
+	// reached for by accident (expected and actual computed the same broken way),
+	// and it is the one `a == b` would also get wrong if anybody reached for it.
+	u_int32 uBothSides = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_EQ_FLOAT(fNaN, fNaN, 0.0f, "deliberate: NaN == NaN must still fail");
+		uBothSides = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uBothSides, 1u, "a NaN on BOTH sides must fail -- a NaN is not equal to itself");
+
+	// --- ...and the other direction: the assertion still PASSES what it should --
+	// Without these, a guard that simply failed everything would satisfy the four
+	// claims above.
+	u_int32 uInsideEpsilon = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_EQ_FLOAT(1.0f, 1.0f + 1.0e-5f, 1.0e-4f, "a genuine near-equal pair inside epsilon");
+		ZENITH_ASSERT_EQ_FLOAT(2.5f, 2.5f, 0.0f, "an exactly-equal pair at epsilon 0.0f");
+		ZENITH_ASSERT_EQ_FLOAT(-0.0f, 0.0f, 0.0f, "negative zero equals zero at epsilon 0.0f");
+		uInsideEpsilon = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uInsideEpsilon, 0u, "a finite pair within epsilon must still pass");
+
+	// And a finite pair OUTSIDE epsilon must still fail, through the unchanged
+	// magnitude branch.
+	u_int32 uOutsideEpsilon = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_EQ_FLOAT(1.0f, 2.0f, 1.0e-4f, "deliberate: a finite pair outside epsilon must fail");
+		uOutsideEpsilon = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uOutsideEpsilon, 1u, "a finite pair outside epsilon must still fail exactly once");
+}
+
+// The sibling with the identical shape (`glm::abs(a.c - b.c) > eps` per component)
+// and therefore the identical hole. It is the only other epsilon comparison in the
+// framework; ZENITH_ASSERT_EQ/NE/GT/LT/GE/LE carry no epsilon and no float-specific
+// branch at all.
+ZENITH_TEST(Core, AssertNearVec3FailsOnNaN)
+{
+	const float fNaN = TestFrameworkRuntimeNaN();
+	const Zenith_Maths::Vector3 xFinite(1.0f, 2.0f, 3.0f);
+
+	// One degenerate COMPONENT is enough: with x NaN, y and z used to decide the
+	// comparison on their own, so a vector degenerate in exactly one axis passed
+	// exactly as silently as one degenerate in all three.
+	u_int32 uLeftX = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(fNaN, 2.0f, 3.0f), xFinite, 1.0e6f,
+			"deliberate: a NaN in the LEFT x must fail");
+		uLeftX = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uLeftX, 1u, "a NaN in one left component must fail even at an absurdly wide epsilon");
+
+	u_int32 uLeftZAtZeroEps = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_NEAR_VEC3(Zenith_Maths::Vector3(1.0f, 2.0f, fNaN), xFinite, 0.0f,
+			"deliberate: a NaN in the LEFT z must fail at eps 0");
+		uLeftZAtZeroEps = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uLeftZAtZeroEps, 1u, "a NaN in one left component must fail at epsilon 0.0f");
+
+	u_int32 uRightY = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_NEAR_VEC3(xFinite, Zenith_Maths::Vector3(1.0f, fNaN, 3.0f), 1.0e6f,
+			"deliberate: a NaN in the RIGHT y must fail");
+		uRightY = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uRightY, 1u, "a NaN in one right component must fail even at an absurdly wide epsilon");
+
+	u_int32 uBothSides = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		const Zenith_Maths::Vector3 xAllNaN(fNaN, fNaN, fNaN);
+		ZENITH_ASSERT_NEAR_VEC3(xAllNaN, xAllNaN, 0.0f, "deliberate: an all-NaN vector must not equal itself");
+		uBothSides = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uBothSides, 1u, "an all-NaN vector must fail against itself");
+
+	// The other direction, so a guard that failed everything could not satisfy the
+	// four claims above.
+	u_int32 uInsideEpsilon = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_NEAR_VEC3(xFinite, Zenith_Maths::Vector3(1.00001f, 2.00001f, 2.99999f), 1.0e-4f,
+			"a genuine near-equal vector pair inside epsilon");
+		ZENITH_ASSERT_NEAR_VEC3(xFinite, xFinite, 0.0f, "an exactly-equal vector pair at epsilon 0.0f");
+		uInsideEpsilon = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uInsideEpsilon, 0u, "a finite vector pair within epsilon must still pass");
+
+	u_int32 uOutsideEpsilon = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		ZENITH_ASSERT_NEAR_VEC3(xFinite, Zenith_Maths::Vector3(1.0f, 2.0f, 9.0f), 1.0e-4f,
+			"deliberate: one component outside epsilon must fail");
+		uOutsideEpsilon = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uOutsideEpsilon, 1u, "a finite vector pair outside epsilon must still fail exactly once");
+}
+
 // The FirstPresentSubmitted boot milestone. The predicate is snapshotted BEFORE
 // EndFrame (which consumes the acquired image — asking afterwards answers a different
 // question) and the latch is taken AFTER it returns, once, ever. A frame that submits

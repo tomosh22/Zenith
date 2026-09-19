@@ -15,7 +15,7 @@
 ## [ZEN-1] Engine gates & pinned baselines
 
 - [ ] **[ZEN-3]** The RenderTest pin is gated by no workflow, so it can drift silently *(TASK · SIMPLE/LOW · 2 pts · MEDIUM · `needs-human`)*
-- [ ] **[ZEN-7]** ZENITH_ASSERT_EQ_FLOAT passes on NaN at every epsilon, so a degenerate float is indistinguishable from a correct one *(BUG · MODERATE/HIGH · 5 pts · HIGH · `tech-debt`)*
+- [x] **[ZEN-7]** ZENITH_ASSERT_EQ_FLOAT passes on NaN at every epsilon, so a degenerate float is indistinguishable from a correct one *(BUG · MODERATE/HIGH · 5 pts · HIGH · `tech-debt`)*
 - [ ] **[ZEN-84]** RenderTest tennis integration units must not depend on an asset a prior tools boot wrote *(TASK · SIMPLE/MEDIUM · 3 pts · MEDIUM · `flaky`)*
 - [ ] **[ZEN-85]** Make the aux tools (FluxCompiler, font libraries) build green so a whole solution can be built *(TASK · MODERATE/MEDIUM · 5 pts · MEDIUM · `tech-debt`)*
 

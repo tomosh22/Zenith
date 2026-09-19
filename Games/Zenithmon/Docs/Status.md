@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-19
 
 **Board:** `ZM` on the agent board. **The work items live there** — epics, stories,
 tasks, bugs, blockers, sprints and releases — and [Board.md](Board.md) explains the
@@ -17,11 +17,37 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-14):
-ZM boot `4548`; engine boot (Null Combat) `2695`; Null RenderTest `2798`; registry **73**.**
+**★ LIVE PIN (UPDATED 2026-09-19):
+ZM boot `4550`; engine boot (Null Combat) `2697`; Null RenderTest `2800`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **★ +2 EVERY GAME (2026-09-19, ZEN-7) — THE TEST FRAMEWORK'S NaN HOLE.**
+> Zenithmon 4548 -> **4550**, Combat 2695 -> **2697**, RenderTest 2798 -> **2800**.
+> **ALL THREE OBSERVED**, each from its own `Null_` run — not arithmetic on the
+> previous number. The two new units are backend-neutral engine units
+> (`Core::AssertEqFloatFailsOnNaN`, `Core::AssertNearVec3FailsOnNaN`), so every
+> game's row moves by the same amount; but this file's own `$RenderTest` note
+> forbids a computed pin ("a computed pin is how a suite that also LOST a test
+> still ratchets green"), and a +2 that happens to be right is indistinguishable
+> from a +3 and a -1. Registry unchanged at 73 — no automated test was declared.
+>
+> `ZENITH_ASSERT_EQ_FLOAT` and `ZENITH_ASSERT_NEAR_VEC3` tested
+> `fabs(a - b) > eps`. Every comparison involving a NaN is false, so the failure
+> branch was unreachable and both assertions passed on a degenerate float at
+> EVERY epsilon, `0.0f` included. Both now test NaN first. **Nothing redded** —
+> all three suites reported 0 failures.
+>
+> ★ That is weaker than "every sanitiser in the repo works", and the difference
+> matters. It means **no NaN reached an epsilon assertion on the paths these
+> three suites execute**. Each run also reported 1-2 SKIPPED tests, and a
+> skipped-as-passed test proves nothing; a call site that would now red only on
+> a path no unit exercises is invisible to this result. The pre-change static
+> survey flagged candidate sites by hand and a reviewer's independent grep
+> counted a different number, so no count is recorded here — `ZENITH_ASSERT_EQ_FLOAT`
+> has ~2650 call sites and the honest claim is the one about coverage, not a
+> tally.
 
 > **★ +1 ZM ONLY (2026-09-04, third bump of the day) — THE FROZEN SAVE-MIGRATION
 > OFFSET.** Zenithmon 3697 -> **3698**, OBSERVED from a `Null_` run; engine pins
