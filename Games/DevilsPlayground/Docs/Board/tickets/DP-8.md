@@ -5,7 +5,7 @@ type: "STORY"
 title: "MVP-3.1 villager skinned meshes: idle, walk and run driven by movement, archetype tint, all-archetypes-instantiable test"
 category: "DevilsPlayground"
 parent: "DP-1"
-sprint: null
+sprint: "dp-dp-mvp-phase-3-assets-and-acceptance"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 8
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:51:24.195Z"
+updatedAt: "2026-09-19T17:55:12.898Z"
 flagged: false
 severity: null
 reproducibility: null
