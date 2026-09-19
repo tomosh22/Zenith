@@ -591,7 +591,7 @@ Commands you would actually use from here:
 | `contract` | the wire contract as data: the protocol version, which flags are path-valued, which commands ship the docs tree |
 | `check ZEN-6` | would a claim take it? **exit 4 if not** — writes nothing, claims nothing |
 | `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
-| `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log |
+| `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log. `--goal`/`--dod` REPLACE that section in the existing body and refuse ("Body has no `## Goal` section") when the ticket has no such section yet — e.g. a pre-check-era ticket filed with no structure at all (ZEN-10). Use `--body` with the full replacement text (both sections) to give a structureless ticket its first `## Goal`/`## Definition of Done` |
 | `update <KEY> --label a,b --unlabel c` | apply a marker (e.g. `needs-human`) AFTER filing, which is when you learn one is needed |
 | `update <KEY> --assignee none` | UNASSIGN — the only way to undo a claim. A claim writes the assignee, `move` only changes status, and the queue skips anything assigned, so a release without this parks the card invisibly |
 | `estimate` / `flag` / `resolve` / `history` | the one-gesture shorthands |

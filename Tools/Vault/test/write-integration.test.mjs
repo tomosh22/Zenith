@@ -60,6 +60,14 @@ test('the real launcher client carries claims, automatic gate inputs, and file-b
   const guard = await invoke(['guard', 'ZEN-7']);
   assert.equal(guard.exitCode, 0, JSON.stringify(guard.payload));
   assert.equal(guard.payload.docsMirrorNeeded, false);
+  // `guard` now writes `changed.txt` itself (it already computed this exact
+  // set to do its own comparison — see tick.md step 6.4 and CLAUDE.md), and
+  // `finish --status Done` cross-checks it against HEAD: a file it recorded
+  // as changed but absent from HEAD is exactly the "commit -am" failure mode
+  // (tick.md step 7). A real tick commits between guard and finish; do the
+  // same here rather than leaving the worker's file uncommitted.
+  await git(root, ['add', 'worker-change.cpp']);
+  await git(root, ['commit', '-qm', 'ZEN-7: isolated integration input']);
   await fs.writeFile(path.join(scratch, 'result.md'), 'Real client integration completed.');
   await fs.writeFile(path.join(scratch, 'worklog.md'), 'Isolated adapter and scratch test; no application gates claimed.\n\n**Durable findings**: none.');
   const finish = await invoke(['finish', 'ZEN-7', '--status', 'Done', '--comment', '.zagent/run/ZEN-7/result.md', '--worklog', '.zagent/run/ZEN-7/worklog.md']);
@@ -68,7 +76,7 @@ test('the real launcher client carries claims, automatic gate inputs, and file-b
   assert.equal(final.metadata.status, 'Done');
   assert.match(final.bodyText, /Real client integration completed/);
   assert.equal((await fs.readFile(path.join(root, '.zagent/last.exit'), 'utf8')).trim(), '0');
-  assert.equal(await git(root, ['status', '--porcelain']), '?? worker-change.cpp');
+  assert.equal(await git(root, ['status', '--porcelain']), '');
 });
 
 test('human takeover rejects the old attempt but still accepts an abandonment comment', async t => {

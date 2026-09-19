@@ -71,6 +71,21 @@ test('durableFindingsAnswer accepts "none" and decision references, refuses ever
   assert.match(junk.reason, /names neither "none" nor a decision reference/);
 });
 
+test('durableFindingsAnswer accepts a bulleted "none" under the bold label, matching tick.md\'s own template', () => {
+  // tick.md's step-8 work log template shows:
+  //   **Durable findings**
+  //
+  //   - none, or: `<PROJ-D-N>`[, ...] — the decision reference(s) ...
+  // A tick that copies that shape verbatim must not be refused.
+  const bulletedNone = durableFindingsAnswer('**Durable findings**\n\n- none\n');
+  assert.equal(bulletedNone.present, true);
+  assert.equal(bulletedNone.answer, 'none');
+
+  const numberedNone = durableFindingsAnswer('**Durable findings**\n\n1. none\n');
+  assert.equal(numberedNone.present, true);
+  assert.equal(numberedNone.answer, 'none');
+});
+
 test('forbiddenAbandonFlags names every forbidden flag present, in both spellings', () => {
   assert.deepEqual(forbiddenAbandonFlags(['abandon', 'FD-1', '--comment', 'x']), []);
   assert.deepEqual(forbiddenAbandonFlags(['abandon', 'FD-1', '--status', 'Done']), ['status']);

@@ -119,6 +119,14 @@ test('gates and guard compute the working-tree set and persist the gate selectio
   const guarded = await runClient(['--vault', root, 'guard', 'FD-1'], { repoRoot: root, dispatch });
   assert.equal(guarded.exitCode, 0);
   assert.equal(calls[1].files.gates !== undefined, true);
+  // guard already computes this changed set to do its own comparison; it
+  // must write it for the orchestrator rather than relying on tick.md's
+  // step 6.4 being followed by hand every time (ZEN-10 finish tripped on
+  // exactly this being missing).
+  assert.equal(
+    await fs.readFile(path.join(root, '.zagent', 'run', 'FD-1', 'changed.txt'), 'utf8'),
+    calls[1].files.file,
+  );
 
   await git(root, ['add', 'new-file.cpp']);
   await git(root, ['commit', '-qm', 'worker change']);

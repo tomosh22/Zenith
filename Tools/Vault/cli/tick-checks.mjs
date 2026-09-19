@@ -276,7 +276,12 @@ export function durableFindingsAnswer(worklog) {
     };
   }
   const references = [...content.matchAll(DECISION_REFERENCE)].map(match => match[0]);
-  const isNone = /^none\.?$/i.test(content.trim());
+  // A collected line commonly carries a leading list marker -- tick.md's own
+  // step-8 template shows "- none, or: `<PROJ-D-N>`..." as a bullet under the
+  // "**Durable findings**" label, which without this strip reads as "- none"
+  // and refuses a work log that followed the documented template exactly.
+  const withoutListMarker = content.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '').trim();
+  const isNone = /^none\.?$/i.test(withoutListMarker);
   if (isNone || references.length) {
     return { present: true, answer: isNone ? 'none' : 'references', references, reason: null };
   }

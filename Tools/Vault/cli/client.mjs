@@ -324,6 +324,15 @@ async function writeCompatibilityScratch(root, command, result, options = {}) {
     // claim archives the complete prior attempt together with its token.
     await atomicWrite(path.join(root, 'run', safeKey, 'gates.json'), Buffer.from(`${JSON.stringify(payload, null, 2)}\n`));
   }
+  if (command === 'guard' && safeKey && typeof options.files?.file === 'string') {
+    // tick.md step 6.4 tells the orchestrator to write this by hand "for
+    // step 7's docs-mirror check and for the work log" — `guard` already
+    // computed this exact changed set to do its own comparison, so nothing
+    // should depend on a human remembering to pipe it to a file themselves.
+    // Written regardless of guard's own exit code: a Blocked ticket's work
+    // log benefits from an accurate changed set just as much as a Done one.
+    await atomicWrite(path.join(root, 'run', safeKey, 'changed.txt'), Buffer.from(options.files.file));
+  }
   if (!((command === 'claim' || command === 'next') && result.exitCode === 0 && safeKey)) return;
   const run = path.join(root, 'run', safeKey);
   await fs.mkdir(run, { recursive: true });
@@ -549,6 +558,7 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const scratch = scratchRoot;
   let result;
+  let dispatchedFiles;
   try {
     const inspected = inspectArguments(withoutWriterProtocolOptions(parsed.commandArgs));
     if (inspected.help) {
@@ -561,6 +571,7 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
       // reading the current ticket to manufacture a fresh token.
       const commandArgs = await injectPersistedClaimAttempt(scratch, parsed.commandArgs);
       const files = await readInputFiles(commandArgs, { cwd });
+      dispatchedFiles = files;
       await addWorkingTreeInput(commandArgs, files, path.resolve(options.repoRoot ?? parsed.vaultRoot));
       await readRecordedGateSelection(scratch, commandArgs, files);
       const context = {
@@ -592,7 +603,7 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
       const record = [...index.tickets.values()].find(item => String(item.metadata?.key ?? '').toUpperCase() === String(key).toUpperCase());
       return record ? { ticket: record.metadata, body: record.bodyText } : null;
     });
-    await writeCompatibilityScratch(scratch, parsed.command, result, { ...options, ticketProvider });
+    await writeCompatibilityScratch(scratch, parsed.command, result, { ...options, ticketProvider, files: options.files ?? dispatchedFiles });
   } catch (error) {
     // A scratch failure must be visible, but must not turn a successfully
     // completed board operation into an ambiguous result. Preserve the
