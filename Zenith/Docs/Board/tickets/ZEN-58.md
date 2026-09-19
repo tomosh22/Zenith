@@ -5,7 +5,7 @@ type: "STORY"
 title: "Text field and engine-drawn on-screen keyboard, headless-testable through the input simulator"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 58
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises text entry on the emulator."}]
-updatedAt: "2026-09-19T17:41:01.956Z"
+updatedAt: "2026-09-19T17:43:35.972Z"
 flagged: false
 severity: null
 reproducibility: null
