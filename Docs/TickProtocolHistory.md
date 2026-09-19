@@ -54,6 +54,32 @@ instructions *outside* any checkbox). It is stated in `tick.md` on those merits
 now. This entry exists because the rule outlived its original reason **within
 the hour**, which is exactly the failure this file is for.
 
+## The `$?` mechanism ("Running the CLI" section)
+
+**Corrected, not deleted — the rule survived, the explanation did not.** This
+section used to say *"in a POSIX shell `$?` is the LAST command's."* That is
+true of a pipeline and false of a `;` suffix: `$?` is expanded BEFORE `echo`
+runs, so a `;`-suffixed call actually holds the CORRECT code in the text
+(`( exit 42 ) ; echo "$?"` → `42`). What lies is not the shell — it is the
+harness's completion notification, which reports the COMPOUND statement's
+exit code:
+
+```
+pwsh tick_gates.ps1 -Phase measure   →  file:      10
+                                        JSON:      10
+                                        harness:    0   ← the notification
+```
+
+That measure run was reporting `10 — MEASURED: a pin needs bumping`. An
+orchestrator branching on the notification instead of the file reads *all
+gates green*, skips the pin, and commits a stale baseline.
+
+`.zagent/last.exit` (added afterward) makes the question moot for `zagent`
+and `tick_gates.ps1` calls — the file is written before the value ever passes
+through a shell — but the corrected mechanism stays here, because a wrong
+explanation of a subtle POSIX rule is exactly the kind of thing that gets
+copied forward confidently.
+
 ## "Running a windowed test is not authoring" (step 2)
 
 **Deleted, because it was false.** The paragraph asserted it while the same

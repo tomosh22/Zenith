@@ -22,9 +22,10 @@ here knows or needs to know where its source is.
 | The board account, model routing, guardrail floors | the board itself |
 
 **A bare `claude` started in this repo is the whole setup** — no
-`--add-dir`, no second checkout. `zagent` needs `ZAGENT_URL` and
-`ZAGENT_TOKEN` on the machine; `Tools/zagent/README.md` covers that and
-`zagent doctor` says so if either is missing.
+`--add-dir`, no second checkout. `zagent` needs nothing but this
+checkout and Node on `PATH`: no token, no URL, no board machine to
+reach, because it always talks to the local Vault. `Tools/zagent/README.md`
+covers the setup and `zagent doctor` names whatever piece is missing.
 
 # Operating invariants
 
@@ -203,28 +204,12 @@ pwsh tick_gates.ps1 … ; echo "$?"    # the run had exited 10, and you read 0
 pwsh tick_gates.ps1 … ; echo "$?"    # …and here 4 — A GATE HAD FAILED
 ```
 
-**★ THE MECHANISM, CORRECTED — it was stated wrongly here once and this is the
-one place a wrong explanation costs most.** It read *"in a POSIX shell `$?` is
-the LAST command's"*. That is true of a PIPELINE and false of a `;` suffix:
-`$?` is expanded BEFORE `echo` runs, so it holds your command's code. Measured
-twice, once synthetically and once on a live gate run:
-
-```
-( exit 42 ) ; echo "$?"              →  42        # the text is CORRECT
-
-pwsh tick_gates.ps1 -Phase measure   →  file:      10
-                                        JSON:      10
-                                        harness:    0   ← the notification
-```
-
-So **what lies is the harness's reported exit code**, not the shell's: the
-completion notification reports the COMPOUND statement's status, which is
-`echo`'s 0. *"completed (exit code 0)"* is never independent confirmation of
-anything for a command whose own exit code did not land in a file, and a
-pipeline additionally destroys `$?` at the source. That measure run was
-reporting `10 — MEASURED: a pin needs bumping`; an orchestrator branching on
-the notification reads *all gates green*, skips the pin, and commits a stale
-baseline.
+**★ THE NOTIFICATION LIES, NOT JUST THE SHELL.** A completion notification
+reports the COMPOUND statement's exit code (`; echo "$?"` reports `echo`'s 0,
+not the command's), and a pipeline destroys `$?` at the source the same way.
+*"completed (exit code 0)"* is never independent confirmation for a command
+whose own code did not land in a file. `Docs/TickProtocolHistory.md` has the
+measured proof and the wrong explanation of POSIX `$?` this replaced.
 
 **This still leaves real cases with no `.exit` file at all — an ad-hoc
 command that isn't `zagent` or `tick_gates.ps1`, chiefly a bare `msbuild`
@@ -565,45 +550,26 @@ measurement the ticket is actually asking for.
 
 **★★ AND SCENE AUTHORING IS NO LONGER OUT OF REACH AT ALL. ZEN-6 REMOVED THE
 `.zscen` PUBLISH GUARD (2026-08-26, `cbebea74`).** A headless run may now CHANGE
-a committed scene, not only create a missing one.
+a committed scene, not only create a missing one — entity creation is
+backend-neutral now and only the GPU allocation is skipped. Proven rather than
+assumed: a `Null_*_True` boot re-authors every scene both RenderTest and
+Zenithmon publish and reports `[ScenePublish] IDENTICAL` for all of them. This
+reverses what the section used to say and was the commonest reason a
+scene-authoring ticket got `needs-gpu` (below); `Docs/TickProtocolHistory.md`
+has the removed guard and the RenderTest incident that motivated it.
 
-This paragraph used to say the opposite, and it was the standing reason a
-scene-authoring ticket got `needs-gpu`. **It is not a reason any more.**
-`Zenith_TerrainEditor::EnsureTreeEntities` used to refuse to run on the Null
-backend, so a headless tools boot authored an INCOMPLETE world and
-`Zenith_Editor::SaveActiveScene` had to refuse any save that would overwrite a
-tracked asset with that subset — it once dropped RenderTest's two instanced-tree
-entities, ~323 KB of a 361,753-byte file. Entity creation is backend-neutral now;
-only the GPU allocation is skipped, which the Null memory manager was already
-doing. The refusal is gone and `CompareWithFile` survives it as a backend-neutral
-audit.
-
-Proven rather than assumed: a `Null_*_True` boot re-authors every scene both
-RenderTest and Zenithmon publish and reports `[ScenePublish] IDENTICAL` for all
-of them.
-
-★ **One trap survives, and it is the one that nearly fooled the tick that landed
-this.** The UNIT-GATE boot authors nothing — it exits before the
-editor-automation queue drains, so it emits no `[ScenePublish]` line and leaves a
-clean tree. **A clean tree is therefore not evidence that a re-author reproduced
-the bytes.** Drive an authoring boot with
+★ **One trap survives.** The UNIT-GATE boot authors nothing — it exits before
+the editor-automation queue drains, so it emits no `[ScenePublish]` line and
+leaves a clean tree. **A clean tree is therefore not evidence that a re-author
+reproduced the bytes.** Drive an authoring boot with
 `--automated-test <T> --skip-unit-tests` and read the marker.
 
-**★★ A WINDOWED TEST RUN IS AUTHORING.** Measured on ZM-65:
-`zenithmon.exe --automated-test ZM_DawnmereRouteSeamGroundTruth_Test
---skip-unit-tests` on a `Vulkan_*_True` build re-authored the committed
-`Dawnmere.zscen` as an ordinary side effect of booting, and `git status` went
-dirty on a tracked asset nobody meant to touch.
-
-**A WINDOWED `_True` BOOT AUTHORS BEFORE IT TESTS. Check `git status` after
-every one.** On a measure-then-freeze ticket that is not a nuisance, it is a
-trap: the run that PRODUCES the measurement necessarily happens while the row
-still holds its deliberate out-of-band sentinel, so that boot wrote the gate
-entity **a million metres below the world** into a tracked 5,682-byte asset —
-byte count unchanged, because it is a float field. Had the tick ended there,
-`master` would carry a corrupted scene and a dirty tree, which the next tick's
-step-3 precondition treats as fatal. And it looks like success: the oracle
-"failed" exactly as designed, so its red tells you nothing is wrong.
+**★★ A WINDOWED TEST RUN IS AUTHORING, BEFORE IT TESTS. Check `git status`
+after every one.** A `Vulkan_*_True` boot re-authors committed scenes as an
+ordinary side effect of booting — measured on ZM-65, where the run that
+PRODUCED a required measurement wrote the gate entity a million metres below
+the world into a tracked asset, byte-identically reproducible and wrong.
+`Docs/TickProtocolHistory.md` has the full measurement.
 
 **The two-boot proof does NOT catch this.** Two pre-freeze boots are
 byte-identical to each other — reproducibly WRONG. Reproducibility and
@@ -615,14 +581,11 @@ tells you is HOW to build: the deliverable needs a `Vulkan_*_True` build and a
 windowed run, not the `--headless` `Null_` config every gate line defaults to.
 
 **★★ APPLYING THE LABEL NOW REQUIRES A MACHINE-READABLE REASON, IN THE SAME
-WRITE.** `zagent update <KEY> --label needs-gpu` without exactly one companion
-`gpu-reason:*` label refuses: *"--label needs-gpu requires exactly one
-companion label naming why: gpu-reason:render-capture, gpu-reason:visual-measure,
-gpu-reason:requires-graphics-test, gpu-reason:legacy-scene-reauthor"* — and two
-or more companions in the same write refuses the same way, naming which ones it
-saw. Not retroactive: a ticket that already carries `needs-gpu` from before this
-rule existed is untouched until somebody writes to its labels again. The four
-values, and what each asserts:
+WRITE.** `zagent update <KEY> --label needs-gpu` refuses unless exactly one
+companion `gpu-reason:*` label lands in the same write. Not retroactive: a
+ticket that already carries `needs-gpu` from before this rule existed is
+untouched until somebody writes to its labels again. The four values, and
+what each asserts:
 
 | Label | Means |
 | --- | --- |
@@ -1027,26 +990,20 @@ disagreed with the ticket is indistinguishable, afterwards, from a
 worker that ignored it.
 
 **★ EXCURSIONS OUTSIDE THIS LIST ARE ALLOWED, AND NOW CHECKED, NOT JUST
-AVOIDED.** `build_prompt.ps1` writes `.zagent/run/<KEY>/filelist.txt` — the
-same list, one path per line — and `zagent finish` (step 8) diffs it
-against the working tree's changed set before it will close the ticket.
-Going outside the list is not forbidden: the survey above is done before
-you have read the code the ticket is about, and a worker with task context
-and a fresh budget may correctly find it needs a file the survey missed.
-What is not permitted is doing so *silently* — `finish` refuses when a
-changed file is neither on the list nor named (a plain, case-insensitive
-substring match) in the `--comment` or `--worklog` text: *"refusing to
-finish `<KEY>` — it touched N file(s) outside its recorded file list, and
-none is named in the comment or work log: `<paths>`. Excursions are
-PERMITTED — the work may genuinely need to reach outside the list — but
-every one must be explained on the ticket record. Add the explanation to
-the comment or work log and finish again. Do not revert the work to dodge
-this."* So when the worker's report says it reached outside the list (see
-`.claude/agents/zagent-worker.md`), carry that explanation into the work
-log verbatim — that is what satisfies the check, not reverting the
-excursion. (A missing `filelist.txt` — an older run, a hand-run tick —
-WARNS instead of refusing: there is nothing to compare the change set
-against, so the excursion state is UNVERIFIED, not clean.)
+AVOIDED.** `build_prompt.ps1` writes `.zagent/run/<KEY>/filelist.txt`, and
+`zagent finish` (step 8) diffs it against the changed set before it will
+close the ticket: a changed file neither on the list nor named (a plain,
+case-insensitive substring match) in the `--comment`/`--worklog` text
+refuses. Going outside the list is not forbidden — the survey above is done
+before you have read the code the ticket is about, and a worker with task
+context may correctly find it needs a file the survey missed — only doing so
+*silently* is. So when the worker's report says it reached outside the list
+(see `.claude/agents/zagent-worker.md`), carry that explanation into the
+work log verbatim — that is what satisfies the check. **Do not revert the
+work to dodge this**; a reverted, hidden excursion is worse than an explained
+one. A missing `filelist.txt` (an older run, a hand-run tick) WARNS instead
+of refusing: there is nothing to compare against, so the excursion state is
+UNVERIFIED, not clean.
 
 **★★ A DoD THAT ASKS FOR *BEFORE* EVIDENCE ORDERS YOUR DISPATCHES. DECIDE THE
 STAGES BEFORE THE FIRST ONE.** This step reads as one dispatch per ticket, and
@@ -1213,7 +1170,7 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    - **`state`** is `running` while a phase is in flight. A killed run leaves
      `running`, not the previous run's verdict. **`guard` now folds this into
      its own exit** — a would-be PASS whose verdict is not `state: complete`
-     is overridden into a failure. See 6.4 for the exact refusal text.
+     is overridden into a failure. See 6.4 for the mechanism.
    - **`headSha`** is the commit the phase gated. **If it does not match
      current HEAD, the verdict describes a different tree — treat it as
      absent.** This directory has held a stale `all gates green` from an
@@ -1362,16 +1319,13 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    Non-zero → Blocked regardless of gate colour.
 
    **★★ `guard` ALSO OVERRIDES A PASS WHOSE GATE VERDICT ISN'T FRESH.**
-   Before returning its own 0, it re-reads this key's `tick_gates.json`: if
-   `state` is not `complete`, or `headSha` does not match current HEAD, a
-   would-be PASS becomes a failure — on stderr, *"guard `<KEY>` — guard
-   passed, but its gate verdict is not fresh: `<reason>`. Treating this as a
-   guard failure — a stale or missing tick_gates.json cannot certify the tree
-   HEAD is on right now."* — with `gateVerdictFresh: false` and
-   `gateVerdictReason` on the JSON payload. It only ever turns a WOULD-BE PASS
-   into a failure, never the reverse: a guard refusal that already fired for
-   its own reason is untouched, because staleness has nothing to add to a
-   refusal that already exists.
+   Before returning its own 0, it re-reads this key's `tick_gates.json`: a
+   `state` that isn't `complete`, or a `headSha` that doesn't match current
+   HEAD, turns a would-be PASS into a failure (`gateVerdictFresh: false` on
+   the payload, naming why). It only ever turns a WOULD-BE PASS into a
+   failure, never the reverse: a guard refusal that already fired for its own
+   reason is untouched, because staleness has nothing to add to a refusal
+   that already exists.
 
    The key is what makes step 6.2 mechanical rather than remembered.
    `guard` re-derives the gate selection from the ticket and the CURRENT
@@ -1539,34 +1493,27 @@ it is indistinguishable from success.
 
 ## 7. Integrate
 
-**★★ FIRST: GREEN IS NOT THE SAME QUESTION AS DONE.** This step had exactly two
-arms for a long time — Green and Red — and neither describes the commonest
-interesting outcome: a worker returns a CORRECT PARTIAL with a verified
-impossibility, the gates go green on what landed, and half the Definition of
-Done is unmet. A loop reading two arms sees "Green" and records **Done**, and
-the work log it files RENDERS the unticked boxes that nothing reads. That is a
-fail-open path to Done, and it is the same defect step 6.5 names one level
-down: green gates answer a narrower question than they look like they answer.
-
-So **read the DoD checkboxes before you pick a status**, and take the third arm
-when any is unticked:
+**★★ FIRST: GREEN IS NOT THE SAME QUESTION AS DONE.** A worker can return a
+CORRECT PARTIAL with a verified impossibility: the gates go green on what
+landed, and half the Definition of Done is unmet. That is the same defect
+step 6.5 names one level down — green gates answer a narrower question than
+they look like they answer — and it means status is a three-way decision, not
+Green-or-Red:
 
 - **Green AND every DoD box ticked** → commit, `finish Done`. Below.
 - **Green but a DoD box unmet** → commit anyway (the work is correct as far as
   it goes, and `direct` mode cannot leave it dirty), then `finish Blocked` with
   a work log naming which items are unmet and why, plus a Questions row for
-  whatever must be decided. `zagent finish <KEY> --status Done` now REFUSES
-  when the work log's `## Definition of Done` section leaves any box unticked,
-  and names every one of them: *"refusing to finish `<KEY>` as Done — its work
-  log leaves N Definition-of-Done item(s) unticked: `[ ] item1; [ ] item2`. A
-  green gate says the tree compiles and the pinned count matches; it does not
-  say the ticket was finished. Either tick the box because the work IS done, or
-  finish as Blocked / "In Review" — both accept an unmet DoD."* The check is
-  **Done-only** — `Blocked` and `"In Review"` still accept an unticked box,
-  which is why the choice below still matters — so this is enforced rather
-  than asked for, but decide it here, because arriving at a refusal you did
-  not expect is how a tick starts editing checkboxes to get past a gate.
+  whatever must be decided.
 - **Red** → the fix-forward path further down.
+
+`zagent finish <KEY> --status Done` refuses when the work log's
+`## Definition of Done` section leaves any box unticked, naming every one —
+**Done-only**, so `Blocked` and `"In Review"` still accept an unmet box, which
+is why the choice above still matters. **Decide it here anyway**: the check
+cannot tell an honestly-unticked box from one ticked to dodge it, and arriving
+at a refusal you did not expect is how a tick starts editing checkboxes to get
+past a gate instead of picking the honest status.
 
 **★★ AND WHEN YOU BLOCK, SAY WHICH KIND OF BLOCK IT IS.**
 `zagent update <KEY> --label blocked-scope` whenever the ticket was **not
@@ -1588,13 +1535,8 @@ block whatever else is also true of it.
 
 **★★ AND NOW IT IS CHECKED, NOT JUST ASKED.** `zagent update <KEY> --label
 blocked-scope` reads the same `tick_gates.json` verdict a human would, before
-the label ever lands. A RED verdict (exit 2/3/4 — a gate actually ran and
-actually failed) refuses: *"refusing --label blocked-scope on `<KEY>` — the
-last gate run exited `<N>` — a gate actually failed, so this is a FAILURE
-block, not a scope block. A scope block is for work that was not buildable AS
-FILED — a missing file list, an unmade ruling — not for a run that failed. If
-a gate actually failed, this is a FAILURE block: leave it unlabelled (or label
-it accurately) and let the ticket re-run."* A green verdict, an absent one, a
+the label ever lands, and refuses when it was genuinely RED (exit 2/3/4 — a
+gate actually ran and actually failed). A green verdict, an absent one, a
 still-`running` one, or exit 10 (a pin needing a bump) all still permit the
 label — nothing on record contradicts it. An unparsable `tick_gates.json`
 refuses too, the other way: "cannot tell" must not read as permission any more
@@ -1622,29 +1564,20 @@ git -C <repo> add -A
 git -C <repo> commit -m "<KEY>: <title>"
 ```
 
-**`commit -am` is wrong and its failure is silent.** `-a` stages
-modifications to files git already tracks; a file the worker CREATED is
-untracked and is simply left behind. A ticket whose new header is
-`#include`d by the source files it also edited would land a commit on
-`master` that **does not compile from a clean checkout** — and every gate
-would have certified it green, because the gates ran against a working
-tree where the file existed. Nothing downstream catches it: the tree is
-clean afterwards, `finish` records Done, and the break surfaces on
-somebody else's next clone. `add -A` is what the guard at step 6.4 already
-listed, so the two stay consistent.
+**`commit -am` is wrong: `-a` stages modifications to files git already
+tracks, and a file the worker CREATED is untracked and simply left behind.**
+`add -A` is what the guard at step 6.4 already listed, so the two stay
+consistent — use it the first time and the rest of this note never applies.
 
-**★★ AND NOW IT IS CAUGHT AT `finish --status Done`, NOT LEFT TO SURFACE
-LATER.** The check reads `.zagent/run/<KEY>/changed.txt` — the same list
-`guard` (step 6.4) recorded from the pre-commit working tree — and diffs it
-against `git diff-tree --no-commit-id --name-only -r HEAD`. Anything recorded
-as changed but absent from `HEAD` refuses: *"refusing to finish `<KEY>` as
-Done — HEAD is missing N file(s) that changed.txt recorded as changed:
-`<paths>`. This is the 'commit -am' failure mode: a file the worker CREATED
-is untracked, so '-a' never stages it and the commit lands without it. Fix:
-git add -A, then a new commit (or amend the one that missed it), then finish
-again."* Like the DoD check, this fires only on a Done finish — Blocked and
-In Review are unaffected — and a missing or empty `changed.txt` (an older
-run, a hand-run tick) WARNS rather than refuses: nothing was recorded, so
+**★★ IF IT HAPPENS ANYWAY, `finish --status Done` NOW CATCHES IT** rather than
+letting it surface on somebody else's next clone. The check diffs
+`.zagent/run/<KEY>/changed.txt` — the same list `guard` (step 6.4) recorded
+from the pre-commit working tree — against `git diff-tree --no-commit-id
+--name-only -r HEAD`, and refuses naming any file recorded as changed but
+absent from `HEAD`, with the fix (`git add -A`, then a new or amended commit).
+Like the DoD check, this fires only on a Done finish — Blocked and In Review
+are unaffected — and a missing or empty `changed.txt` (an older run, a
+hand-run tick) WARNS rather than refuses: nothing was recorded, so
 completeness is UNVERIFIED, not confirmed.
 
 Then:
@@ -1710,35 +1643,20 @@ False → skip, silently; a ticket that never touched a doc has nothing to
 mirror. True → **`zagent docs sync --json`**, appended to
 `.zagent/run/<KEY>/docs-sync.log`; `docsMirrorPaths` names what triggered it.
 
-**★★ IT NEVER HUNG, AND FIVE TICKS BELIEVED IT DID.** This step used to
-mandate `timeout 120` and record *"timed out — the mirror is one commit
-behind"* as an expected outcome. Both were wrong, and the second was a lie
-the protocol told itself: the mirror was never behind.
-
-`docs sync` opened a WebSocket per page for **every** page — 199 on this
-checkout, 597 across the three projects that map to it — including every page
-already identical to its source, at a handshake plus two settles each and two
-sessions per replace. A no-op sync therefore ran about **ten minutes**, so
-every caller's bound killed it around page 40 of 199 and discarded the
-`--json` report, which is emitted at the end. Hence the zero-byte logs. It had
-been writing correctly the whole time, which is exactly why the mirror always
-looked current for the docs that sort early (`Status`, `DecisionLog`) and never
-for `Conventions`.
-
-Fixed in upstream `05408ef`: a page needing no write is now answered from the
-persisted row with no socket, by the same `decideWrite` the live path applies.
-A CONFLICT and `--force` still open a session. **Measured: five consecutive
-timeouts became exit 0 in 9 seconds.**
+**★★ IT NEVER HUNG, AND FIVE TICKS BELIEVED IT DID.** This step used to wrap
+`docs sync` in a timeout and record a timeout as an expected outcome — both
+wrong, and the mirror was never actually behind. Fixed in upstream `05408ef`;
+five consecutive timeouts became exit 0 in 9 seconds. `Docs/TickProtocolHistory.md`
+has the per-page WebSocket mechanism that caused it.
 
 So run it unbounded and read its report. A non-zero exit is now a real
 failure worth recording rather than the expected case — and if you find
 yourself reaching for a timeout again, check whether the page count has grown
 rather than re-adding the wrapper.
 
-Do NOT re-derive it by matching `changed.txt` in the shell: a PowerShell
-implementation of that is wrong in a way nothing notices, and the wrong
-answer is benign, which is why it would go on being wrong forever.
-`Docs/TickProtocolHistory.md` has the mechanism.
+Do NOT re-derive `docsMirrorNeeded` by matching `changed.txt` in the shell —
+`guard` already answers it (above), and a hand implementation is wrong in a
+way nothing notices. `Docs/TickProtocolHistory.md` has that mechanism too.
 
 Never block the tick on this. `docs sync` reaches a Notion project over a
 WebSocket the tick has no other reason to depend on, and a mirror that is
@@ -1892,21 +1810,14 @@ to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
   `zagent abandon <KEY> --comment .zagent/run/<KEY>/worklog.md`, sweep, then
   `ScheduleWakeup{noop:false}`.
 
-  **This used to be three negatives to hold under pressure — "use comment,
-  do NOT change status, do NOT clear the assignee" — and is now a verb that
-  cannot do any of the three even by accident.** `abandon` is
-  client-composed: it has no `--status`, `--assignee` or `--label` flag at
-  all, and posts the text through the ordinary `comment` mutation. Passing
-  any of the forbidden flags refuses outright: *"zagent abandon does not
-  accept --status[, --assignee][, --label]. Ownership was lost, not
-  resolved: the assignee stays put and the status stays untouched (tick.md
-  step 9). Post the work log with `zagent abandon <KEY> --comment <file>`;
-  use `zagent update` yourself, deliberately, if you actually mean to change
-  any of them."* Somebody else holds the ticket now — the human owns the
-  description, and leaves with the assignee and status exactly where they
-  were. Use `zagent update` yourself, deliberately, only if you actually
-  mean to reassign or reopen it — that is the one release where "deliberate"
-  matters more than "fast".
+  `abandon` is client-composed and has no `--status`, `--assignee` or
+  `--label` flag at all — it posts the text through the ordinary `comment`
+  mutation, so the two things this release must never touch are not choices
+  it is capable of making, not just ones it is asked not to. Somebody else
+  holds the ticket now: the human owns the description, and the assignee and
+  status stay exactly where they were. Use `zagent update` yourself,
+  deliberately, only if you actually mean to reassign or reopen it — that is
+  the one release where "deliberate" matters more than "fast".
 
 `ScheduleWakeup` only exists when the session is driven by `/loop`; a
 bare `/tick` invocation simply ends instead of scheduling.
