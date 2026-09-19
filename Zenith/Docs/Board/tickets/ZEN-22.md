@@ -3,7 +3,7 @@ key: ZEN-22
 type: TASK
 title: Remove const char* szName overloads of Flux_ShaderBinder functions
 category: Engine
-parent: null
+parent: "ZEN-25"
 sprint: null
 status: To Do
 assignee: null
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:36.195Z"
+updatedAt: "2026-09-19T17:38:40.344Z"
 ---
 ## Goal
 `Zenith/Flux/Slang/Flux_ShaderBinder.h` still declares the by-name overloads `BindCBV`, `BindSRV`, `BindUAV_Texture`, `BindUAV_Buffer`, `BindSRV_Buffer` and `BindDrawConstants` taking `const char* szName`, resolved at call time through `ResolveNamedBinding(const Flux_ShaderReflection*, const char*)`, and grants `friend class Zenith_UnitTests` so a unit can call the resolver with a synthetic reflection. The binding-model overhaul made `Flux_BindingHandle&` the API: a handle is resolved once from reflection, so a by-name call per bind is both slower and a second way to spell the same thing.
