@@ -5,7 +5,7 @@ type: "TASK"
 title: "Mobile P0 acceptance: the emulator renders a test lot at 30 fps with suspend/resume"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 87
 labels: ["human-gate"]
 fixVersions: []
 blocks: [{"key":"ZEN-52","reason":"P1 starts after P0 is accepted (Hearth TDD phase order)."}]
-updatedAt: "2026-09-19T17:40:32.732Z"
+updatedAt: "2026-09-19T17:43:07.917Z"
 flagged: false
 severity: null
 reproducibility: null
