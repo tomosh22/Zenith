@@ -15,8 +15,8 @@ storyPoints: 5
 position: 7
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:55:08.435Z"
+blocks: [{"key":"DP-8","reason":"MvpRoadmap 3.1 is 'blocked on MVP-3.0.1' by its own heading: villagers use the rig and clip set the spike proves."}]
+updatedAt: "2026-09-19T17:58:34.707Z"
 flagged: false
 severity: null
 reproducibility: null
