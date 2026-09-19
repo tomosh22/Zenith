@@ -15,8 +15,8 @@ storyPoints: 3
 position: 53
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:44.811Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."}]
+updatedAt: "2026-09-19T17:40:41.023Z"
 flagged: false
 severity: null
 reproducibility: null
