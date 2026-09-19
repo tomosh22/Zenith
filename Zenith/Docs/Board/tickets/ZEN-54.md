@@ -5,7 +5,7 @@ type: "STORY"
 title: "Render scale decoupled from TAA and reachable on Android"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 54
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises render scale on the emulator."}]
-updatedAt: "2026-09-19T17:40:45.157Z"
+updatedAt: "2026-09-19T17:43:20.080Z"
 flagged: false
 severity: null
 reproducibility: null
