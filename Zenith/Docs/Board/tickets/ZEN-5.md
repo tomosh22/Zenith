@@ -3,7 +3,7 @@ key: ZEN-5
 type: TASK
 title: "Zenith_TerrainComponent's //private: is commented out, so the lockstep invariant has no access control behind it"
 category: Engine
-parent: null
+parent: "ZEN-24"
 sprint: null
 status: Done
 assignee: agent@zenith.invalid
@@ -42,7 +42,7 @@ source:
   resolved_at: 2026-08-21T15:10:40.408
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:48.644Z"
+updatedAt: "2026-09-19T18:03:38.981Z"
 ---
 ## Goal
 
