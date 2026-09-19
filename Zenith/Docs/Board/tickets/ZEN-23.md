@@ -11,12 +11,12 @@ assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
-storyPoints: null
+storyPoints: 2
 position: 23
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-16T01:35:53.243Z"
+updatedAt: "2026-09-19T17:38:56.897Z"
 claimAttempt: null
 ---
 ## Goal
