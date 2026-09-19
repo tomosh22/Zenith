@@ -5,7 +5,7 @@ type: "STORY"
 title: "Shipping graphics tiers: TAA toggle, cascade count, shadow resolution, dynamic-light cap and a device-tier heuristic"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 46
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."},"invalid":false},"invalid":false},{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist.","raw":{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist."},"invalid":false},{"key":"ZEN-87","reason":"P0 acceptance runs at a device tier."}]
-updatedAt: "2026-09-19T17:40:07.799Z"
+updatedAt: "2026-09-19T17:42:44.054Z"
 flagged: false
 severity: null
 reproducibility: null
