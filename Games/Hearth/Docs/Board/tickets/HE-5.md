@@ -15,8 +15,8 @@ storyPoints: 8
 position: 5
 labels: []
 fixVersions: []
-blocks: [{"key":"HE-6","reason":"the human edits reference files the scaffold creates"}]
-updatedAt: "2026-09-19T19:24:03.926Z"
+blocks: [{"key":"HE-6","reason":"the human edits reference files the scaffold creates","raw":{"key":"HE-6","reason":"the human edits reference files the scaffold creates"},"invalid":false},{"key":"HE-7","reason":"the docs describe a game that must exist first"}]
+updatedAt: "2026-09-19T19:24:08.753Z"
 flagged: false
 severity: null
 reproducibility: null
