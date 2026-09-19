@@ -5,7 +5,7 @@ type: "TASK"
 title: "Quad budget: per-game configurable FLUX_MAX_QUADS_PER_FRAME, owned arrays, high-water debug variable"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 45
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 exit lists the quad budget among the P0 items."}]
-updatedAt: "2026-09-19T17:40:03.663Z"
+updatedAt: "2026-09-19T17:42:40.123Z"
 flagged: false
 severity: null
 reproducibility: null
