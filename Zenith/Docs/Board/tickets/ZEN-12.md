@@ -5,8 +5,8 @@ title: Remove FLUX_RENDER_VIEW_PREVIEW
 category: Engine
 parent: "ZEN-25"
 sprint: null
-status: To Do
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: HIGH
 complexity: COMPLEX
 risk: HIGH
@@ -42,7 +42,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:37:46.621Z"
+updatedAt: "2026-09-19T20:44:31.113Z"
+claimAttempt: "70e84b7a-b660-4925-9434-53e9b6ff325d"
 ---
 ## Goal
 `FluxRenderViewType` (`Zenith/Flux/RenderViews/Flux_RenderViews.h`) should enumerate genuinely different KINDS of view (main, shadow cascade, and future ones such as planar reflections). `FLUX_RENDER_VIEW_PREVIEW` is not one of those: it exists so the whole pipeline can be rendered a second time to a second final image for the editor's material and animation previews, and the one consumer that branches on it is `Flux_HDR.cpp` (the exposure path), with the preview slots filled by the preview controller. That is a routing decision leaking into the frame.
