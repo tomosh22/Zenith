@@ -4,7 +4,7 @@ key: "ZEN-23"
 type: "TASK"
 title: "Verify Vault production cutover"
 category: "Engine"
-parent: null
+parent: "ZEN-28"
 sprint: null
 status: "Done"
 assignee: "agent@zenith.invalid"
@@ -16,7 +16,7 @@ position: 23
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:38:56.897Z"
+updatedAt: "2026-09-19T18:03:51.845Z"
 claimAttempt: null
 ---
 ## Goal
