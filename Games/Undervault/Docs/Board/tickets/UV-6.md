@@ -15,8 +15,8 @@ storyPoints: 8
 position: 6
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T19:05:58.706Z"
+blocks: [{"key":"UV-7","reason":"the human edits reference files the scaffold creates"}]
+updatedAt: "2026-09-19T19:11:50.063Z"
 flagged: false
 severity: null
 reproducibility: null
