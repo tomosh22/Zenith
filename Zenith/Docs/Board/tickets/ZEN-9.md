@@ -10,7 +10,7 @@ assignee: null
 priority: MEDIUM
 complexity: SIMPLE
 risk: MEDIUM
-storyPoints: null
+storyPoints: 1
 position: 5
 labels: []
 fixVersions: []
@@ -42,7 +42,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:37:34.258Z"
+updatedAt: "2026-09-19T17:37:38.318Z"
+resolution: "WONT_DO"
 ---
 ## Goal
 
