@@ -32,7 +32,7 @@ Nothing here is binding. If a rule in `tick.md` and a paragraph here disagree,
 **Original reason, now gone:** `parseTicket` kept only the line each `- [ ]`
 sat on, truncating every checkbox at its first newline. Under I3 that
 mutilated the worker's spec, and the worker — having no shell and no board —
-could not tell it had been cut. Fixed in saas `9d03869` (2026-08-25) and
+could not tell it had been cut. Fixed in upstream `9d03869` (2026-08-25) and
 verified against ZM-23, the ticket that exposed it.
 
 What it cost while it lasted, kept as the worked example:
@@ -91,7 +91,7 @@ report, which is emitted at the end. Hence the zero-byte logs. It had been
 writing correctly throughout, which is why the mirror always looked current for
 the docs that sort early (`Status`, `DecisionLog`) and never for `Conventions`.
 
-Fixed in saas `05408ef`; five consecutive timeouts became **exit 0 in 9
+Fixed in upstream `05408ef`; five consecutive timeouts became **exit 0 in 9
 seconds**. `Bash(timeout *)` stays in `allowed-tools` — the rule it illustrates
 (a mandated command whose first token is not prefix-matched stalls the loop on
 a permission prompt) is untouched.

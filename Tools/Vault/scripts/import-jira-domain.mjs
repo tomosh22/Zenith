@@ -1,4 +1,4 @@
-// Development-only import. The generated modules have no SaaS runtime dependency.
+// Development-only import. The generated modules have no runtime dependency on the retired upstream application.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import { transform } from 'esbuild';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const source = process.argv[2];
-if (!source) throw new Error('Usage: node scripts/import-jira-domain.mjs <saas/packages/lib/src>');
+if (!source) throw new Error('Usage: node scripts/import-jira-domain.mjs <UPSTREAM_REPO_ROOT>/packages/lib/src');
 const modules = ['constants', 'fields', 'workflow', 'board', 'permissions', 'utils/mentions', 'utils/references'];
 const suites = ['agile', 'fields', 'workflow', 'board', 'permissions', 'mentions', 'references'];
 const provenance = [];
@@ -28,7 +28,7 @@ for (const [relative, destination, isTest] of [
   });
   const target = path.join(root, destination);
   await mkdir(path.dirname(target), { recursive: true });
-  await writeFile(target, `// Ported from SaaS packages/lib/src/${relative}; see provenance.json.\n${code}`);
+  await writeFile(target, `// Ported from the upstream packages/lib/src/${relative}; see provenance.json.\n${code}`);
   provenance.push({ source: relative, target: destination, sha256: createHash('sha256').update(input).digest('hex') });
 }
-await writeFile(path.join(root, 'shared/jira/provenance.json'), `${JSON.stringify({ sourceRepository: 'saas', description: 'Pure Jira domain rules and their original assertions. TypeScript is transpiled and optional process.env reads are guarded for browsers; domain semantics are unchanged. Runtime is entirely local to Vault.', files: provenance }, null, 2)}\n`);
+await writeFile(path.join(root, 'shared/jira/provenance.json'), `${JSON.stringify({ sourceRepository: 'upstream', description: 'Pure Jira domain rules and their original assertions. TypeScript is transpiled and optional process.env reads are guarded for browsers; domain semantics are unchanged. Runtime is entirely local to Vault.', files: provenance }, null, 2)}\n`);

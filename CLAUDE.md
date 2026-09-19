@@ -783,7 +783,7 @@ graphics driver and 4 wanted a person — and two of those four had nothing
 to do with rendering (one's deliverable was a board row, the other's a
 `.github/**` workflow). Six of the ten tickets on Zenithmon's S8 critical
 path sat behind the label; exactly one needed a human.
-ZEN-6 tracks removing the underlying limit; `saas` migration
+ZEN-6 tracks removing the underlying limit; the upstream migration
 `0028_split_windowed_marker` did the rename.
 
 **And a marker can be applied after filing** — `zagent update <KEY>
@@ -798,7 +798,7 @@ loop claiming it, because labels could only be set at create time.
 no drag to perform: a card in *To Do* is claimable the moment it lands,
 and the loop carries it to Done with nobody in the middle. That is the
 whole point — a lane a person had to drag a card into put a human in
-front of every ticket, so it was retired (saas migration
+front of every ticket, so it was retired (upstream migration
 `0026_retire_ready_for_agent`) and its cards moved into *To Do*.
 
 **Three markers, and only three, put a person back in the loop**, and

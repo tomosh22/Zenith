@@ -112,7 +112,7 @@ configured headless build, D3D12 false build, and headless test lines from
 ## 4. Cutover and recovery are separate from readiness
 
 Stage 4 must not claim cutover completion. The plan’s sequence is: freeze the
-tick loop and SaaS UI, require no ticket `In Progress`, export once from one
+tick loop and the previous board's UI, require no ticket `In Progress`, export once from one
 snapshot, verify counts/entity/reference parity, retain `pg_dump`, tag the
 pre-cutover SHA, switch writers in one commit, and watch one small chosen first
 ticket (`the-current-staged-work-stateful-kitten.md:285-310`). There must be no
@@ -121,7 +121,7 @@ dual writes.
 Recovery must be tested at the cutover boundary:
 
 - before the first Vault claim: restore the dump, revert the switch commit, and
-  resume SaaS;
+  resume the previous board application;
 - after the first claim: use forward recovery through the committed `board:`
   changes (for example, `git revert` to the cutover tag), with no automatic
   reconciliation back into Postgres.

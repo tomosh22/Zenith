@@ -60,9 +60,10 @@ DROP SCHEMA IF EXISTS zenith_vault_retirement;
 COMMIT;
 `;
 
-export function runSql(container, database, sql) {
+export function runSql(container, database, sql, role = process.env.VAULT_SNAPSHOT_ROLE) {
+  if (!role) throw new Error('Set VAULT_SNAPSHOT_ROLE to the Postgres role used to connect (see README "Reproduce the capture").');
   if (!/^[A-Za-z0-9_-]+$/.test(container) || !/^[A-Za-z0-9_-]+$/.test(database)) throw new Error('Invalid container or database name');
-  const result = spawnSync('docker', ['exec', '-i', container, 'psql', '-U', 'saas', '-d', database, '-v', 'ON_ERROR_STOP=1', '-X', '-q'], { input: sql, encoding: 'utf8', windowsHide: true });
+  const result = spawnSync('docker', ['exec', '-i', container, 'psql', '-U', role, '-d', database, '-v', 'ON_ERROR_STOP=1', '-X', '-q'], { input: sql, encoding: 'utf8', windowsHide: true });
   if (result.error || result.status !== 0) throw new Error(result.error?.message ?? result.stderr);
   return result.stdout;
 }

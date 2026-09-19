@@ -7,7 +7,7 @@
  * does not implement board mutations.  A caller may inject `dispatch(context)`
  * (the mutating CLI does this), while the default falls back to the read-only
  * Vault dispatcher.  This keeps the transport usable during the staged
- * cutover without importing the SaaS application or a database driver.
+ * cutover without importing the previous board application or a database driver.
  */
 
 import { constants, promises as fs } from 'node:fs';

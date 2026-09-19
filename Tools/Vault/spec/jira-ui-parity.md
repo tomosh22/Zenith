@@ -7,7 +7,9 @@ not merely a larger test count.
 
 ## Scope and count conventions
 
-- Legacy source root: C:/dev/saas/apps/jira.
+- Legacy source root: the retired upstream board application's repository.
+  Paths below are relative to that repository root, for example `apps/jira/...`
+  and `packages/ui/...`.
 - Vault source root: C:/dev/Zenith/Tools/Vault.
 - The inventory covers every Jira route, Jira-owned component, UI workflow, the
   supporting route handlers/actions, and shared shell components that the Jira
@@ -18,7 +20,7 @@ not merely a larger test count.
 - The legacy Jira Playwright suite has 103 declared tests in 14 specs. It uses
   the signed-in Alice, Bob, and Carol fixtures and a single worker.
 - Legacy frontend/server coverage is configured in
-  C:/dev/saas/apps/jira/vitest.config.ts with V8 thresholds of statements 76,
+  apps/jira/vitest.config.ts with V8 thresholds of statements 76,
   branches 72, functions 63, and lines 80. The verified legacy run measured
   statements 79.69, branches 74.76, functions 82.56, and lines 81.72.
 - The Vault repository currently passes 675 Vitest tests in 61 files and 30
@@ -34,7 +36,7 @@ not merely a larger test count.
 ## Architecture decision
 
 The accepted migration plan explicitly specifies “One vault, one user” and
-drops SaaS authentication. Vault retains this local operating mode. The session
+drops the previous board's authentication. Vault retains this local operating mode. The session
 declares it and exposes a named repository actor. Imported user identities remain
 available for attribution and assignment. Organization sign-in, invitations,
 tenant switching, permission-scheme administration, and delivery of notifications
@@ -61,12 +63,12 @@ required. See `project-ui-api.md`.
 
 | Legacy route | Behavior and data contract | Existing test evidence |
 | --- | --- | --- |
-| C:/dev/saas/apps/jira/src/app/page.tsx | Root auth check; unauthenticated users go to the shared sign-in route and authenticated users enter the Web dashboard. | variations.spec.ts (5), full-session.spec.ts (1) |
-| C:/dev/saas/apps/jira/src/app/layout.tsx | Global theme script, fonts, toaster, and app-wide providers. | shared UI package tests below |
-| C:/dev/saas/apps/jira/src/app/(workspace)/[orgSlug]/layout.tsx | Authenticates, resolves organization and membership, loads projects and notifications, and renders AppShell, sidebar, app switcher, command palette, user menu, and error boundary. | project-flow.spec.ts, variations.spec.ts, mentions.spec.ts, shared UI tests |
-| C:/dev/saas/apps/jira/src/app/(workspace)/[orgSlug]/page.tsx | Organization project grid and New Project entry point. | project-flow.spec.ts |
-| C:/dev/saas/apps/jira/src/app/(workspace)/[orgSlug]/projects/new/page.tsx | Create project form and post-create navigation to the project board. | create-project-form.test.tsx (19), project-flow.spec.ts |
-| C:/dev/saas/apps/jira/src/app/(workspace)/[orgSlug]/project/[projectKey]/layout.tsx | Project-level shell and modal slot; ProjectNav links all eight project sections. | project-flow.spec.ts, issue-modal.spec.ts, project-settings.spec.ts |
+| apps/jira/src/app/page.tsx | Root auth check; unauthenticated users go to the shared sign-in route and authenticated users enter the Web dashboard. | variations.spec.ts (5), full-session.spec.ts (1) |
+| apps/jira/src/app/layout.tsx | Global theme script, fonts, toaster, and app-wide providers. | shared UI package tests below |
+| apps/jira/src/app/(workspace)/[orgSlug]/layout.tsx | Authenticates, resolves organization and membership, loads projects and notifications, and renders AppShell, sidebar, app switcher, command palette, user menu, and error boundary. | project-flow.spec.ts, variations.spec.ts, mentions.spec.ts, shared UI tests |
+| apps/jira/src/app/(workspace)/[orgSlug]/page.tsx | Organization project grid and New Project entry point. | project-flow.spec.ts |
+| apps/jira/src/app/(workspace)/[orgSlug]/projects/new/page.tsx | Create project form and post-create navigation to the project board. | create-project-form.test.tsx (19), project-flow.spec.ts |
+| apps/jira/src/app/(workspace)/[orgSlug]/project/[projectKey]/layout.tsx | Project-level shell and modal slot; ProjectNav links all eight project sections. | project-flow.spec.ts, issue-modal.spec.ts, project-settings.spec.ts |
 | .../project/[projectKey]/board/page.tsx | Kanban or active-sprint Scrum board; loads workflow statuses, cards, assignees, categories, blockers, legal targets, labels, sprints, and board configuration. | board component/action tests; project-flow.spec.ts; project-settings.spec.ts |
 | .../project/[projectKey]/board/settings/page.tsx | Admin board settings: column/status mapping, WIP limits, card fields, and quick filters. | board-settings.test.tsx (20), project-settings.spec.ts |
 | .../project/[projectKey]/backlog/page.tsx | Backlog plus planned/active/completed sprint sections and sprint controls. | backlog-view.test.tsx (41), backlog-sprint.spec.ts (39) |
@@ -79,16 +81,16 @@ required. See `project-ui-api.md`.
 | .../project/[projectKey]/issue/[issueKey]/page.tsx | Full-page issue detail for a direct URL. | issue-detail/property/link tests; issue-modal.spec.ts; full-session.spec.ts |
 | .../project/[projectKey]/@modal/(.)issue/[issueKey]/page.tsx | Intercepting modal issue detail; preserves board/backlog context and URL, with close, Escape, and browser-back behavior. | issue-modal.spec.ts (8) |
 | .../loading.tsx, .../error.tsx, .../not-found.tsx | Loading, recoverable error, and missing-resource states for workspace/project/issue routes. | route-states.test.tsx (4); route boundary coverage |
-| C:/dev/saas/apps/jira/src/app/api/auth/[...nextauth]/route.ts | Shared authentication handler and cross-app session cookie integration. | auth fixture/e2e redirect coverage |
-| C:/dev/saas/apps/jira/src/app/api/healthz/route.ts | Auth-independent DB health check returning Jira service status. | route tests in the legacy API suite |
-| C:/dev/saas/apps/jira/src/app/api/realtime/token/route.ts | Authenticated issue namespace token minting with project/read/write guards. | realtime token route test (6) |
-| C:/dev/saas/apps/jira/src/app/api/board/stream/route.ts | Authenticated project-filtered SSE with connected/heartbeat/event behavior. | board stream route test (10) |
-| C:/dev/saas/apps/jira/src/app/api/agent/route.ts | Bearer-authenticated agent RPC/liveness endpoint used by the agent loop, not the primary browser UI. | agent route test (25), agent-loop.spec.ts (5) |
+| apps/jira/src/app/api/auth/[...nextauth]/route.ts | Shared authentication handler and cross-app session cookie integration. | auth fixture/e2e redirect coverage |
+| apps/jira/src/app/api/healthz/route.ts | Auth-independent DB health check returning Jira service status. | route tests in the legacy API suite |
+| apps/jira/src/app/api/realtime/token/route.ts | Authenticated issue namespace token minting with project/read/write guards. | realtime token route test (6) |
+| apps/jira/src/app/api/board/stream/route.ts | Authenticated project-filtered SSE with connected/heartbeat/event behavior. | board stream route test (10) |
+| apps/jira/src/app/api/agent/route.ts | Bearer-authenticated agent RPC/liveness endpoint used by the agent loop, not the primary browser UI. | agent route test (25), agent-loop.spec.ts (5) |
 
 The route aliases above are shorthand only; the canonical source paths are the
 absolute paths in the first column.
 
-## Workstream A: shared SaaS infrastructure, identity, and shell
+## Workstream A: shared infrastructure, identity, and shell
 
 **Legacy surfaces.** The workspace layout and middleware establish auth,
 organization membership, project visibility, and cross-app navigation. The
@@ -100,13 +102,13 @@ title synchronized with workspace, project, and issue paths.
 
 **Sources.**
 
-- C:/dev/saas/apps/jira/src/middleware.ts
-- C:/dev/saas/apps/jira/src/app/(workspace)/[orgSlug]/layout.tsx
-- C:/dev/saas/apps/jira/src/components/project/project-nav.tsx
-- C:/dev/saas/apps/jira/src/components/shell/route-states.tsx
-- C:/dev/saas/apps/jira/src/components/shell/workspace-header-title.tsx
-- C:/dev/saas/apps/jira/src/components/shell/user-menu-client.tsx
-- C:/dev/saas/packages/ui/src/app-shell.tsx,
+- apps/jira/src/middleware.ts
+- apps/jira/src/app/(workspace)/[orgSlug]/layout.tsx
+- apps/jira/src/components/project/project-nav.tsx
+- apps/jira/src/components/shell/route-states.tsx
+- apps/jira/src/components/shell/workspace-header-title.tsx
+- apps/jira/src/components/shell/user-menu-client.tsx
+- packages/ui/src/app-shell.tsx,
   app-switcher.tsx, command-menu.tsx, command-palette.tsx,
   error-boundary.tsx, notification-popover.tsx, notifications-bell.tsx,
   page-header.tsx, sidebar.tsx, status-badge.tsx, theme-toggle.tsx,
@@ -157,9 +159,9 @@ project shell keeps navigation and selected project identity stable.
 
 **Sources and tests.**
 
-- C:/dev/saas/apps/jira/src/components/project/create-project-form.tsx
+- apps/jira/src/components/project/create-project-form.tsx
   (19 Vitest tests)
-- C:/dev/saas/apps/jira/src/components/project/project-nav.tsx
+- apps/jira/src/components/project/project-nav.tsx
 - projects action tests: 5
 - project-flow.spec.ts (seeded project listing, project links, nav, create CTA,
   issue creation), variations.spec.ts (sidebar project switching)
@@ -194,10 +196,10 @@ debounced.
 
 **Sources and tests.**
 
-- C:/dev/saas/apps/jira/src/components/board/board-view.tsx (25)
+- apps/jira/src/components/board/board-view.tsx (25)
 - board-column.tsx (15), board-filters.tsx (25), issue-card.tsx (35),
   create-issue-inline.tsx (10), board-settings.tsx (20)
-- C:/dev/saas/apps/jira/src/lib/board-store.ts (19) and
+- apps/jira/src/lib/board-store.ts (19) and
   src/hooks/use-board-stream.ts (13)
 - board action tests: 26
 - project-flow.spec.ts (columns, cards, inline create, nav), agent-loop.spec.ts
@@ -256,7 +258,7 @@ completion offers planned/backlog choices. Complete writes completedAt.
 
 **Sources and tests.**
 
-- C:/dev/saas/apps/jira/src/components/backlog/backlog-view.tsx (41)
+- apps/jira/src/components/backlog/backlog-view.tsx (41)
 - move-issue-menu.tsx (3), complete-sprint-dialog.tsx,
   edit-sprint-dialog.tsx, delete-sprint-dialog.tsx
 - sprints action tests: 6
@@ -305,7 +307,7 @@ are permission-gated.
 
 **Sources and tests.**
 
-- C:/dev/saas/apps/jira/src/app/(workspace)/[orgSlug]/project/[projectKey]/
+- apps/jira/src/app/(workspace)/[orgSlug]/project/[projectKey]/
   issue/[issueKey]/page.tsx and @modal/(.)issue/[issueKey]/page.tsx
 - issue-detail.tsx (14), issue-properties.tsx (72), issue-description.tsx
   (12), issue-links.tsx (19), comments-section.tsx, issue-family.tsx,

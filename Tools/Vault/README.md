@@ -2,7 +2,7 @@
 
 A local Markdown board and document editor with a local project workspace, a
 disposable index, compatible CLI, Git-backed mutations, and a localhost browser
-app. PostgreSQL and the old saas checkout are not runtime dependencies.
+app. PostgreSQL and the previous board application's checkout are not runtime dependencies.
 
 **Deployment status:** the production launcher uses the local Vault through
 `Tools/zagent/backend.json`. Legacy board/docs writes are fenced in PostgreSQL.
@@ -169,13 +169,16 @@ with the index. These local commands replace the old uploaded document mirror.
 
 ## Reproduce the capture
 
-This is development tooling, separate from the runtime. It requires the saas checkout,
-its existing dependencies, Docker, and an isolated PostgreSQL instance.
+This is development tooling, separate from the runtime. It requires the previous
+board application's checkout, its existing dependencies, Docker, and an isolated
+PostgreSQL instance.
 
-1. Run `scripts/snapshot.mjs SOURCE_CONTAINER zenith-vault-snapshot-NAME OUTPUT.dump`.
-   It runs only `pg_dump` against the source and restores into a new container on
-   `127.0.0.1:55439`; it never restores over the source. Keep the dump outside tracked
-   files (the completed run used `.zagent/vault/` in the repository root).
+1. Run `scripts/snapshot.mjs SOURCE_CONTAINER zenith-vault-snapshot-NAME OUTPUT.dump SOURCE_ROLE`
+   (or set `VAULT_SNAPSHOT_ROLE` instead of passing the fourth argument), naming the
+   source Postgres role and database to dump. It runs only `pg_dump` against the source
+   and restores into a new container on `127.0.0.1:55439`; it never restores over the
+   source. Keep the dump outside tracked files (the completed run used `.zagent/vault/`
+   in the repository root).
 2. The snapshot script creates the local development account `vault_reader`, grants SELECT
    on `public`, `jira`, and `notion`, and enables `default_transaction_read_only`. Both capture
    and extraction require this account, database `vault_snapshot`, and the isolated port.
@@ -204,10 +207,12 @@ reviewable writer-switch commit. The plan also requires no tickets In Progress;
 relaxing that condition requires an explicit migration decision. Choose the first
 small watched ticket before activation.
 
-`scripts/freeze-legacy.mjs` provides a database write fence for board/docs tables.
+`scripts/freeze-legacy.mjs` provides a database write fence for board/docs tables and
+requires the same `VAULT_SNAPSHOT_ROLE` environment variable as the capture script.
 Its isolated test verifies that unrelated Figma writes remain available. PostgreSQL,
-realtime, and other saas applications have shared consumers: retiring board/docs does
-not authorize deleting the entire database or stopping those shared services.
+realtime, and other applications from the previous board's platform have shared
+consumers: retiring board/docs does not authorize deleting the entire database or
+stopping those shared services.
 
 Before the first new claim, rollback can restore the old backend and unfreeze it.
 After the first claim, use forward recovery; there is no automatic reconciliation

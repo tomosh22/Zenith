@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { transform } from 'esbuild';
 
-const legacy=path.resolve(process.argv[2]??'C:/dev/saas');
+const legacyArg=process.argv[2];
+if(!legacyArg){
+  console.error('Usage: node scripts/vendor-read-helpers.mjs UPSTREAM_REPO_ROOT');
+  process.exit(1);
+}
+const legacy=path.resolve(legacyArg);
 const out=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../cli/legacy-pure');
 mkdirSync(out,{recursive:true});
 const hashes={};
@@ -16,7 +21,7 @@ const source=name=>{
 async function emit(name,text) {
   const transformed=await transform(text,{loader:'ts',format:'esm',target:'node22'});
   const code=transformed.code.replace(/from "\.\/(ticket|routing|guardrails|config)"/g,'from "./$1.mjs"');
-  writeFileSync(path.join(out,name+'.mjs'),'// Generated from saas read-only policy helpers; see provenance.json. No DB or network imports.\n'+code);
+  writeFileSync(path.join(out,name+'.mjs'),'// Generated from the upstream read-only policy helpers; see provenance.json. No DB or network imports.\n'+code);
 }
 for(const name of ['ticket','routing','guardrails']) await emit(name,source(name));
 await emit('flags', source('flags').replace("import { BoardError } from './board';", 'class BoardError extends Error {}'));
@@ -37,5 +42,5 @@ const NEEDS_HUMAN_LABEL='needs-human',HUMAN_GATE_LABEL='human-gate';
 ${board.slice(start,end)}`);
 await emit('config',`export class ConfigError extends Error { constructor(message:string){super(message);this.name='ConfigError';} }
 export function projectConfig(config:any,key:string){const p=config.projects[key];if(!p)throw new ConfigError('Project '+key+' is not mapped in agent.config.json. Known: '+(Object.keys(config.projects).join(', ')||'(none)'));return p;}`);
-writeFileSync(path.join(out,'provenance.json'),JSON.stringify({source:'saas/packages/agent/src',hashes,notes:'ticket/routing/guardrails transpiled unchanged. evaluateContract and parseArgs extracted unchanged. flags uses a local Error subclass in place of the database module import. config shim only looks up already-resolved pinned policy. Regenerate with scripts/vendor-read-helpers.mjs; never imports legacy repo at runtime.'},null,2)+'\n');
+writeFileSync(path.join(out,'provenance.json'),JSON.stringify({source:'packages/agent/src',hashes,notes:'ticket/routing/guardrails transpiled unchanged. evaluateContract and parseArgs extracted unchanged. flags uses a local Error subclass in place of the database module import. config shim only looks up already-resolved pinned policy. Regenerate with scripts/vendor-read-helpers.mjs; never imports legacy repo at runtime.'},null,2)+'\n');
 console.log('Vendored read-only policy helpers.');

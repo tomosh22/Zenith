@@ -3,25 +3,26 @@
   "title": "Zenith Vault Stage 1 persisted field inventory",
   "status": "stage-1-specification",
   "source": {
-    "schemaIndex": "C:/dev/saas/packages/database/src/schema/index.ts",
+    "note": "schemaIndex, schemaFiles and agentSources are relative to the retired upstream board application's repository root.",
+    "schemaIndex": "packages/database/src/schema/index.ts",
     "schemaFiles": [
-      "C:/dev/saas/packages/database/src/schema/public.ts",
-      "C:/dev/saas/packages/database/src/schema/agent.ts",
-      "C:/dev/saas/packages/database/src/schema/jira.ts",
-      "C:/dev/saas/packages/database/src/schema/notion.ts",
-      "C:/dev/saas/packages/database/src/schema/figma.ts",
-      "C:/dev/saas/packages/database/src/schema/mermaid.ts"
+      "packages/database/src/schema/public.ts",
+      "packages/database/src/schema/agent.ts",
+      "packages/database/src/schema/jira.ts",
+      "packages/database/src/schema/notion.ts",
+      "packages/database/src/schema/figma.ts",
+      "packages/database/src/schema/mermaid.ts"
     ],
     "agentSources": [
-      "C:/dev/saas/packages/agent/src/board.ts",
-      "C:/dev/saas/packages/agent/src/agile.ts",
-      "C:/dev/saas/packages/agent/src/notion.ts",
-      "C:/dev/saas/packages/agent/src/dispatch.ts",
-      "C:/dev/saas/packages/agent/src/config.ts",
-      "C:/dev/saas/packages/agent/src/doctor.ts",
-      "C:/dev/saas/packages/agent/src/docs.ts",
-      "C:/dev/saas/packages/agent/src/routing.ts",
-      "C:/dev/saas/packages/agent/src/ticket.ts"
+      "packages/agent/src/board.ts",
+      "packages/agent/src/agile.ts",
+      "packages/agent/src/notion.ts",
+      "packages/agent/src/dispatch.ts",
+      "packages/agent/src/config.ts",
+      "packages/agent/src/doctor.ts",
+      "packages/agent/src/docs.ts",
+      "packages/agent/src/routing.ts",
+      "packages/agent/src/ticket.ts"
     ],
     "contract": "C:/dev/Zenith/Tools/zagent/contract.json",
     "referenceFixture": "C:/dev/Zenith/Tools/Vault/fixtures/snapshot/reference.json",

@@ -53,9 +53,11 @@ or journal files.
 
 These are the payload shapes captured in
 `fixtures/snapshot/reference.json` and defined by the corresponding
-interfaces in `C:/dev/saas/packages/agent/src`. A local implementation may
-change where it reads a value, but it must keep these keys and nesting for
-the retained command. Fields shown as nullable remain present with `null`.
+interfaces in the retired upstream board application's `packages/agent/src`
+(paths in this document are relative to that repository's root). A local
+implementation may change where it reads a value, but it must keep these keys
+and nesting for the retained command. Fields shown as nullable remain present
+with `null`.
 
 * **show** returns the legacy `TicketPayload`: `{key, id, number, title, type,
   priority, complexity, risk, category, labels, humanGate, needsHuman,
@@ -132,12 +134,12 @@ second result vocabulary:
 
 | Surface | Source anchor |
 | --- | --- |
-| show/check/queue/owns/gates | `C:/dev/saas/packages/agent/src/board.ts` (`showTicket`, `queue`, `checkClaim`, `GateSelection`) and `dispatch.ts` cases `show`, `check`, `queue`, `owns`, `gates` |
-| links/blocked/epic/sprint/version/history/reports | `C:/dev/saas/packages/agent/src/agile.ts` (`listLinks`, `listBlocked`, `showEpic`, `listSprints`, `listVersions`, `ticketHistory`, `velocity`, `epicProgress`) |
-| link display labels | `C:/dev/saas/packages/lib/src/constants.ts`: `JIRA_LINK_LABELS` (`blocks`, `relates to`, `duplicates`, `causes`) and `JIRA_LINK_INVERSE_LABELS` (`is blocked by`, `relates to`, `is duplicated by`, `is caused by`) |
-| knowledge rows/options | `C:/dev/saas/packages/agent/src/notion.ts` (`DATABASE_KEYS`, `DATABASES`, `listRows`, `optionId`) and `dispatch.ts` cases `rows`/`suggestions` |
-| docs reads | `C:/dev/saas/packages/agent/src/docs.ts` and `dispatch.ts` `docs()` (`ls`, `read`, `search`); the vault uses local Markdown paths in place of Notion page ids |
-| flag vocabulary | `C:/dev/saas/packages/agent/src/flags.ts` (`COMMAND_FLAGS`, `GLOBAL_FLAGS`) and `args.ts` (`parseArgs`, `whereFrom`, enum/date/points helpers) |
+| show/check/queue/owns/gates | `packages/agent/src/board.ts` (`showTicket`, `queue`, `checkClaim`, `GateSelection`) and `dispatch.ts` cases `show`, `check`, `queue`, `owns`, `gates` |
+| links/blocked/epic/sprint/version/history/reports | `packages/agent/src/agile.ts` (`listLinks`, `listBlocked`, `showEpic`, `listSprints`, `listVersions`, `ticketHistory`, `velocity`, `epicProgress`) |
+| link display labels | `packages/lib/src/constants.ts`: `JIRA_LINK_LABELS` (`blocks`, `relates to`, `duplicates`, `causes`) and `JIRA_LINK_INVERSE_LABELS` (`is blocked by`, `relates to`, `is duplicated by`, `is caused by`) |
+| knowledge rows/options | `packages/agent/src/notion.ts` (`DATABASE_KEYS`, `DATABASES`, `listRows`, `optionId`) and `dispatch.ts` cases `rows`/`suggestions` |
+| docs reads | `packages/agent/src/docs.ts` and `dispatch.ts` `docs()` (`ls`, `read`, `search`); the vault uses local Markdown paths in place of Notion page ids |
+| flag vocabulary | `packages/agent/src/flags.ts` (`COMMAND_FLAGS`, `GLOBAL_FLAGS`) and `args.ts` (`parseArgs`, `whereFrom`, enum/date/points helpers) |
 
 Every invocation accepts the global `--json` selector. The following mapping
 is the closed option vocabulary from `flags.ts`; options not listed for a

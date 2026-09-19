@@ -52,7 +52,7 @@ contains 244 tickets, zero In Progress, 157 activity rows and 196 links. Its
 Migration preserved 235 mapped tickets, nine read-only archived tickets, and
 68 existing living documents without overwriting them.
 
-The backup is retained under `.zagent/cutover-20260916/saas.dump`; its SHA-256
+The backup is retained under `.zagent/cutover-20260916/upstream.dump`; its SHA-256
 and the snapshot/freeze evidence are recorded in `migration/`. The pre-cutover
 recovery tag is `vault-pre-cutover-20260916` at `44f4f7a9`.
 

@@ -122,7 +122,7 @@ loop without it lies to itself.
      the one place this file says the queue must never stop. `Bash(timeout *)`
      went on the list then and stays there, though **step 7 no longer wraps
      that command**: the underlying hang was a per-page WebSocket and is fixed
-     (saas `05408ef`). Kept as the worked example, because the rule it
+     (upstream `05408ef`). Kept as the worked example, because the rule it
      illustrates is untouched — a mandated command whose first token is not
      prefix-matched stalls the loop on a permission prompt.
    - Step 5 mandates `TaskStop` for the wedged-worker guardrail, and it was
@@ -148,7 +148,7 @@ loop without it lies to itself.
 
 # Never
 
-- No `psql`, no direct database access, no importing `@saas/database`.
+- No `psql`, no direct database access, no importing `@upstream/database`.
   Every board interaction is a `zagent …` call.
 - No `git push`. No `--force`. No `reset --hard`. No deleting a branch.
 - No `git switch -c`, `git worktree`, or `gh pr` when `branching` is
@@ -311,7 +311,7 @@ shell, so passing it in one proves nothing about the other. That is not
 hypothetical — `Tools/zagent/` held only `zagent.ps1` and `zagent.cmd`, neither
 of which a POSIX shell will run from a bare name, so Git Bash walked past this
 repo's directory (already first on `PATH`) and found a pnpm global shim for the
-old in-saas Node client. Board half only, 18 rows, **exit 0**. An orchestrator
+old upstream Node client. Board half only, 18 rows, **exit 0**. An orchestrator
 that ran step 0 in PowerShell and its work through Bash sailed past the one
 check written to catch this and mutated the board through the wrong client.
 
@@ -1725,7 +1725,7 @@ been writing correctly the whole time, which is exactly why the mirror always
 looked current for the docs that sort early (`Status`, `DecisionLog`) and never
 for `Conventions`.
 
-Fixed in saas `05408ef`: a page needing no write is now answered from the
+Fixed in upstream `05408ef`: a page needing no write is now answered from the
 persisted row with no socket, by the same `decideWrite` the live path applies.
 A CONFLICT and `--force` still open a session. **Measured: five consecutive
 timeouts became exit 0 in 9 seconds.**

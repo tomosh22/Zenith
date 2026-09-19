@@ -684,7 +684,7 @@ function usage() {
     notes: [
       'Dry-run reads the source only. --prepare creates a new destination and refuses an existing path.',
       'Only ZEN, ZM, DP, UV, HE and FD are mapped to repository board roots; all other issue projects go under archive/legacy/.',
-      'This command never installs files into the active checkout or writes to the legacy SaaS repository.',
+      'This command never installs files into the active checkout or writes to the retired upstream repository.',
     ],
   };
 }

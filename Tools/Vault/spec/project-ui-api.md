@@ -14,8 +14,9 @@ assignment. Local ownership does not bypass archived-project or global
 read-only protection, workflow validation, or revision checks.
 
 Organization sign-in, tenant switching, member invitations, per-user notification
-delivery, and SaaS permission-scheme administration are outside this local
-operating mode. They must not be described as implemented multi-user parity.
+delivery, and the previous board application's permission-scheme administration
+are outside this local operating mode. They must not be described as implemented
+multi-user parity.
 The corresponding read-only and forbidden-write boundaries are tested locally.
 
 ## Reads

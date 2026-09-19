@@ -6,7 +6,7 @@
  * Rehearsal copies a prepared vault (or prepares one from a snapshot), enables
  * writes only in that copy, and runs a small claim -> finish -> recovery flow.
  * It never switches branches, merges, writes the supplied vault, or contacts
- * the legacy SaaS checkout.  The injected operation adapter is useful while
+ * the retired upstream checkout.  The injected operation adapter is useful while
  * the CLI dispatcher is being integrated; the default adapter uses the shared
  * server/operations.mjs engine directly.
  */
