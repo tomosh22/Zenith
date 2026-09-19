@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 7: the Flux subsystems"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 34
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-35","reason":"Inventory phase order: games reach engine subsystems through the seams phases 3b to 7 establish."}]
-updatedAt: "2026-09-19T17:39:26.027Z"
+updatedAt: "2026-09-19T17:42:12.352Z"
 flagged: false
 severity: null
 reproducibility: null
