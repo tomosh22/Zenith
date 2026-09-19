@@ -15,8 +15,8 @@ storyPoints: 3
 position: 50
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:33.698Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance sets flags on the emulator through the config plumbing."}]
+updatedAt: "2026-09-19T17:40:24.441Z"
 flagged: false
 severity: null
 reproducibility: null
