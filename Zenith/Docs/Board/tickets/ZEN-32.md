@@ -15,8 +15,8 @@ storyPoints: 8
 position: 32
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:27.949Z"
+blocks: [{"key":"ZEN-33","reason":"Inventory phase order: Flux_Graphics is reached from Editor and Input paths phase 5.5 rewires."}]
+updatedAt: "2026-09-19T17:39:17.743Z"
 flagged: false
 severity: null
 reproducibility: null
