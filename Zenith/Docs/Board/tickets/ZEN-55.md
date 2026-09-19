@@ -5,7 +5,7 @@ type: "TASK"
 title: "Animation events from the state-machine path with a crossfade contract"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 55
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."}]
-updatedAt: "2026-09-19T17:40:49.330Z"
+updatedAt: "2026-09-19T17:43:24.086Z"
 flagged: false
 severity: null
 reproducibility: null
