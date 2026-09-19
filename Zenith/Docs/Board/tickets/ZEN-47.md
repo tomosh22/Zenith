@@ -15,8 +15,8 @@ storyPoints: 8
 position: 47
 labels: ["engine-gap","needs-human"]
 fixVersions: []
-blocks: [{"key":"ZEN-87","reason":"P0 acceptance includes suspend/resume, which is the surface-recreation result."}]
-updatedAt: "2026-09-19T17:42:47.977Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance includes suspend/resume, which is the surface-recreation result.","raw":{"key":"ZEN-87","reason":"P0 acceptance includes suspend/resume, which is the surface-recreation result."},"invalid":false},{"key":"UV-11","reason":"the Undervault verdict is about the engine fix for surface recreation"}]
+updatedAt: "2026-09-19T19:12:26.449Z"
 flagged: false
 severity: null
 reproducibility: null
