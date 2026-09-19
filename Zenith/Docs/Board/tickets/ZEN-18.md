@@ -4,7 +4,7 @@ type: TASK
 title: "De-globalisation program spine: refreshed inventory, the injection shape, the ratchet's target and the phase split"
 category: Engine
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: To Do
 assignee: null
 priority: MEDIUM
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:11.620Z"
+updatedAt: "2026-09-19T17:38:15.774Z"
 ---
 ## Goal
 The number of `g_xEngine` references must fall in favour of dependency injection. Today: 1,569 references across 227 engine files and 3,651 in games; `Tools/engine_singleton_allowlist.txt` (148 lines) is the shrink-only per-file COUNT ratchet the complexity gate enforces (`Tools/complexity_profiles.json`, `architecture.singleton_ratchet`: a file may never exceed its baseline, a new file gets zero), and the ECS leaf is already at zero by its own ratchet. `Docs/design/EngineRefactor_Phase-1_Inventory.md` is the plan: it inventories every mutable static and global by subsystem and sequences the work in phases with a per-phase surface estimate.
