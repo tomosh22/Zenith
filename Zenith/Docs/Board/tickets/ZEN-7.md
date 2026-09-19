@@ -5,8 +5,8 @@ title: ZENITH_ASSERT_EQ_FLOAT passes on NaN at every epsilon, so a degenerate fl
 category: Engine
 parent: "ZEN-1"
 sprint: null
-status: To Do
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: HIGH
 complexity: MODERATE
 risk: HIGH
@@ -43,7 +43,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: ALWAYS
-updatedAt: "2026-09-19T17:37:17.816Z"
+updatedAt: "2026-09-19T19:36:04.179Z"
+claimAttempt: "a35422c7-296b-44be-9318-e47e98257589"
 ---
 ## Goal
 
