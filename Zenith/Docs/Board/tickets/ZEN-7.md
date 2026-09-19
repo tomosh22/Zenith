@@ -3,7 +3,7 @@ key: ZEN-7
 type: BUG
 title: ZENITH_ASSERT_EQ_FLOAT passes on NaN at every epsilon, so a degenerate float is indistinguishable from a correct one
 category: Engine
-parent: null
+parent: "ZEN-1"
 sprint: null
 status: To Do
 assignee: null
@@ -43,6 +43,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: ALWAYS
+updatedAt: "2026-09-19T17:37:13.704Z"
 ---
 ## Goal
 
