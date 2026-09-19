@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 9: static-API removal sweep and the allowlist to zero"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 36
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-86","reason":"The acceptance reads the allowlist total the final phase drives to zero."}]
-updatedAt: "2026-09-19T17:39:34.300Z"
+updatedAt: "2026-09-19T17:42:20.147Z"
 flagged: false
 severity: null
 reproducibility: null
