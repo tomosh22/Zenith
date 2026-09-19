@@ -6,13 +6,13 @@ category: Engine
 parent: null
 sprint: null
 status: To Do
-assignee: agent@zenith.invalid
+assignee: null
 priority: MEDIUM
 complexity: MODERATE
 risk: MEDIUM
-storyPoints: null
+storyPoints: 8
 position: 10
-labels: []
+labels: ["tech-debt"]
 fixVersions: []
 blocks: []
 links: []
@@ -42,5 +42,17 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:37:50.729Z"
 ---
-Zenith libraries, such as ZenithPhysics and ZenithECS currently have their source files in the same directory as all the other Zenith source files. This means that the source files get included in the main Zenith library vcxproj and have to be explicitly marked as being excluded from build. These file should live in a physically different directory and Sharpmake shouldn't have to exclude them from the main Zenith library as they shouldn't be there in the first place.
+## Goal
+The leaf libraries (ZenithECS, ZenithPhysics, ZenithAI) keep their source files under the main `Zenith/` tree, so the aggregate `Zenith` project's source glob SEES them and `Build/Sharpmake_Zenith.cs` has to build-exclude them by regex (`SourceFilesBuildExcludeRegex.Add(@".*\\ZenithECS\\.*\.cpp$")` and the equivalent Physics and AI exclusions). Files a library does not own should not be in its directory in the first place.
+
+Move each leaf library's sources into a physically separate directory the aggregate glob never reaches (proposed `Zenith/Libs/ZenithECS/`, `Zenith/Libs/ZenithPhysics/`, `Zenith/Libs/ZenithAI/`, or a sibling of `Zenith/` if the include-root convention prefers it), update the three `Sharpmake_Zenith*.cs` and the Sentinel projects, fix every `#include` path, delete the exclusion regexes, and regenerate. The Sentinel leaf-proof executables (`Build/Sharpmake_SentinelECS.cs` and siblings) are the mechanical proof that the leaf still links against ZenithBase alone.
+
+Constraints: the ECS-leaf `g_xEngine` ratchet (`Tools/complexity_profiles.json` leaf_ratchet) and the layering allowlists key on paths, so their allowlist files move in the same commit and the gates stay green rather than being widened; `Docs/BuildSystem.md`, the directory table in root `CLAUDE.md` and each leaf's `CLAUDE.md` describe the new layout. Every game and the engine solution regenerate and build.
+
+## Definition of Done
+- [ ] The three leaf libraries live outside the aggregate engine glob and `Sharpmake_Zenith.cs` carries no build-exclude regex for them
+- [ ] All three Sentinel proofs, `zenith build engine` and every game build green after `Build\regen.ps1`
+- [ ] Layering and singleton allowlists are re-pathed, not loosened; the architecture gates stay green
+- [ ] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the leaf `CLAUDE.md` files describe the new layout
