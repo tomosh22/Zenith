@@ -3,7 +3,7 @@ key: ZEN-4
 type: TASK
 title: Make the physics-chunk-span lifetime invariant simple instead of subtle
 category: Engine
-parent: null
+parent: "ZEN-24"
 sprint: null
 status: Done
 assignee: agent@zenith.invalid
@@ -42,7 +42,7 @@ source:
   resolved_at: 2026-08-21T12:49:26.588
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:44.434Z"
+updatedAt: "2026-09-19T18:03:34.514Z"
 ---
 ## Goal
 
