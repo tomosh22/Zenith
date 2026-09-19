@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/../../../apps/jira/src/lib/reports.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/../../../apps/jira/src/lib/reports.ts; see provenance.json.
 function dayKey(date) {
   return date.toISOString().slice(0, 10);
 }

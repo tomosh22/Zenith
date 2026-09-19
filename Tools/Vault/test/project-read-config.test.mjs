@@ -350,15 +350,15 @@ test('workflow rules join through transitions even when the workflow lives in a 
 test('users join from the relational table with identity fallbacks', async () => {
   const index = await loadVault(root);
   index.tables.set('public.users', [
-    { id: 'user-zoe', name: 'Zoe', email: 'zoe@saas.invalid' },
-    { user_id: 'user-al', display_name: 'Al', mail: 'al@saas.invalid' },
+    { id: 'user-zoe', name: 'Zoe', email: 'zoe@example.invalid' },
+    { user_id: 'user-al', display_name: 'Al', mail: 'al@example.invalid' },
     { id: 'user-zoe', name: 'Zoe duplicate' },
     { note: 'neither identity nor name' },
   ]);
   const users = projectDetail(index, 'ZEN').users;
   expect(users.map(user => user.name)).toEqual(['Al', 'Zoe']);
-  expect(users.find(user => user.name === 'Al')).toMatchObject({ id: 'user-al', email: 'al@saas.invalid' });
-  expect(users.find(user => user.name === 'Zoe')).toMatchObject({ id: 'user-zoe', email: 'zoe@saas.invalid' });
+  expect(users.find(user => user.name === 'Al')).toMatchObject({ id: 'user-al', email: 'al@example.invalid' });
+  expect(users.find(user => user.name === 'Zoe')).toMatchObject({ id: 'user-zoe', email: 'zoe@example.invalid' });
 });
 
 test('serializeTicket projects tickets with stable fallbacks', async () => {
@@ -418,7 +418,7 @@ test('serializeTicket projects tickets with stable fallbacks', async () => {
 
 test('issueDetail resolves config-mode issues with family, links, history and revisions', async () => {
   const index = await loadVault(root);
-  index.tables.set('public.users', [{ id: HISTORIAN_ID, name: 'Historian', email: 'historian@saas.invalid' }]);
+  index.tables.set('public.users', [{ id: HISTORIAN_ID, name: 'Historian', email: 'historian@example.invalid' }]);
   index.tables.set('jira.issue_links', [
     { id: 'link-out', source_issue_id: ZEN_1_ID, target_issue_id: ZEN_5_ID, type: 'BLOCKS' },
     { id: 'link-in', source_issue_id: ZEN_5_ID, target_issue_id: ZEN_1_ID, type: 'RELATES_TO' },
@@ -466,7 +466,7 @@ test('issueDetail resolves config-mode issues with family, links, history and re
       fromValue: HISTORIAN_ID,
       toValue: null,
       actorName: 'Historian',
-      actorEmail: 'historian@saas.invalid',
+      actorEmail: 'historian@example.invalid',
     })]);
     expect(detail.links.outgoing).toEqual([expect.objectContaining({ key: 'ZEN-5', type: 'BLOCKS', label: 'blocks' })]);
     expect(detail.links.incoming).toEqual([expect.objectContaining({ key: 'ZEN-5', type: 'RELATES_TO', label: 'relates to' })]);

@@ -1,4 +1,4 @@
-// Generated from saas read-only policy helpers; see provenance.json. No DB or network imports.
+// Generated from the upstream board application's read-only policy helpers; see provenance.json. No DB or network imports.
 import { projectConfig } from "./config.mjs";
 import { categoryContractError, resolveRules } from "./routing.mjs";
 import { parseTicket, validateTicket, danglingBoardReferences, humanOnlyClaims } from "./ticket.mjs";

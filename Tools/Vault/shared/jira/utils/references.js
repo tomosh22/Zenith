@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/utils/references.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/utils/references.ts; see provenance.json.
 import { PRODUCTS } from "../constants.js";
 function pathFor(url) {
   if (!url) return null;

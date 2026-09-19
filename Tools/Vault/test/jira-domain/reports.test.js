@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/../../../apps/jira/src/lib/reports.test.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/../../../apps/jira/src/lib/reports.test.ts; see provenance.json.
 import { describe, it, expect } from "vitest";
 import {
   buildBurndown,

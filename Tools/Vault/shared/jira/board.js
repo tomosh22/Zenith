@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/board.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/board.ts; see provenance.json.
 const JIRA_BOARD_TYPES = ["KANBAN", "SCRUM"];
 function boardShowsOnlyActiveSprint(type) {
   return type === "SCRUM";

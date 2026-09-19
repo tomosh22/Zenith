@@ -226,7 +226,7 @@
         "and that is the mechanism, not a gap. They FAIL until the first scaffold",
         "ticket lands its .zproj + directories, and pass exactly when the scaffold",
         "is real: the gate list IS the scaffold's acceptance test, and it needs no",
-        "protected-path edit, ever. See Docs/OperateBoard.md (saas repo) for the",
+        "protected-path edit, ever. See Docs/OperateBoard.md (the previous board's repo) for the",
         "full bootstrap transition, including the two HUMAN edits that follow a",
         "scaffold: a `build <Name>` line joins the Engine list above (a .zproj'd",
         "game missing from it fails Test-ZagentClient.ps1), and the game's",

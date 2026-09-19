@@ -229,7 +229,7 @@ test('issue.update walks config transitions and clears the claim leaving In Prog
     action: 'issue.update',
     project: 'ZEN',
     key: 'ZEN-8',
-    data: { status: 'In Progress', assignee: 'human@saas.invalid', customFieldValues: { 'cfg-area': ['Core'] } },
+    data: { status: 'In Progress', assignee: 'human@example.invalid', customFieldValues: { 'cfg-area': ['Core'] } },
     revisions: { [issue.relativePath]: expectedRevision(issue) },
     operationId: 'cfg-update-start-progress',
   });
@@ -237,7 +237,7 @@ test('issue.update walks config transitions and clears the claim leaving In Prog
 
   index = await loadVault(root);
   const inProgress = index.getTicket('ZEN-8');
-  expect(inProgress.metadata.assignee).toBe('human@saas.invalid');
+  expect(inProgress.metadata.assignee).toBe('human@example.invalid');
   const stopped = await dispatchProjectAction(index, {
     action: 'issue.update',
     project: 'ZEN',

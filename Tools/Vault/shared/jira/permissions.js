@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/permissions.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/permissions.ts; see provenance.json.
 import { orgRoleRank } from "./workflow.js";
 const JIRA_PERMISSIONS = [
   "BROWSE_PROJECT",

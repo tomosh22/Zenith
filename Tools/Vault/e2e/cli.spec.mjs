@@ -236,7 +236,7 @@ test.describe('Vault CLI process workflows', () => {
       expect(body.status).toBe(0);
       expect(body.payload.body).toContain(bodySentinel);
 
-      await replaceFrontmatterScalar(file, 'assignee', 'agent@saas.invalid');
+      await replaceFrontmatterScalar(file, 'assignee', 'agent@example.invalid');
       const queue = await runCli(root, ['queue', '--project', 'FD']);
       expect(queue.status).toBe(0);
       const queueEntry = queue.payload.find(entry => entry.key === key);

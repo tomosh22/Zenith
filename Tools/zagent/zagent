@@ -4,7 +4,7 @@
 # Without this file Git Bash cannot run the client at all: it will not execute
 # `zagent.ps1` or `zagent.cmd` from a bare name, so a bare `zagent` walks past
 # this directory and takes whatever else is on PATH. On at least one machine
-# that was a pnpm global shim for the OLD in-saas Node client, which talks
+# that was a pnpm global shim for the OLD Node client from the previous board, which talks
 # straight to the database — exactly what the tick's `Never` list forbids.
 #
 # PATH ORDER DOES NOT FIX THIS. `Tools/zagent` was already ahead of the pnpm

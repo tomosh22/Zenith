@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/workflow.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/workflow.ts; see provenance.json.
 import { JIRA_RESOLUTIONS } from "./constants.js";
 const JIRA_ORG_ROLES = ["VIEWER", "MEMBER", "ADMIN", "OWNER"];
 function orgRoleRank(role) {

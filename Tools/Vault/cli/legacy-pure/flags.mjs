@@ -1,4 +1,4 @@
-// Generated from saas read-only policy helpers; see provenance.json. No DB or network imports.
+// Generated from the upstream board application's read-only policy helpers; see provenance.json. No DB or network imports.
 class BoardError extends Error {
 }
 const GLOBAL_FLAGS = ["json"];

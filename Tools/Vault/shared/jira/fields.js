@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/fields.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/fields.ts; see provenance.json.
 const JIRA_CUSTOM_FIELD_TYPES = [
   "TEXT",
   "TEXTAREA",

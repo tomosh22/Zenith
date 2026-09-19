@@ -1,5 +1,5 @@
 {
-  "sourceRepository": "saas",
+  "sourceRepository": "upstream",
   "description": "Pure Jira domain rules and their original assertions. TypeScript is transpiled and optional process.env reads are guarded for browsers; domain semantics are unchanged. Runtime is entirely local to Vault.",
   "files": [
     {

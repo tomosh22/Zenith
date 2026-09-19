@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/utils/mentions.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/utils/mentions.ts; see provenance.json.
 function extractMentions(body) {
   if (!body) return [];
   const re = /@([a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;

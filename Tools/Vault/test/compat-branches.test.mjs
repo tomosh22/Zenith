@@ -92,7 +92,7 @@ function makeIndex({ tickets = {}, sprints = {}, tables, vaultConfig } = {}) {
     writes: { enabled: true },
     policy: {
       resolved: RESOLVED,
-      board: { agentEmail: 'agent@saas.invalid', guardrails: RESOLVED.guardrails },
+      board: { agentEmail: 'agent@example.invalid', guardrails: RESOLVED.guardrails },
     },
   };
   return index;
@@ -200,11 +200,11 @@ test('policyOf accepts the pinned-policy shape without a vault wrapper', () => {
   const flat = {
     resolved: RESOLVED,
     client: { file: { project: 'FD', categories: { Client: { gates: ['client gate'] } } } },
-    board: { agentEmail: 'board@saas.invalid', guardrails: { protectedPaths: [] } },
+    board: { agentEmail: 'board@example.invalid', guardrails: { protectedPaths: [] } },
     orgSlug: 'flat-org',
   };
   const policy = policyOf({ vaultConfig: flat });
-  assert.equal(policy.agentEmail, 'board@saas.invalid');
+  assert.equal(policy.agentEmail, 'board@example.invalid');
   assert.equal(policy.orgSlug, 'flat-org');
   assert.equal(policy.clientFile.project, 'FD');
   assert.deepEqual(policy.categories.Client.gates, ['client gate']);

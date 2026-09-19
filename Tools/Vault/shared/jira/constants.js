@@ -1,6 +1,6 @@
-// Ported from SaaS packages/lib/src/constants.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/constants.ts; see provenance.json.
 const legacyEnvironment = typeof process === 'undefined' ? {} : process.env;
-const APP_NAME = "SaaS Suite";
+const APP_NAME = "Vault Suite";
 const PRODUCTS = {
   web: {
     name: "Home",

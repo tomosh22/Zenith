@@ -52,7 +52,7 @@ test('queue claim filters cover the independent board predicates', async () => {
     {
       name: 'primary agent assigned',
       key: 'FD-9002',
-      fields: { assignee: 'agent@saas.invalid' },
+      fields: { assignee: 'agent@example.invalid' },
       claimable: false,
       assigned: true,
     },

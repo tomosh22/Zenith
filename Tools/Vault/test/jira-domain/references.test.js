@@ -1,4 +1,4 @@
-// Ported from SaaS packages/lib/src/__tests__/references.test.ts; see provenance.json.
+// Ported from the upstream board application's packages/lib/src/__tests__/references.test.ts; see provenance.json.
 import { describe, it, expect } from "vitest";
 import { parseReference, extractReferences } from "../../shared/jira/utils/references.js";
 import { PRODUCTS, issueUrl, pageUrl, diagramUrl, databaseUrl } from "../../shared/jira/constants.js";
