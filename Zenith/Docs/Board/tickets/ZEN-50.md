@@ -5,7 +5,7 @@ type: "TASK"
 title: "Android config plumbing: an APK args file and intent extras reach Zenith_CommandLine"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 50
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 acceptance sets flags on the emulator through the config plumbing."}]
-updatedAt: "2026-09-19T17:40:24.441Z"
+updatedAt: "2026-09-19T17:42:59.979Z"
 flagged: false
 severity: null
 reproducibility: null
