@@ -114,7 +114,11 @@
     "Games/Foundry/Docs/Board.md",
     "Games/Foundry/Docs/GameDesignDocument.md",
     "Games/Foundry/Docs/Roadmap.md",
-    "Games/Foundry/Docs/TechnicalDesignDocument.md"
+    "Games/Foundry/Docs/TechnicalDesignDocument.md",
+    "Games/Undervault/Docs/Board.md",
+    "Games/Undervault/Docs/Roadmap.md",
+    "Games/Hearth/Docs/Board.md",
+    "Games/Hearth/Docs/Roadmap.md"
   ],
   "$comment": [
     "policy.board.routing is DATA only. Tools/Vault/cli/compat.mjs's policyOf()",
