@@ -15,8 +15,8 @@ storyPoints: 8
 position: 58
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises text entry on the emulator."}]
-updatedAt: "2026-09-19T17:43:35.972Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises text entry on the emulator.","raw":{"key":"ZEN-88","reason":"P1 acceptance exercises text entry on the emulator."},"invalid":false},{"key":"HE-23","reason":"naming needs the engine text field and keyboard"}]
+updatedAt: "2026-09-19T19:25:46.301Z"
 flagged: false
 severity: null
 reproducibility: null
