@@ -5,7 +5,7 @@ type: "TASK"
 title: "Android CI leg: an AGDE compile-and-link gate plus APK assembly on engine changes"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 60
 labels: ["engine-gap","needs-human"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance requires the Android CI leg green."}]
-updatedAt: "2026-09-19T17:41:10.412Z"
+updatedAt: "2026-09-19T17:43:43.976Z"
 flagged: false
 severity: null
 reproducibility: null
