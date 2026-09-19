@@ -15,8 +15,8 @@ storyPoints: 2
 position: 67
 labels: ["needs-human","question"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:36.884Z"
+blocks: [{"key":"ZEN-68","reason":"ZEN-68 implements option (a) of a ruling only the user may make; if (b) is chosen it closes WONT_DO."}]
+updatedAt: "2026-09-19T17:39:46.874Z"
 flagged: false
 severity: null
 reproducibility: null
