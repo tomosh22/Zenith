@@ -22,7 +22,7 @@ import {
 } from './legacy-pure/routing.mjs';
 
 const DEFAULT_ORG_SLUG = 'pink-goat';
-const DEFAULT_AGENT_EMAIL = 'agent@saas.invalid';
+const DEFAULT_AGENT_EMAIL = 'agent@zenith.invalid';
 
 export const EXIT_CODES = Object.freeze({
   OK: 0,

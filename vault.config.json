@@ -117,7 +117,7 @@
   ],
   "policy": {
     "board": {
-      "agentEmail": "agent@saas.invalid",
+      "agentEmail": "agent@zenith.invalid",
       "routing": {
         "effortByComplexity": {
           "TRIVIAL": "low",
@@ -366,7 +366,7 @@
       }
     },
     "resolved": {
-      "agentEmail": "agent@saas.invalid",
+      "agentEmail": "agent@zenith.invalid",
       "routing": {
         "effortByComplexity": {
           "TRIVIAL": "low",

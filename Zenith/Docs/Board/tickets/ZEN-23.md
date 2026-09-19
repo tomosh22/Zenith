@@ -7,7 +7,7 @@ category: "Engine"
 parent: null
 sprint: null
 status: "Done"
-assignee: "agent@saas.invalid"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"

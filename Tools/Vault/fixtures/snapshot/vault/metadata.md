@@ -4244,8 +4244,8 @@ tables:
       name: Repo
       type: SELECT
       options:
-        - id: c-dev-saas
-          label: C:/dev/saas
+        - id: c-dev-upstream
+          label: Upstream board repo
         - id: c-dev-zenith
           label: C:/dev/Zenith
       position: 6
@@ -4266,8 +4266,8 @@ tables:
       name: Repo
       type: SELECT
       options:
-        - id: c-dev-saas
-          label: C:/dev/saas
+        - id: c-dev-upstream
+          label: Upstream board repo
         - id: c-dev-zenith
           label: C:/dev/Zenith
       position: 6
@@ -4706,8 +4706,8 @@ tables:
       name: Repo
       type: SELECT
       options:
-        - id: c-dev-saas
-          label: C:/dev/saas
+        - id: c-dev-upstream
+          label: Upstream board repo
         - id: c-dev-zenith
           label: C:/dev/Zenith
       position: 3
@@ -4932,8 +4932,8 @@ tables:
       name: Repo
       type: SELECT
       options:
-        - id: c-dev-saas
-          label: C:/dev/saas
+        - id: c-dev-upstream
+          label: Upstream board repo
         - id: c-dev-zenith
           label: C:/dev/Zenith
       position: 3
@@ -4987,7 +4987,7 @@ tables:
       database_id: ei3xsxd2a5zto5fqkxkfddor
     - id: binn14eenp8ezfsowtod5n7t
       values:
-        mjyvbwb8eb566wiwz1qx9z57: "FIXED in saas 05408ef, and the premise was wrong in a way worth recording. docs sync was never hanging and had never failed to complete its WORK: it opened a WebSocket session for EVERY page (199 on this checkout, 597 across the three projects that map to it), including every page already identical to its source, at a handshake plus 2x DEFAULT_SETTLE_MS each and two sessions per replace. A no-op sync therefore ran about ten minutes and every caller's timeout killed it around page 40 of 199, discarding the --json report (emitted at the end) and leaving a zero-byte log. That is exactly why the mirror always looked CURRENT for docs sorting early (Status, DecisionLog) and never for Conventions -- the pages were being written correctly the whole time. syncPage now answers the no-write case from the persisted row with no socket, using the same decideWrite predicate the live path applies, and takes that path ONLY for a clean 'unchanged' (a CONFLICT and --force both still open the session). Measured on this checkout: five consecutive timeouts at 120-300s became exit 0 in 9 SECONDS. Write path re-verified by editing one doc: updated 2, verified true, on exactly the two pages the change touched, 595 skipped. Consequence for the protocol: tick.md step 7's 'timed out -- the mirror is one commit behind is a legal and expected work-log outcome' rests on a false premise and should be retired along with the timeout wrapper it justifies."
+        mjyvbwb8eb566wiwz1qx9z57: "FIXED in the previous board 05408ef, and the premise was wrong in a way worth recording. docs sync was never hanging and had never failed to complete its WORK: it opened a WebSocket session for EVERY page (199 on this checkout, 597 across the three projects that map to it), including every page already identical to its source, at a handshake plus 2x DEFAULT_SETTLE_MS each and two sessions per replace. A no-op sync therefore ran about ten minutes and every caller's timeout killed it around page 40 of 199, discarding the --json report (emitted at the end) and leaving a zero-byte log. That is exactly why the mirror always looked CURRENT for docs sorting early (Status, DecisionLog) and never for Conventions -- the pages were being written correctly the whole time. syncPage now answers the no-write case from the persisted row with no socket, using the same decideWrite predicate the live path applies, and takes that path ONLY for a clean 'unchanged' (a CONFLICT and --force both still open the session). Measured on this checkout: five consecutive timeouts at 120-300s became exit 0 in 9 SECONDS. Write path re-verified by editing one doc: updated 2, verified true, on exactly the two pages the change touched, 595 skipped. Consequence for the protocol: tick.md step 7's 'timed out -- the mirror is one commit behind is a legal and expected work-log outcome' rests on a false premise and should be retired along with the timeout wrapper it justifies."
         o3pcxl3702jyekp99cz9u9tp: "tick.md step 7 mandates `timeout 120 zagent docs sync --json` and documents three prior hangs (300s, 120s, 120s), stating it 'has never once completed'. ZM-67 is the fourth: killed at 120s, zero-byte log, exit 143. The timeout mitigation works and the tick correctly continued -- but a mandated step with a 0/4 success rate is not a step, it is a ritual, and it costs two minutes of every tick that touches a doc. Either fix the WebSocket path it depends on or drop it from the mandated flow and make the mirror an explicit human-run command."
         ohv88qhy9empasgx47noi40o: cli
         q48d3r9i9zteonj2f3woqmft: nuisance
@@ -5001,7 +5001,7 @@ tables:
       database_id: cnjr4j9501dwnmtozwf03oo8
     - id: ddl5rcbext98gjo8rptucf7b
       values:
-        mjyvbwb8eb566wiwz1qx9z57: "Shipped: `zagent update` takes --label/--unlabel (flags.ts COMMAND_FLAGS.update), so a marker can be applied AFTER filing, which is when you learn one is needed. The follow-on it asked about also shipped: `windowed` was split into needs-gpu and needs-human (saas migration 0028)."
+        mjyvbwb8eb566wiwz1qx9z57: "Shipped: `zagent update` takes --label/--unlabel (flags.ts COMMAND_FLAGS.update), so a marker can be applied AFTER filing, which is when you learn one is needed. The follow-on it asked about also shipped: `windowed` was split into needs-gpu and needs-human (the previous board's migration 0028)."
         o3pcxl3702jyekp99cz9u9tp: "Labels can only be set at CREATE time. `zagent create` takes --label, but `zagent update` accepts only --priority/--points/--severity/--repro/--environment/--due and answers \"Nothing to update -- pass at least one field\" for --label. So a ticket that is DISCOVERED to need a human after filing cannot be protected. That matters because `windowed` is the board's one mechanical guard for unrunnable work -- filtered from the claim query, contract-invalid on a targeted claim -- and it is exactly the guard you want to apply after reading a ticket, not before. Concrete case: ZM-56 is \"ZM_InteriorTintPixels_Test passes windowed, or is retired with a recorded reason\". It is a requiresGraphics test, so a headless loop cannot run the fix branch and can only verify the RETIRE branch -- an agent handed \"fix it or delete it\", unable to test a fix, deletes coverage. It carries labels tech-debt,visual and is not marked windowed, so nothing stops the loop claiming it. The protection is prose in tick.md, which is precisely the shape of guard this repo keeps finding does not hold."
         ohv88qhy9empasgx47noi40o: cli
         q48d3r9i9zteonj2f3woqmft: slows-work
@@ -5070,7 +5070,7 @@ tables:
       database_id: cnjr4j9501dwnmtozwf03oo8
     - id: gqbpgj4sav9u8bdzn6rncdjp
       values:
-        mjyvbwb8eb566wiwz1qx9z57: "All four enforcement proposals in this row have shipped, board-side, across three commits in C:/dev/saas.  (1) The claim query refuses a ticket outside the project ACTIVE sprint. IN_SCOPE_SPRINT is strict now but self-configuring rather than absolute: a project with a non-continuous ACTIVE stage offers that stage ONLY, so both the sprint_id IS NULL and the continuous exemptions stop qualifying, while a board with no stage in progress keeps its previous behaviour unchanged. (17be92f)  (2) zagent create defaults --sprint to the ACTIVE stage, and warns by name when no --parent is set. That closes the hole the loop itself widened every time it filed a follow-up mid-stage. (17be92f)  (3) A stage cannot be completed while its work is unfinished, and the refusal names the tickets that are not done. Since startSprint already refuses a second ACTIVE sprint, completing the current one is the only route to starting the next, which makes this the enforcement point you asked for. --force still carries work to the backlog, because a stage sometimes genuinely ends with scope unlanded; it just has to be deliberate. (17be92f)  (4) zagent doctor grows a queue row per project counting To Do work that is ready and parked outside the ACTIVE stage. It reads 4 on ZM right now: ZM-63, ZM-51, ZM-52 and ZM-59. It counts UNSCHEDULED work apart from work in a later stage, because nothing will ever un-park the first kind, and it goes red only when the queue is ALSO dry, which is the incident it exists to explain. A permanently red check is one nobody reads. (af1873b)"
+        mjyvbwb8eb566wiwz1qx9z57: "All four enforcement proposals in this row have shipped, board-side, across three commits in the previous board's repo.  (1) The claim query refuses a ticket outside the project ACTIVE sprint. IN_SCOPE_SPRINT is strict now but self-configuring rather than absolute: a project with a non-continuous ACTIVE stage offers that stage ONLY, so both the sprint_id IS NULL and the continuous exemptions stop qualifying, while a board with no stage in progress keeps its previous behaviour unchanged. (17be92f)  (2) zagent create defaults --sprint to the ACTIVE stage, and warns by name when no --parent is set. That closes the hole the loop itself widened every time it filed a follow-up mid-stage. (17be92f)  (3) A stage cannot be completed while its work is unfinished, and the refusal names the tickets that are not done. Since startSprint already refuses a second ACTIVE sprint, completing the current one is the only route to starting the next, which makes this the enforcement point you asked for. --force still carries work to the backlog, because a stage sometimes genuinely ends with scope unlanded; it just has to be deliberate. (17be92f)  (4) zagent doctor grows a queue row per project counting To Do work that is ready and parked outside the ACTIVE stage. It reads 4 on ZM right now: ZM-63, ZM-51, ZM-52 and ZM-59. It counts UNSCHEDULED work apart from work in a later stage, because nothing will ever un-park the first kind, and it goes red only when the queue is ALSO dry, which is the incident it exists to explain. A permanently red check is one nobody reads. (af1873b)"
         o3pcxl3702jyekp99cz9u9tp: "Milestone ordering is not enforced, so the queue hands out work from outside the ACTIVE sprint. The mapping itself is right: sprints are one-per-milestone (S8 ACTIVE, S9-S12 PLANNED, matching Roadmap.md S0..S12) and the PLANNED gate works - ZM-45, ZM-46 and ZM-37 all correctly report OUT OF STAGE. What leaks is everything that never enters that gate. HOLE A: a ticket with NO sprint is claimable, and create never assigns one - zagent show prints '(none - claimable, sprints are optional)'. This is self-worsening, because the loop files follow-ups during a milestone and every one lands outside milestone control: ZM-65 and ZM-66, both filed by the loop during S8 today, had no sprint until added by hand, and ZM-17 still shows none. HOLE B: the 'Cross-cutting - no stage' sprint is continuous/always-in-scope and holds 18 issues claimable regardless of the active milestone. Its members are not stage-less chores - ZM-51 (player gender), ZM-52 (LFS question), ZM-59 (NPC palette), ZM-63 (PlayerHome tint) are ordinary feature/bug work that belongs to some milestone. Concretely: with ZM-22 finishing Blocked, ZM-23/R1-5 stays blocked, and the next tick would have claimed ZM-63 - Cross-cutting - while S8 is the active milestone. HOLE C: nothing requires the ACTIVE sprint to be complete before the next is started; S8 stands at 21/81 pts over 14 issues."
         ohv88qhy9empasgx47noi40o: board
         q48d3r9i9zteonj2f3woqmft: blocks-work
@@ -5279,8 +5279,8 @@ tables:
       database_id: roqon5olpfp13m5xe4d9miq1
     - id: ncuggcp8ff343d0ob7s284ei
       values:
-        a2wz1fyja62b1499uuz0pt17: c-dev-saas
-        fm04r617ckxd7s4wv762wi0h: SAAS-D-001
+        a2wz1fyja62b1499uuz0pt17: c-dev-upstream
+        fm04r617ckxd7s4wv762wi0h: UPSTREAM-D-001
         iv4c61wxv3wvh0jr0fjdcd6o: 2026-08-16
         kdiiph10osx2gugvy2m7phbp: Four things depend on the files being on disk and would break under a move. (1) Tools/doc_lint.ps1 gates push-to-master by reading six of them and resolving their cross-links. (2) `zagent decide` appends to Games/Zenithmon/Docs/DecisionLog.md, because that is where a Zenith session greps. (3) Games/Zenithmon/Docs/Status.md is the AUTHORITY for the pinned unit-gate baseline mirrored into zm-tests.yml and agent.config.json - an authority site you need a browser to read cannot be reconciled against a gate. (4) A loop worker is spawned with no Bash and no network; it reads its binding briefing off disk with the Read tool. The cost is owning the drift, and each page records a fingerprint of what was written so `zagent docs status` names the stale pages without touching anything.
         ofmpdviro4nuojcx5s7tinbk: The Zenith living docs are MIRRORED into Notion pages, one way. The Markdown files stay authoritative; `zagent docs sync` never writes back.
@@ -5334,7 +5334,7 @@ tables:
       database_id: cnjr4j9501dwnmtozwf03oo8
     - id: obgedk4ld93tcjy3mwa1n7jo
       values:
-        o3pcxl3702jyekp99cz9u9tp: "(1) PASTE THE WHY. ZM-D-196 Ruling 2 reads 'Explicitly NO gym door'. Read as a decision it forbids ZM-69 outright. Read with its WHY -- 'Gym1 ... declared but unauthored, so a door to an unauthored scene is a permanent black screen' -- it is a PRECONDITION that ZM-69 discharges by authoring Gym1. tick.md already separates a ruling's JUDGEMENT from its SURVEY; this is a third kind, a judgement whose validity is CONDITIONAL on a stated fact, and pasting only the Decision line (which is what 'paste the ruling verbatim' naturally produces) makes a legitimate ticket look like a violation. (2) GREP THE SUBJECT. ZM-69's tripwire table found 4 of 8 sites. The gap has a clean cause: I enumerated files that MENTION 'gym door', and ZM_Tests_SceneRegistry.cpp never uses that phrase -- it says 'the Gym'. The sites that matter ASSERT THE ABSENCE and name the SYMBOL (ZM_SCENE_GYM1, ZM_IsSceneRegisteredForLoad). Step 5's file-list rule currently says 'start from the DoD's nouns and follow them into the repo'; nouns are prose. For a ticket that reverses a recorded assertion the survey pattern must be the identifier. (3) DURABLE FINDINGS NEED A HOME. ZM-28's worker found that appending a move is never inert -- ZM_Learnsets.cpp:52 and ZM_SpeciesData.cpp:555 both DERIVE from the whole move table by scanning it, which no blast-radius grep can find. Seven more gym reward moves remain, so it recurs seven times. I3 tells every tick to GREP the DecisionLog for governing rulings, but no step ever CREATES one from a discovery; step 8's 'Deviations / follow-ups' is a work-log row on a closing ticket that the next worker never reads. One sentence in step 8 fixes it, and the mechanism (zagent decide) already exists. (4) RETIRE THE DOCS-SYNC PROSE. Step 7's 'timed out -- the mirror is one commit behind is a legal and expected work-log outcome', the mandatory `timeout 120` wrapper and the Bash(timeout *) allowed-tools entry all rest on the belief that docs sync hangs and has never completed. It does not: saas 05408ef root-caused it to a WebSocket per page for all 597 pages including unchanged ones, and it now exits 0 in 9 seconds. The machinery and the paragraph should go."
+        o3pcxl3702jyekp99cz9u9tp: "(1) PASTE THE WHY. ZM-D-196 Ruling 2 reads 'Explicitly NO gym door'. Read as a decision it forbids ZM-69 outright. Read with its WHY -- 'Gym1 ... declared but unauthored, so a door to an unauthored scene is a permanent black screen' -- it is a PRECONDITION that ZM-69 discharges by authoring Gym1. tick.md already separates a ruling's JUDGEMENT from its SURVEY; this is a third kind, a judgement whose validity is CONDITIONAL on a stated fact, and pasting only the Decision line (which is what 'paste the ruling verbatim' naturally produces) makes a legitimate ticket look like a violation. (2) GREP THE SUBJECT. ZM-69's tripwire table found 4 of 8 sites. The gap has a clean cause: I enumerated files that MENTION 'gym door', and ZM_Tests_SceneRegistry.cpp never uses that phrase -- it says 'the Gym'. The sites that matter ASSERT THE ABSENCE and name the SYMBOL (ZM_SCENE_GYM1, ZM_IsSceneRegisteredForLoad). Step 5's file-list rule currently says 'start from the DoD's nouns and follow them into the repo'; nouns are prose. For a ticket that reverses a recorded assertion the survey pattern must be the identifier. (3) DURABLE FINDINGS NEED A HOME. ZM-28's worker found that appending a move is never inert -- ZM_Learnsets.cpp:52 and ZM_SpeciesData.cpp:555 both DERIVE from the whole move table by scanning it, which no blast-radius grep can find. Seven more gym reward moves remain, so it recurs seven times. I3 tells every tick to GREP the DecisionLog for governing rulings, but no step ever CREATES one from a discovery; step 8's 'Deviations / follow-ups' is a work-log row on a closing ticket that the next worker never reads. One sentence in step 8 fixes it, and the mechanism (zagent decide) already exists. (4) RETIRE THE DOCS-SYNC PROSE. Step 7's 'timed out -- the mirror is one commit behind is a legal and expected work-log outcome', the mandatory `timeout 120` wrapper and the Bash(timeout *) allowed-tools entry all rest on the belief that docs sync hangs and has never completed. It does not: the previous board's 05408ef root-caused it to a WebSocket per page for all 597 pages including unchanged ones, and it now exits 0 in 9 seconds. The machinery and the paragraph should go."
         ohv88qhy9empasgx47noi40o: tick
         q48d3r9i9zteonj2f3woqmft: slows-work
         u3pk0xm44evvopgkhgn7txwg: "Four changes to tick.md, all earned by the 2026-08-25 ZM run: paste a ruling's WHY not just its Decision; grep the SUBJECT not the prose on a reversal ticket; a durable worker finding becomes a DecisionLog entry rather than a work-log line; and retire the docs-sync timeout prose, which now rests on a disproved premise."
@@ -5487,7 +5487,7 @@ tables:
       database_id: cnjr4j9501dwnmtozwf03oo8
     - id: udgwpd6xkjtg6qzhxfih41xt
       values:
-        mjyvbwb8eb566wiwz1qx9z57: "Both halves are now closed. The board half landed in saas 9d03869 (2026-08-25): parseTicket carries continuation lines, so definitionOfDone[].text is no longer truncated at the first newline -- verified against ZM-23, the ticket that exposed it. The tick.md half is stated and STILL STANDS, but on a reason that never depended on the bug: the array holds the checkboxes and never the prose that qualifies them, and ZM-23's body carried two load-bearing instructions OUTSIDE any checkbox. So 'inline from body.md, never from the array' is a rule about what the array IS, not a workaround. The worked example of what the truncation cost -- including that the reachability scan could not see a protectedPath written on a continuation line -- moved to Docs/TickProtocolHistory.md, since it is now history rather than a live hazard. Zenith e411b451."
+        mjyvbwb8eb566wiwz1qx9z57: "Both halves are now closed. The board half landed in the previous board's 9d03869 (2026-08-25): parseTicket carries continuation lines, so definitionOfDone[].text is no longer truncated at the first newline -- verified against ZM-23, the ticket that exposed it. The tick.md half is stated and STILL STANDS, but on a reason that never depended on the bug: the array holds the checkboxes and never the prose that qualifies them, and ZM-23's body carried two load-bearing instructions OUTSIDE any checkbox. So 'inline from body.md, never from the array' is a rule about what the array IS, not a workaround. The worked example of what the truncation cost -- including that the reachability scan could not see a protectedPath written on a continuation line -- moved to Docs/TickProtocolHistory.md, since it is now history rather than a live hazard. Zenith e411b451."
         o3pcxl3702jyekp99cz9u9tp: "The payload's definitionOfDone[].text truncates each checkbox at its first newline. On ZM-23 that deletes the entire substance of two items: item 1 loses 'not bumped to a larger count ... caught as a DOUBLE CLAIM on ZM_TRAINER_RIVAL_VESPER, proven by an anti-vacuity arm' (the whole point of the ticket), and item 3 loses 'are REPORTED from the shipped tables rather than asserted' (the clause preventing a self-referential guard). I3 makes the DoD the worker's verbatim specification, and the array is the obvious thing to inline because it is structured and already in the payload. A tick that does so ships a mutilated spec, and the worker cannot tell, having no shell and no board. It also weakens finish --status Done's unticked-box refusal, which reads the same truncated text."
         ohv88qhy9empasgx47noi40o: contract
         q48d3r9i9zteonj2f3woqmft: blocks-work
@@ -5592,7 +5592,7 @@ tables:
       database_id: ei3xsxd2a5zto5fqkxkfddor
     - id: yq41hev2uelvu576mw3dfr70
       values:
-        mjyvbwb8eb566wiwz1qx9z57: Shipped in saas dc80c1e. `recordTransition` is now the one writer of jira.issue_activity for both status and assignee, and `recordClaim` is a caller of it rather than a parallel implementation; `moveTicket` and `finishTicket` both record their move. `planAgentMove` returns the from-status and from-assignee it had already loaded, so no caller re-reads the row. moveTicket became a transaction where it was a bare UPDATE, so the move and its history row land together. `zagent history <KEY>` now shows To Do -> In Progress -> Done in order, which is asserted as a SEQUENCE (a test that only checked "some row mentions Done" would pass on a trail with the moves backwards).
+        mjyvbwb8eb566wiwz1qx9z57: Shipped in the previous board's dc80c1e. `recordTransition` is now the one writer of jira.issue_activity for both status and assignee, and `recordClaim` is a caller of it rather than a parallel implementation; `moveTicket` and `finishTicket` both record their move. `planAgentMove` returns the from-status and from-assignee it had already loaded, so no caller re-reads the row. moveTicket became a transaction where it was a bare UPDATE, so the move and its history row land together. `zagent history <KEY>` now shows To Do -> In Progress -> Done in order, which is asserted as a SEQUENCE (a test that only checked "some row mentions Done" would pass on a trail with the moves backwards).
         o3pcxl3702jyekp99cz9u9tp: Reconstructing what happened to a ticket means reading the org activity feed and correlating by timestamp, rather than reading the ticket's own history. The gap was invisible for as long as nothing wrote the claim either -- `history` on a freshly claimed ticket said 'No recorded changes', so the whole table looked unused rather than half-used.
         ohv88qhy9empasgx47noi40o: board
         q48d3r9i9zteonj2f3woqmft: nuisance
@@ -5703,61 +5703,61 @@ tables:
       email: carol@example.com
     - id: n9xhr52s8n49fa832egoqf4z
       name: Loop Agent
-      email: agent@saas.invalid
+      email: agent@zenith.invalid
     - id: j8sl77hsstiujri72v58n8vf
       name: Thomas O'Shaughnessy
       email: tomosh22@googlemail.com
     - id: ndsnc5ru21svn6ki634zi76q
       name: Loop Agent
-      email: agent-d707f677@saas.invalid
+      email: agent-d707f677@zenith.invalid
     - id: zolqpxsvrg0oys29s5h4r7qs
       name: Loop Agent
-      email: agent-42a4f86c@saas.invalid
+      email: agent-42a4f86c@zenith.invalid
     - id: v7dbbap8qmeajzerru0wjnqq
       name: Loop Agent
-      email: agent-fc5922eb@saas.invalid
+      email: agent-fc5922eb@zenith.invalid
     - id: yj7lijb9jikjl987ttgqcljy
       name: Loop Agent
-      email: agent-8e217c83@saas.invalid
+      email: agent-8e217c83@zenith.invalid
     - id: feu315qur1k2qts087nm2c5v
       name: Loop Agent
-      email: agent-3e3454cb@saas.invalid
+      email: agent-3e3454cb@zenith.invalid
     - id: hlo2500lyv23mfwwt54wv2n8
       name: Loop Agent
-      email: agent-ed1b3747@saas.invalid
+      email: agent-ed1b3747@zenith.invalid
     - id: bcuafigleuxo6xim2ua2qxs5
       name: Loop Agent
-      email: agent-3ba84fbd@saas.invalid
+      email: agent-3ba84fbd@zenith.invalid
     - id: u6e995kxc0sy13wom2hc5rh0
       name: Loop Agent
-      email: agent-d88fdc10@saas.invalid
+      email: agent-d88fdc10@zenith.invalid
     - id: duk9rfjr4qmufprw0ldc1obe
       name: Loop Agent
-      email: agent-e099358a@saas.invalid
+      email: agent-e099358a@zenith.invalid
     - id: iioh4y60zd7jk3sc9tx8nb7u
       name: Loop Agent
-      email: agent-cb5e360a@saas.invalid
+      email: agent-cb5e360a@zenith.invalid
     - id: vjgm3a3tdszwd4z936i39bri
       name: Loop Agent
-      email: agent-a71e855b@saas.invalid
+      email: agent-a71e855b@zenith.invalid
     - id: aa35y3auhhiw9yflph0vkpu7
       name: Loop Agent
-      email: agent-433d3e12@saas.invalid
+      email: agent-433d3e12@zenith.invalid
     - id: h198m84i498i2o6sryom5z5b
       name: Loop Agent
-      email: agent-24ec044b@saas.invalid
+      email: agent-24ec044b@zenith.invalid
     - id: duti854owuzvibd5ch1qd6fc
       name: Loop Agent
-      email: agent-c047968e@saas.invalid
+      email: agent-c047968e@zenith.invalid
     - id: nqbv6p83c7ddiuvcbvbqlvzf
       name: Loop Agent
-      email: agent-532888f6@saas.invalid
+      email: agent-532888f6@zenith.invalid
     - id: exj3xku9l2kks9vjugq2qoku
       name: Loop Agent
-      email: agent-e5c8456b@saas.invalid
+      email: agent-e5c8456b@zenith.invalid
     - id: zvno54huvecj6tjn8l6lo50f
       name: Loop Agent
-      email: agent-53da38d8@saas.invalid
+      email: agent-53da38d8@zenith.invalid
   public.organizations:
     - id: l3aedt1lbdxorzns0d6yzxlx
       name: Acme Corp

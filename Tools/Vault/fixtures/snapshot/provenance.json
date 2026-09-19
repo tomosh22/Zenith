@@ -16,9 +16,9 @@
     "packages/database/src/schema/notion.ts": "782ac98ab9e37b1a123a9d327101f2032f758f0ae1586f79dc3938406a463a75"
   },
   "sourceSha256": "692c314f2df1183df06fe01c2e78c126cebbc8582eb2cbe2f7d1f52b0ef32722",
-  "referenceSha256": "a3ba7d5b9270f834000ed08de252f5613f6d991377d3d6c7bace6d62f4b389d3",
+  "referenceSha256": "1fc4a547f21478d549fedf2ad6bc3e3c63ad6b7fa5dd9a99eb0ecd5c2d2d94d8",
   "orderingSha256": "caeedf40fd4086a7949ebeb6f6a2a7268f6c79bb0ba0c7b77b0857575167fd8a",
-  "configSha256": "b0d84b53e9608bc0c4465bb33ae41517a607ac7c14372ad5fce6bcb641850257",
+  "configSha256": "39a3245af8afc1fc4adc231d882db784ccb5d0d800ad99cc6deec3ab0f1f0d9e",
   "issueCount": 244,
   "counts": {
     "jira.board_column_statuses": 130,

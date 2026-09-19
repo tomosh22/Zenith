@@ -8,8 +8,8 @@
     "status": "stopped and preserved"
   },
   "liveSource": {
-    "container": "saas-postgres-1",
-    "database": "saas",
+    "container": "upstream-postgres-1",
+    "database": "upstream",
     "writerFreezeEvidence": "writer-freeze.json",
     "inProgressCount": 0
   },
@@ -35,7 +35,7 @@
     "result": "parity-result.json"
   },
   "hashes": {
-    "saas.dump": "c2b608bb22142999d05523d0e35c6aef79a6dad16b5ea1dc0d94f138287bca24",
+    "upstream.dump": "c2b608bb22142999d05523d0e35c6aef79a6dad16b5ea1dc0d94f138287bca24",
     "source.json": "9b5b06680fb73d85bab8760f5abfb54fa952254cb50ff14bb8b6c37ec3cfda5e",
     "reference.json": "f3ee6b8f2ce0e6a9ecc79a8484ec8bc9bfacd4d7f2adc34b8f462d92ec236181",
     "ordering.json": "29cf957e6a5bd2454d694775f68cd534758966e186e972bdba6ec2859a1e42c6",

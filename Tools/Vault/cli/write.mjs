@@ -233,7 +233,7 @@ function agentEmail(index, argv = []) {
       ?? root.policy?.writes?.agentEmail
       ?? policy.policy.agentEmail
       ?? policy.policy.board?.agentEmail
-      ?? 'agent@saas.invalid',
+      ?? 'agent@zenith.invalid',
   );
 }
 
