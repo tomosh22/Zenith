@@ -5,7 +5,7 @@ type: "TASK"
 title: "Ortho camera: public InitialiseOrthographic, plane setters and the missing Vulkan Y-flip"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 42
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 acceptance renders through the ortho camera."}]
-updatedAt: "2026-09-19T17:39:51.055Z"
+updatedAt: "2026-09-19T17:42:28.117Z"
 flagged: false
 severity: null
 reproducibility: null
