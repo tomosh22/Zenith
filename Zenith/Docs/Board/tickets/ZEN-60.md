@@ -15,8 +15,8 @@ storyPoints: 3
 position: 60
 labels: ["engine-gap","needs-human"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:10.783Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance requires the Android CI leg green."}]
+updatedAt: "2026-09-19T17:41:10.412Z"
 flagged: false
 severity: null
 reproducibility: null
