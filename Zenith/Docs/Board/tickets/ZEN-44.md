@@ -15,8 +15,8 @@ storyPoints: 3
 position: 44
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:11.533Z"
+blocks: [{"key":"ZEN-87","reason":"P0 exit lists the priority queue among the P0 items."}]
+updatedAt: "2026-09-19T17:39:59.354Z"
 flagged: false
 severity: null
 reproducibility: null
