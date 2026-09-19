@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 4: AssetRegistry and Physics"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 30
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-31","reason":"Inventory phase order: the SceneManager subsystems hold asset and physics handles injected in phase 4."}]
-updatedAt: "2026-09-19T17:39:09.479Z"
+updatedAt: "2026-09-19T17:41:55.202Z"
 flagged: false
 severity: null
 reproducibility: null
