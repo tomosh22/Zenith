@@ -15,8 +15,8 @@ storyPoints: 5
 position: 7
 labels: []
 fixVersions: []
-blocks: [{"key":"DP-8","reason":"MvpRoadmap 3.1 is 'blocked on MVP-3.0.1' by its own heading: villagers use the rig and clip set the spike proves."}]
-updatedAt: "2026-09-19T17:58:34.707Z"
+blocks: [{"key":"DP-8","reason":"MvpRoadmap 3.1 is 'blocked on MVP-3.0.1' by its own heading: villagers use the rig and clip set the spike proves.","raw":{"key":"DP-8","reason":"MvpRoadmap 3.1 is 'blocked on MVP-3.0.1' by its own heading: villagers use the rig and clip set the spike proves."},"invalid":false},{"key":"DP-9","reason":"Aelfric uses the same rig route the spike proves."}]
+updatedAt: "2026-09-19T17:58:39.173Z"
 flagged: false
 severity: null
 reproducibility: null
