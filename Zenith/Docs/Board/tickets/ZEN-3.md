@@ -3,7 +3,7 @@ key: ZEN-3
 type: TASK
 title: The RenderTest pin is gated by no workflow, so it can drift silently
 category: Engine
-parent: null
+parent: "ZEN-1"
 sprint: null
 status: To Do
 assignee: null
@@ -43,7 +43,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:37:05.474Z"
+updatedAt: "2026-09-19T17:37:09.536Z"
 ---
 ## Goal
 `Tools/unit_baselines.json` pins three games and CI gates two of them: `engine-gate.yml` runs `run_unit_gate.ps1 -Game Combat`, `zm-tests.yml` runs `-Game Zenithmon`, and nothing runs `-Game RenderTest`. The file's own `advisory` block records why: engine-gate compiles RenderTest only in `Vulkan_vs2022_Debug_Win64_True` as a compile proof, hosted runners have no Vulkan ICD so the exe never runs, and pinning from a Vulkan exe is forbidden (it reports higher than Null for the same tree). Gating the row needs a SECOND, `Null_`-config RenderTest build in engine-gate, an extra compile of a game that job already compiles once.
