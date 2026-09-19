@@ -15,8 +15,8 @@ storyPoints: 8
 position: 46
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."},"invalid":false},{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist."}]
-updatedAt: "2026-09-19T17:39:42.698Z"
+blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."},"invalid":false},"invalid":false},{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist.","raw":{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist."},"invalid":false},{"key":"ZEN-87","reason":"P0 acceptance runs at a device tier."}]
+updatedAt: "2026-09-19T17:40:07.799Z"
 flagged: false
 severity: null
 reproducibility: null
