@@ -15,8 +15,8 @@ storyPoints: 3
 position: 51
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:37.402Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance boots on the emulator, which the relaxed device gate must admit."}]
+updatedAt: "2026-09-19T17:40:28.608Z"
 flagged: false
 severity: null
 reproducibility: null
