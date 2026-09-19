@@ -15,8 +15,8 @@ storyPoints: 5
 position: 9
 labels: []
 fixVersions: []
-blocks: [{"key":"HE-10","reason":"the router reads the edge lattice"}]
-updatedAt: "2026-09-19T19:24:23.550Z"
+blocks: [{"key":"HE-10","reason":"the router reads the edge lattice","raw":{"key":"HE-10","reason":"the router reads the edge lattice"},"invalid":false},{"key":"HE-12","reason":"the shell is generated from the grid"}]
+updatedAt: "2026-09-19T19:24:28.414Z"
 flagged: false
 severity: null
 reproducibility: null
