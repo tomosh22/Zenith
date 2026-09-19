@@ -15,8 +15,8 @@ storyPoints: 8
 position: 59
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-88","reason":"P1 acceptance installs the AAB the packaging target produces."}]
-updatedAt: "2026-09-19T17:43:40.009Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance installs the AAB the packaging target produces.","raw":{"key":"ZEN-88","reason":"P1 acceptance installs the AAB the packaging target produces."},"invalid":false},{"key":"UV-53","reason":"AAB packaging is engine work"}]
+updatedAt: "2026-09-19T19:17:45.614Z"
 flagged: false
 severity: null
 reproducibility: null
