@@ -15,8 +15,8 @@ storyPoints: 8
 position: 46
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:18.757Z"
+blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."}]
+updatedAt: "2026-09-19T17:39:38.457Z"
 flagged: false
 severity: null
 reproducibility: null
