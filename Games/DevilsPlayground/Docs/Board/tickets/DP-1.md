@@ -7,7 +7,7 @@ parent: null
 sprint: null
 status: To Do
 assignee: null
-priority: MEDIUM
+priority: "HIGH"
 complexity: COMPLEX
 risk: MEDIUM
 storyPoints: null
@@ -42,13 +42,14 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:51:12.861Z"
 ---
 ## Goal
+`Games/DevilsPlayground/Docs/MVPScope.md` §0 to §5: the MVP sentence, the §1.1 system list, and the §5 success criteria (headless MVP subset 100% pass; `Test_P4Playthrough_Night1WinGolden` under 150 s at fixed-dt 60 Hz; both loss playthroughs pass; a human completes the sentence in under five minutes; every §1.1 system has a simulator-driven test). `MvpRoadmap.md` is the sequenced task list with `MVP-N.N.N` ids (uniqueness-checked by `Tools/doc_lint.ps1` C3); Phases 0.0 to 2 and most of 4 are ticked, Phase 3 (asset substitution) is untouched behind a Mixamo login gate, and MVP-4.3.4 is the human demo. Every open MVP item is a child here.
 
-The MVP roadmap in `Games/DevilsPlayground/Docs/MvpRoadmap.md`, whose task ids are `MVP-N.N.N` and are uniqueness-checked by `Tools/doc_lint.ps1` (check C3).
-
-DP keeps its own branching mode: `Docs/CIPolicy.md` is a squash-merge PR policy, unlike Zenithmon's direct-to-master ZM-D-031.
+DP runs `branching: direct` in `zagent.project.json` (the `Docs/CIPolicy.md` squash-merge PR text predates the Vault cutover and is history).
 
 ## Definition of Done
-
 - [ ] Every child issue Done
+- [ ] MVPScope §5 criteria 1 to 5 all true at once, recorded in `Docs/Status.md`
+- [ ] The MVP demo is signed off by a person (DP-18)
