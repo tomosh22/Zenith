@@ -6,11 +6,11 @@ category: Engine
 parent: null
 sprint: null
 status: To Do
-assignee: agent@zenith.invalid
+assignee: null
 priority: MEDIUM
-complexity: SIMPLE
+complexity: "MODERATE"
 risk: LOW
-storyPoints: null
+storyPoints: 5
 position: 18
 labels: []
 fixVersions: []
@@ -42,5 +42,15 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:38:36.195Z"
 ---
-Flux_BindingHandle& overloads must be used instead. The const char* overloads must be completely removed. ResolveNamedBinding and the Zenith_UnitTests friend declaration should be able to go as well
+## Goal
+`Zenith/Flux/Slang/Flux_ShaderBinder.h` still declares the by-name overloads `BindCBV`, `BindSRV`, `BindUAV_Texture`, `BindUAV_Buffer`, `BindSRV_Buffer` and `BindDrawConstants` taking `const char* szName`, resolved at call time through `ResolveNamedBinding(const Flux_ShaderReflection*, const char*)`, and grants `friend class Zenith_UnitTests` so a unit can call the resolver with a synthetic reflection. The binding-model overhaul made `Flux_BindingHandle&` the API: a handle is resolved once from reflection, so a by-name call per bind is both slower and a second way to spell the same thing.
+
+Remove every `const char* szName` overload; migrate any remaining caller in engine or games to a `Flux_BindingHandle` resolved at setup; delete `ResolveNamedBinding` and the `Zenith_UnitTests` friend declaration once nothing needs them, and move whatever the resolver unit proved onto the handle-resolution path so the coverage is not lost. Shader validation (`shader-validation.yml`'s local equivalent in the Flux binding-validation units) is the guard that a binding that used to resolve by name still resolves by handle.
+
+## Definition of Done
+- [ ] No `const char*` binding overload remains on `Flux_ShaderBinder`; every engine and game caller binds through `Flux_BindingHandle`
+- [ ] `ResolveNamedBinding` and the `Zenith_UnitTests` friend declaration are deleted, and the resolver's unit coverage lives on the handle path
+- [ ] Every game builds and its render tests pass; binding validation units green
+- [ ] Every game's pinned baseline bumped from an OBSERVED run
