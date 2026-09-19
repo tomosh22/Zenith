@@ -15,8 +15,8 @@ storyPoints: 2
 position: 6
 labels: ["needs-human","question"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:55:04.138Z"
+blocks: [{"key":"DP-7","reason":"The spike imports along the route the ruling chooses (Mixamo drop vs shared StickFigure rig); running it before the ruling would spike the wrong route."}]
+updatedAt: "2026-09-19T17:58:30.307Z"
 flagged: false
 severity: null
 reproducibility: null
