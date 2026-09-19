@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 6: Flux_Graphics and the Vulkan backend statics"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 33
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-34","reason":"Inventory phase order: the subsystems receive their dependencies from the Flux_Renderer shell phase 6 creates."}]
-updatedAt: "2026-09-19T17:39:21.911Z"
+updatedAt: "2026-09-19T17:42:08.179Z"
 flagged: false
 severity: null
 reproducibility: null
