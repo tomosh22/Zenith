@@ -18,10 +18,18 @@ const source=name=>{
   hashes[name+'.ts']=createHash('sha256').update(bytes).digest('hex');
   return bytes.toString('utf8');
 };
+// Per-file trailing note appended to the generated header, for a pointer that
+// would otherwise get lost the moment this script's own output overwrites a
+// hand-added comment in the vendored file.
+const HEADER_NOTES={
+  routing:'// config.routing here is DATA supplied by the caller: Tools/Vault/cli/compat.mjs\'s policyOf()/legacyConfigOf() load it from vault.config.json\'s policy.board.routing and pass it in.',
+};
 async function emit(name,text) {
   const transformed=await transform(text,{loader:'ts',format:'esm',target:'node22'});
   const code=transformed.code.replace(/from "\.\/(ticket|routing|guardrails|config)"/g,'from "./$1.mjs"');
-  writeFileSync(path.join(out,name+'.mjs'),'// Generated from the upstream read-only policy helpers; see provenance.json. No DB or network imports.\n'+code);
+  const header='// Generated from the upstream read-only policy helpers; see provenance.json. No DB or network imports.\n'
+    +(HEADER_NOTES[name]?HEADER_NOTES[name]+'\n':'');
+  writeFileSync(path.join(out,name+'.mjs'),header+code);
 }
 for(const name of ['ticket','routing','guardrails']) await emit(name,source(name));
 await emit('flags', source('flags').replace("import { BoardError } from './board';", 'class BoardError extends Error {}'));

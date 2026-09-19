@@ -115,6 +115,14 @@
     "Games/Foundry/Docs/Roadmap.md",
     "Games/Foundry/Docs/TechnicalDesignDocument.md"
   ],
+  "$comment": [
+    "policy.board.routing is DATA only. Tools/Vault/cli/compat.mjs's policyOf()",
+    "loads this block and Tools/Vault/cli/legacy-pure/routing.mjs's",
+    "resolveRouting() applies it (modelByComplexity, escalated by riskEscalation,",
+    "paired with effortByComplexity) to pick a ticket's model/effort. Follow that",
+    "chain rather than re-deriving it if you need to trace where a routing value",
+    "comes from."
+  ],
   "policy": {
     "board": {
       "agentEmail": "agent@zenith.invalid",

@@ -122,7 +122,13 @@ function organizationSlugOf(index, projects) {
   return organization?.slug ?? organization?.name;
 }
 
-/** Resolve the exported policy regardless of whether callers pass vault or fixture config. */
+/**
+ * Resolve the exported policy regardless of whether callers pass vault or fixture config.
+ * Source: vault.config.json's `policy.board` block (see that file's own `$comment`
+ * for the routing sub-block specifically). `legacyConfigOf()` below reshapes this
+ * into what Tools/Vault/cli/legacy-pure/routing.mjs's resolveRouting() expects —
+ * that is the model/effort decision for a ticket; this function is not it.
+ */
 export function policyOf(index) {
   const root = configRoot(index);
   const policy = object(root.policy);
@@ -150,7 +156,11 @@ export function policyOf(index) {
   };
 }
 
-/** Config shape expected by the vendored pure helpers. */
+/**
+ * Config shape expected by the vendored pure helpers — including
+ * legacy-pure/routing.mjs's resolveRouting(), which reads `.routing.*` off
+ * whatever this returns to pick a ticket's model/effort.
+ */
 export function legacyConfigOf(index) {
   const policy = policyOf(index);
   if (Object.keys(policy.resolved).length) return policy.resolved;

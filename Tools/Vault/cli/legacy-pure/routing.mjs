@@ -1,4 +1,5 @@
 // Generated from the upstream board application's read-only policy helpers; see provenance.json. No DB or network imports.
+// config.routing here is DATA supplied by the caller: Tools/Vault/cli/compat.mjs's policyOf()/legacyConfigOf() load it from vault.config.json's policy.board.routing and pass it in.
 import {
   ConfigError,
   projectConfig
