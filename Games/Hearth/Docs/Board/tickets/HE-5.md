@@ -15,8 +15,8 @@ storyPoints: 8
 position: 5
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T19:19:23.644Z"
+blocks: [{"key":"HE-6","reason":"the human edits reference files the scaffold creates"}]
+updatedAt: "2026-09-19T19:24:03.926Z"
 flagged: false
 severity: null
 reproducibility: null
