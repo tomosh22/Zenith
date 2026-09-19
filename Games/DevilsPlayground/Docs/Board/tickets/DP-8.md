@@ -15,8 +15,8 @@ storyPoints: 13
 position: 8
 labels: []
 fixVersions: []
-blocks: [{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned.","raw":{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned."},"invalid":false},{"key":"DP-15","reason":"The 24-archetype test reports rows as instantiable only once the skinned villager path exists."}]
-updatedAt: "2026-09-19T17:59:10.075Z"
+blocks: [{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned.","raw":{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned.","raw":{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned."},"invalid":false},"invalid":false},{"key":"DP-15","reason":"The 24-archetype test reports rows as instantiable only once the skinned villager path exists.","raw":{"key":"DP-15","reason":"The 24-archetype test reports rows as instantiable only once the skinned villager path exists."},"invalid":false},{"key":"DP-18","reason":"The demo is played on the Phase 3 assets; MvpRoadmap orders 4.3.4 after Phase 3."}]
+updatedAt: "2026-09-19T17:59:14.518Z"
 flagged: false
 severity: null
 reproducibility: null
