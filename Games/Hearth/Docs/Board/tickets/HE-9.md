@@ -15,8 +15,8 @@ storyPoints: 5
 position: 9
 labels: []
 fixVersions: []
-blocks: [{"key":"HE-10","reason":"the router reads the edge lattice","raw":{"key":"HE-10","reason":"the router reads the edge lattice","raw":{"key":"HE-10","reason":"the router reads the edge lattice"},"invalid":false},"invalid":false},{"key":"HE-12","reason":"the shell is generated from the grid","raw":{"key":"HE-12","reason":"the shell is generated from the grid"},"invalid":false},{"key":"HE-19","reason":"objects occupy grid cells and slots"}]
-updatedAt: "2026-09-19T19:25:12.075Z"
+blocks: [{"key":"HE-10","reason":"the router reads the edge lattice","raw":{"key":"HE-10","reason":"the router reads the edge lattice","raw":{"key":"HE-10","reason":"the router reads the edge lattice","raw":{"key":"HE-10","reason":"the router reads the edge lattice"},"invalid":false},"invalid":false},"invalid":false},{"key":"HE-12","reason":"the shell is generated from the grid","raw":{"key":"HE-12","reason":"the shell is generated from the grid","raw":{"key":"HE-12","reason":"the shell is generated from the grid"},"invalid":false},"invalid":false},{"key":"HE-19","reason":"objects occupy grid cells and slots","raw":{"key":"HE-19","reason":"objects occupy grid cells and slots"},"invalid":false},{"key":"HE-20","reason":"build commands mutate the grid"}]
+updatedAt: "2026-09-19T19:25:16.967Z"
 flagged: false
 severity: null
 reproducibility: null
