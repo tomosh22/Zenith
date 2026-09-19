@@ -15,8 +15,8 @@ storyPoints: 8
 position: 49
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:29.824Z"
+blocks: [{"key":"ZEN-87","reason":"P0 exit lists cutaway among the P0 items."}]
+updatedAt: "2026-09-19T17:40:20.335Z"
 flagged: false
 severity: null
 reproducibility: null
