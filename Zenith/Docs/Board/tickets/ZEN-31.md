@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 5: SceneManager callback registries and the entity store"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 31
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-32","reason":"Inventory phase order: Editor statics wrap SceneManager callbacks that phase 5 re-homes."}]
-updatedAt: "2026-09-19T17:39:13.606Z"
+updatedAt: "2026-09-19T17:41:59.467Z"
 flagged: false
 severity: null
 reproducibility: null
