@@ -15,8 +15,8 @@ storyPoints: 8
 position: 9
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:55:17.118Z"
+blocks: [{"key":"DP-18","reason":"The demo is played with the real Aelfric."}]
+updatedAt: "2026-09-19T17:59:18.936Z"
 flagged: false
 severity: null
 reproducibility: null
