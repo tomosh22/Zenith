@@ -42,6 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:37:30.100Z"
 ---
 ## Goal
 
@@ -75,3 +76,7 @@ before it moved into `ZagentClient.psm1`.
 - [ ] The stale cross-reference in the board-side comment points at the file
       that actually holds the twin
 - [ ] Every affected game's pinned baseline bumped from an OBSERVED run
+
+## Comments
+
+**Closed WONT_DO 2026-09-19 by the board audit: the twin no longer exists.** The ticket asked for a check that `needsDocsTree` in `packages/agent/src/dispatch.ts` (the remote SaaS board) and `Test-NeedsDocsTree` in `Tools/zagent/ZagentClient.psm1` agree. The remote board and its docs-tree upload were retired at the Vault cutover (2026-09-16, ZEN-23): `zagent.ps1` is a dispatch shim onto `Tools/Vault/cli/client.mjs`, the board is this checkout, and no command ships a docs tree anywhere. There is one predicate now, so there is nothing to drift.
