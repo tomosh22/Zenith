@@ -258,39 +258,60 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
       G1-2. Per ZM-D-162 discipline the line is AMENDED rather than replaced.**
       **G1-1 `ZM-28` DONE 2026-08-25** -- `ZM_Gym1Placement.h`, the badge table, Fenna's
       trainer row and the Verdant Lash move/TM landed with a headless solvability proof.
-      The box stays unticked: it covers all three slices, and G1-2/G1-3 are open.)
+      The box stays unticked: it covers all three slices, and G1-2/G1-3 are open.) **Board audit 2026-09-19: G1-2 was split AGAIN into G1-2a `ZM-73` (the headless registry half, the omission that blocked the first attempt) and G1-2b `ZM-69` (the authoring boot); both wait on the four user rulings in `ZM-72`.**
+- [ ] **[ZM-72]** Rule on the four open S8 Questions rows (ZM-23 flagless arm, ZM-69 door column + U4 arm, ZM-25/26 order) -- `needs-human`; BLOCKS ZM-23, ZM-69 and ZM-73, so the S8 critical path waits on it
+- [ ] **[ZM-73]** G1-2a -- register Gym1 for load: the `ZM_SceneRegistry` row, the registry-test moves, `RGThornacreFreezeTarget` and the door needles (headless; split out of ZM-69 on 2026-09-19)
+- [ ] **[ZM-71]** Dawnmere's Trade Post and Care Center as standing buildings, in the `ZM_BuildingFacade` shape ZM-D-219 established (`needs-gpu`) -- BLOCKS **[ZM-58]**, the human "reads as a town" sign-off (ZM-D-168 item 4)
 - [ ] **[ZM-29]** `ZM_AutoTests_Slice` mini-playthrough (CB_HumanSession-style flat Act script + PROBEs, ~4-6k frames, windowed)
 
 *Gate:* mini-playthrough new-game -> Badge 1 green; manual visual playthrough sign-off. **Checkpoint before content scale-up.**
 
 ## [ZM-10] S9 -- World buildout A (XL) -- critical path
 
-- [ ] **[ZM-31]** Towns 3-6, Routes 2-8, Gyms 2-4, interiors (content = `ZM_WorldSpec` rows + recipes, not bespoke code)
+- [ ] **[ZM-31]** S9 world data (PURE): `ZM_WorldSpec` rows, connections and spawn tags for Towns 3-8, Routes 2-8, Gyms 2-4 and the interior templates -- content = `ZM_WorldSpec` rows + recipes, not bespoke code; the scenes themselves are the four region waves below (re-scoped 2026-09-19 from "Towns 3-6, Routes 2-8, Gyms 2-4, interiors")
 - [ ] **[ZM-68]** Scene-aware NPC appearance distinctness -- the invariant is global where the
       property is local **[the structural fix ZM-D-208 ruling 1 named and deferred here; the
       palette refill it took instead buys six cells and little more]**
-- [ ] **[ZM-32]** Encounter tables per route
-- [ ] **[ZM-33]** Field evolution / stones; TM items
+- [ ] **[ZM-32]** Encounter tables for Routes 2-8 (Routes 9-14 + Highcrown are **[ZM-91]** in S10)
+- [ ] **[ZM-33]** Item USE path -- bag and battle items become usable: medicine, balls consumed on throw, TMs teach, evolution stones (the "no way to USE an item" surface ZM-D-196 ruling 1 recorded; was "Field evolution / stones; TM items")
 - [ ] **[ZM-34]** Daycare / breeding / eggs (step counting on the manager)
 - [ ] **[ZM-35]** Weather zones (WorldSpec-driven, feeds battle modifiers)
 - [ ] **[ZM-36]** **`ZM_UI_Box` -- the storage screen. RE-DEFERRED HERE FROM S7 on 2026-07-29 (ZM-D-165, Q-2026-07-29-001).** `Roadmap.md:98` deferred it out of S6 with "Box is deferred to S7", and S7 was closing without it and without any re-deferral recorded -- caught by a doc audit, not by tripping over it. The storage MODEL is not outstanding: `ZM_SaveSchema` has persisted boxes **16x30** since S7 item 1 (ZM-D-136). What is missing is a presenter, in the established S6 `Source/UI/ZM_UI_*` by-value idiom (no schema change, no new ECS order, no serialization bump -- it lands whenever with zero rework). It belongs HERE because a box is only *functional* once the player can exceed a full party, which needs S9's routes and encounter tables; built earlier its only reachable state is "empty", which cannot be play-tested. **Do not let this deferral expire unremarked a second time.**
 
+- [ ] **[ZM-74]** WorldSpec-driven traversal harness -- one registration per region walks every warp edge and wins one scripted battle per route (the gate's first clause, built once)
+- [ ] **[ZM-75]** Shared Care Center and Trade Post interior templates (indices 52/53) with a recorded-origin return
+- [ ] **[ZM-76]** Route trainer rosters for Routes 2-8 (PURE) · **[ZM-77]** Townsfolk, story beats, shop stock and badge-gated wardens for Towns 3-6 / Routes 2-8 (PURE) -- both wait on **[ZM-68]** for palette headroom
+- [ ] **[ZM-78]** G2-1 Bram (Fire, Kiln Badge, Cinder Rush) · **[ZM-79]** G3-1 Maris (Water, Tide Badge, Riptide) · **[ZM-80]** G4-1 Tessa (Electric, Coil Badge, Arc Surge) -- gym data, placement headers and puzzle logic (PURE); the waves author the interiors
+- [ ] **[ZM-81]** Counter-starter rival: Vesper's six teams derive from the player's starter, rival rows 2-6 (PURE) · **[ZM-82]** relocate rival battle 1 onto Route 1 (Shortfalls 1.8-1 debt, `needs-gpu`, after ZM-26)
+- [ ] **[ZM-83]** Thornacre Town buildout -- civic buildings on the templates, housing, dressing, NPCs; ends the ZM-D-196 traversal-stub ruling (`needs-gpu`)
+- [ ] **[ZM-84]** Wave A: Route 2 + Cinderfell + Gym 2 · **[ZM-85]** Wave B: Routes 3-4 + Tidegate + Gym 3 · **[ZM-86]** Wave C: Route 5 + Gearspring + Gym 4 · **[ZM-87]** Wave D: Routes 6-8 + Milldown/Skyshear traversal stubs -- recipes, scenes, seams, dressing, one traversal row each (`needs-gpu`, chained A -> B -> C -> D)
+- [ ] **[ZM-88]** Bake-determinism check over the whole S9 bake (the gate's second clause, `needs-gpu`)
+- [ ] **[ZM-89]** Dialogue box compacts consumed lines so conversations can exceed the 8-line cap (ZM-15 tech debt scheduled here; BLOCKS ZM-77 and ZM-38)
+- [ ] **[ZM-90]** S9 milestone acceptance (`human-gate`, the sprint's designated gate)
 *Gate:* per-region automated traversal tests (every warp edge walked, one scripted battle per route); bake-determinism check (re-run tools boot -> zero diffs).
 
 ## [ZM-11] S10 -- World buildout B (XL) -- critical path
 
-- [ ] **[ZM-37]** Towns 7-11, Routes 9-15, Gyms 5-8
-- [ ] **[ZM-38]** Victory Road; League (4 Elite rooms + Champion)
-- [ ] **[ZM-39]** Full rival arc; badge-gate audit
+- [ ] **[ZM-37]** S10 world data (PURE): `ZM_WorldSpec` rows for Towns 7-12, Routes 9-14, Highcrown Pass, Gyms 5-8, the Daycare, the League Halls and the Tower -- the full 43-scene table (re-scoped 2026-09-19 from "Towns 7-11, Routes 9-15, Gyms 5-8")
+- [ ] **[ZM-38]** League Halls: Elite Four and Champion data, the gauntlet scene (index 51) and the automated Elite-4 gauntlet (`needs-gpu`); Victory Road is wave J **[ZM-103]**
+- [ ] **[ZM-39]** Full rival arc: place Vesper's battles 2-6 and their beats in one isolated pass (`needs-gpu`) · **[ZM-104]** badge-gate audit -- the progression graph from compiled data matches GDD §8 for every badge count
 
+- [ ] **[ZM-91]** Encounter tables for Routes 9-14 + Highcrown; every COMMON and UNCOMMON species reachable · **[ZM-92]** Route trainer rosters for Routes 9-14 + Highcrown (PURE) · **[ZM-93]** Townsfolk, story beats, shop stock and wardens for Towns 7-12 / Routes 9-15 (PURE)
+- [ ] **[ZM-94]** G5-1 Aquilo (Sky, Gale Badge, Shearwind) · **[ZM-95]** G6-1 Morwenna (Phantom, Wisp Badge, Grave Chill) · **[ZM-96]** G7-1 Halvard (Ice, Rime Badge, Frostbind) · **[ZM-97]** G8-1 Vardis (Drake, Crest Badge, Wyrmsurge) -- gym data, placement headers and puzzle logic (PURE)
+- [ ] **[ZM-98]** Wave E: Milldown Crossing + Daycare interior · **[ZM-99]** Wave F: Skyshear + Route 9 + Gym 5 · **[ZM-100]** Wave G: Umbermoor + Route 10 + Gym 6 · **[ZM-101]** Wave H: Frostvale + Routes 11-12 + Gym 7 · **[ZM-102]** Wave I: Stonereach + Routes 13-14 + Gym 8 · **[ZM-103]** Wave J: Highcrown Pass (Victory Road) + Zenith Gate (`needs-gpu`, chained E -> J)
+- [ ] **[ZM-105]** S10 milestone acceptance (`human-gate`, the sprint's designated gate)
 *Gate:* traversal tests for all remaining scenes; automated Elite-4 gauntlet with overleveled scripted team.
 
 ## [ZM-12] S11 -- Post-game (M) -- parallel with late S10
 
 - [ ] **[ZM-40]** Champion rematch row
-- [ ] **[ZM-41]** Battle Tower (interior scene + streak/rental logic + AI escalation, boss every 7th)
+- [ ] **[ZM-41]** Battle Tower: the scene (index 95), the lobby and the streak run with the automated 7-battle tower run (`needs-gpu`) · **[ZM-107]** rental squad picker, results/BP presenter and BP shop
 - [ ] **[ZM-42]** Balance pass driven by headless AI-vs-AI simulation stats
 
+- [ ] **[ZM-106]** Post-game unlock beat: credits, Mom's trainer card and story, the flag that opens the rematch and the Tower (`needs-gpu`)
+- [ ] **[ZM-108]** Legendary encounters -- Zenaris, Nadirath, roaming Equinara (`deferred` + `question`: Scope §1 lists only rematch + Tower; needs a Scope §4 ruling first)
+- [ ] **[ZM-109]** Battle-engine fidelity deferrals from Shortfalls 1.2 (ball bonuses, high-crit fold, self-target secondary on a KO) -- ZM-15 tech debt scheduled here; BLOCKS the balance pass
+- [ ] **[ZM-110]** S11 milestone acceptance (`human-gate`, the sprint's designated gate)
 *Gate:* headless 100-streak simulation invariants; automated 7-battle tower run.
 
 ## [ZM-13] S12 -- Full playthrough & hardening (L) -- critical path
@@ -300,6 +321,8 @@ sign-off.** Observed at closure: headless **49 passed / 0 failed**, full windowe
 - [ ] **[ZM-45]** Perf pass (grass counts vs 2M cap, load times, suite runtime <= budget)
 - [ ] **[ZM-46]** Save-migration audit; fix backlog
 
+- [ ] **[ZM-111]** Ship-candidate configuration matrix: every win64 config builds and boots, D3D12 link proof, packaged build runs
+- [ ] **[ZM-112]** S12 milestone acceptance -- the SHIP gate (`human-gate`, the sprint's designated gate)
 *Gate:* full suite green + playthrough bot completes + budgets met.
 
 ---
@@ -314,14 +337,14 @@ scheduled, blocked or reported on. See [Board.md](Board.md) §2.
   **[ZM-47]** E6 (terrain extent is a compile-time constant), **[ZM-48]** E7 (runtime
   navmesh, option B). **[ZM-49]** E8's TIER 1 (ground-height query) landed 2026-08-21;
   TIER 2 (authoring-time query, needs the heightfield) is still open. E1-E5 are
-  RESOLVED.
-- **[ZM-15] Tech debt & shortfalls** — [Shortfalls.md](Shortfalls.md) sections 1 and 3.
+  RESOLVED. **[ZM-113]** E8 TIER 2 (authoring-time ground query off the baked heightfield) filed 2026-09-19.
+- **[ZM-15] Tech debt & shortfalls** — [Shortfalls.md](Shortfalls.md) sections 1 and 3. Open: **[ZM-89]** the dialogue 8-line cap (scheduled in S9), **[ZM-109]** the three battle-fidelity deferrals (scheduled in S11), **[ZM-115]** the pad-vs-shelf recipe lint, **[ZM-116]** the shared scene-dressing contract for tree clumps.
 - **[ZM-16] Open questions** — the `[OPEN]` entries in [Questions.md](Questions.md),
   including **[ZM-51]** (the player is always `ZM_HUMAN_PLAYER_M`) and **[ZM-52]**
-  (other games' `.zscen` and the LFS question).
+  (other games' `.zscen` and the LFS question). **[ZM-114]** batches the nine other `[OPEN]` best-guess entries for ratification.
 - **[ZM-17] Test infrastructure & gates** — the unit gate and its four pinned sites.
 - **[ZM-18] Visual polish debt** — the open ZM-D-168 audit items, including
-  **[ZM-60]** the camera cut for the trainer spotted beat.
+  **[ZM-60]** the camera cut for the trainer spotted beat. Also **[ZM-59]** the NPC palette rendered-separation re-measure, and **[ZM-63]** (PlayerHome tint), CLOSED by ZM-D-220.
 
 *These have no stage gate.* They are scheduled against sprints and releases on the
 board, not against S0-S12.
