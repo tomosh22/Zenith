@@ -15,8 +15,8 @@ storyPoints: 8
 position: 46
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."},"invalid":false},"invalid":false},{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist.","raw":{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist."},"invalid":false},{"key":"ZEN-87","reason":"P0 acceptance runs at a device tier."}]
-updatedAt: "2026-09-19T17:42:44.054Z"
+blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."},"invalid":false},"invalid":false},"invalid":false},{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist.","raw":{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist.","raw":{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist."},"invalid":false},"invalid":false},{"key":"ZEN-87","reason":"P0 acceptance runs at a device tier.","raw":{"key":"ZEN-87","reason":"P0 acceptance runs at a device tier."},"invalid":false},{"key":"UV-50","reason":"device tiers are engine work"}]
+updatedAt: "2026-09-19T19:16:52.267Z"
 flagged: false
 severity: null
 reproducibility: null
