@@ -15,8 +15,8 @@ storyPoints: 8
 position: 64
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:25.614Z"
+blocks: [{"key":"HE-49","reason":"the string table is engine work"}]
+updatedAt: "2026-09-19T19:30:07.685Z"
 flagged: false
 severity: null
 reproducibility: null
