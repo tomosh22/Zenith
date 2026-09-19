@@ -5,7 +5,7 @@ type: "STORY"
 title: "AAB and install-time Play Asset Delivery packaging: zenith package grows an Android target"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 59
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance installs the AAB the packaging target produces."}]
-updatedAt: "2026-09-19T17:41:06.174Z"
+updatedAt: "2026-09-19T17:43:40.009Z"
 flagged: false
 severity: null
 reproducibility: null
