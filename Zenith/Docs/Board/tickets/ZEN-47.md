@@ -15,8 +15,8 @@ storyPoints: 8
 position: 47
 labels: ["engine-gap","needs-human"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:22.420Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance includes suspend/resume, which is the surface-recreation result."}]
+updatedAt: "2026-09-19T17:40:11.984Z"
 flagged: false
 severity: null
 reproducibility: null
