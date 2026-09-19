@@ -15,8 +15,8 @@ storyPoints: 3
 position: 42
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-87","reason":"P0 acceptance renders through the ortho camera."}]
-updatedAt: "2026-09-19T17:42:28.117Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance renders through the ortho camera.","raw":{"key":"ZEN-87","reason":"P0 acceptance renders through the ortho camera."},"invalid":false},{"key":"UV-21","reason":"the ortho camera needs the public initialiser and the Vulkan Y-flip"}]
+updatedAt: "2026-09-19T19:13:12.421Z"
 flagged: false
 severity: null
 reproducibility: null
