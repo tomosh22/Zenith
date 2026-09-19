@@ -3,7 +3,7 @@ key: ZEN-10
 type: TASK
 title: Move mip load bias out of Vulkan and into Flux
 category: Engine
-parent: null
+parent: "ZEN-25"
 sprint: null
 status: "Done"
 assignee: "agent@zenith.invalid"
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: 1
   reproducibility: null
-updatedAt: "2026-09-19T14:04:38.679Z"
+updatedAt: "2026-09-19T18:03:47.574Z"
 claimAttempt: null
 ---
 ## Goal
