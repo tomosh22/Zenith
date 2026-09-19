@@ -5,7 +5,7 @@ type: "STORY"
 title: "Skinned-path headroom: skip culled instances, size palettes to the rig, no per-frame heap churn"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 56
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."}]
-updatedAt: "2026-09-19T17:40:53.581Z"
+updatedAt: "2026-09-19T17:43:28.072Z"
 flagged: false
 severity: null
 reproducibility: null
