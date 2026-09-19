@@ -5,7 +5,7 @@ title: Nothing checks that the twinned needsDocsTree rule agrees across client a
 category: Engine
 parent: null
 sprint: null
-status: To Do
+status: "Done"
 assignee: null
 priority: MEDIUM
 complexity: SIMPLE
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:37:30.100Z"
+updatedAt: "2026-09-19T17:37:34.258Z"
 ---
 ## Goal
 
