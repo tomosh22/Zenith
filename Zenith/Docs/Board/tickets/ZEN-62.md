@@ -15,8 +15,8 @@ storyPoints: 8
 position: 62
 labels: ["engine-gap","deferred"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:18.109Z"
+blocks: [{"key":"HE-39","reason":"VAT crossfade and normals are engine work"}]
+updatedAt: "2026-09-19T19:28:18.510Z"
 flagged: false
 severity: null
 reproducibility: null
