@@ -12,7 +12,7 @@ complexity: COMPLEX
 risk: HIGH
 storyPoints: 13
 position: 8
-labels: []
+labels: ["human-gate","needs-gpu","gpu-reason:visual-measure"]
 fixVersions: []
 blocks: []
 links: []
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T20:44:31.113Z"
+updatedAt: "2026-09-19T20:50:40.769Z"
 claimAttempt: "70e84b7a-b660-4925-9434-53e9b6ff325d"
 ---
 ## Goal
