@@ -5,8 +5,8 @@ title: Move mip load bias out of Vulkan and into Flux
 category: Engine
 parent: null
 sprint: null
-status: To Do
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: LOW
 complexity: SIMPLE
 risk: MEDIUM
@@ -42,7 +42,8 @@ source:
   resolved_at: null
   story_points: 1
   reproducibility: null
-updatedAt: "2026-09-19T13:51:28.841Z"
+updatedAt: "2026-09-19T13:51:45.904Z"
+claimAttempt: "d661ed1b-1f00-49ee-91af-1b757e5144be"
 ---
 ## Goal
 
