@@ -15,8 +15,8 @@ storyPoints: 3
 position: 42
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:04.311Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance renders through the ortho camera."}]
+updatedAt: "2026-09-19T17:39:51.055Z"
 flagged: false
 severity: null
 reproducibility: null
