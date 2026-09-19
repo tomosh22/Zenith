@@ -15,8 +15,8 @@ storyPoints: 8
 position: 36
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:42.616Z"
+blocks: [{"key":"ZEN-86","reason":"The acceptance reads the allowlist total the final phase drives to zero."}]
+updatedAt: "2026-09-19T17:39:34.300Z"
 flagged: false
 severity: null
 reproducibility: null
