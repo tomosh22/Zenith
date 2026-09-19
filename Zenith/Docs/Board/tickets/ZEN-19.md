@@ -3,7 +3,7 @@ key: ZEN-19
 type: TASK
 title: Flux_ShadowsImpl::UpdateShadowMatrices should be called from within Flux_Shadows instead of in SubmitRenderWork
 category: Engine
-parent: null
+parent: "ZEN-25"
 sprint: null
 status: To Do
 assignee: null
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:19.737Z"
+updatedAt: "2026-09-19T17:38:23.812Z"
 ---
 ## Goal
 `Zenith_Core.cpp` hoists `g_xEngine.Shadows().UpdateShadowMatrices()` into the main-thread seam ("Stage 2: hoisted UpdateShadowMatrices (pre-gather)") and includes `Flux/Shadows/Flux_ShadowsImpl.h` to do it. The shadow system should own when its matrices update; the frame loop should not reach into a Flux subsystem's implementation header. `Flux_RenderViews.h` records the constraint that makes the hoist exist: cascade views activate where their constants are staged, and the gather that follows needs the matrices already computed.
