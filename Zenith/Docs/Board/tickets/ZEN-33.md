@@ -15,8 +15,8 @@ storyPoints: 13
 position: 33
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:31.565Z"
+blocks: [{"key":"ZEN-34","reason":"Inventory phase order: the subsystems receive their dependencies from the Flux_Renderer shell phase 6 creates."}]
+updatedAt: "2026-09-19T17:39:21.911Z"
 flagged: false
 severity: null
 reproducibility: null
