@@ -15,8 +15,8 @@ storyPoints: 8
 position: 46
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."}]
-updatedAt: "2026-09-19T17:39:38.457Z"
+blocks: [{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers.","raw":{"key":"ZEN-54","reason":"Render scale is the second option the tiers set; the options plumbing lands with the tiers."},"invalid":false},{"key":"ZEN-68","reason":"Local light shadows are off on the LOW tier, which needs the tier heuristic to exist."}]
+updatedAt: "2026-09-19T17:39:42.698Z"
 flagged: false
 severity: null
 reproducibility: null
