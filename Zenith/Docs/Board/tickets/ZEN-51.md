@@ -5,7 +5,7 @@ type: "TASK"
 title: "Device-gate relaxation: core plus per-enabled-feature requirements declared per project"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 51
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 acceptance boots on the emulator, which the relaxed device gate must admit."}]
-updatedAt: "2026-09-19T17:40:28.608Z"
+updatedAt: "2026-09-19T17:43:03.909Z"
 flagged: false
 severity: null
 reproducibility: null
