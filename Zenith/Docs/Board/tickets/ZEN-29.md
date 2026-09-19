@@ -15,8 +15,8 @@ storyPoints: 8
 position: 29
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:16.669Z"
+blocks: [{"key":"ZEN-30","reason":"Inventory phase order: Profiling and TaskSystem are reached by everything later, so their seam must exist first."}]
+updatedAt: "2026-09-19T17:39:05.328Z"
 flagged: false
 severity: null
 reproducibility: null
