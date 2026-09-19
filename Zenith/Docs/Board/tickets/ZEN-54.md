@@ -15,8 +15,8 @@ storyPoints: 8
 position: 54
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises render scale on the emulator."}]
-updatedAt: "2026-09-19T17:43:20.080Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises render scale on the emulator.","raw":{"key":"ZEN-88","reason":"P1 acceptance exercises render scale on the emulator."},"invalid":false},{"key":"UV-50","reason":"render scale on Android is engine work"}]
+updatedAt: "2026-09-19T19:16:47.413Z"
 flagged: false
 severity: null
 reproducibility: null
