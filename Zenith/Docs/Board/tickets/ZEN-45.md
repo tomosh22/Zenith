@@ -15,8 +15,8 @@ storyPoints: 3
 position: 45
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:15.134Z"
+blocks: [{"key":"ZEN-87","reason":"P0 exit lists the quad budget among the P0 items."}]
+updatedAt: "2026-09-19T17:40:03.663Z"
 flagged: false
 severity: null
 reproducibility: null
