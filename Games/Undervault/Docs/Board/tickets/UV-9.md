@@ -15,8 +15,8 @@ storyPoints: 5
 position: 9
 labels: ["needs-gpu","gpu-reason:visual-measure"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T19:06:10.750Z"
+blocks: [{"key":"UV-10","reason":"the device run executes the harness"}]
+updatedAt: "2026-09-19T19:12:08.268Z"
 flagged: false
 severity: null
 reproducibility: null
