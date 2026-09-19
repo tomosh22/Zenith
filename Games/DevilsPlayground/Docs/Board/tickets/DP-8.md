@@ -15,8 +15,8 @@ storyPoints: 13
 position: 8
 labels: []
 fixVersions: []
-blocks: [{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned."}]
-updatedAt: "2026-09-19T17:58:52.355Z"
+blocks: [{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned.","raw":{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned."},"invalid":false},{"key":"DP-15","reason":"The 24-archetype test reports rows as instantiable only once the skinned villager path exists."}]
+updatedAt: "2026-09-19T17:59:10.075Z"
 flagged: false
 severity: null
 reproducibility: null
