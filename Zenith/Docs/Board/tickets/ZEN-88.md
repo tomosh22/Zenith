@@ -5,7 +5,7 @@ type: "TASK"
 title: "Mobile P1 acceptance: an AAB installs and runs on the emulator; Android CI green"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 88
 labels: ["human-gate"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:57.374Z"
+updatedAt: "2026-09-19T17:43:51.964Z"
 flagged: false
 severity: null
 reproducibility: null
