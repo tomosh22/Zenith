@@ -15,8 +15,8 @@ storyPoints: 13
 position: 34
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:35.169Z"
+blocks: [{"key":"ZEN-35","reason":"Inventory phase order: games reach engine subsystems through the seams phases 3b to 7 establish."}]
+updatedAt: "2026-09-19T17:39:26.027Z"
 flagged: false
 severity: null
 reproducibility: null
