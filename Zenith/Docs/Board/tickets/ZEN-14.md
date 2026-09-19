@@ -3,7 +3,7 @@ key: ZEN-14
 type: TASK
 title: Zenith library source files must be in their own dedicated directories
 category: Engine
-parent: null
+parent: "ZEN-24"
 sprint: null
 status: To Do
 assignee: null
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:37:50.729Z"
+updatedAt: "2026-09-19T17:37:54.945Z"
 ---
 ## Goal
 The leaf libraries (ZenithECS, ZenithPhysics, ZenithAI) keep their source files under the main `Zenith/` tree, so the aggregate `Zenith` project's source glob SEES them and `Build/Sharpmake_Zenith.cs` has to build-exclude them by regex (`SourceFilesBuildExcludeRegex.Add(@".*\\ZenithECS\\.*\.cpp$")` and the equivalent Physics and AI exclusions). Files a library does not own should not be in its directory in the first place.
