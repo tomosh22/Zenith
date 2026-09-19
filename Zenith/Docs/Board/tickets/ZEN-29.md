@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 3b: TaskSystem and Profiling off g_xEngine"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 29
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-30","reason":"Inventory phase order: Profiling and TaskSystem are reached by everything later, so their seam must exist first."}]
-updatedAt: "2026-09-19T17:39:05.328Z"
+updatedAt: "2026-09-19T17:41:51.314Z"
 flagged: false
 severity: null
 reproducibility: null
