@@ -5,7 +5,7 @@ type: "TASK"
 title: "Rule on the villager rig source: Mixamo drop, or the engine's shared StickFigure rig through the glb importer"
 category: "DevilsPlayground"
 parent: "DP-1"
-sprint: null
+sprint: "dp-dp-mvp-phase-3-assets-and-acceptance"
 status: "To Do"
 assignee: null
 priority: "CRITICAL"
@@ -16,7 +16,7 @@ position: 6
 labels: ["needs-human","question"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:51:16.654Z"
+updatedAt: "2026-09-19T17:55:04.138Z"
 flagged: false
 severity: null
 reproducibility: null
