@@ -15,8 +15,8 @@ storyPoints: 8
 position: 35
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:38.728Z"
+blocks: [{"key":"ZEN-36","reason":"The removal sweep can only delete static APIs nothing reaches; phase 8 removes the last game-side reaches."}]
+updatedAt: "2026-09-19T17:39:30.140Z"
 flagged: false
 severity: null
 reproducibility: null
