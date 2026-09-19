@@ -15,8 +15,8 @@ storyPoints: 3
 position: 52
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."}]
-updatedAt: "2026-09-19T17:43:12.017Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item.","raw":{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."},"invalid":false},{"key":"UV-51","reason":"the 9-slice widget is engine work"}]
+updatedAt: "2026-09-19T19:17:11.656Z"
 flagged: false
 severity: null
 reproducibility: null
