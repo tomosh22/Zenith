@@ -179,8 +179,50 @@ export function unexplainedExcursions(excursions, explanationText) {
  * `missingFromCommit` is `null` (never an empty array) when there was
  * nothing recorded to compare against — that is "unverified", not "clean",
  * and a caller must not read the two the same way.
+ *
+ * ★ THE COMMIT CHECKED IS THE TICKET'S OWN, NOT `HEAD`, AND THAT DISTINCTION
+ * IS LOAD-BEARING. This check read `HEAD` unconditionally, which is only the
+ * ticket's commit when nothing has committed since — and on the Vault backend
+ * the board commits to THIS SAME repository, so an ordinary `zagent decide`
+ * between the ticket's commit and its `finish` moves `HEAD` onto a
+ * `board: decide` commit touching only `metadata.md`. Every one of the
+ * ticket's files then reads as missing, and the refusal blames the
+ * `commit -am` failure mode — naming files that are, in fact, committed.
+ *
+ * That is not a corner case: tick.md step 8 REQUIRES a `Durable findings`
+ * answer naming either "none" or a `PROJ-D-N` reference, and the only way to
+ * get such a reference is `zagent decide`, which must run BEFORE the work log
+ * citing it is finished. So the two mandatory halves of step 8 refused each
+ * other, and a fully green ticket could not be closed. Measured on ZEN-7.
+ *
+ * The ticket's commit is found by the subject convention tick.md step 7
+ * mandates — `<KEY>: <title>`, or `WIP(<KEY>): <title> — GATES RED` for the
+ * red-park path — taking the most recent match. When no such commit exists
+ * (a hand-run tick, a different message) it falls back to `HEAD`, which is
+ * the previous behaviour; `resolvedFrom` says which happened, so "checked the
+ * ticket's commit" and "checked whatever HEAD was" stay distinguishable, per
+ * this module's fail-closed convention.
  */
-export async function commitCompleteness({ repoRoot, key, sha = 'HEAD' }) {
+async function ticketCommitSha(repoRoot, key) {
+  try {
+    const { stdout } = await execFile(
+      'git', ['-C', repoRoot, 'log', '--format=%H%x1f%s', '-n', '200'], { encoding: 'utf8' },
+    );
+    const prefixes = [`${key}:`, `WIP(${key}):`];
+    for (const line of stdout.split(/\r?\n/)) {
+      const sep = line.indexOf('\x1f');
+      if (sep < 0) continue;
+      const subject = line.slice(sep + 1).trimStart();
+      if (prefixes.some(prefix => subject.startsWith(prefix))) return line.slice(0, sep);
+    }
+  } catch {
+    // An unreadable log is not this check's failure to report; fall back to
+    // HEAD and let the diff-tree call below produce the real error.
+  }
+  return null;
+}
+
+export async function commitCompleteness({ repoRoot, key, sha = null }) {
   const changedPath = path.join(repoRoot, '.zagent', 'run', String(key), 'changed.txt');
   const recorded = await readPathListFile(changedPath);
   if (recorded === null || recorded.length === 0) {
@@ -192,14 +234,19 @@ export async function commitCompleteness({ repoRoot, key, sha = 'HEAD' }) {
         : `changed.txt at ${changedPath} is empty — nothing was recorded as changed, so there is nothing to check the commit against`,
     };
   }
+  const resolved = sha ?? await ticketCommitSha(repoRoot, key);
+  const resolvedFrom = sha ? 'caller' : (resolved ? 'ticket-commit' : 'head-fallback');
+  const target = resolved ?? 'HEAD';
+
   let committed;
   try {
-    const { stdout } = await execFile('git', ['-C', repoRoot, 'diff-tree', '--no-commit-id', '--name-only', '-r', sha], { encoding: 'utf8' });
+    const { stdout } = await execFile('git', ['-C', repoRoot, 'diff-tree', '--no-commit-id', '--name-only', '-r', target], { encoding: 'utf8' });
     committed = stdout.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
   } catch (error) {
     return {
       key, ok: false, recordedFound: true, recorded, committed: [], missingFromCommit: null, extraInCommit: null,
-      reason: `'git diff-tree' against '${sha}' failed — ${error.message}`,
+      sha: target, resolvedFrom,
+      reason: `'git diff-tree' against '${target}' failed — ${error.message}`,
     };
   }
   const committedSet = new Set(committed);
@@ -209,8 +256,10 @@ export async function commitCompleteness({ repoRoot, key, sha = 'HEAD' }) {
     key, ok: missing.length === 0, recordedFound: true, recorded, committed,
     missingFromCommit: missing,
     extraInCommit: committed.filter(value => !recordedSet.has(value)),
+    sha: target, resolvedFrom,
     reason: missing.length
-      ? `commit '${sha}' is missing ${missing.length} file(s) changed.txt recorded — the 'commit -am' failure mode: a CREATED file silently left behind`
+      ? `commit '${target}'${resolvedFrom === 'head-fallback' ? " (HEAD — no commit subject names this ticket, so this may not be the ticket's commit)" : ''}`
+        + ` is missing ${missing.length} file(s) changed.txt recorded — the 'commit -am' failure mode: a CREATED file silently left behind`
       : null,
   };
 }

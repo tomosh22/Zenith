@@ -179,6 +179,64 @@ test('commitCompleteness: absent/empty changed.txt is UNVERIFIED; a dropped file
   const complete = await commitCompleteness({ repoRoot: root, key: 'FD-1' });
   assert.equal(complete.ok, true);
   assert.deepEqual(complete.missingFromCommit, []);
+  // No commit subject names FD-1, so this fell back to HEAD — and says so.
+  assert.equal(complete.resolvedFrom, 'head-fallback');
+});
+
+test("commitCompleteness: checks the TICKET's commit, not HEAD, so a board commit in between does not read as a dropped file", async t => {
+  const root = await tempRepo(t);
+  await fs.writeFile(path.join(root, 'seed.txt'), 'seed\n');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-qm', 'seed']);
+
+  // The ticket's own commit, named the way tick.md step 7 mandates.
+  await fs.writeFile(path.join(root, 'src.txt'), 'work\n');
+  await fs.writeFile(path.join(root, 'created.txt'), 'new\n');
+  await writeRun(root, 'FD-2', 'changed.txt', 'src.txt\ncreated.txt\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-qm', 'FD-2: the work']);
+
+  // ...then `zagent decide` commits to this SAME repo before `finish` runs,
+  // which is the mandated order: step 8's work log must cite the reference
+  // that `decide` produces. HEAD is now a board commit touching one file.
+  await fs.writeFile(path.join(root, 'metadata.md'), 'rows\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-qm', 'board: decide']);
+
+  const afterBoardCommit = await commitCompleteness({ repoRoot: root, key: 'FD-2' });
+  assert.equal(afterBoardCommit.ok, true, 'the ticket committed everything; a later board commit must not read as a drop');
+  assert.deepEqual(afterBoardCommit.missingFromCommit, []);
+  assert.equal(afterBoardCommit.resolvedFrom, 'ticket-commit');
+
+  // The red-park path uses a different subject and must resolve too.
+  await fs.writeFile(path.join(root, 'wip.txt'), 'partial\n');
+  await writeRun(root, 'FD-3', 'changed.txt', 'wip.txt\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-qm', 'WIP(FD-3): the work — GATES RED']);
+  await fs.writeFile(path.join(root, 'metadata.md'), 'more rows\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-qm', 'board: comment']);
+
+  const wip = await commitCompleteness({ repoRoot: root, key: 'FD-3' });
+  assert.equal(wip.ok, true);
+  assert.equal(wip.resolvedFrom, 'ticket-commit');
+
+  // And a genuine drop is still caught through the same resolution.
+  await fs.writeFile(path.join(root, 'tracked2.txt'), 'seed\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-qm', 'seed tracked2']);
+  await fs.writeFile(path.join(root, 'tracked2.txt'), 'modified\n');
+  await fs.writeFile(path.join(root, 'dropped.txt'), 'never staged\n');
+  await writeRun(root, 'FD-4', 'changed.txt', 'tracked2.txt\ndropped.txt\n');
+  await git(root, ['commit', '-qam', 'FD-4: forgot the new file']);
+  await fs.writeFile(path.join(root, 'metadata.md'), 'yet more\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-qm', 'board: decide']);
+
+  const stillCaught = await commitCompleteness({ repoRoot: root, key: 'FD-4' });
+  assert.equal(stillCaught.ok, false);
+  assert.deepEqual(stillCaught.missingFromCommit, ['dropped.txt']);
+  assert.equal(stillCaught.resolvedFrom, 'ticket-commit');
 });
 
 test('blockedScopeAllowed: red exit codes refuse, exit 10 and green and absent all allow, unparsable refuses', async t => {
