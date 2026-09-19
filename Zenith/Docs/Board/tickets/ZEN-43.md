@@ -5,7 +5,7 @@ type: "STORY"
 title: "Zenith_Gestures: tap, long-press, drag, flick, pinch and two-finger pan over the pointer table and claims"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 43
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 acceptance drives the camera by gesture on the emulator."}]
-updatedAt: "2026-09-19T17:39:55.174Z"
+updatedAt: "2026-09-19T17:42:32.069Z"
 flagged: false
 severity: null
 reproducibility: null
