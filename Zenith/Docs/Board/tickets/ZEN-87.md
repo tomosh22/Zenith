@@ -15,8 +15,8 @@ storyPoints: 2
 position: 87
 labels: ["human-gate"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:36:53.464Z"
+blocks: [{"key":"ZEN-52","reason":"P1 starts after P0 is accepted (Hearth TDD phase order)."}]
+updatedAt: "2026-09-19T17:40:32.732Z"
 flagged: false
 severity: null
 reproducibility: null
