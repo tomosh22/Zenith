@@ -28,6 +28,26 @@ function isAllowedMsaaFalsePositive(relPath) {
   return ALLOWED_MSAA_PREFIXES.some(prefix => normalised.startsWith(prefix));
 }
 
+// This file necessarily contains the very string it hunts for, so it must
+// exempt itself or it fails the moment it is committed.
+//
+// ★ That is not hypothetical: every run before the first commit PASSED,
+// because `git grep` only searches TRACKED files and the new test was still
+// untracked. It went red on the next run for no reason connected to the
+// repo's actual contents. A check whose result depends on whether it has been
+// committed yet is worse than no check, because it looks green exactly when
+// you are deciding to commit it.
+//
+// Derived from `import.meta.url` rather than hardcoded, so renaming or moving
+// this file cannot silently re-break it.
+const SELF_RELATIVE_PATH = path
+  .relative(repoRoot, fileURLToPath(import.meta.url))
+  .replace(/\\/g, '/');
+
+function isSelf(relPath) {
+  return relPath.replace(/\\/g, '/') === SELF_RELATIVE_PATH;
+}
+
 test('no tracked file mentions the retired "saas" repo name', () => {
   let stdout;
   try {
@@ -58,7 +78,7 @@ test('no tracked file mentions the retired "saas" repo name', () => {
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)
-    .filter(relPath => !isAllowedMsaaFalsePositive(relPath));
+    .filter(relPath => !isAllowedMsaaFalsePositive(relPath) && !isSelf(relPath));
 
   assert.deepEqual(
     offenders,
@@ -76,4 +96,15 @@ test('the MSAA allowlist itself stays narrow and does not swallow a real hit', (
   assert.equal(isAllowedMsaaFalsePositive('Zenith\\Vulkan\\Zenith_Vulkan.cpp'), true);
   assert.equal(isAllowedMsaaFalsePositive('Tools/Vault/shared/jira/board.js'), false);
   assert.equal(isAllowedMsaaFalsePositive('Zenith/VulkanExtra/not_really_vulkan.cpp'), false);
+});
+
+test('the self-exemption matches this file and nothing else', () => {
+  // Pins the exemption to exactly one path. If it ever widened to a prefix or
+  // a directory it would hide a real hit in a sibling test, which is the only
+  // way this guard can fail silently rather than loudly.
+  assert.equal(isSelf(SELF_RELATIVE_PATH), true);
+  assert.equal(isSelf(SELF_RELATIVE_PATH.replace(/\\/g, '/')), true);
+  assert.equal(isSelf('Tools/Vault/test/saas-guard-other.test.mjs'), false);
+  assert.equal(isSelf('Tools/Vault/shared/jira/board.js'), false);
+  assert.match(SELF_RELATIVE_PATH, /^Tools\/Vault\/test\//);
 });
