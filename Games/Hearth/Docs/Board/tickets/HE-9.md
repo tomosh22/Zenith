@@ -15,8 +15,8 @@ storyPoints: 5
 position: 9
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T19:19:41.751Z"
+blocks: [{"key":"HE-10","reason":"the router reads the edge lattice"}]
+updatedAt: "2026-09-19T19:24:23.550Z"
 flagged: false
 severity: null
 reproducibility: null
