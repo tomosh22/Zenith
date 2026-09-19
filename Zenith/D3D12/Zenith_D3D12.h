@@ -33,9 +33,9 @@ class Zenith_D3D12_Sampler
 public:
 	Zenith_D3D12_Sampler() = default;
 
-	static void InitialiseRepeat(Zenith_D3D12_Sampler& /*xSampler*/) { }
-	static void InitialiseClamp(Zenith_D3D12_Sampler& /*xSampler*/) { }
-	static void InitialisePointClamp(Zenith_D3D12_Sampler& /*xSampler*/) { }
+	static void InitialiseRepeat(Zenith_D3D12_Sampler& /*xSampler*/, float /*fMipLodBias*/) { }
+	static void InitialiseClamp(Zenith_D3D12_Sampler& /*xSampler*/, float /*fMipLodBias*/) { }
+	static void InitialisePointClamp(Zenith_D3D12_Sampler& /*xSampler*/, float /*fMipLodBias*/) { }
 };
 
 // ----------------------------------------------------------------------------

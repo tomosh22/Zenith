@@ -118,9 +118,20 @@ DEBUGVAR float dbg_fTAARenderScale = 1.0f;
 
 void Flux_GraphicsImpl::InitialiseSamplers()
 {
-	Flux_Sampler::InitialiseRepeat(m_xRepeatSampler);
-	Flux_Sampler::InitialiseClamp(m_xClampSampler);
-	Flux_Sampler::InitialisePointClamp(m_xPointSampler);
+	// Mip-LOD bias is a Flux-level decision, not a backend one: TAA ships ON by
+	// default and resolves the sub-texel aliasing a sharper mip pick would
+	// otherwise show as crawling speckle, so the filtered (repeat/clamp)
+	// material samplers take back the half-mip of detail a box-filtered mip
+	// chain blurs away (the standard TAA sharpening bias; every offline .ztxtr
+	// mip chain is a box filter). The point-clamp sampler stays at 0: a
+	// nearest-filtered data read (e.g. a VAT position texture) wants the exact
+	// level, not a sharper one.
+	constexpr float kfFilteredSamplerMipLodBias = -0.5f;
+	constexpr float kfPointSamplerMipLodBias    = 0.0f;
+
+	Flux_Sampler::InitialiseRepeat(m_xRepeatSampler, kfFilteredSamplerMipLodBias);
+	Flux_Sampler::InitialiseClamp(m_xClampSampler, kfFilteredSamplerMipLodBias);
+	Flux_Sampler::InitialisePointClamp(m_xPointSampler, kfPointSamplerMipLodBias);
 }
 
 void Flux_GraphicsImpl::Initialise()

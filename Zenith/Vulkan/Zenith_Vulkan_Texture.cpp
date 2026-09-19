@@ -27,7 +27,7 @@ void Zenith_Vulkan_Texture::Reset()
 // callers and have been removed. Use the Zenith_Vulkan:: versions.
 
 static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddressMode eAddressMode,
-	vk::Filter eFilter = vk::Filter::eLinear, bool bAnisotropic = true)
+	float fMipLodBias, vk::Filter eFilter = vk::Filter::eLinear, bool bAnisotropic = true)
 {
 	const vk::Device& xDevice = g_xEngine.FluxBackend().GetDevice();
 	// Anisotropic filtering: the device feature is enabled at init
@@ -35,18 +35,18 @@ static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddres
 	// previously sampled trilinear-only, blurring + shimmering all textures at
 	// grazing angles -- a top-tier non-photoreal tell. 16x is universally
 	// supported on desktop Vulkan (maxSamplerAnisotropy >= 16).
-	// Mip-LOD bias is -0.5 on the filtered samplers: TAA ships ON by default and
-	// resolves the sub-texel aliasing a sharper mip pick would otherwise show as
-	// crawling speckle, so the material samplers take back the half-mip of
-	// detail a box-filtered chain blurs away (the standard TAA sharpening bias;
-	// every offline .ztxtr mip chain is a box filter). The POINT sampler stays
-	// at 0: a nearest-filtered data read wants the exact level, not a sharper
-	// one. eFilter/bAnisotropic let DATA textures opt into NEAREST/no-aniso
-	// reads (a VAT position texture must be sampled EXACTLY — see
-	// InitialisePointClamp).
+	// Mip-LOD bias is decided by the Flux-level caller and passed in as
+	// fMipLodBias (see Flux_Graphics.cpp): -0.5 on the filtered samplers, since
+	// TAA ships ON by default and resolves the sub-texel aliasing a sharper mip
+	// pick would otherwise show as crawling speckle, so the material samplers
+	// take back the half-mip of detail a box-filtered chain blurs away (the
+	// standard TAA sharpening bias; every offline .ztxtr mip chain is a box
+	// filter). The POINT sampler stays at 0: a nearest-filtered data read wants
+	// the exact level, not a sharper one. eFilter/bAnisotropic let DATA textures
+	// opt into NEAREST/no-aniso reads (a VAT position texture must be sampled
+	// EXACTLY — see InitialisePointClamp).
 	const vk::SamplerMipmapMode eMipMode = (eFilter == vk::Filter::eNearest)
 		? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear;
-	const float fMipLodBias = (eFilter == vk::Filter::eNearest) ? 0.0f : -0.5f;
 	vk::SamplerCreateInfo xInfo = vk::SamplerCreateInfo()
 		.setMagFilter(eFilter)
 		.setMinFilter(eFilter)
@@ -66,22 +66,22 @@ static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddres
 	xSampler.m_xSampler = VkUnwrap(xDevice.createSampler(xInfo));
 }
 
-void Zenith_Vulkan_Sampler::InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler)
+void Zenith_Vulkan_Sampler::InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler, float fMipLodBias)
 {
-	InitialiseSampler(xSampler, vk::SamplerAddressMode::eRepeat);
+	InitialiseSampler(xSampler, vk::SamplerAddressMode::eRepeat, fMipLodBias);
 }
 
-void Zenith_Vulkan_Sampler::InitialiseClamp(Zenith_Vulkan_Sampler& xSampler)
+void Zenith_Vulkan_Sampler::InitialiseClamp(Zenith_Vulkan_Sampler& xSampler, float fMipLodBias)
 {
-	InitialiseSampler(xSampler, vk::SamplerAddressMode::eClampToEdge);
+	InitialiseSampler(xSampler, vk::SamplerAddressMode::eClampToEdge, fMipLodBias);
 }
 
-void Zenith_Vulkan_Sampler::InitialisePointClamp(Zenith_Vulkan_Sampler& xSampler)
+void Zenith_Vulkan_Sampler::InitialisePointClamp(Zenith_Vulkan_Sampler& xSampler, float fMipLodBias)
 {
 	// NEAREST + no anisotropy + clamp: exact per-texel reads, no cross-texel
 	// blend. Required for VAT position textures (adjacent columns = different
 	// mesh vertices metres apart; a linear blend of two vertices' positions
 	// varies every frame as they animate -> visible jitter/distortion).
-	InitialiseSampler(xSampler, vk::SamplerAddressMode::eClampToEdge,
+	InitialiseSampler(xSampler, vk::SamplerAddressMode::eClampToEdge, fMipLodBias,
 		vk::Filter::eNearest, /*bAnisotropic*/ false);
 }

@@ -33,9 +33,9 @@ class Zenith_Null_Sampler
 public:
 	Zenith_Null_Sampler() = default;
 
-	static void InitialiseRepeat(Zenith_Null_Sampler& /*xSampler*/) { }
-	static void InitialiseClamp(Zenith_Null_Sampler& /*xSampler*/) { }
-	static void InitialisePointClamp(Zenith_Null_Sampler& /*xSampler*/) { }
+	static void InitialiseRepeat(Zenith_Null_Sampler& /*xSampler*/, float /*fMipLodBias*/) { }
+	static void InitialiseClamp(Zenith_Null_Sampler& /*xSampler*/, float /*fMipLodBias*/) { }
+	static void InitialisePointClamp(Zenith_Null_Sampler& /*xSampler*/, float /*fMipLodBias*/) { }
 };
 
 // ----------------------------------------------------------------------------

@@ -140,13 +140,16 @@ class Zenith_Vulkan_Sampler
 public:
 	const vk::Sampler& GetSampler() const { return m_xSampler; }
 
-	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler);
-	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler);
+	// fMipLodBias is decided by the Flux-level caller (Flux_Graphics.cpp), not
+	// derived here from the filter — see the call site for the rationale (-0.5
+	// on the filtered repeat/clamp samplers, 0.0 on the nearest point-clamp one).
+	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler, float fMipLodBias);
+	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler, float fMipLodBias);
 	// NEAREST/point filter, NO anisotropy, clamp addressing. For data textures
 	// whose texels must be read EXACTLY (e.g. VAT vertex-animation position
 	// textures: adjacent columns are different mesh vertices, adjacent rows are
 	// different frames — any linear cross-blend corrupts positions).
-	static void InitialisePointClamp(Zenith_Vulkan_Sampler& xSampler);
+	static void InitialisePointClamp(Zenith_Vulkan_Sampler& xSampler, float fMipLodBias);
 
 	vk::Sampler m_xSampler;
 };
