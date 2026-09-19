@@ -42,5 +42,34 @@ source:
   resolved_at: null
   story_points: 1
   reproducibility: null
+updatedAt: "2026-09-19T13:51:28.841Z"
 ---
-InitialiseSampler in Zenith_Vulkan_Texture.cpp is currently responsible for deciding what mip load bias a sampler should have, this decision should be made and the Flux level and passed down to Vulkan, similar to anisotropy
+## Goal
+
+`Zenith_Vulkan_Sampler::InitialiseSampler` (`Zenith\Vulkan\Zenith_Vulkan_Texture.cpp`) currently
+decides the mip load bias itself: it computes `fMipLodBias` from the `eFilter` parameter
+(`-0.5f` for the linear-filtered repeat/clamp samplers, `0.0f` for the nearest-filtered
+point-clamp sampler) and bakes it straight into the `vk::SamplerCreateInfo`. That decision
+should move up to the backend-neutral Flux level, the same way `bAnisotropic` is already an
+explicit parameter of `InitialiseSampler` rather than something the function derives on its
+own — the caller decides, Vulkan just applies it.
+
+`Flux_Graphics.cpp::Init` already makes the equivalent backend-neutral decision for which
+sampler shape to create by choosing which of `Flux_Sampler::InitialiseRepeat` /
+`InitialiseClamp` / `InitialisePointClamp` to call for `m_xRepeatSampler` / `m_xClampSampler`
+/ `m_xPointSampler`. Thread the mip load bias down through that same call path instead of
+recomputing it from `eFilter` inside the Vulkan translation layer.
+
+## Definition of Done
+
+- [ ] The mip load bias value is decided at the Flux level (`Flux_Graphics.cpp` or equivalent
+      backend-neutral call site) and passed as an explicit parameter into
+      `Flux_Sampler::InitialiseRepeat` / `InitialiseClamp` / `InitialisePointClamp`, rather than
+      `Zenith_Vulkan_Sampler::InitialiseSampler` deriving it from `eFilter` internally.
+- [ ] The `Zenith_Vulkan`, `Zenith_Null` and `Zenith_D3D12` `InitialiseRepeat` / `InitialiseClamp`
+      / `InitialisePointClamp` signatures are updated consistently so all three backends keep
+      matching signatures.
+- [ ] Behaviour is unchanged: the repeat/clamp (linear-filtered) samplers still get a -0.5 mip
+      load bias, and the point-clamp (nearest-filtered) sampler still gets 0.0.
+- [ ] Every affected game's pinned unit baseline bumped from an OBSERVED run, if the change adds
+      or removes any unit.
