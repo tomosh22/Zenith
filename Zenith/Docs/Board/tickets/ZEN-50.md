@@ -15,8 +15,8 @@ storyPoints: 3
 position: 50
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-87","reason":"P0 acceptance sets flags on the emulator through the config plumbing."}]
-updatedAt: "2026-09-19T17:42:59.979Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance sets flags on the emulator through the config plumbing.","raw":{"key":"ZEN-87","reason":"P0 acceptance sets flags on the emulator through the config plumbing."},"invalid":false},{"key":"UV-50","reason":"config overrides are engine work"}]
+updatedAt: "2026-09-19T19:16:57.140Z"
 flagged: false
 severity: null
 reproducibility: null
