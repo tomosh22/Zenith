@@ -5,7 +5,7 @@ type: "TASK"
 title: "MVP-3.0.1 skeletal-mesh import spike: one rigged villager body imports and plays a shared-rig clip in ProcLevel"
 category: "DevilsPlayground"
 parent: "DP-1"
-sprint: null
+sprint: "dp-dp-mvp-phase-3-assets-and-acceptance"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 7
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:51:20.446Z"
+updatedAt: "2026-09-19T17:55:08.435Z"
 flagged: false
 severity: null
 reproducibility: null
