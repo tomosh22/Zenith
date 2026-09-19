@@ -5,7 +5,7 @@ type: "STORY"
 title: "Cutaway rendering: per-item camera-hide and height-clip flags on the draw item"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 49
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 exit lists cutaway among the P0 items."}]
-updatedAt: "2026-09-19T17:40:20.335Z"
+updatedAt: "2026-09-19T17:42:55.971Z"
 flagged: false
 severity: null
 reproducibility: null
