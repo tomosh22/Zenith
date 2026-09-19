@@ -15,8 +15,8 @@ storyPoints: 8
 position: 43
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:07.909Z"
+blocks: [{"key":"ZEN-87","reason":"P0 acceptance drives the camera by gesture on the emulator."}]
+updatedAt: "2026-09-19T17:39:55.174Z"
 flagged: false
 severity: null
 reproducibility: null
