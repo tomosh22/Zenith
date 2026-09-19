@@ -10,7 +10,7 @@ assignee: agent@zenith.invalid
 priority: MEDIUM
 complexity: MODERATE
 risk: MEDIUM
-storyPoints: null
+storyPoints: 5
 position: 1
 labels: []
 fixVersions: []
@@ -42,6 +42,7 @@ source:
   resolved_at: 2026-08-21T15:10:40.408
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:38:48.644Z"
 ---
 ## Goal
 
