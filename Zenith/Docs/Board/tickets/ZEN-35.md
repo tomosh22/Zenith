@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 8: per-game extern globals"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 35
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-36","reason":"The removal sweep can only delete static APIs nothing reaches; phase 8 removes the last game-side reaches."}]
-updatedAt: "2026-09-19T17:39:30.140Z"
+updatedAt: "2026-09-19T17:42:16.221Z"
 flagged: false
 severity: null
 reproducibility: null
