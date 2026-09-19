@@ -15,8 +15,8 @@ storyPoints: 8
 position: 6
 labels: []
 fixVersions: []
-blocks: [{"key":"UV-7","reason":"the human edits reference files the scaffold creates"}]
-updatedAt: "2026-09-19T19:11:50.063Z"
+blocks: [{"key":"UV-7","reason":"the human edits reference files the scaffold creates","raw":{"key":"UV-7","reason":"the human edits reference files the scaffold creates"},"invalid":false},{"key":"UV-8","reason":"the docs describe a game that must exist first"}]
+updatedAt: "2026-09-19T19:11:54.710Z"
 flagged: false
 severity: null
 reproducibility: null
