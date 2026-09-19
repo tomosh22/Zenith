@@ -534,13 +534,22 @@ ZENITH_TEST(AnimationPreview, AStagedFrameRaisesSlotSixAndNeverTouchesSlotFive)
 	}
 
 	// ★ A GUARD ON THIS TEST'S OWN PREMISE. Everything below assumes slot 6 is a
-	// full-pipeline PREVIEW view the registry constructed for this purpose; if a
+	// full-pipeline preview view the registry constructed for this purpose; if a
 	// later slot-layout change moved that, the assertions would still pass while
 	// measuring the wrong view.
+	//
+	// The second clause used to read `m_eType == FLUX_RENDER_VIEW_PREVIEW`. That
+	// enumerator is gone — where a view's image GOES is no longer a KIND of view —
+	// so the premise is stated against the two things that actually make slot 6
+	// the animation preview: it runs the full pipeline, and it tonemaps into a
+	// persistent LDR of its own (the very image this panel samples). Both are what
+	// the old type stood in for.
 	ZENITH_ASSERT_TRUE(pxViews->View(kuFluxViewSlotPreviewAnim).m_bFullPipeline,
 		"slot 6 is a full-pipeline view");
-	ZENITH_ASSERT_TRUE(pxViews->View(kuFluxViewSlotPreviewAnim).m_eType == FLUX_RENDER_VIEW_PREVIEW,
-		"and a PREVIEW-typed one");
+	ZENITH_ASSERT_TRUE(pxViews->View(kuFluxViewSlotPreviewAnim).m_bOwnsPersistentLDR,
+		"and owns the persistent LDR the dope sheet draws");
+	ZENITH_ASSERT_TRUE(Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewAnim),
+		"and the slot-layout predicate agrees it is preview-class");
 
 	const bool bMaterialBefore = pxViews->IsViewActive(kuFluxViewSlotPreviewMaterial);
 	ZENITH_ASSERT_FALSE(pxViews->IsViewActive(kuFluxViewSlotPreviewAnim),

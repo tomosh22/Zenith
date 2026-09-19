@@ -31,11 +31,21 @@
 // unified cull's frustum-plane block + visible/indirect buffer slices.
 inline constexpr u_int FLUX_MAX_RENDER_VIEWS = 8u;
 
+// The KINDS of view the renderer knows how to render — what a view IS, never
+// where its image ends up. A third value, FLUX_RENDER_VIEW_PREVIEW, used to sit
+// here for the editor's two preview views, and it was the second of those things
+// wearing the clothes of the first: a preview view is not a different kind of
+// view at all, it runs the very same full pipeline the main view runs and differs
+// only in what it tonemaps INTO. That made a routing decision visible to a pass,
+// which is a question no pass should be able to ask. The destination is now a
+// PROPERTY of the view (Flux_RenderView::m_bOwnsPersistentLDR below).
+//
+// A genuinely new KIND — a planar reflection, a cubemap face — belongs here. A
+// new DESTINATION does not.
 enum FluxRenderViewType : u_int
 {
 	FLUX_RENDER_VIEW_MAIN = 0,
 	FLUX_RENDER_VIEW_SHADOW_CASCADE,
-	FLUX_RENDER_VIEW_PREVIEW,
 };
 
 // Fixed slot assignments (see header comment). kuFluxViewSlotShadowFirst + c is
@@ -52,8 +62,9 @@ inline constexpr u_int kuFluxViewSlotShadowFirst = 1u;
 // The editor's MATERIAL preview view — the first of the PREVIEW class.
 inline constexpr u_int kuFluxViewSlotPreviewMaterial = 1u + kuFluxViewNumShadowSlots;
 // The editor's ANIMATION preview view. Same shape as the material preview — a
-// full-pipeline PREVIEW-typed view, INACTIVE until its owner activates it — and
-// deliberately the NEXT slot up, so the preview class stays a contiguous range.
+// full-pipeline view owning its own persistent LDR, INACTIVE until its owner
+// activates it — and deliberately the NEXT slot up, so the preview class stays a
+// contiguous range.
 inline constexpr u_int kuFluxViewSlotPreviewAnim     = kuFluxViewSlotPreviewMaterial + 1u;
 
 // The PREVIEW class as a RANGE, which is the form anything DERIVED should read.
@@ -75,10 +86,17 @@ static_assert(kuFluxViewSlotPreviewAnim == kuFluxViewSlotPreviewFirst + kuFluxVi
 // True iff uSlot is one of the PREVIEW-class views. DERIVED from the contiguous
 // range above and NOT a second list: an enumerated list is a place a later slot
 // can be forgotten while every existing test stays green. Pinned against the
-// registry's own m_eType for every slot by the RenderViews unit
-// IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes — so the predicate and the
-// constructor cannot drift apart silently. Total over all u_int inputs
+// registry's own m_bOwnsPersistentLDR for every slot by the RenderViews unit
+// IsPreviewViewSlotIsTotalAndMatchesTheRegistryOwnership — so the predicate and
+// the constructor cannot drift apart silently. Total over all u_int inputs
 // (out-of-range slots are simply not preview slots).
+//
+// ★ THIS IS THE PUBLIC SPELLING OF "preview-class", and it outlived the view KIND
+// it used to be pinned against. Code asking "is this slot a preview" asks HERE;
+// code asking "does this view tonemap into its own target" reads the view's
+// m_bOwnsPersistentLDR. They agree slot-for-slot today and are still different
+// questions: the first is about the fixed slot LAYOUT, the second about what one
+// view does with its image.
 inline constexpr bool Flux_IsPreviewViewSlot(u_int uSlot)
 {
 	return uSlot >= kuFluxViewSlotPreviewFirst
@@ -165,6 +183,24 @@ struct Flux_RenderView
 	// for depth-only shadow views. Feature setup loops iterate full-pipeline
 	// views when instantiating per-view pass chains (Stage S5).
 	bool                   m_bFullPipeline = false;
+	// True for views that own a PERSISTENT LDR of their own
+	// (Flux_GraphicsImpl::GetPreviewLDR) and tonemap into it, instead of into the
+	// shared final render target the swapchain presents. THE DESTINATION AS A
+	// PROPERTY OF THE VIEW: it is what Flux_HDRImpl::SetupRenderGraph's per-view
+	// walk keys its tonemap + LDR-transition pair on, replacing a test against the
+	// deleted FLUX_RENDER_VIEW_PREVIEW view kind.
+	//
+	// It carries exactly the same meaning that branch always wanted — its own
+	// comment already said it was keyed on the TYPE so that "a second
+	// preview-class view picks up its own tonemap with no edit here", which is a
+	// property, described as a kind. Any future view that renders into a target of
+	// its own (a planar reflection probe, an offscreen capture) sets this and is
+	// served by the same walk, whatever KIND it is.
+	//
+	// Stamped for every slot of the preview range by the registry constructor, and
+	// pinned slot-by-slot against Flux_IsPreviewViewSlot by the RenderViews unit
+	// IsPreviewViewSlotIsTotalAndMatchesTheRegistryOwnership.
+	bool                   m_bOwnsPersistentLDR = false;
 	u_int                  m_uViewFlags    = 0u;
 	Zenith_Maths::UVector2 m_xTargetDims   = Zenith_Maths::UVector2(0u, 0u);
 	// The per-view spine constants payload, staged CPU-side by the view's owner

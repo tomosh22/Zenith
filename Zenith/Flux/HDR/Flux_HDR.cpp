@@ -776,7 +776,8 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 		.WritesBuffer(m_xExposureBuffer.GetBuffer(),  RESOURCE_ACCESS_WRITE_UAV);
 
 	// ONE bloom chain per ACTIVE FULL-PIPELINE view, in ascending slot order,
-	// plus the preview tonemap + LDR transition for the PREVIEW-typed ones. The
+	// plus the preview tonemap + LDR transition for the views that own a
+	// persistent LDR of their own (m_bOwnsPersistentLDR — see the walk below). The
 	// registry decides membership by view PROPERTIES, never by slot number: slot
 	// 0 always qualifies (active + full-pipeline from construction) and a preview
 	// slot joins while its owner has it up — so its bloom transients exist
@@ -821,11 +822,18 @@ void Flux_HDRImpl::SetupRenderGraph(Flux_RenderGraph& xGraph)
 			: xSetup.m_pxGraphics->GetViewSetupDims(uSlot);
 		xSetup.m_pxThis->SetupBloomViewPasses(*xSetup.m_pxGraph, uSlot, xDims.x, xDims.y);
 
-		// Keyed on the view's TYPE, not on its slot number: a second
-		// preview-class view picks up its own tonemap + transition with no edit
-		// here. The main view's tonemap is a different pass (it writes the final
-		// RT and meters) and is declared once, below.
-		if (xView.m_eType == FLUX_RENDER_VIEW_PREVIEW)
+		// Keyed on the view's own OUTPUT-OWNERSHIP property, not on its slot
+		// number and not on its KIND: any view that owns a persistent LDR picks
+		// up its own tonemap + transition with no edit here. The main view's
+		// tonemap is a different pass (it writes the final RT and meters) and is
+		// declared once, below.
+		//
+		// This used to read `xView.m_eType == FLUX_RENDER_VIEW_PREVIEW` and was
+		// the ONE production branch on that enumerator — a frame asking where its
+		// image was going. The comment here already described the intent as "any
+		// view of this class", so the only thing that changed is the carrier: a
+		// property of the view instead of a kind of view.
+		if (xView.m_bOwnsPersistentLDR)
 		{
 			xSetup.m_pxThis->SetupPreviewViewPasses(*xSetup.m_pxGraph, *xSetup.m_pxGraphics, uSlot);
 		}

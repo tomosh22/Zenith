@@ -112,7 +112,7 @@ view it calls:
 | | |
 |---|---|
 | `SetupBloomViewPasses(xGraph, uSlot, w, h)` | that view's 5 transients + its threshold / 4 downsample / 4 upsample passes, every one with `.View(uSlot)` |
-| `SetupPreviewViewPasses(xGraph, xGraphics, uSlot)` | **only when `xView.m_eType == FLUX_RENDER_VIEW_PREVIEW`** — that view's tonemap into its persistent preview LDR, plus the LDR layout-transition no-op |
+| `SetupPreviewViewPasses(xGraph, xGraphics, uSlot)` | **only when `xView.m_bOwnsPersistentLDR`** — that view's tonemap into its persistent preview LDR, plus the LDR layout-transition no-op |
 
 Membership is decided by view PROPERTIES, never by slot number: slot 0 always
 qualifies, a preview slot joins while its owner has it up (so its transients
@@ -120,6 +120,24 @@ exist exactly when its passes do, which the graph's unused-transient validation
 demands), and depth-only shadow cascades are never full-pipeline. Today that set
 is `{main} ∪ {material preview if active}`. Adding a second preview-class view
 needs no edit in this feature.
+
+**★ AND THE SECOND ROW KEYS OFF A PROPERTY, NOT A VIEW KIND.** It used to read
+`xView.m_eType == FLUX_RENDER_VIEW_PREVIEW`, and that enumerator was the only
+place in the engine where a pass could ask *where its image was going* — a
+routing decision leaking into the frame. `FLUX_RENDER_VIEW_PREVIEW` is gone;
+`FluxRenderViewType` now names only genuine kinds (main, shadow cascade), and
+"this view tonemaps into a persistent LDR of its own rather than the shared final
+RT" is `Flux_RenderView::m_bOwnsPersistentLDR`. The behaviour is identical — the
+branch already meant "any view of this class", which is what a property is — and
+the walk now serves any FUTURE view that renders to a target of its own without
+needing a kind invented for it.
+
+**A destination alone must not change a pass list, and that is checked two
+ways.** The registry unit
+`RenderViews::TheTwoPreviewViewsDifferOnlyInTheirDestination` pins that the two
+preview views are equal in every field this walk reads, and
+`RT_RenderGraphViewStructure`'s clause 5 compares the two views' LIVE per-view
+pass inventories against each other on the compiled graph.
 
 **Pass names come from `Flux_ViewPassName(base, uSlot)`**
 (`Flux/RenderViews/Flux_ViewPassNames.h`), not from a per-view literal table.

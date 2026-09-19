@@ -19,14 +19,19 @@ Flux_RenderViewRegistry::Flux_RenderViewRegistry()
 	{
 		m_axViews[kuFluxViewSlotShadowFirst + u].m_eType = FLUX_RENDER_VIEW_SHADOW_CASCADE;
 	}
-	// Typed from the RANGE, not from the two named constants: the predicate
+	// Stamped from the RANGE, not from the two named constants: the predicate
 	// Flux_IsPreviewViewSlot reads the same range, and the RenderViews unit
-	// IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes holds this loop against
-	// it slot by slot, so the two cannot drift.
+	// IsPreviewViewSlotIsTotalAndMatchesTheRegistryOwnership holds this loop
+	// against it slot by slot, so the two cannot drift.
+	//
+	// Both preview slots keep FLUX_RENDER_VIEW_MAIN as their KIND, which is not an
+	// oversight: they render the main view's pipeline, and the only thing that set
+	// them apart was where the result went. That is m_bOwnsPersistentLDR now, so
+	// there is no preview KIND left to stamp.
 	for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
 	{
-		m_axViews[kuFluxViewSlotPreviewFirst + u].m_eType         = FLUX_RENDER_VIEW_PREVIEW;
-		m_axViews[kuFluxViewSlotPreviewFirst + u].m_bFullPipeline = true;
+		m_axViews[kuFluxViewSlotPreviewFirst + u].m_bFullPipeline      = true;
+		m_axViews[kuFluxViewSlotPreviewFirst + u].m_bOwnsPersistentLDR = true;
 	}
 }
 

@@ -39,10 +39,16 @@
 //   C  main + BOTH preview views               (+ kuFluxViewSlotPreviewAnim)
 //   D  both preview views off again, settled   (the graph must return to A)
 //
-// Sample C is LIVE as of unit D2-b: slot 6 is a constructed PREVIEW-typed
-// full-pipeline view, it owns its own persistent LDR, and every clause below runs
-// over it. It was staged behind two constants while the slot did not exist; both
-// are now true and the staging is gone.
+// Sample C is LIVE as of unit D2-b: slot 6 is a constructed full-pipeline view
+// that owns its own persistent LDR, and every clause below runs over it. It was
+// staged behind two constants while the slot did not exist; both are now true and
+// the staging is gone.
+//
+// ★ AND SAMPLE C IS WHERE THE DESTINATION CLAUSE LIVES (clause 5b). With both
+// preview views up, the two differ in NOTHING but which LDR they tonemap into, so
+// their pass lists must match each other pass for pass. That is the standing
+// proof that a view's OUTPUT DESTINATION cannot change what the graph builds for
+// it — the property FLUX_RENDER_VIEW_PREVIEW's removal rests on.
 //
 // Every clause runs and reports on EVERY run (the Test_TennisBrainContract
 // accumulator shape), so one failing run names every clause that moved rather
@@ -324,21 +330,28 @@ namespace
 		bool  m_bPreviewAnimViewActive = false;
 		u_int m_uMainHiZMipCount = 0u;
 		u_int m_uOverflowed = 0u;      // passes dropped because a capture array filled
-		// Passes on a slot this sampler cannot classify: a non-main slot whose
-		// registered view type is neither SHADOW_CASCADE nor PREVIEW. It is counted
-		// (and asserted zero) rather than ignored because that is EXACTLY the shape
-		// a new preview slot arrives in if the registry constructor does not TYPE
-		// it: a default-constructed Flux_RenderView is FLUX_RENDER_VIEW_MAIN, so its
-		// passes would be invisible to clause 2 and the naming law would silently
-		// stop covering them. The animation preview is typed (D2-a), which is what
-		// lets sample C see its passes at all.
+		// Passes on a slot this sampler cannot classify: a non-main slot that is
+		// neither a SHADOW_CASCADE nor a view owning a persistent LDR of its own.
+		// It is counted (and asserted zero) rather than ignored because that is
+		// EXACTLY the shape a new preview slot arrives in if the registry
+		// constructor does not STAMP it: a default-constructed Flux_RenderView has
+		// m_bOwnsPersistentLDR false, so its passes would be invisible to clause 2
+		// and the naming law would silently stop covering them.
+		//
+		// ★ THIS COUNTER GOT MORE IMPORTANT WHEN FLUX_RENDER_VIEW_PREVIEW WENT
+		// AWAY, not less. Both preview slots now carry FLUX_RENDER_VIEW_MAIN as
+		// their KIND — correctly, because they render the main view's pipeline —
+		// so the view TYPE no longer distinguishes them from an unstamped slot at
+		// all. The property is the only thing that does, which is precisely why the
+		// registry unit IsPreviewViewSlotIsTotalAndMatchesTheRegistryOwnership
+		// pins the stamping slot-by-slot against Flux_IsPreviewViewSlot.
 		u_int m_uUnclassified = 0u;
 
 		// EVERY slot-0 pass name, duplicates included (clause 4 counts them).
 		const char* m_aszSlot0Names[kuMAX_SAMPLED_SLOT0_PASSES] = {};
 		u_int       m_uSlot0Count = 0u;
 
-		// Every pass whose VIEW TYPE is FLUX_RENDER_VIEW_PREVIEW, with its slot.
+		// Every pass whose VIEW owns a persistent LDR of its own, with its slot.
 		const char* m_aszPreviewNames[kuMAX_SAMPLED_PREVIEW_PASSES] = {};
 		u_int       m_auPreviewSlots[kuMAX_SAMPLED_PREVIEW_PASSES] = {};
 		u_int       m_uPreviewCount = 0u;
@@ -562,7 +575,8 @@ namespace
 
 			if (uSlot >= FLUX_MAX_RENDER_VIEWS) { continue; }   // View() would assert
 
-			const FluxRenderViewType eType = xViews.View(uSlot).m_eType;
+			const Flux_RenderView&   xView = xViews.View(uSlot);
+			const FluxRenderViewType eType = xView.m_eType;
 			if (eType == FLUX_RENDER_VIEW_SHADOW_CASCADE
 				&& uSlot >= kuFluxViewSlotShadowFirst
 				&& uSlot < kuFluxViewSlotShadowFirst + kuFluxViewNumShadowSlots)
@@ -574,7 +588,15 @@ namespace
 				continue;
 			}
 
-			if (eType == FLUX_RENDER_VIEW_PREVIEW)
+			// ★ CLASSIFIED BY THE VIEW'S OWN OUTPUT-OWNERSHIP PROPERTY, NOT BY A
+			// VIEW KIND. This read `eType == FLUX_RENDER_VIEW_PREVIEW` until that
+			// enumerator was removed: where a view's image goes was never a KIND of
+			// view, and expressing it as one is what let a render pass branch on its
+			// own destination. m_bOwnsPersistentLDR is the property that replaced
+			// it, and it is the one that matters to every clause below — a view that
+			// tonemaps into an LDR of its own is exactly a view whose pass chain
+			// should be the main view's chain under a different name.
+			if (xView.m_bOwnsPersistentLDR)
 			{
 				if (xSample.m_uPreviewCount < kuMAX_SAMPLED_PREVIEW_PASSES)
 				{
@@ -585,12 +607,13 @@ namespace
 				continue;
 			}
 
-			// Non-main slot, non-cascade, non-preview: nothing classifies it, so
-			// no clause can see it. Counted so clause 1 can say so out loud.
+			// Non-main slot, non-cascade, owning no LDR of its own: nothing
+			// classifies it, so no clause can see it. Counted so clause 1 can say so
+			// out loud.
 			++xSample.m_uUnclassified;
 			Zenith_Log(LOG_CATEGORY_RENDERER,
-				"[ViewStructure] UNCLASSIFIED pass '%s' on slot %u (view type %u)", szName, uSlot,
-				static_cast<u_int>(eType));
+				"[ViewStructure] UNCLASSIFIED pass '%s' on slot %u (view kind %u, ownsPersistentLDR %d)",
+				szName, uSlot, static_cast<u_int>(eType), xView.m_bOwnsPersistentLDR ? 1 : 0);
 		}
 
 		xSample.m_bTaken = true;
@@ -955,6 +978,96 @@ namespace
 		}
 	}
 
+	// A preview pass's BASE name, with the one legacy spelling normalised.
+	//
+	// "Preview LDR Transition" is the pool's single legacy row and spells its
+	// suffix as a PREFIX, so TryStripViewSuffix cannot parse it; slot 6's twin is
+	// the ordinary "LDR Transition (AnimPreview)". Mapping the literal onto the
+	// same base is what lets the two views' LDR transitions compare as THE SAME
+	// PASS. Without it the cross-view comparison below would report the material
+	// preview as missing a pass the animation preview has, which is a difference in
+	// SPELLING and not in the pass list.
+	bool PreviewPassBase(const char* szName, u_int uSlot, char* pcOut, u_int uOutLen)
+	{
+		if (szName == nullptr || pcOut == nullptr) { return false; }
+		if (std::strcmp(szName, kszPREVIEW_ONLY_LITERAL) == 0)
+		{
+			const size_t ulBaseLen = std::strlen(kszPREVIEW_ONLY_BASE);
+			if (ulBaseLen + 1u > static_cast<size_t>(uOutLen)) { return false; }
+			std::memcpy(pcOut, kszPREVIEW_ONLY_BASE, ulBaseLen);
+			pcOut[ulBaseLen] = '\0';
+			return true;
+		}
+		return TryStripViewSuffix(szName, uSlot, pcOut, uOutLen);
+	}
+
+	// ------------------------------------------------------------------
+	// Clause 5b — TWO DESTINATIONS, IDENTICAL PASS LISTS.
+	//
+	// The two preview views differ in exactly one thing: which persistent LDR
+	// their tonemap writes (GetPreviewLDR(uSlot)). Everything else about them is
+	// the same, so their pass lists must be the same, pass for pass. That is the
+	// property the whole FLUX_RENDER_VIEW_PREVIEW removal turns on: a view's
+	// DESTINATION must not be able to change what the graph does for it.
+	//
+	// ★ IT IS NOT IMPLIED BY CLAUSE 5's GOLDEN LIST, which is why it is its own
+	// clause. The golden check is a containment in both directions against a
+	// HAND-MAINTAINED table, so two failures cancel: a pass instantiated for one
+	// preview view and not the other is invisible the moment the table is updated
+	// to match whichever view was sampled. This compares the two views against
+	// EACH OTHER, with no table in between, so it cannot be satisfied by editing
+	// a list.
+	//
+	// Multiset, not set: a duplicated pass on one side is a real divergence, so a
+	// matched entry on the B side is consumed and cannot match twice.
+	void Clause5_PreviewInventoriesMatch(const ViewStructureSample& xSample, u_int uSlotA, u_int uSlotB)
+	{
+		bool  abMatchedB[kuMAX_SAMPLED_PREVIEW_PASSES] = {};
+		u_int uCountA = 0u;
+		u_int uCountB = 0u;
+
+		for (u_int u = 0; u < xSample.m_uPreviewCount; u++)
+		{
+			if (xSample.m_auPreviewSlots[u] == uSlotB) { ++uCountB; }
+		}
+
+		for (u_int u = 0; u < xSample.m_uPreviewCount; u++)
+		{
+			if (xSample.m_auPreviewSlots[u] != uSlotA) { continue; }
+			++uCountA;
+
+			char acBaseA[kuBASE_BUFFER_LEN] = {};
+			if (!PreviewPassBase(xSample.m_aszPreviewNames[u], uSlotA, acBaseA, kuBASE_BUFFER_LEN))
+			{
+				// Clause 2 already reported the parse failure; do not double-count.
+				continue;
+			}
+
+			bool bFound = false;
+			for (u_int v = 0; v < xSample.m_uPreviewCount && !bFound; v++)
+			{
+				if (xSample.m_auPreviewSlots[v] != uSlotB) { continue; }
+				if (abMatchedB[v]) { continue; }
+				char acBaseB[kuBASE_BUFFER_LEN] = {};
+				if (!PreviewPassBase(xSample.m_aszPreviewNames[v], uSlotB, acBaseB, kuBASE_BUFFER_LEN)) { continue; }
+				if (std::strcmp(acBaseA, acBaseB) == 0)
+				{
+					abMatchedB[v] = true;
+					bFound = true;
+				}
+			}
+			CheckTrueNamed(bFound, "a pass was instantiated for one preview view and NOT the other", acBaseA);
+		}
+
+		// The other direction. Every A entry consumed a DISTINCT B entry above, so
+		// equal totals is exactly "and B has nothing A lacks".
+		CheckEqInt(static_cast<int>(uCountA), static_cast<int>(uCountB),
+			"the two preview views declared different pass COUNTS — a destination changed the pass list");
+		Zenith_Log(LOG_CATEGORY_RENDERER,
+			"[ViewStructure] clause 5b: slot %u declared %u passes, slot %u declared %u",
+			uSlotA, uCountA, uSlotB, uCountB);
+	}
+
 	void Clause5_AlwaysOnAtSlot0(const ViewStructureSample& xSample)
 	{
 		for (u_int u = 0; u < kuALWAYS_ON_COUNT; u++)
@@ -1046,13 +1159,13 @@ namespace
 		if (xA.m_bTaken)
 		{
 			CheckEqInt(static_cast<int>(xA.m_uPreviewCount), 0,
-				"a FLUX_RENDER_VIEW_PREVIEW pass exists with every preview view inactive (sample A)");
+				"a preview-view pass exists with every preview view inactive (sample A)");
 		}
 		if (xB.m_bTaken) { Clause2_NamingLaw(xB); }
 		if (xD.m_bTaken)
 		{
 			CheckEqInt(static_cast<int>(xD.m_uPreviewCount), 0,
-				"a FLUX_RENDER_VIEW_PREVIEW pass survived the preview view going away (sample D)");
+				"a preview-view pass survived the preview view going away (sample D)");
 		}
 		if constexpr (kbSampleCEnabled && kbSampleCFullClauses) { if (xC.m_bTaken) { Clause2_NamingLaw(xC); } }
 		EndClause();
@@ -1092,6 +1205,16 @@ namespace
 				for (u_int u = 0; u < kuFluxViewNumPreviewSlots; u++)
 				{
 					Clause5_PerViewInventory(xC, kuFluxViewSlotPreviewFirst + u);
+				}
+
+				// ...and against EACH OTHER. Sample C is the only sample with two
+				// preview views up at once, so it is the only place this can be
+				// asked. Walked over the RANGE so a third preview view is compared
+				// to the first without an edit here.
+				for (u_int u = 1u; u < kuFluxViewNumPreviewSlots; u++)
+				{
+					Clause5_PreviewInventoriesMatch(xC, kuFluxViewSlotPreviewFirst,
+						kuFluxViewSlotPreviewFirst + u);
 				}
 			}
 		}

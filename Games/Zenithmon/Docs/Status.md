@@ -18,10 +18,41 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-09-19):
-ZM boot `4550`; engine boot (Null Combat) `2697`; Null RenderTest `2800`; registry **73**.**
+ZM boot `4551`; engine boot (Null Combat) `2698`; Null RenderTest `2801`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **★ +1 EVERY GAME (2026-09-19, ZEN-12) — `FLUX_RENDER_VIEW_PREVIEW` REMOVED.**
+> Zenithmon 4550 -> **4551**, Combat 2697 -> **2698**, RenderTest 2800 -> **2801**.
+> **ALL THREE OBSERVED**, each from its own `Null_` run, none computed. The new
+> unit is `RenderViews::TheTwoPreviewViewsDifferOnlyInTheirDestination` —
+> backend-neutral, so every game's row moves by the same amount. Registry
+> unchanged at 73.
+>
+> The editor's two preview views were a `FluxRenderViewType` value, so a render
+> pass could ask where its image was going. The destination is a per-view
+> property now (`Flux_RenderView::m_bOwnsPersistentLDR`) and the enum names only
+> what a view IS. One production branch moved carrier; the single-graph-per-frame
+> architecture is untouched.
+>
+> ★ **Which of these three numbers a gate actually checks, precisely.**
+> `Combat` is checked by the Engine list's own unit-gate line, and its 2698 is
+> corroborated by an artifact (`.zagent/run/ZEN-12/tick_gates.json`). `Zenithmon`
+> is checked only because this commit edits a file under `Games/Zenithmon/**`,
+> which unions the Zenithmon category's gates — build, test, unit gate and
+> `doc_lint` — into the verify run. **`RenderTest` is checked by nothing, here or
+> anywhere**: it is an `advisory` row in `Tools/unit_baselines.json` by that
+> file's own declaration, no workflow or gate line runs `run_unit_gate.ps1
+> -Game RenderTest`, and the unioned Zenithmon lines do not either. Its 2801 was
+> OBSERVED by hand and rests on that observation alone.
+>
+> The measurement worth keeping: an engine tick that bumps all three pins and
+> touches no Zenithmon doc gets NO union, so this block would go stale and
+> unchecked together, and `doc_lint` C7 — which reconciles it against the
+> manifest with equality — would then red on the next Zenithmon ticket, which did
+> not cause it. The check that guards this narration only runs when the diff
+> already touches the narration.
 
 > **★ +2 EVERY GAME (2026-09-19, ZEN-7) — THE TEST FRAMEWORK'S NaN HOLE.**
 > Zenithmon 4548 -> **4550**, Combat 2695 -> **2697**, RenderTest 2798 -> **2800**.

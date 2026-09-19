@@ -91,11 +91,12 @@ public:
 	// design. See the walk in SetupRenderGraph for the full reasoning.
 	void SetupBloomViewPasses(Flux_RenderGraph& xGraph, u_int uViewSlot, u_int uWidth, u_int uHeight);
 
-	// The extra passes a PREVIEW-class view owns: its fixed-exposure tonemap into
-	// that slot's persistent preview LDR, and the no-op reader that leaves the
-	// LDR in SHADER_READ_ONLY for the editor's ImGui sample. Called from the
-	// per-view walk for every view whose registered type is
-	// FLUX_RENDER_VIEW_PREVIEW; nothing here is slot-5-specific.
+	// The extra passes a view that owns its OWN OUTPUT needs: its fixed-exposure
+	// tonemap into that slot's persistent preview LDR, and the no-op reader that
+	// leaves the LDR in SHADER_READ_ONLY for the editor's ImGui sample. Called
+	// from the per-view walk for every view whose m_bOwnsPersistentLDR is set;
+	// nothing here is slot-5-specific, and nothing here asks what KIND of view it
+	// is serving.
 	void SetupPreviewViewPasses(Flux_RenderGraph& xGraph, Flux_GraphicsImpl& xGraphics, u_int uViewSlot);
 
 	void SetToneMappingOperator(ToneMappingOperator eOperator);

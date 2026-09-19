@@ -14,6 +14,10 @@ ZENITH_TEST(RenderViews, FixedSlotLayoutAndDefaults)
 	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotMain).m_eType == FLUX_RENDER_VIEW_MAIN, "slot 0 is MAIN");
 	ZENITH_ASSERT_TRUE(xReg.IsViewActive(kuFluxViewSlotMain), "MAIN starts active");
 	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotMain).m_bFullPipeline, "MAIN is full-pipeline");
+	// The main view writes the SHARED final render target the swapchain presents,
+	// so it owns no persistent LDR of its own. That is what keeps its tonemap the
+	// separate, metering pass declared outside HDR's per-view walk.
+	ZENITH_ASSERT_TRUE(!xReg.View(kuFluxViewSlotMain).m_bOwnsPersistentLDR, "MAIN writes the shared final RT, not an LDR of its own");
 	for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++)
 	{
 		const Flux_RenderView& xV = xReg.View(kuFluxViewSlotShadowFirst + u);
@@ -26,12 +30,21 @@ ZENITH_TEST(RenderViews, FixedSlotLayoutAndDefaults)
 	// with kuFluxViewNumShadowSlots and this clause must move with it.
 	ZENITH_ASSERT_TRUE(kuFluxViewSlotPreviewMaterial == kuFluxViewSlotPreviewFirst,
 		"the material preview is the first slot of the preview range");
-	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewMaterial).m_eType == FLUX_RENDER_VIEW_PREVIEW, "the material-preview slot is PREVIEW-typed");
+	// ★ PREVIEW-CLASS IS NO LONGER A VIEW KIND, SO THE CLAUSE MOVED TO THE PROPERTY
+	// THAT REPLACED IT. These two lines used to assert the slot was
+	// FLUX_RENDER_VIEW_PREVIEW-typed; that enumerator described where the view's
+	// image GOES, which is not a kind of view, so it is a per-view property now.
+	// The thing worth pinning was never the enum name — it is that the registry
+	// stamps these slots as owning their own output, which is exactly what makes
+	// HDR give them a tonemap.
+	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewMaterial).m_bOwnsPersistentLDR, "the material preview owns its own persistent LDR");
+	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewMaterial).m_eType == FLUX_RENDER_VIEW_MAIN,
+		"...and is not a distinct view KIND — it renders the main view's pipeline");
 	ZENITH_ASSERT_TRUE(!xReg.IsViewActive(kuFluxViewSlotPreviewMaterial), "the material preview starts inactive");
 	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewMaterial).m_bFullPipeline, "the material preview is full-pipeline");
 	// The ANIMATION preview: exactly the material preview's shape, and INACTIVE —
 	// the default registry must still have precisely one active full-pipeline view.
-	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewAnim).m_eType == FLUX_RENDER_VIEW_PREVIEW, "the animation-preview slot is PREVIEW-typed");
+	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewAnim).m_bOwnsPersistentLDR, "the animation preview owns its own persistent LDR");
 	ZENITH_ASSERT_TRUE(!xReg.IsViewActive(kuFluxViewSlotPreviewAnim), "the animation preview starts inactive");
 	ZENITH_ASSERT_TRUE(xReg.View(kuFluxViewSlotPreviewAnim).m_bFullPipeline, "the animation preview is full-pipeline");
 	ZENITH_ASSERT_EQ(xReg.View(kuFluxViewSlotPreviewAnim).m_uViewFlags, 0u, "the animation preview carries no view flags");
@@ -244,16 +257,23 @@ ZENITH_TEST(RenderViews, HighestActiveSlotPlusOneSeesSlotSix)
 // Flux_IsPreviewViewSlot is derived from the preview RANGE, so the way it can go
 // wrong is not "a slot is missing from a list" but "the range and the registry
 // constructor disagree". This walks EVERY slot and holds the predicate against
-// the ctor's own m_eType — the two are then a single fact, not two.
-ZENITH_TEST(RenderViews, IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes)
+// the ctor's own stamping — the two are then a single fact, not two.
+//
+// ★ IT USED TO BE PINNED AGAINST m_eType == FLUX_RENDER_VIEW_PREVIEW, and the
+// obvious move when that enumerator was deleted was to delete this with it. That
+// would have been wrong: the drift this catches has nothing to do with the enum.
+// What it says is that the SLOT-LAYOUT predicate every derived list is written
+// over and the registry's own per-slot stamping describe the same set of slots —
+// and the stamping is now m_bOwnsPersistentLDR, so that is what it reads.
+ZENITH_TEST(RenderViews, IsPreviewViewSlotIsTotalAndMatchesTheRegistryOwnership)
 {
 	Flux_RenderViewRegistry xReg;
 	for (u_int u = 0; u < FLUX_MAX_RENDER_VIEWS; u++)
 	{
-		const bool bRegistrySaysPreview  = xReg.View(u).m_eType == FLUX_RENDER_VIEW_PREVIEW;
+		const bool bRegistrySaysPreview  = xReg.View(u).m_bOwnsPersistentLDR;
 		const bool bPredicateSaysPreview = Flux_IsPreviewViewSlot(u);
 		ZENITH_ASSERT_TRUE(bPredicateSaysPreview == bRegistrySaysPreview,
-			"slot %u: Flux_IsPreviewViewSlot says %d, the registry type says %d",
+			"slot %u: Flux_IsPreviewViewSlot says %d, the registry's own-LDR stamping says %d",
 			u, static_cast<int>(bPredicateSaysPreview), static_cast<int>(bRegistrySaysPreview));
 	}
 
@@ -266,6 +286,88 @@ ZENITH_TEST(RenderViews, IsPreviewViewSlotIsTotalAndMatchesTheRegistryTypes)
 	static_assert(!Flux_IsPreviewViewSlot(kuFluxViewSlotPreviewAnim + 1u), "the preview range ENDS at the animation preview");
 	static_assert(!Flux_IsPreviewViewSlot(FLUX_MAX_RENDER_VIEWS), "an out-of-range slot is not a preview slot");
 	static_assert(!Flux_IsPreviewViewSlot(~0u), "the predicate is total — no wraparound admits a huge slot");
+}
+
+// ----------------------------------------------------------------------------
+// TWO DESTINATIONS, ONE SETUP. The registry half of "a view's destination must
+// not change its pass list".
+//
+// Every per-view feature setup loop in the engine — HDR's bloom + tonemap walk,
+// HiZ, SSAO, SSR, SSGI, Decals, deferred shading — decides what to instantiate
+// for a view by reading the FIELDS below off Flux_RenderView. So if the two
+// preview views agree on every one of them, no feature can give them different
+// pass chains; the only thing left that differs between them is the SLOT, and a
+// slot selects a destination (Flux_GraphicsImpl::GetPreviewLDR(uSlot)) and
+// nothing else. That is the property that MAKES their pass lists identical.
+//
+// It is deliberately not a claim about the live graph, which this unit cannot
+// reach (a pass list needs a compiled Flux_RenderGraph and a live
+// Flux_GraphicsImpl). The live half is RT_RenderGraphViewStructure clause 5,
+// which runs the SAME golden inventory over both preview slots of sample C and
+// compares the two views against each other. This one runs in every game's boot
+// suite on every backend, which is where a registry-level divergence would
+// actually be introduced.
+//
+// ★ THE MAIN VIEW IS NOT A COUNTEREXAMPLE and is deliberately excluded. It
+// differs from a preview view in more than its destination: it meters exposure,
+// it writes the shared final RT, it carries the shadow / cluster-light / scene-
+// content flags, and it is sized from the output dims rather than its staged
+// target dims. "Destination alone changes nothing" is a claim about two views
+// that are otherwise the same, and these two are the only such pair.
+ZENITH_TEST(RenderViews, TheTwoPreviewViewsDifferOnlyInTheirDestination)
+{
+	Flux_RenderViewRegistry xReg;
+
+	static_assert(kuFluxViewNumPreviewSlots >= 2u,
+		"this clause compares preview views against each other — it needs at least two");
+
+	const u_int uReference = kuFluxViewSlotPreviewFirst;
+	const Flux_RenderView& xReference = xReg.View(uReference);
+
+	// Walked over the RANGE rather than the two named slots, so a third preview
+	// view is held to the same equality the day it is added.
+	for (u_int u = 1u; u < kuFluxViewNumPreviewSlots; u++)
+	{
+		const u_int uSlot = kuFluxViewSlotPreviewFirst + u;
+		const Flux_RenderView& xView = xReg.View(uSlot);
+
+		ZENITH_ASSERT_TRUE(xView.m_eType == xReference.m_eType,
+			"slot %u and slot %u disagree on view KIND — a destination is not a kind", uSlot, uReference);
+		ZENITH_ASSERT_TRUE(xView.m_bFullPipeline == xReference.m_bFullPipeline,
+			"slot %u and slot %u disagree on m_bFullPipeline, which decides whether a view is visited at all", uSlot, uReference);
+		ZENITH_ASSERT_TRUE(xView.m_bOwnsPersistentLDR == xReference.m_bOwnsPersistentLDR,
+			"slot %u and slot %u disagree on m_bOwnsPersistentLDR, which decides the tonemap + LDR-transition pair", uSlot, uReference);
+		// ★ THIS PAIR PINS THE CONSTRUCTOR DEFAULT, NOT THE WORD THE PIPELINE READS,
+		// and the difference is worth stating because the obvious reading is wrong.
+		// Production gates the shadow / cluster-light / scene-content chains on
+		// `View(uSlot).m_xConstants.m_uViewFlags` (Flux_DeferredShading.cpp,
+		// Flux_Translucency.cpp), which each preview's OWNER stages per frame;
+		// `m_uViewFlags` itself is written once at construction and read by nobody
+		// (Flux_UnifiedMesh.cpp says so in as many words). So what these two clauses
+		// establish is that the two slots LEAVE THE CONSTRUCTOR identical, which is
+		// this unit's whole remit -- it holds a default-constructed registry and
+		// cannot see a per-frame stage. A divergence introduced at stage time is
+		// invisible here and is caught by RT_RenderGraphViewStructure's clause 5b,
+		// which compares the two views' LIVE pass inventories.
+		ZENITH_ASSERT_EQ(xView.m_uViewFlags, xReference.m_uViewFlags,
+			"slot %u and slot %u leave the constructor with different view flags", uSlot, uReference);
+		ZENITH_ASSERT_TRUE(Flux_ViewShadingModeFromFlags(xView.m_uViewFlags) == Flux_ViewShadingModeFromFlags(xReference.m_uViewFlags),
+			"slot %u and slot %u resolve to different shading variants", uSlot, uReference);
+		ZENITH_ASSERT_TRUE(xView.m_xTargetDims.x == xReference.m_xTargetDims.x && xView.m_xTargetDims.y == xReference.m_xTargetDims.y,
+			"slot %u and slot %u start at different target dims — every per-view transient is sized from these", uSlot, uReference);
+		ZENITH_ASSERT_TRUE(xView.m_bActive == xReference.m_bActive,
+			"slot %u and slot %u start at different activation — each is raised by its own owner, never here", uSlot, uReference);
+
+		// ...and the ONE thing that does differ. The destination is not a field of
+		// the view at all: it is reached as GetPreviewLDR(uSlot), so "a different
+		// destination" IS "a different slot" and can be nothing else. If these ever
+		// collided, both previews would tonemap into one image.
+		ZENITH_ASSERT_TRUE(uSlot != uReference, "each preview view must occupy a slot of its own");
+		ZENITH_ASSERT_TRUE(Flux_ViewMaskForSlot(uSlot) != Flux_ViewMaskForSlot(uReference),
+			"slot %u and slot %u must carry distinct view-mask bits, or content masked to one reaches the other", uSlot, uReference);
+		ZENITH_ASSERT_TRUE(Flux_IsPreviewViewSlot(uSlot),
+			"slot %u is inside the preview range it was derived from", uSlot);
+	}
 }
 
 // ----------------------------------------------------------------------------
