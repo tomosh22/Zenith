@@ -3,7 +3,7 @@ key: ZEN-8
 type: TASK
 title: "doc_lint: verify bare ticket-key citations, not just markdown links"
 category: Engine
-parent: null
+parent: "ZEN-28"
 sprint: null
 status: To Do
 assignee: null
@@ -42,6 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:37:21.940Z"
 ---
 ## Goal
 
