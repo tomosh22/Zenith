@@ -15,8 +15,8 @@ storyPoints: 13
 position: 8
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:55:12.898Z"
+blocks: [{"key":"DP-11","reason":"Held items move to the rig's hand socket, which exists only once villagers are skinned."}]
+updatedAt: "2026-09-19T17:58:52.355Z"
 flagged: false
 severity: null
 reproducibility: null
