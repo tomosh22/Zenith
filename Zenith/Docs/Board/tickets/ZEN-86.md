@@ -5,7 +5,7 @@ type: "TASK"
 title: "De-globalisation acceptance: allowlist at zero outside the composition root, every game green"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 86
 labels: ["human-gate"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:49.471Z"
+updatedAt: "2026-09-19T17:42:24.124Z"
 flagged: false
 severity: null
 reproducibility: null
