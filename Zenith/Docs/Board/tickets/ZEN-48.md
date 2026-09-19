@@ -15,8 +15,8 @@ storyPoints: 3
 position: 48
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:34:26.113Z"
+blocks: [{"key":"ZEN-87","reason":"P0 exit lists per-instance tint among the P0 items."}]
+updatedAt: "2026-09-19T17:40:16.132Z"
 flagged: false
 severity: null
 reproducibility: null
