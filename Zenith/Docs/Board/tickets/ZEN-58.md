@@ -15,8 +15,8 @@ storyPoints: 8
 position: 58
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:03.313Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises text entry on the emulator."}]
+updatedAt: "2026-09-19T17:41:01.956Z"
 flagged: false
 severity: null
 reproducibility: null
