@@ -3,7 +3,7 @@ key: ZEN-6
 type: STORY
 title: Headless runs must be able to CHANGE a committed .zscen, not only create a missing one
 category: Engine
-parent: null
+parent: "ZEN-25"
 sprint: null
 status: Done
 assignee: agent@zenith.invalid
@@ -43,7 +43,7 @@ source:
   resolved_at: 2026-08-26T12:18:28.126
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:52.783Z"
+updatedAt: "2026-09-19T18:03:43.247Z"
 ---
 ## Goal
 
