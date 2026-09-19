@@ -5,7 +5,7 @@ type: "TASK"
 title: "Per-instance tint from Zenith_ModelComponent for static and skinned draws"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 48
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 exit lists per-instance tint among the P0 items."}]
-updatedAt: "2026-09-19T17:40:16.132Z"
+updatedAt: "2026-09-19T17:42:51.959Z"
 flagged: false
 severity: null
 reproducibility: null
