@@ -24,7 +24,8 @@
       "packages/agent/src/routing.ts",
       "packages/agent/src/ticket.ts"
     ],
-    "contract": "C:/dev/Zenith/Tools/zagent/contract.json",
+    "contract": null,
+    "contractNote": "Tools/zagent/contract.json (the old HTTP wire contract) was removed with the legacy remote backend; command-matrix.md is now the offline specification.",
     "referenceFixture": "C:/dev/Zenith/Tools/Vault/fixtures/snapshot/reference.json",
     "schemaTableCount": 56,
     "capturedTableCount": 36,

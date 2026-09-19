@@ -1,10 +1,12 @@
 # Vault command matrix
 
-This matrix keeps the Stage 1 read contract for the command names in
-`Tools/zagent/contract.json` and records the current local Vault behavior. The
-contract remains the complete input list; every command and subcommand appears
-below even when its old transport has been removed or its mutation is guarded
-by the local write protocol.
+This matrix is the Stage 1 read contract for the command names the CLI
+accepts, and records the current local Vault behavior. It was originally kept
+in step with `Tools/zagent/contract.json`, the old HTTP wire contract; that
+file was removed along with the legacy remote backend it described, and this
+matrix is now the complete, offline specification on its own — every command
+and subcommand appears below even when its old transport has been removed or
+its mutation is guarded by the local write protocol.
 
 ## Status vocabulary
 
@@ -236,7 +238,7 @@ available whenever `writes.enabled` is false.
 | `suggest --ticket <KEY>\|--org <SLUG> --file <JSON>\|--text TEXT` | `conditional-write` | Appends a `suggestions` row with date, area, suggestion, friction, severity, status, resolution, ticket link and filed-as. | Validate the input and append under the operation protocol when enabled. |
 | `suggestions [--all]` | `retained-read` | Exact `{id,url,values}[]` suggestion rows newest first. Default filters unresolved/new workflow friction; `--all` returns every retained row. | Read rows, resolve SELECT labels and IDs, and include ticket links in `values`. |
 | `suggestions resolve <ID> done\|accepted\|rejected` | `conditional-write` | Updates a suggestion status. | Resolve the row under the operation protocol when enabled; disabled vaults refuse without changing metadata bytes. |
-| `contract` | `removed-transport` | None; the old endpoint advertised a remote wire contract. | Explicit unsupported response. This matrix and `contract.json` are the offline specification. |
+| `contract` | `removed-transport` | None; the old endpoint advertised a remote wire contract. | Explicit unsupported response. `Tools/zagent/contract.json` was removed along with the retired remote transport it described; this matrix is now the sole offline specification. |
 
 ## Conditional write safety
 

@@ -2,7 +2,7 @@
 
 **Document purpose:** how the Markdown in this directory and the `FD` Jira board relate. Read it once; after that [Roadmap.md](Roadmap.md) and the board carry the keys and this file only answers "why is it arranged this way". The model is `Games/Zenithmon/Docs/Board.md`; Foundry follows it exactly.
 
-**Board:** project **`FD`**, on the machine named by `ZAGENT_URL`, served by the same `C:\dev\Zenith` checkout as `ZM`, `ZEN`, `DP`, `UV` and `HE`. One ticket in flight per checkout (I5).
+**Board:** project **`FD`**, served by the same `C:\dev\Zenith` checkout as `ZM`, `ZEN`, `DP`, `UV` and `HE` — the board is this checkout, not a separate machine. One ticket in flight per checkout (I5).
 
 ---
 

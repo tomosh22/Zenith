@@ -4,10 +4,8 @@
  *
  * `.claude/commands/tick.md:1274` states the principle this module exists to
  * serve: "a rule enforced at a check that already fails is a rule, and the
- * same rule in this paragraph is a hope." `Tools/zagent/TickChecks.psm1`
- * carries the equivalent checks for the legacy/remote backend — read as a
- * specification of intent, not ported line for line, because the two
- * backends disagree about almost everything except the shape of the answer.
+ * same rule in this paragraph is a hope." This is the sole implementation of
+ * these checks — there is no second copy anywhere else in the repo.
  *
  * Every function here answers a question about `.zagent/run/<KEY>/` and the
  * git working tree; it never refuses, commits, or writes anything itself.

@@ -4,8 +4,9 @@ A local Markdown board and document editor with a local project workspace, a
 disposable index, compatible CLI, Git-backed mutations, and a localhost browser
 app. PostgreSQL and the previous board application's checkout are not runtime dependencies.
 
-**Deployment status:** the production launcher uses the local Vault through
-`Tools/zagent/backend.json`. Legacy board/docs writes are fenced in PostgreSQL.
+**Deployment status:** the production launcher uses the local Vault —
+`Tools/zagent/zagent.ps1` dispatches straight to it, unconditionally; there is
+no backend-selection file or concept. Legacy board/docs writes are fenced in PostgreSQL.
 The pre-cutover recovery tag is `vault-pre-cutover-20260916`; migration evidence is in
 the repository root `migration/` directory. The frozen test fixture stays read-only.
 

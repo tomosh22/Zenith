@@ -4,7 +4,8 @@
 Read it once; after that `Roadmap.md` and the board carry the keys and this file only
 answers "why is it arranged this way".
 
-**Board:** project **`ZM`**, org `pink-goat`, on the machine named by `ZAGENT_URL`.
+**Board:** project **`ZM`**, org `pink-goat` -- the board is this same
+`C:\dev\Zenith` checkout, not a separate machine.
 Engine work is **`ZEN`** and DevilsPlayground is **`DP`** -- one board per game area,
 all served by the same `C:\dev\Zenith` checkout. Three more joined in 2026-09,
 bootstrapped from their TDDs: **`UV`** Undervault, **`HE`** Hearth and **`FD`**

@@ -41,7 +41,8 @@ results are supplemented by the production verification below.
 
 ## Production cutover
 
-The launcher now selects the local Vault through `Tools/zagent/backend.json`.
+The launcher now dispatches straight to the local Vault — `Tools/zagent/zagent.ps1`
+execs the Vault CLI unconditionally, with no backend-selection file or concept.
 The root `vault.config.json` enables Git-backed writes in the authoritative checkout.
 Legacy board/docs database writes are fenced; shared services remain available.
 
