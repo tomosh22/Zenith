@@ -5,7 +5,7 @@ type: "STORY"
 title: "De-globalisation phase 5.5: Input and Editor statics"
 category: "Engine"
 parent: "ZEN-24"
-sprint: null
+sprint: "zen-zen-de-globalisation-program"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 32
 labels: []
 fixVersions: []
 blocks: [{"key":"ZEN-33","reason":"Inventory phase order: Flux_Graphics is reached from Editor and Input paths phase 5.5 rewires."}]
-updatedAt: "2026-09-19T17:39:17.743Z"
+updatedAt: "2026-09-19T17:42:03.836Z"
 flagged: false
 severity: null
 reproducibility: null
