@@ -15,8 +15,8 @@ storyPoints: 8
 position: 6
 labels: []
 fixVersions: []
-blocks: [{"key":"UV-7","reason":"the human edits reference files the scaffold creates","raw":{"key":"UV-7","reason":"the human edits reference files the scaffold creates","raw":{"key":"UV-7","reason":"the human edits reference files the scaffold creates"},"invalid":false},"invalid":false},{"key":"UV-8","reason":"the docs describe a game that must exist first","raw":{"key":"UV-8","reason":"the docs describe a game that must exist first"},"invalid":false},{"key":"UV-9","reason":"the spike harness is a test inside the scaffolded game"}]
-updatedAt: "2026-09-19T19:11:59.214Z"
+blocks: [{"key":"UV-7","reason":"the human edits reference files the scaffold creates","raw":{"key":"UV-7","reason":"the human edits reference files the scaffold creates","raw":{"key":"UV-7","reason":"the human edits reference files the scaffold creates","raw":{"key":"UV-7","reason":"the human edits reference files the scaffold creates"},"invalid":false},"invalid":false},"invalid":false},{"key":"UV-8","reason":"the docs describe a game that must exist first","raw":{"key":"UV-8","reason":"the docs describe a game that must exist first","raw":{"key":"UV-8","reason":"the docs describe a game that must exist first"},"invalid":false},"invalid":false},{"key":"UV-9","reason":"the spike harness is a test inside the scaffolded game","raw":{"key":"UV-9","reason":"the spike harness is a test inside the scaffolded game"},"invalid":false},{"key":"UV-12","reason":"the prototype lives in Source/ the scaffold creates"}]
+updatedAt: "2026-09-19T19:12:03.726Z"
 flagged: false
 severity: null
 reproducibility: null
