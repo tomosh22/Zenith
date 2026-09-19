@@ -5,7 +5,7 @@ type: "TASK"
 title: "Vulkan surface recreation across TERM_WINDOW and INIT_WINDOW: verify on the emulator, then fix"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
 status: "To Do"
 assignee: null
 priority: "HIGH"
@@ -16,7 +16,7 @@ position: 47
 labels: ["engine-gap","needs-human"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 acceptance includes suspend/resume, which is the surface-recreation result."}]
-updatedAt: "2026-09-19T17:40:11.984Z"
+updatedAt: "2026-09-19T17:42:47.977Z"
 flagged: false
 severity: null
 reproducibility: null
