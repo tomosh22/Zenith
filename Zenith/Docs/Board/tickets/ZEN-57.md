@@ -5,7 +5,7 @@ type: "TASK"
 title: "SaveData slot metadata: ReadHeader and EnumerateSlots as engine surface"
 category: "Engine"
 parent: "ZEN-26"
-sprint: null
+sprint: "zen-zen-mobile-readiness-p1-before-an-android-ship"
 status: "To Do"
 assignee: null
 priority: "MEDIUM"
@@ -16,7 +16,7 @@ position: 57
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-88","reason":"P1 acceptance exercises save metadata."}]
-updatedAt: "2026-09-19T17:40:57.769Z"
+updatedAt: "2026-09-19T17:43:32.040Z"
 flagged: false
 severity: null
 reproducibility: null
