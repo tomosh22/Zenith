@@ -10,7 +10,7 @@ assignee: agent@zenith.invalid
 priority: HIGH
 complexity: COMPLEX
 risk: HIGH
-storyPoints: null
+storyPoints: 13
 position: 1
 labels:
   - engine-gap
@@ -43,6 +43,7 @@ source:
   resolved_at: 2026-08-26T12:18:28.126
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:38:52.783Z"
 ---
 ## Goal
 
