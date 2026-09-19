@@ -15,8 +15,8 @@ storyPoints: 8
 position: 56
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."}]
-updatedAt: "2026-09-19T17:43:28.072Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item.","raw":{"key":"ZEN-88","reason":"P1 acceptance reviews every P1 item."},"invalid":false},{"key":"HE-42","reason":"the headroom work is engine work"}]
+updatedAt: "2026-09-19T19:29:13.643Z"
 flagged: false
 severity: null
 reproducibility: null
