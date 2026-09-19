@@ -15,8 +15,8 @@ storyPoints: 13
 position: 31
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:24.304Z"
+blocks: [{"key":"ZEN-32","reason":"Inventory phase order: Editor statics wrap SceneManager callbacks that phase 5 re-homes."}]
+updatedAt: "2026-09-19T17:39:13.606Z"
 flagged: false
 severity: null
 reproducibility: null
