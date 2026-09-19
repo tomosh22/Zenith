@@ -15,8 +15,8 @@ storyPoints: 8
 position: 59
 labels: ["engine-gap"]
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:35:07.010Z"
+blocks: [{"key":"ZEN-88","reason":"P1 acceptance installs the AAB the packaging target produces."}]
+updatedAt: "2026-09-19T17:41:06.174Z"
 flagged: false
 severity: null
 reproducibility: null
