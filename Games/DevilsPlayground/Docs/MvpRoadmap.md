@@ -363,3 +363,78 @@ When MVP ships, the next milestone candidates are:
 10. **Localisation pipeline.**
 
 Each becomes its own roadmap document at the time.
+
+---
+
+## Board (project `DP`)
+
+**Added 2026-09-19.** Every open MVP item above and every post-MVP milestone below is a ticket on the `DP` board; this section is the join, and `zagent board status --project DP --roadmap MvpRoadmap.md` reports drift between it and the board. Each milestone is an epic with a PLANNED sprint of the same name and a `human-gate` acceptance ticket designated as the sprint's gate; a human starts the sprint (`zagent sprint start "<name>"`). The MVP task ids (`MVP-N.N.N`) stay the authority for WHAT; the board is the authority for status and dependencies. DevilsPlayground runs `branching: direct` in `zagent.project.json`; the squash-merge PR text in `CIPolicy.md` is history.
+
+### [DP-1] DevilsPlayground MVP
+
+- [ ] **[DP-6]** Rule on the villager rig source: Mixamo drop, or the engine's shared StickFigure rig through the glb importer *(TASK · SIMPLE/LOW · 2 pts · CRITICAL · `needs-human` · `question`)*
+- [ ] **[DP-7]** MVP-3.0.1 skeletal-mesh import spike: one rigged villager body imports and plays a shared-rig clip in ProcLevel *(TASK · MODERATE/HIGH · 5 pts · HIGH)*
+- [ ] **[DP-8]** MVP-3.1 villager skinned meshes: idle, walk and run driven by movement, archetype tint, all-archetypes-instantiable test *(STORY · COMPLEX/HIGH · 13 pts · HIGH)*
+- [ ] **[DP-9]** MVP-3.2 Aelfric mesh: hat silhouette, dark robe, hand-parented lantern light *(STORY · MODERATE/MEDIUM · 8 pts · HIGH)*
+- [ ] **[DP-10]** Drop the item and interactable source meshes (Kenney kits as glb) into the SourceArt root, or rule for generated primitives *(TASK · SIMPLE/LOW · 2 pts · HIGH · `needs-human`)*
+- [ ] **[DP-11]** MVP-3.3 item meshes for the nine item tags, held in the hand socket, cube fallback as a runtime flag *(STORY · MODERATE/MEDIUM · 8 pts · HIGH)*
+- [ ] **[DP-12]** MVP-3.4 interactable meshes with Pivot, Leaf and Lid sockets: door, double door, chest, forge, pentagram *(STORY · MODERATE/MEDIUM · 8 pts · HIGH)*
+- [ ] **[DP-13]** MVP-3.5 asset linter: ZenithTools lint over the manifest plus Test_AssetScene_VexholmeLoadsCleanly *(TASK · MODERATE/LOW · 5 pts · MEDIUM)*
+- [ ] **[DP-14]** MVP-3.5.2 CI step: run the asset lint before the build in dp-tests *(TASK · SIMPLE/LOW · 2 pts · MEDIUM · `needs-human`)*
+- [ ] **[DP-15]** MVP-0.2.4 Test_P3Inventory_ArchetypeCount over all 24 archetypes, non-MVP rows reported by name *(TASK · SIMPLE/LOW · 3 pts · LOW · `deferred`)*
+- [ ] **[DP-16]** MVP-4.1.2 reconcile the bot wins-consistently clause against the golden test time and the matrix *(TASK · SIMPLE/LOW · 3 pts · MEDIUM · `question`)*
+- [ ] **[DP-17]** MVP-4.1.3 scene re-bake determinism: two boots byte-identical, committed-bytes guard, a clean tree after the suite *(TASK · MODERATE/MEDIUM · 5 pts · HIGH)*
+- [ ] **[DP-18]** MVP-4.3.4 MVP acceptance: a person plays the packaged demo end to end and records GO or NO-GO *(TASK · SIMPLE/LOW · 2 pts · CRITICAL · `needs-human` · `human-gate`)*
+
+### [DP-2] DP M2 — Playtest instrumentation, bot and balance
+
+- [ ] **[DP-19]** Autonomous playtest bot: N seeds times 8 personalities unattended with a nightly report and delta *(STORY · COMPLEX/HIGH · 13 pts · HIGH)*
+- [ ] **[DP-20]** Replay-debug UI over telemetry recordings: scrub, paths and events on the minimap layer *(STORY · COMPLEX/MEDIUM · 8 pts · MEDIUM)*
+- [ ] **[DP-21]** Single-cell telemetry analysis mode for dp_seed_matrix_analyse.py *(TASK · SIMPLE/LOW · 3 pts · MEDIUM)*
+- [ ] **[DP-22]** P1 timer-cluster amortisation: an accelerated test clock for the nine timer tests *(TASK · MODERATE/LOW · 5 pts · MEDIUM)*
+- [ ] **[DP-23]** Bot pathfinding onto the engine navmesh: fix FindPath on procgen layouts, delete the grid A* *(STORY · COMPLEX/HIGH · 13 pts · HIGH · `engine-gap`)*
+- [ ] **[DP-24]** Procgen distance cap from iron spawners to the pentagram so every seed is solvable *(TASK · MODERATE/MEDIUM · 5 pts · MEDIUM)*
+- [ ] **[DP-25]** Explain from telemetry why Zealot delivers fewer objectives than Speedrunner *(TASK · SIMPLE/LOW · 3 pts · LOW · `question`)*
+- [ ] **[DP-26]** Rule the shipping and playtest values of reagents_required_for_victory and align the docs, tuning and golden test *(TASK · SIMPLE/LOW · 2 pts · HIGH · `needs-human` · `question`)*
+- [ ] **[DP-27]** Minimap draws rotated rooms as rotated quads *(TASK · SIMPLE/LOW · 3 pts · LOW · `visual`)*
+- [ ] **[DP-28]** Third-person camera wall-clipping avoidance with an occlusion clamp *(TASK · MODERATE/MEDIUM · 5 pts · MEDIUM · `visual`)*
+- [ ] **[DP-29]** Forge crafting duration with start and complete events and a completion effect *(TASK · SIMPLE/LOW · 3 pts · LOW)*
+- [ ] **[DP-30]** Knot cost curve tuning from matrix and playtest data *(TASK · MODERATE/MEDIUM · 5 pts · LOW · `deferred`)*
+- [ ] **[DP-31]** M2 acceptance: nightly matrix report reviewed, navmesh before and after, open questions resolved *(TASK · SIMPLE/LOW · 2 pts · MEDIUM · `human-gate`)*
+
+### [DP-3] DP M3 — Content depth: archetypes, reagents and threats
+
+- [ ] **[DP-32]** Villager archetypes batch A: the first ten post-MVP archetypes as full data, abilities, bodies and tests *(STORY · COMPLEX/MEDIUM · 8 pts · MEDIUM · `content`)*
+- [ ] **[DP-33]** Villager archetypes batch B: the last ten post-MVP archetypes as full data, abilities, bodies and tests *(STORY · COMPLEX/MEDIUM · 8 pts · MEDIUM · `content`)*
+- [ ] **[DP-34]** The nine remaining reagents with unique behaviours and meshes; a Night draws five of fourteen *(STORY · COMPLEX/MEDIUM · 8 pts · MEDIUM · `content`)*
+- [ ] **[DP-35]** Hounds Aram and Tobit: scent following, barking to Aelfric, a bite that ends possession *(STORY · COMPLEX/HIGH · 13 pts · MEDIUM)*
+- [ ] **[DP-36]** Aelfric variants Cautious, Cruel and Drunk as tuning plus graph branches *(STORY · COMPLEX/MEDIUM · 8 pts · MEDIUM)*
+- [ ] **[DP-37]** Mid-Night escalation: flintlock, bless and exorcise as time-gated tools with telegraphs *(STORY · COMPLEX/MEDIUM · 8 pts · MEDIUM)*
+- [ ] **[DP-38]** Charms: rowan, salt and the St. George medal as villager-carried possession resistance *(STORY · MODERATE/LOW · 5 pts · MEDIUM · `content`)*
+- [ ] **[DP-39]** Distractions: music box, tin whistle, tinder bundle and raw meat as forge-craftable stimuli *(STORY · MODERATE/LOW · 5 pts · MEDIUM · `content`)*
+- [ ] **[DP-40]** Confessional hide mechanic and the well drown verb *(STORY · MODERATE/MEDIUM · 5 pts · MEDIUM)*
+- [ ] **[DP-41]** Procedural shuffler and the 7-Night campaign: deterministic per-Night draws with meta-save carry-over *(STORY · COMPLEX/HIGH · 13 pts · HIGH)*
+- [ ] **[DP-42]** M3 acceptance: full-content matrix, the 7-Night campaign test, three Nights played *(TASK · SIMPLE/LOW · 2 pts · MEDIUM · `human-gate`)*
+
+### [DP-4] DP M4 — Meta-progression, narrative and modes
+
+- [ ] **[DP-43]** Liminal hub scene: hermit, unlock board and campaign map between Nights *(STORY · COMPLEX/MEDIUM · 8 pts · LOW)*
+- [ ] **[DP-44]** Hermit unlock trees: data-driven meta-progression bought with Knots, persisted and applied at Night start *(STORY · COMPLEX/MEDIUM · 8 pts · LOW)*
+- [ ] **[DP-45]** Cross-Night save: the campaign survives quit and continue, corrupt blobs fail soft *(TASK · MODERATE/MEDIUM · 5 pts · LOW)*
+- [ ] **[DP-46]** Narrative arc: hermit dialogue, whisper lines, Joan Trew and the Order of the Unstaked Heart, an ending *(STORY · COMPLEX/MEDIUM · 8 pts · LOW · `content`)*
+- [ ] **[DP-47]** Cutscenes for the campaign opening, Joan Trew's reveal and the ending over the live scene *(STORY · MODERATE/MEDIUM · 8 pts · LOW · `deferred`)*
+- [ ] **[DP-48]** Daily Vexholme, Endless Vexholme and Hauntings as front-end modes over the shuffler *(STORY · MODERATE/MEDIUM · 8 pts · LOW)*
+- [ ] **[DP-49]** M4 acceptance: a full campaign with meta-progression played, modes smoke-tested *(TASK · SIMPLE/LOW · 2 pts · LOW · `human-gate`)*
+
+### [DP-5] DP Ship readiness (deferred)
+
+- [ ] **[DP-50]** Audio integration: bind every DP emission to a clip and bus once the engine mixer (FD-79) lands *(STORY · MODERATE/MEDIUM · 8 pts · LOW · `deferred`)*
+- [ ] **[DP-51]** Rule the final art sourcing route and budget: commission, CC0 or procedural generators *(TASK · SIMPLE/LOW · 2 pts · LOW · `needs-human` · `question` · `deferred`)*
+- [ ] **[DP-52]** Console platform survey: first target, required engine layers, SDK prerequisites *(TASK · COMPLEX/HIGH · 13 pts · LOW · `deferred`)*
+- [ ] **[DP-53]** Console certification pre-flight checklist for the chosen platform *(TASK · MODERATE/HIGH · 5 pts · LOW · `needs-human` · `deferred`)*
+- [ ] **[DP-54]** Localisation: every DP string through the engine string table, one second locale *(TASK · MODERATE/MEDIUM · 5 pts · LOW · `deferred`)*
+- [ ] **[DP-55]** Accessibility pass against GDD section 10 with options and a tint colour-blind check *(STORY · MODERATE/MEDIUM · 5 pts · LOW · `deferred`)*
+- [ ] **[DP-56]** Real volumetric fog shader honouring the gameplay fog contract *(STORY · COMPLEX/MEDIUM · 8 pts · LOW · `deferred` · `visual`)*
+- [ ] **[DP-57]** Final particle effect set on the GPU particle path *(STORY · MODERATE/LOW · 5 pts · LOW · `deferred` · `visual`)*
+- [ ] **[DP-58]** Rule the Aelfric mutter source under the no-paid-services agreement: authored, offline-generated or cut *(TASK · SIMPLE/LOW · 3 pts · LOW · `question` · `deferred`)*
+
