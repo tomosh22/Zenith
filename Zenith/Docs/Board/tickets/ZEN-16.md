@@ -6,13 +6,13 @@ category: Engine
 parent: null
 sprint: null
 status: To Do
-assignee: agent@zenith.invalid
+assignee: null
 priority: MEDIUM
-complexity: SIMPLE
+complexity: "MODERATE"
 risk: LOW
-storyPoints: null
+storyPoints: 5
 position: 12
-labels: []
+labels: ["tech-debt"]
 fixVersions: []
 blocks: []
 links: []
@@ -42,5 +42,15 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:37:59.142Z"
 ---
-Zenith/Vulkan, Zenith/D3D12 and Zenith/Null should move into Zenith/RenderBackends/Vulkan, Zenith/RenderBackends/D3D12 and Zenith/RenderBackends/Null. The RenderBackends directory does not exist yet, it will need to be created
+## Goal
+`Zenith/Vulkan`, `Zenith/D3D12` and `Zenith/Null` are the three render backends and sit as top-level engine directories beside unrelated modules. Move them under a new `Zenith/RenderBackends/` (`RenderBackends/Vulkan`, `RenderBackends/D3D12`, `RenderBackends/Null`) so the backend set is one directory the `RenderBackend` config fragment selects from.
+
+Mechanics: `git mv` the three directories; update every `#include "Vulkan/..."`, `"Null/..."`, `"D3D12/..."` across engine and games; update `Build/Sharpmake_Common.cs` and `Sharpmake_Zenith.cs` where the backend fragment picks which directory compiles (`Null_` configs compile `Zenith/Null` instead of Vulkan; `D3D12_` is the link-neutrality proof); move the three `CLAUDE.md` files and fix the root `CLAUDE.md` directory table and `Docs/BuildSystem.md`; re-path any layering/allowlist entries. Regenerate and build every configuration prefix (`Vulkan_`, `Null_`, `D3D12_`), because a path mistake in one backend is invisible from the other two.
+
+## Definition of Done
+- [ ] The three backends live under `Zenith/RenderBackends/` and nothing remains at the old paths
+- [ ] `Vulkan_`, `Null_` and `D3D12_` configurations all build for the engine and every game after `Build\regen.ps1`
+- [ ] Allowlists are re-pathed, not loosened; the architecture gates stay green
+- [ ] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the three backend `CLAUDE.md` files describe the new layout
