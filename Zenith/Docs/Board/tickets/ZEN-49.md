@@ -15,8 +15,8 @@ storyPoints: 8
 position: 49
 labels: ["engine-gap"]
 fixVersions: []
-blocks: [{"key":"ZEN-87","reason":"P0 exit lists cutaway among the P0 items."}]
-updatedAt: "2026-09-19T17:42:55.971Z"
+blocks: [{"key":"ZEN-87","reason":"P0 exit lists cutaway among the P0 items.","raw":{"key":"ZEN-87","reason":"P0 exit lists cutaway among the P0 items."},"invalid":false},{"key":"HE-26","reason":"cutaway needs the view-mask hide and height clip"}]
+updatedAt: "2026-09-19T19:26:15.570Z"
 flagged: false
 severity: null
 reproducibility: null
