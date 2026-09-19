@@ -15,8 +15,8 @@ storyPoints: 13
 position: 30
 labels: []
 fixVersions: []
-blocks: []
-updatedAt: "2026-09-19T17:33:20.513Z"
+blocks: [{"key":"ZEN-31","reason":"Inventory phase order: the SceneManager subsystems hold asset and physics handles injected in phase 4."}]
+updatedAt: "2026-09-19T17:39:09.479Z"
 flagged: false
 severity: null
 reproducibility: null
