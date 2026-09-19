@@ -1,14 +1,12 @@
 # `zagent` — the Vault board client
 
-## Active backend: Zenith Vault
+## Zenith Vault
 
-The 2026-09-16 cutover makes Zenith Vault the active local board backend. The
-repository-owned `Tools/zagent/backend.json` profile contains
-`{"backend":"vault","vaultRoot":"../.."}`; `zagent.ps1` resolves that profile to
-the checkout's Vault root and refuses to fall back to the retired writer when the
-profile is invalid. Vault uses this checkout as the single authoritative working
-tree, and `zagent.project.json` declares direct integration for every category,
-including DevilsPlayground.
+Zenith Vault is the agent board for this checkout — there is exactly one
+backend, it lives at `Tools/Vault/`, and it needs no network credential:
+Vault uses this checkout as its own single authoritative working tree,
+and `zagent.project.json` declares direct integration for every
+category, including DevilsPlayground.
 
 Start the local Vault app from the repository root:
 
@@ -16,44 +14,44 @@ Start the local Vault app from the repository root:
 node Tools/Vault/server/http.mjs --vault . --port 4317
 ```
 
-It listens at `http://127.0.0.1:4317`. The CLI and browser use the same Vault
-files and operation lock. Vault requires Node 22 and the dependencies under
-`Tools/Vault`; it needs no `ZAGENT_URL`, `ZAGENT_TOKEN`, board account, or other
-remote credentials. See [Vault](../Vault/README.md) for the app, tests, migration,
-and recovery boundary.
+It listens at `http://127.0.0.1:4317`. The CLI and browser use the same
+Vault files and operation lock. Vault requires Node 22 and the
+dependencies under `Tools/Vault`; it needs no board URL, bearer token,
+board account, or other remote credential. See
+[Vault](../Vault/README.md) for the app, tests, migration, and recovery
+boundary.
 
-The rest of this README retains the pre-cutover HTTP client and board protocol as
-historical reference for the legacy remainder. Those sections do not describe the
-active startup path or credential requirements.
+## `zagent.ps1` — a dispatch shim, nothing else
 
-## Historical legacy backend
+`Tools/zagent/zagent.ps1` is a thin PowerShell shim. It resolves this
+repo's root from its own location (`$PSScriptRoot/../..` — `Tools/zagent`
+always lives two levels under the repo root, regardless of the caller's
+current directory) and hands off every argument, verbatim, to:
 
-The autonomous loop's board is a web application. It may run on **an
-entirely different machine**, and this repo does not know where its
-source lives — there is deliberately no setting for that.
-
-This directory is the whole client: a PowerShell script that speaks HTTP
-to the board, plus a `.cmd` shim so `zagent …` works bare. No Node, no
-`node_modules`, no package manager. `pwsh` is already a hard dependency
-of every gate and every `zenith.ps1` command, so the client adds nothing
-new to a build machine.
-
-### Legacy setup (historical)
-
-Two environment variables, once per machine:
-
-```powershell
-[Environment]::SetEnvironmentVariable('ZAGENT_URL',   'https://board.example.com', 'User')
-[Environment]::SetEnvironmentVariable('ZAGENT_TOKEN', 'zag_…',                     'User')
+```
+node Tools/Vault/cli/client.mjs --vault <repoRoot> <args...>
 ```
 
-Put `Tools\zagent` on `PATH` so a bare `zagent` resolves. **Prepend it, do
-not append it** — `PATH` is ordered, and a machine that once had an older
-`zagent` installed (a pnpm/npm global shim, say) still has that shim
-earlier in the list. Appending leaves the stale one winning, and the
-symptom is not an error: the old client answers, talks straight to the
-database instead of over HTTP, and `zagent doctor` still exits 0 while
-silently omitting every client-side row.
+then exits with that process's own exit code. It adds nothing of its
+own beyond one failure mode: if `node` or `Tools/Vault/cli/client.mjs`
+cannot be found, it prints a message and exits `1`.
+
+There used to be a second, remote-HTTP backend here, selected by a
+`Tools/zagent/backend.json` config file — a PowerShell client speaking
+to a board that could run on an entirely different machine, needing a
+board URL and a per-machine bearer token configured as environment
+variables on this one. It, `backend.json`, and every line of
+`zagent.ps1`/`ZagentClient.psm1` reachable only through it were removed:
+there is now exactly one backend and nothing left to select.
+`Tools/Vault/cli/tick-checks.mjs` is the live equivalent of the
+tick-protocol checks that backend used to carry (file-list excursions,
+commit completeness, `blocked-scope` defensibility, gate-verdict
+freshness), wired into `Tools/Vault/cli/write.mjs` and `client.mjs`.
+
+Put `Tools\zagent` on `PATH` so a bare `zagent` resolves. **Prepend it,
+do not append it** — `PATH` is ordered, and a machine that once had an
+older `zagent` installed (a pnpm/npm global shim, say) still has that
+shim earlier in the list. Appending leaves the stale one winning.
 
 ```powershell
 $path = [Environment]::GetEnvironmentVariable('PATH', 'User')
@@ -66,21 +64,9 @@ Confirm the right one won — this should print a path inside this repo:
 (Get-Command zagent).Source
 ```
 
-The token is minted **on the board machine**, which is the only place
-that can reach the database without already holding one:
+Verify with `zagent doctor`.
 
-```
-zagent auth mint --name <this-machine>
-```
-
-It is shown exactly once — only its SHA-256 is stored — and revoking it
-is `zagent auth revoke <name>` on the board. Per-machine, so a laptop
-that walks off is one row, not a secret rotation.
-
-Verify with `zagent doctor`, which merges the board's checks with this
-machine's.
-
-### Legacy layout (historical)
+## Where things live
 
 | | Where | Why |
 |---|---|---|
@@ -93,118 +79,33 @@ machine's.
 registered once. A stored copy goes stale, and a stale gate list is
 exactly how a green run ratchets the wrong baseline.
 
-### Legacy working-tree commands (historical)
-
-`guard` and `gates` are the only commands that look at the repo itself,
-and neither takes the file list from you:
-
-| | |
-|---|---|
-| `zagent gates <KEY>` | the gate list this DIFF needs — the ticket's own, plus every category whose declared `paths` the change touched. Records it in `.zagent/run/<KEY>/gates.json`. |
-| `zagent guard <KEY>` | protected paths, **and** that the recorded gate selection still describes the diff. Non-zero on either. |
-
-A gate list picked by the ticket's filing CATEGORY says who asked for the
-work, not what it touched. Four consecutive tickets filed `Zenithmon`
-edited `Zenith/**` — code every game links — and ran a list that builds
-one game and checks one pin; one of them said "the fix is engine-side" in
-its own Goal while the category quietly decided otherwise. `gates` gives
-the diff a vote, and it can only ever ADD: the category's own list stays
-a prefix of the result.
-
-`guard <KEY>` is where that becomes mechanical instead of remembered. It
-re-derives the selection and refuses a stale one, because the failure is
-silent otherwise — every gate that ran passes, so the ticket merges green
-with an entire area unverified. Both commands compute the changed set
-with `Get-WorkingTreeChanges`; do not hand-assemble one and pass
-`--file`.
-
-### Legacy request behavior (historical)
-
-There was no timeout at all, so a board that accepted the connection and
-then stopped answering hung the client forever — and an unattended
-`/tick` has no operator to notice. Every request now has a budget
-(`Get-RequestTimeout`), and `docs sync`/`docs status` get a much longer
-one because they ship a ~1 MB Markdown tree and write a CRDT per page.
-
-A timeout lands in the same `catch` as a refused connection and so exits
-**7**, which is exactly what it means: the board was never reached.
-
-### Legacy exit codes (historical)
-
-Branch on them, never on the text:
-
-| | |
-|---|---|
-| `0` | ok |
-| `3` | nothing to claim |
-| `4` | contract invalid |
-| `5` | ownership lost / repo busy |
-| `6` | circuit breaker open |
-| `1` | error |
-| `7` | **could not reach the board** |
-
-`7` is this client's own and is distinct on purpose. "The board said no"
-and "I never reached the board" demand opposite responses from an
-unattended loop, and collapsing them into `1` is how a network blip gets
-written into a ticket as a contract failure.
-
-### Legacy client layout and tests (historical)
+## Client layout and tests
 
 | File | |
 |---|---|
-| `zagent.ps1` | argv, environment, transport, main flow — and, first, the `backend.json` dispatch: on `vault` it execs `node Tools/Vault/cli/client.mjs` and exits before any of the rest of this table runs |
-| `ZagentClient.psm1` | the pure helpers — path resolution, JSON shaping, payload assembly, applying the board's writes, the client half of `doctor` |
-| `TickChecks.psm1` | this backend's copy of the four tick-protocol checks — file-list excursions, commit completeness, `blocked-scope` defensibility, gate-verdict freshness. `Tools/Vault/cli/tick-checks.mjs` is the LIVE equivalent, wired into `Tools/Vault/cli/write.mjs` and `client.mjs`; this module is a specification of intent for the legacy backend, not a line-for-line port |
-| `build_prompt.ps1` | assembles `.zagent/run/<KEY>/prompt.md` and `filelist.txt` for step 5 of `/tick`, deterministically. Invoked directly with `pwsh -File`, never through `zagent.ps1`, so it runs the same way under either backend |
-| `Test-ZagentClient.ps1` | the assertions over `ZagentClient.psm1` |
-| `Test-TickChecks.ps1` | the assertions over `TickChecks.psm1`'s own filesystem/git behaviour |
-| `Test-TickWiring.ps1` | the assertions over how `zagent.ps1` WIRES those four checks into `finish`/`update`/`guard`/`abandon` — a separate file on purpose, since a second agent may be running `Test-ZagentClient.ps1` or `Test-TickChecks.ps1` concurrently |
+| `zagent.ps1` | the dispatch shim described above |
+| `ZagentClient.psm1` | the handful of pure helpers `build_prompt.ps1` still calls standalone: `Find-ClientRepo`, `ConvertTo-PosixPath`, `Write-StdErr`, `Get-ScratchRoot`, `Write-LastExit` |
+| `build_prompt.ps1` | assembles `.zagent/run/<KEY>/prompt.md` and `filelist.txt` for step 5 of `/tick`, deterministically. Invoked directly with `pwsh -File`, never through `zagent.ps1` |
+| `Test-ZagentClient.ps1` | the assertions over `ZagentClient.psm1`'s surviving helpers, plus a couple of `zagent.project.json` sanity checks that happen to live here |
 | `Test-BuildPrompt.ps1` | the assertions over `build_prompt.ps1`, run as a real `pwsh -File` child process per assertion (never dot-sourced), because `exit` inside the script under test would otherwise tear down the test runner too |
 
-Each of the four test scripts **prints its own count** — do not pin one
-here, this line has been stale twice:
+Each test script **prints its own count** — do not pin one here, this
+line has been stale before:
 
 ```
 pwsh -NoProfile -File Tools/zagent/Test-ZagentClient.ps1
-pwsh -NoProfile -File Tools/zagent/Test-TickChecks.ps1
-pwsh -NoProfile -File Tools/zagent/Test-TickWiring.ps1
 pwsh -NoProfile -File Tools/zagent/Test-BuildPrompt.ps1
 ```
 
 The `zagent.ps1`/`ZagentClient.psm1` split exists so the helpers are
 reachable from a test: `zagent.ps1` runs a command the moment it is
-invoked, which makes every function inside it untestable. Plain assert
-scripts rather than Pester, matching
+invoked, which makes every function inside it untestable directly.
+Plain assert scripts rather than Pester, matching
 `Tools/Test_T0Harness_SessionCloseFlagsExist.ps1` — the only PowerShell
 this repo requires is the `pwsh` every gate already needs.
 
-### Legacy client sharp edges (historical)
+## Sharp edges
 
-- **`ConvertTo-Json` defaults to `-Depth 2`.** Anything deeper is
-  serialised as a type name. Every call here passes `-Depth 100`.
-- **A PowerShell function unrolls a returned collection**, so a
-  one-element array comes back as a scalar and `cleanup: ["…"]` goes on
-  the wire as a bare string. `Remove-Annotations` returns `,@(…)` for
-  exactly this reason; the board's strict schema catches it, but the
-  error ("Expected array, received string") does not point at the
-  language feature that caused it.
-- **`$`-prefixed keys are comments** in `zagent.project.json`, stripped
-  at every depth. JSON has no comments and that file pins baselines —
-  the numbers most in need of a note beside them.
-- **Do not re-wrap a `,@(…)` return.** `@(Get-BodyDrift …)` nests the
-  rows one level down, and the symptom is not an error: `$rows[0].kind`
-  still interpolates correctly through member enumeration while
-  `$rows[0].PSObject.Properties['movedTo']` quietly answers with the
-  ARRAY's own properties. Half a check passes, which is how it survives
-  being written. Assign the call and use the result.
-- **`Get-ClientChecks` returns ONE pipeline item on purpose.** `,@(…)`
-  keeps `.Count` honest for a single-row result — a bare hashtable would
-  answer with its KEY count — at the cost that `| ForEach-Object` sees
-  the whole array. Assign it and iterate.
-- **`Set-StrictMode` turns a missing property into a throw**, so every
-  optional field in the project file is read through
-  `PSObject.Properties['name']`. A file that legally omits `baseBranch`
-  must make `doctor` report, not crash.
 - **`zagent.cmd` must keep CRLF line endings.** A Windows batch file
   with LF-only endings is outside what cmd.exe's parser guarantees, and
   the symptom is a bare `zagent …` through the shim that never returns —
@@ -214,19 +115,14 @@ this repo requires is the `pwsh` every gate already needs.
   under `core.autocrlf=true` while still looking "clean" to git.
   `.gitattributes` pins `Tools/zagent/zagent.cmd text eol=crlf`, so every
   checkout puts CRLF on disk regardless of the cloner's setting.
-
-### Legacy wire contract and local board (historical)
-
-`contract.json` (this directory, committed) is the golden fixture both
-sides of the protocol assert against — the path-valued flags, the
-commands that ship the docs tree, the protocol version. A board change
-without this client fails the client's own test suite; a client change
-without the board fails the board's. `zagent contract --json` prints
-the live answer when a board is reachable.
-
-The board itself lives in a different repo and may run on an entirely
-different machine — this client only ever needs `ZAGENT_URL` +
-`ZAGENT_TOKEN`. **A local board for development** (its startup, health
-checks, backup expectations, the protocol handshake and the
-milestone-to-sprint mapping) is documented in the board repo at
-`packages/agent/OPERATIONS.md`; nothing here depends on it.
+- **A separator mismatch in `ConvertTo-PosixPath` matches nothing.** The
+  docs mirror and the board key an uploaded tree off these strings, so a
+  value that normalises differently on a second pass silently mirrors
+  zero pages and reports success. `Test-ZagentClient.ps1` pins this.
+- **`Find-ClientRepo` reads the cwd, not `$PSScriptRoot`.** It walks up
+  looking for `zagent.project.json`, so `zagent owns ZEN-11` from
+  `Games/Zenithmon` finds the same file as one run from the repo root.
+  `zagent.ps1`'s own `--vault` root is computed differently (from its
+  own location, not the cwd) — see `zagent.ps1` above — because the
+  Vault client's location relative to the repo is a fixed fact, not one
+  that depends on where the caller happens to be standing.
