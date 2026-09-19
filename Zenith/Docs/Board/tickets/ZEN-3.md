@@ -6,11 +6,11 @@ category: Engine
 parent: null
 sprint: null
 status: To Do
-assignee: agent@zenith.invalid
+assignee: null
 priority: MEDIUM
 complexity: SIMPLE
 risk: LOW
-storyPoints: null
+storyPoints: 2
 position: 1
 labels:
   - needs-human
@@ -43,29 +43,16 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
+updatedAt: "2026-09-19T17:37:05.474Z"
 ---
 ## Goal
+`Tools/unit_baselines.json` pins three games and CI gates two of them: `engine-gate.yml` runs `run_unit_gate.ps1 -Game Combat`, `zm-tests.yml` runs `-Game Zenithmon`, and nothing runs `-Game RenderTest`. The file's own `advisory` block records why: engine-gate compiles RenderTest only in `Vulkan_vs2022_Debug_Win64_True` as a compile proof, hosted runners have no Vulkan ICD so the exe never runs, and pinning from a Vulkan exe is forbidden (it reports higher than Null for the same tree). Gating the row needs a SECOND, `Null_`-config RenderTest build in engine-gate, an extra compile of a game that job already compiles once.
 
-`Tools/unit_baselines.json` pins three games — Zenithmon 3364, Combat 1648, RenderTest 1739 — but **CI gates only two of them**:
+Every backend-neutral engine unit moves the RenderTest row (ZM-49, ZEN-2, ZEN-4, ZEN-6 all did), and each was caught only because a person ran the sweep. `Test_UnitBaselineManifest.ps1` enforces that an ungated row is declared advisory, so this is a declared debt, not a silent one.
 
-| Workflow | Gates |
-|---|---|
-| `engine-gate.yml:191` | `-Game Combat` |
-| `zm-tests.yml:683` | `-Game Zenithmon` |
-| `scaffold-smoke.yml` | Combat, via `test_scaffold.ps1` |
-
-Nothing passes `-Game RenderTest`. So the RenderTest row is verified only when somebody runs it by hand.
-
-That matters because the gate asserts `ran == baseline` EXACTLY. An unread pin cannot red, so it drifts silently — and the next person to run a RenderTest sweep gets a failure that has nothing to do with their change. This is the same failure the manifest was created to end, surviving in the one row no workflow reads.
-
-RenderTest is not incidental here: it boots the same engine suite, so **every backend-neutral engine unit moves its row**. ZM-49 (+6) and ZEN-2 (+4) both did, and both were caught only because a human ran the sweep deliberately.
-
-Found by the ZEN-2 reviewer pass.
-
-**This needs a human: `.github/**` is a protected path, so the agent loop is refused by `zagent guard`.** Note this is not a pure documentation change — adding a gate leg costs CI minutes and can red the build, so it wants a deliberate decision about which workflow owns it.
+**`needs-human`:** `.github/**` is a protected path, and adding a gate leg costs CI minutes and can red the build, so it wants a deliberate decision about which workflow owns it.
 
 ## Definition of Done
-
 - [ ] Some workflow runs `run_unit_gate.ps1 -Game RenderTest` against a `Null_` RenderTest exe
 - [ ] A drifted RenderTest pin fails that check rather than surviving
-- [ ] `Tools/unit_baselines.json`'s `$coverage` note is updated or removed once the row is genuinely gated
+- [ ] The `advisory` entry for RenderTest in `Tools/unit_baselines.json` is removed once the row is genuinely gated, and `Test_UnitBaselineManifest.ps1` stays green
