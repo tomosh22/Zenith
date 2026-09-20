@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T11:03:08.473Z"
+updatedAt: "2026-09-20T11:05:13.407Z"
 claimAttempt: "70dc181f-edb9-4f5c-83a5-5130e507c66c"
 ---
 ## Goal
@@ -57,3 +57,13 @@ Constraints: the ECS-leaf `g_xEngine` ratchet (`Tools/complexity_profiles.json` 
 - [ ] All three Sentinel proofs, `zenith build engine` and every game build green after `Build\regen.ps1`
 - [ ] Layering and singleton allowlists are re-pathed, not loosened; the architecture gates stay green
 - [ ] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the leaf `CLAUDE.md` files describe the new layout
+
+## Comments
+
+Released without dispatching a worker. Claimed during a verification tick whose purpose was to confirm the 2026-09-20 protocol fixes; that tick found a blocking defect in the gate-selection path itself and is being spent on it instead.
+
+**The defect:** `zagent.project.json` is documented as the single authority for gate lines ("sent to the board with every request... a stored copy goes stale, and a stale gate list is exactly how a green run ratchets the wrong pinned baseline"). Under the Vault backend the CLI does not read it. `policyOf()` in `Tools/Vault/cli/compat.mjs` resolves categories from `vault.config.json`'s embedded `policy.client.file` block — a snapshot taken at the cutover migration, with no sync mechanism.
+
+Measured on this claim: the on-disk `zagent.project.json` carries 15 Engine gate lines and a `Tooling` category; `zagent gates ZEN-14` resolved 13 lines and no `Tooling`. Two fixes committed earlier today (`fa8ad5b2`) are therefore INERT — the `Tooling` category that was meant to close "no gate runs non-C++ code", and the `doc_lint` lines that close ZEN-D-006.
+
+Nothing was dispatched and no file was edited for ZEN-14. Returned to To Do, unassigned.
