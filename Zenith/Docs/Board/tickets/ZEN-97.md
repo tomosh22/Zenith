@@ -3,7 +3,7 @@ id: "c3e4e521-6a25-4104-a74b-e1f15a126f0b"
 key: "ZEN-97"
 type: "BUG"
 title: "The tick protocol's step-0 pre-flight tells a healthy Vault checkout to stop"
-category: "Engine"
+category: "Tooling"
 parent: null
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 97
 labels: ["needs-human"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T22:10:12.022Z"
+updatedAt: "2026-09-20T23:31:54.487Z"
 flagged: false
 severity: null
 reproducibility: null
