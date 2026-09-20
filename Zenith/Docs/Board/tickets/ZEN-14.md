@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T11:37:47.584Z"
+updatedAt: "2026-09-20T18:47:48.094Z"
 claimAttempt: "1ace13f0-259b-42d4-a11f-d7b1c3432390"
 ---
 ## Goal
@@ -60,6 +60,47 @@ Constraints: the ECS-leaf `g_xEngine` ratchet (`Tools/complexity_profiles.json` 
 
 ## Comments
 
+Superseded by the library-split refactor landed on master as `12eb38b8`
+(*build: one static library per engine subsystem*).
+
+That commit achieves this ticket's OUTCOME — `Sharpmake_Zenith.cs` carries no
+build-exclude regex for ECS, Physics or AI, and `SourceFilesBuildExcludeRegex`
+is at **0** across the whole build, down from 33 — by a different mechanism, and
+one that does not need the protected-path prerequisite this ticket was Blocked
+on.
+
+Every leaf library keeps its sources **under `Zenith/`**. Instead of moving them
+outside the aggregate glob, the aggregate's `SourceRootPath` was narrowed from
+`/Zenith` to `/Zenith/EngineComposition`, so it no longer sees them. The
+gate-coverage measurement recorded on this ticket is therefore moot:
+`Engine.paths` still owns exactly `Zenith/**`, every engine diff still unions in
+18 gate lines, and `zagent.project.json` needed no edit at all.
+
+Three things from this ticket's own notes, resolved in passing:
+
+- **The false comment is gone with the exclusion it justified.** Beside the
+  Physics build-exclude it read *"Anchored on `\Physics\` so it does NOT touch
+  `Middleware\JoltPhysics-5.4.0\`"*. That was wrong for exactly the reason
+  recorded here — Jolt's in-scope sources sit under
+  `Middleware/JoltPhysics-5.4.0/Jolt/Physics/`. Jolt is now its own `ZenithJolt`
+  library (133 in-scope TUs, not the ~900 the note estimated over the whole
+  vendored tree).
+- **The two engine-wide scopes this ticket flagged as missing from its own
+  constraint list** (`singleton_ratchet`'s glob and lints `scope_globs`) needed
+  no re-path, because nothing moved out of `Zenith/**`.
+- **The "not done, deliberately" third mechanism was NOT what landed.** That
+  option was to narrow the aggregate root and enumerate ~25 subdirectories as a
+  hand-maintained `AdditionalSourceRootPaths` list — the fragility this repo has
+  been bitten by elsewhere, and rightly rejected. What landed is the opposite:
+  membership is additive, one directory per project, 32 libraries each globbing
+  only itself, with a new `Tools/check_project_membership.ps1` asserting that
+  every compiled source belongs to exactly one project **per link target**. It
+  runs fatal by default and currently reports zero findings across 84 projects
+  and 186 link targets. Nothing checked that invariant before.
+
+Closing as superseded rather than done: the deliverable text asks for a physical
+directory move that is no longer the right shape, and leaving it open would
+invite someone to undo gate coverage to satisfy it.
 Blocked on a one-line prerequisite in a protected path. No file was edited for this ticket.
 
 ## The contradiction is structural, not a choice of directory
