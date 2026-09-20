@@ -6,8 +6,8 @@ title: "Teardown scratch overflow makes every windowed run exit non-zero"
 category: "Engine"
 parent: "ZEN-25"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "HIGH"
 complexity: "MODERATE"
 risk: "MEDIUM"
@@ -16,12 +16,13 @@ position: 40
 labels: ["tech-debt"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:33:57.117Z"
+updatedAt: "2026-09-20T00:57:15.685Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "a75035e8-d771-4bdc-b0d2-73c0978ad4af"
 ---
 ## Goal
 `Docs/design/Photorealism.md` §4: *"The teardown scratch overflow (see §0). Cosmetic, but it makes every windowed run exit non-zero."* A windowed run that always exits non-zero is not cosmetic for a gate: every windowed verification (`zenith test <Game>` windowed, `phototour_run.ps1`, the `Vulkan_*_True` authoring boots the ZM tickets require) has to be read by its log rather than its exit code, which is the fail-open shape this repo keeps paying for (`zenith build` once reported success for an exe that could not start).
