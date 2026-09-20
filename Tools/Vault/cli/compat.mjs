@@ -9,6 +9,9 @@
  * but it must never overwrite an edited canonical field.
  */
 
+import { readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
 import { evaluateContract as legacyEvaluateContract } from './legacy-pure/contract.mjs';
 import {
   citationsIn as legacyCitationsIn,
@@ -80,6 +83,67 @@ function configRoot(index) {
   return object(index?.vaultConfig ?? index?.config);
 }
 
+// ★★ `zagent.project.json` IS THE AUTHORITY FOR GATES AND CATEGORIES, AND IT IS
+// READ FRESH. The repo's own CLAUDE.md states the rule and the reason:
+//
+//   "The file is sent every time rather than registered once. A stored copy
+//    goes stale, and a stale gate list is exactly how a green run ratchets the
+//    wrong pinned baseline."
+//
+// The Vault cutover broke that. `vault.config.json` carries a SNAPSHOT of the
+// file under `policy.client.file`, taken by the migration, with nothing to
+// resync it — so `policyOf` resolved categories from a copy that had drifted.
+// Measured 2026-09-20: the on-disk file declared 15 Engine gate lines and a
+// `Tooling` category; `zagent gates ZEN-14` resolved 13 and no `Tooling`, so
+// two gate-coverage fixes committed that morning were silently INERT. Nothing
+// reported it, because a gate list that is merely SHORTER still goes green.
+//
+// So: read the file, every call, and let the embedded block be the fallback for
+// fixtures and tests that legitimately have no repo file beside them.
+//
+// `$`-prefixed keys are comments by this file's own convention and are stripped
+// recursively — an un-stripped `$gates` array beside `gates` is exactly the kind
+// of near-miss that would run the wrong list.
+const projectFileCache = new Map();
+
+function stripCommentKeys(value) {
+  if (Array.isArray(value)) return value.map(stripCommentKeys);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    if (key.startsWith('$')) continue;
+    out[key] = stripCommentKeys(inner);
+  }
+  return out;
+}
+
+function projectFileOf(index) {
+  const root = index?.root ?? index?.vaultRoot;
+  if (!root || typeof root !== 'string') return null;
+  const file = path.join(root, 'zagent.project.json');
+  let stamp;
+  try {
+    const stat = statSync(file);
+    stamp = `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    projectFileCache.delete(file);
+    return null; // No repo file (a fixture vault) — the embedded block stands.
+  }
+  const cached = projectFileCache.get(file);
+  if (cached && cached.stamp === stamp) return cached.value;
+  let value = null;
+  try {
+    value = stripCommentKeys(JSON.parse(readFileSync(file, 'utf8')));
+  } catch {
+    // A malformed repo file must not take the board down: fall back to the
+    // embedded block rather than throwing out of every read command. The file
+    // is committed and `zagent doctor` is where a human should learn it is bad.
+    value = null;
+  }
+  projectFileCache.set(file, { stamp, value });
+  return value;
+}
+
 /**
  * Read a source-preserving metadata table without making metadata.md part of
  * the ticket model.  The index exposes the table map directly in current
@@ -135,7 +199,12 @@ export function policyOf(index) {
   const direct = Object.keys(policy).length ? policy : root;
   const resolved = object(direct.resolved ?? root.resolved);
   const client = object(direct.client ?? root.client);
-  const clientFile = object(client.file);
+  // The repo file wins over the embedded snapshot, key by key — see
+  // projectFileOf above. Spread rather than replace so a vault.config.json that
+  // carries client-file keys the repo file does not (a fixture's `repo`, say)
+  // keeps them.
+  const onDisk = projectFileOf(index);
+  const clientFile = onDisk ? { ...object(client.file), ...onDisk } : object(client.file);
   const board = object(direct.board ?? root.board);
   const boardGuardrails = object(board.guardrails ?? direct.guardrails ?? root.guardrails);
   const globalProjects = object(resolved.projects ?? direct.projects ?? root.projects);
@@ -161,9 +230,39 @@ export function policyOf(index) {
  * legacy-pure/routing.mjs's resolveRouting(), which reads `.routing.*` off
  * whatever this returns to pick a ticket's model/effort.
  */
+// The keys `zagent.project.json` OWNS. `repo` is deliberately absent: it is the
+// checkout path, machine-local, and lives only in vault.config.json.
+const PROJECT_FILE_OWNED = Object.freeze([
+  'baseBranch', 'branching', 'merge', 'conventions', 'cleanup',
+  'reviewOn', 'workerTools', 'categories', 'conventionDocs', 'protectedPaths',
+]);
+
+// ★★ THE SNAPSHOT CARRIES THE CATEGORIES TWICE, AND GATE SELECTION USES THE
+// SECOND COPY. Overriding `policy.client.file` alone was not enough: this
+// function returns `policy.resolved`, whose `projects.<KEY>.categories` is a
+// separate embedded copy, and `gatesOf`/`gateSelectionOf` read THAT. Fixing one
+// and not the other is how a config edit appears to work — `policyOf` reports
+// the new categories — while the gate list the tick actually runs stays stale.
+//
+// Each project gets the same category map, which is the shape the resolved
+// export already uses (see projectPolicy's comment below).
+function withProjectFileOverlay(resolved, index) {
+  const onDisk = projectFileOf(index);
+  if (!onDisk) return resolved;
+  const projects = {};
+  for (const [key, value] of Object.entries(object(resolved.projects))) {
+    const merged = { ...object(value) };
+    for (const field of PROJECT_FILE_OWNED) {
+      if (onDisk[field] !== undefined) merged[field] = clone(onDisk[field]);
+    }
+    projects[key] = merged;
+  }
+  return { ...resolved, projects };
+}
+
 export function legacyConfigOf(index) {
   const policy = policyOf(index);
-  if (Object.keys(policy.resolved).length) return policy.resolved;
+  if (Object.keys(policy.resolved).length) return withProjectFileOverlay(policy.resolved, index);
   // A test may provide the pinned policy directly instead of wrapping it in
   // vault.config.json. Keep this fallback deliberately small and immutable.
   return {
