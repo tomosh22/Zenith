@@ -6,8 +6,8 @@ title: "zagent decide mints no ID without --project, silently storing an uncitea
 category: "Tooling"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "MEDIUM"
@@ -16,12 +16,13 @@ position: 99
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T11:41:12.285Z"
+updatedAt: "2026-09-20T21:39:07.445Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "d382caa9-7d01-4326-8738-1dd55ef40ca7"
 ---
 ## Goal
 `zagent decide` mints a `PROJ-D-N` ID only when `--project` is passed explicitly. A bare `zagent decide --file x.md` returns exit 0, a rowId and a commit, and stores the row with `ID: null` — silently unciteable, which is the exact failure the minting was added to eliminate.
