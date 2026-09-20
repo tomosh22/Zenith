@@ -3,7 +3,7 @@ id: "2fcd9111-a111-4dde-a8a5-a232316a52dc"
 key: "ZEN-76"
 type: "TASK"
 title: "zagent check: the contract verdict (exit 4) wins over repo-busy (exit 5); claim and next unchanged"
-category: "Engine"
+category: "Tooling"
 parent: "ZEN-28"
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 76
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:11.072Z"
+updatedAt: "2026-09-20T23:31:36.987Z"
 flagged: false
 severity: null
 reproducibility: null
