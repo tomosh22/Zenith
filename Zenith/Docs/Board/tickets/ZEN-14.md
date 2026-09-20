@@ -5,7 +5,7 @@ title: Zenith library source files must be in their own dedicated directories
 category: Engine
 parent: "ZEN-24"
 sprint: null
-status: "In Progress"
+status: "Done"
 assignee: "agent@zenith.invalid"
 priority: MEDIUM
 complexity: MODERATE
@@ -42,8 +42,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T20:27:36.930Z"
-claimAttempt: "757a5b42-02a5-439e-a504-9f684d01aa5a"
+updatedAt: "2026-09-20T20:28:24.596Z"
+claimAttempt: null
 ---
 ## Goal
 The leaf libraries (ZenithECS, ZenithPhysics, ZenithAI) keep their source files under the main `Zenith/` tree, so the aggregate `Zenith` project's source glob SEES them and `Build/Sharpmake_Zenith.cs` has to build-exclude them by regex (`SourceFilesBuildExcludeRegex.Add(@".*\\ZenithECS\\.*\.cpp$")` and the equivalent Physics and AI exclusions). Files a library does not own should not be in its directory in the first place.
@@ -61,6 +61,15 @@ Constraints: the ECS-leaf `g_xEngine` ratchet (`Tools/complexity_profiles.json` 
 - [x] Gate coverage is UNCHANGED: `Engine.paths` still owns exactly `Zenith/**`, so an engine diff still unions in 18 gate lines and `zagent.project.json` needed no edit — the protected-path prerequisite this ticket was Blocked on is moot
 ## Comments
 
+ran on opus/high via MODERATE+MEDIUM · category Engine
+
+**Done by supersession** — the deliverable landed in `12eb38b8` (*build: one static library per engine subsystem*). No new code under this key; this tick verified the claim against `master`, replaced a DoD that had become actively wrong, and closed.
+
+This ticket asked for the leaf libraries to be moved to a sibling of `Zenith/`. **That design must not be executed.** Its own Blocked comment measured why: `Engine.paths` owns exactly `Zenith/**`, so a sibling directory drops an engine diff from 18 gate lines to 5. It sat Blocked on a protected-path prerequisite a human had to land first.
+
+`12eb38b8` achieves the outcome with that prerequisite **moot**: every leaf stayed under `Zenith/**` and the aggregate's `SourceRootPath` was narrowed from `/Zenith` (330 TUs) to `/Zenith/EngineComposition` (7 TUs) instead. Verified on `master` — the narrowed root at `Sharpmake_Zenith.cs:89`, **zero** `SourceFilesBuildExcludeRegex` calls in that file (and zero across every non-vendored project), and **zero** `ZenithECS`/`Physics`/`AI` files in `zenith_win64.vcxproj`.
+
+The DoD was replaced rather than ticked as-written, because its box 3 said "the architecture gates stay green" and they are not: one pre-existing `max-engine-singleton-count` finding against `Zenith_Editor_MaterialUI.cpp`, red on clean `master` before this work started, tracked separately. The replacement states the half this ticket owns — allowlists re-pathed by hand, no `unmapped:` finding.
 Superseded by the library-split refactor landed on master as `12eb38b8`
 (*build: one static library per engine subsystem*).
 
@@ -165,3 +174,52 @@ Released without dispatching a worker. Claimed during a verification tick whose 
 Measured on this claim: the on-disk `zagent.project.json` carries 15 Engine gate lines and a `Tooling` category; `zagent gates ZEN-14` resolved 13 lines and no `Tooling`. Two fixes committed earlier today (`fa8ad5b2`) are therefore INERT — the `Tooling` category that was meant to close "no gate runs non-C++ code", and the `doc_lint` lines that close ZEN-D-006.
 
 Nothing was dispatched and no file was edited for ZEN-14. Returned to To Do, unassigned.
+
+<!-- agent:worklog:start ZEN-14 -->
+## Work Log — 2026-09-20
+
+ran on opus/high via MODERATE+MEDIUM · category Engine
+
+**Outcome**: **Done by supersession.** The deliverable landed in commit `12eb38b8` (*build: one static library per engine subsystem*), which achieves this ticket's OUTCOME by a different and better mechanism. No new code was written under this key; this tick verified the claim against `master` and closed the ticket.
+
+**What changed**
+
+- Nothing in the working tree. The DoD was replaced (see below); the code was already on `master`.
+
+**Files** (`git diff --stat`): no files changed.
+
+**Gates**
+
+| Command | Result |
+|---|---|
+| `Tools\CheckComplexity.bat --gate-group architecture,lints` | 1 finding — `Zenith/Editor/Zenith_Editor_MaterialUI.cpp => g_xEngine (10>7)`. **Pre-existing on clean `master` before any of this work**, unrelated, shrink-only ratchet, tracked separately. **No `unmapped:` finding**, which is the half this ticket owns: every allowlist re-path landed. |
+| Build/Sentinel/game gates | Green as of the `ZEN-101` verify run (25/25, nothing skipped) on this same tree. Not re-run: this tick changed no file. |
+| `Tools/check_project_membership.ps1` | exit 0 — 86 projects, duplicate-owned 0, orphan 0, orphan-duplicate 0, unowned 0. |
+
+**Coverage**
+
+| Changed file | What executes the changed line |
+|---|---|
+| — | No file changed. The code this ticket describes is covered by the gates listed above, which ran green on this tree under `ZEN-101`. |
+
+**Definition of Done**
+
+- [x] The three leaf libraries are outside the aggregate engine glob, and `Sharpmake_Zenith.cs` carries no build-exclude regex for them
+- [x] `SourceFilesBuildExcludeRegex` is at zero across every non-vendored Sharpmake project
+- [x] All Sentinel proofs, `zenith build engine` and every game build green after `Build\regen.ps1`
+- [x] Layering and singleton allowlists were re-pathed by hand, never loosened, and the architecture gate reports no `unmapped:` finding
+- [x] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the leaf `CLAUDE.md` files describe the layout that actually landed
+- [x] Gate coverage is UNCHANGED
+
+**Durable findings**
+
+- none
+
+**Deviations / follow-ups**
+
+- **The DoD was REPLACED, and that is the substantive act of this tick.** The original read: *"Move each leaf library's sources into a physically separate directory the aggregate glob never reaches (proposed `Zenith/Libs/ZenithECS/` … or a sibling of `Zenith/`)"*, with four boxes built on that move. **That design is now the wrong one and must not be executed.** This ticket's own Blocked comment measured why: the `Engine` category owns exactly `Zenith/**`, so any sibling directory drops an engine diff from 18 gate lines to 5 and unions in nothing. It was Blocked on a protected-path prerequisite (adding `Libs/**` to `zagent.project.json`) that a human had to land first.
+- **`12eb38b8` achieves the outcome with that prerequisite moot.** Every leaf stayed under `Zenith/**`; the aggregate's `SourceRootPath` was narrowed from `/Zenith` (330 TUs) to `/Zenith/EngineComposition` (7 TUs) instead. So the glob no longer reaches the leaves, `Engine.paths` needed no edit, and gate coverage is untouched. Verified on `master`: `Sharpmake_Zenith.cs:89` is the narrowed root; the file carries **zero** `SourceFilesBuildExcludeRegex` calls; `zenith_win64.vcxproj` references **zero** files under `Zenith\ZenithECS`, `Zenith\Physics` or `Zenith\AI`.
+- **The original box 3 said "the architecture gates stay green", and they are NOT green** — one pre-existing `max-engine-singleton-count` finding against `Zenith_Editor_MaterialUI.cpp` that was red on clean `master` before any of this work began and is tracked as separate work. Rather than tick a box whose text is false, the replacement DoD states the half this ticket actually owns: the allowlists were re-pathed by hand and the gate reports no `unmapped:` finding. That distinction is the reason the DoD was rewritten instead of simply ticked.
+- **The rejected third mechanism from this ticket's own notes is NOT what landed.** Its comment flagged "narrow the aggregate's `SourceRootPath` and enumerate ~25 subdirectories as `AdditionalSourceRootPaths`" as fragile and declined it — correctly. `12eb38b8` narrowed the root but made membership **additive, one directory per project** across 33 libraries, with `Tools/check_project_membership.ps1` asserting every compiled source belongs to exactly one project per link target. There is no hand-maintained membership list.
+- **Two corrections this ticket's own notes earned.** Its comment said the Physics build-exclude comment was wrong because "~900 Jolt `.cpp` under `Middleware/JoltPhysics-5.4.0/Jolt/Physics/`" match it: the in-scope Jolt TU count is **133**, not ~900 (the larger figure counts the whole vendored tree including `Samples`/`Docs`/`UnitTests`). And the two engine-wide scopes it flagged as missing from its constraint list (`singleton_ratchet` glob, lints `scope_globs`) needed **no** re-path, because nothing moved out of `Zenith/**`.
+<!-- agent:worklog:end -->
