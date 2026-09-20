@@ -4,6 +4,15 @@
 
 Vulkan rendering backend providing GPU resource management, command buffer recording, and pipeline construction.
 
+**Location:** `Zenith/RenderBackends/Vulkan/` — grouped with its `D3D12` and
+`Null` siblings under `Zenith/RenderBackends/` (it was `Zenith/Vulkan/` before).
+Exactly one backend compiles per configuration, selected by the `RenderBackend`
+config-name prefix rather than by a source exclude; see
+`Zenith/RenderBackends/CLAUDE.md`. Headers here are reached as
+`"Vulkan/<header>.h"` off the `/Zenith/RenderBackends` include path — that is
+why `Flux/Flux_BackendTypes.h` spells its backend include path-qualified
+instead of by bare basename.
+
 **Build:** its own static library, `ZenithRenderBackendVulkan`
 (`Build/Sharpmake_ZenithRenderBackendVulkan.cs`), declaring `RenderBackend.Vulkan`
 only — win64 **and** agde (agde is always Vulkan). It also owns
