@@ -3,7 +3,7 @@ id: "d46514c4-2bc2-4f5c-805e-b8de92d26e83"
 key: "ZEN-83"
 type: "TASK"
 title: "Apply the six recorded tick.md changes (paste the WHY, grep the subject, durable findings to the log, retire docs-sync prose, two allowed-tools gaps)"
-category: "Engine"
+category: "Tooling"
 parent: "ZEN-28"
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 83
 labels: ["needs-human"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:37.898Z"
+updatedAt: "2026-09-20T23:31:48.676Z"
 flagged: false
 severity: null
 reproducibility: null
