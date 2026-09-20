@@ -12,7 +12,7 @@ complexity: SIMPLE
 risk: LOW
 storyPoints: 3
 position: 15
-labels: []
+labels: ["blocked-scope"]
 fixVersions: []
 blocks: []
 links: []
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T20:57:28.254Z"
+updatedAt: "2026-09-20T21:37:51.472Z"
 claimAttempt: "a5b6c9f3-3d69-4e5b-9dc7-f07c6aabc52b"
 ---
 ## Goal
