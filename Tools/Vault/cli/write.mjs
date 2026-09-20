@@ -1229,6 +1229,15 @@ function parseKnowledgeInput(command, argv, files) {
   if (command === 'ask') return { question: raw };
   if (command === 'changelog') return { summary: raw };
   if (command === 'suggest') return { area: 'other', suggestion: raw, friction: '(not recorded — filed as a one-line suggestion)' };
+  // `decide` and `shortfall` used to be the only two knowledge commands that
+  // refused plain text, while `bodyValue` above advertises BOTH --file and
+  // --text and the usage line printed on a bare `zagent decide` says "Pass
+  // --file <path> or --text". So the documented invocation was rejected with
+  // "needs a JSON body" and the working one was undocumented. A decision is
+  // one prose field; there is nothing a caller could usefully express in JSON
+  // here that a string cannot, and the remaining fields all default below.
+  if (command === 'decide') return { Decision: raw };
+  if (command === 'shortfall') return { Gap: raw };
   throw new WriteError(`zagent ${command} needs a JSON body`, 'USAGE', 1);
 }
 
@@ -1267,10 +1276,100 @@ function lowerFieldMap(values) {
   return new Map(Object.entries(values).map(([key, value]) => [key.toLowerCase().replace(/[ _-]/g, ''), value]));
 }
 
+// Every decision reference this repo has ever cited — ZM-D-209, ZEN-D-003,
+// UPSTREAM-D-001 — is `<PREFIX>-D-<N>`, zero-padded to three digits.
+// ★★ THE WRITE PATH MUST RESOLVE THE DATABASE THE SAME WAY THE READ PATH DOES.
+//
+// `metadata.md` carries TWO databases titled "Agent · Decisions": one for
+// `acme-corp` (13 rows) left over from the migration fixture, and one for
+// `pink-goat`, the live organisation (7 rows). The reader (`databaseModel` in
+// queries.mjs) prefers the database whose project belongs to the CURRENT
+// organisation. The writers here used to take the first title match instead,
+// which is acme-corp -- so `zagent decide` reported exit 0, a rowId and a
+// commit, and `zagent rows decisions` could never see the row. That is the
+// whole of ZEN-90, and it is what made five of the seven readable rows
+// null-ID: the ones that were not null went into the other database.
+//
+// Two independent resolutions of the same question is the defect. There is
+// now one, imported from the reader, so they cannot drift again.
+function knowledgeDatabase(index, command) {
+  try {
+    return databaseModel(index, KNOWLEDGE_FILES[command]);
+  } catch (error) {
+    throw new WriteError(error?.message ?? String(error), 'CONFIGURATION', 1);
+  }
+}
+
+// ★ A REFERENCE ALREADY CITED IN A TICKET BODY IS TAKEN, EVEN IF NO ROW
+// CARRIES IT. ZEN-D-001..004 are cited in ZEN-12's body and exist as no row
+// in this database, so scanning rows alone minted ZEN-D-001 a second time and
+// silently pointed two different decisions at one reference. Every ticket the
+// index already holds in memory is scanned for the prefix; the high-water
+// mark is the max across both sources.
+function decisionIdsCitedInTickets(index, prefix, collect) {
+  for (const record of allTicketRecords(index)) {
+    const text = record?.rawText;
+    if (typeof text !== 'string' || !text) continue;
+    for (const match of text.matchAll(/\b([A-Z][A-Z0-9]*-D-)(\d+)\b/g)) {
+      if (match[1].toUpperCase() === prefix) collect(`${match[1]}${match[2]}`);
+    }
+  }
+}
+
+function decisionIdsInUse(index, command, project) {
+  const prefix = `${String(project ?? '').toUpperCase()}-D-`;
+  const seen = [];
+  const collect = value => {
+    const match = /^(.+-D-)(\d+)$/.exec(String(value ?? '').trim());
+    if (match && match[1].toUpperCase() === prefix) seen.push(Number(match[2]));
+  };
+  decisionIdsCitedInTickets(index, prefix, collect);
+  const direct = knowledgeRecord(index, project, command);
+  if (direct) {
+    for (const row of array(direct.fields?.rows)) collect(object(row?.values)?.ID);
+    return { prefix, seen };
+  }
+  let model;
+  try { model = knowledgeDatabase(index, command); } catch { return { prefix, seen }; }
+  const idProperty = model.properties.find(row => String(row?.name ?? '').trim().toLowerCase() === 'id');
+  if (!idProperty) return { prefix, seen };
+  for (const row of rowsFor(index, 'notion.database_rows')) {
+    if (String(row?.database_id ?? '') !== String(model.database.id)) continue;
+    collect(object(row?.values)?.[idProperty.id]);
+  }
+  return { prefix, seen };
+}
+
+// ★ MINT THE REFERENCE RATHER THAN EXPECTING THE CALLER TO KNOW IT IS THEIRS.
+//
+// `zagent finish` REFUSES a terminal status whose work log's "Durable
+// findings" line names neither "none" nor a PROJ-D-N reference. Nothing
+// minted one, nothing documented that `ID` was the caller's to supply, and a
+// body omitting it was accepted with exit 0, a rowId and a commit -- and
+// stored with `ID: null`. Five of the seven rows present when this was
+// written are null-ID for exactly that reason, and the read path then cannot
+// cite them.
+//
+// So a tick that learned something durable could not close: it had no
+// reference to write, and "none" would have been a lie. The only way through
+// was to reverse-engineer the convention from the two rows that happened to
+// carry an ID. That is not a discoverable interface; this is.
+//
+// An explicitly-passed ID still wins, so a caller renumbering or importing
+// history keeps full control.
+function mintDecisionId(index, command, project, values) {
+  if (command !== 'decide') return values;
+  if (String(values.ID ?? '').trim()) return values;
+  if (!project) return values;
+  const { prefix, seen } = decisionIdsInUse(index, command, project);
+  const next = (seen.length ? Math.max(...seen) : 0) + 1;
+  return { ...values, ID: `${prefix}${String(next).padStart(3, '0')}` };
+}
+
 function appendKnowledgeRow(index, command, input, ticketKey, argv = []) {
   const project = projectOf(index, findTicket(index, ticketKey), ticketKey) ?? String(valueOf(argv, 'project') ?? '').toUpperCase();
   const direct = knowledgeRecord(index, project, command);
-  const values = knowledgeValues(command, input, argv, ticketKey);
+  const values = mintDecisionId(index, command, project, knowledgeValues(command, input, argv, ticketKey));
   if (direct) {
     const rows = array(direct.fields?.rows).slice();
     rows.push({ id: randomUUID(), values, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
@@ -1286,11 +1385,11 @@ function appendKnowledgeRow(index, command, input, ticketKey, argv = []) {
     return { newFile: true, path: relativePath, bytes: createTicketBytes(fields, ''), result: { database: KNOWLEDGE_FILES[command], rowId: row.id, values } };
   }
   const tables = clone(metadata.fields?.tables ?? {});
-  const databases = array(tables['notion.databases']);
-  const title = `Agent · ${KNOWLEDGE_FILES[command][0].toUpperCase()}${KNOWLEDGE_FILES[command].slice(1)}`;
-  const database = databases.find(row => String(row?.title ?? '').toLowerCase() === title.toLowerCase()) ?? databases.find(row => String(row?.title ?? '').toLowerCase().includes(KNOWLEDGE_FILES[command]));
-  if (!database) throw new WriteError(`No Notion database for ${KNOWLEDGE_FILES[command]} is present in the vault`, 'CONFIGURATION', 1);
-  const properties = array(tables['notion.database_properties']).filter(row => String(row?.database_id ?? '') === String(database.id));
+  // Resolved by the READER's rule (organisation-preferring), not by first
+  // title match -- see knowledgeDatabase above and ZEN-90.
+  const model = knowledgeDatabase(index, command);
+  const database = model.database;
+  const properties = model.properties;
   const byName = lowerFieldMap(values);
   const cells = {};
   for (const property of properties) {
@@ -1327,11 +1426,16 @@ function findKnowledgeRow(index, databaseKey, rowRef) {
   const metadata = metadataRecord(index);
   if (!metadata) throw new WriteError('No knowledge catalog is present in the vault', 'CONFIGURATION', 1);
   const tables = metadata.fields?.tables ?? {};
-  const databases = array(tables['notion.databases']);
-  const title = `Agent · ${databaseKey[0].toUpperCase()}${databaseKey.slice(1)}`;
-  const database = databases.find(row => String(row?.title ?? '').toLowerCase() === title.toLowerCase())
-    ?? databases.find(row => String(row?.title ?? '').toLowerCase().includes(databaseKey));
-  if (!database) throw new WriteError(`No Notion database for ${databaseKey} is present in the vault`, 'EMPTY', 3);
+  // Same organisation-preferring resolution the reader uses (ZEN-90): a
+  // `rows … resolve` that picked a different database than `rows … ` listed
+  // would refuse a row the caller can plainly see, or resolve a homonym in
+  // the migration-fixture organisation.
+  let database;
+  try {
+    database = databaseModel(index, databaseKey).database;
+  } catch (error) {
+    throw new WriteError(error?.message ?? String(error), 'EMPTY', 3);
+  }
   const rows = array(tables['notion.database_rows']).filter(row => String(row?.database_id ?? '') === String(database.id));
   const matches = rows.filter(row => String(row?.id ?? '').toLowerCase() === String(rowRef).toLowerCase() || String(row?.id ?? '').toLowerCase().startsWith(String(rowRef).toLowerCase()));
   if (matches.length === 0) throw new WriteError(`No row in ${databaseKey} starts with "${rowRef}"`, 'EMPTY', 3);

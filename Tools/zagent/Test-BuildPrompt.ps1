@@ -154,7 +154,21 @@ Assert-That 'never touches ticket.json or body.md' {
 }
 
 $promptText = Get-Content -LiteralPath (Join-Path $fx.RunDir 'prompt.md') -Raw
-Assert-That 'opens with the DO NOT clause' { $promptText.TrimStart().StartsWith('**DO NOT**') }
+# The survey clause is the worker's FIRST instruction (ZEN-89): the file list
+# is a hypothesis it must falsify before editing, and a prompt that opens with
+# the prohibitions instead buries the one control that catches an under-scoped
+# list. Order is asserted, not just presence, because "somewhere in the
+# prompt" is how it stops being step zero.
+Assert-That 'opens with the blast-radius survey clause' {
+    $promptText.TrimStart().StartsWith('**Step zero, before you edit anything.**')
+}
+Assert-That 'the survey clause demands a STOP on any hit outside the list' {
+    $promptText -match 'STOP and report the complete corrected list before making a single edit'
+}
+Assert-That 'carries the DO NOT clause, after the survey' {
+    ($promptText -match '\*\*DO NOT\*\*') -and
+    ($promptText.IndexOf('**Step zero') -lt $promptText.IndexOf('**DO NOT**'))
+}
 Assert-That 'carries the Files clause' { $promptText -match '\*\*Files you may edit:\*\* Games/Zenithmon/Source/Foo\.cpp\.' }
 Assert-That 'carries the Boundary text' { $promptText -match [regex]::Escape('Stop once both items are wired.') }
 Assert-That 'carries the Goal section' { $promptText -match '## Goal(\r?\n)+Wire the reward path\.' }

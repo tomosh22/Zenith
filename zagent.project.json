@@ -156,9 +156,29 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Foundry --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Combat --headless",
-        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600"
+        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Combat\\Build\\output\\win64\\null_vs2022_debug_win64_true\\combat.exe -Game Combat -TimeoutSec 600",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game DevilsPlayground"
       ],
-      "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site."
+      "$docLint": [
+        "★ ZEN-D-006. doc_lint's Check 7 (Check-LivePin) reconciles a game's",
+        "Status.md LIVE PIN block against Tools/unit_baselines.json, and NO",
+        "Engine gate ran doc_lint for any game -- so the one check written to",
+        "catch pin-narration drift was unreachable from exactly the tickets",
+        "that cause it. A backend-neutral engine unit moves EVERY game's row,",
+        "so engine tickets change the most pins and linted none of them.",
+        "",
+        "Measured: Zenithmon's LIVE PIN sat at 4551/2698/2801 while the",
+        "manifest already held 4556/2703/2806 -- five units of un-narrated",
+        "drift accumulated since ZEN-12. C7 would have failed the moment it",
+        "ran. ZEN-40 ran it only by luck, because its diff happened to touch",
+        "Games/Zenithmon/Docs/ and unioned the Zenithmon category in.",
+        "",
+        "Two games, not five: these are the two with a narrated LIVE PIN. The",
+        "pair costs ~4s against a list that takes ten minutes. The other three",
+        "are linted by the Tooling category, which owns doc_lint.ps1 itself."
+      ],
+      "conventions": "Engine work moves EVERY game's pinned unit count if it adds a backend-neutral engine unit - the ticket's Definition of Done must list every pinned site, and doc_lint's C7 will red if a game's Status.md LIVE PIN block is left behind."
     },
     "DevilsPlayground": {
       "$comment": "Vault uses the project's direct single-checkout policy for DP. Docs/CIPolicy.md retains the historical remote branch-protection record; it does not require agent branches or PRs.",
@@ -218,6 +238,56 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 test ScriptTest --headless"
       ],
       "conventions": "Games/ScriptTest/CLAUDE.md is binding. ST_ prefix. ZERO gameplay C++: the game defines no game ECS component and no game graph-node implementation -- every behaviour is an engine-owned node wired by a BuildGraph_ST_* builder in ScriptTest.cpp. ST_NoGameExtensionsContract enforces that mechanically; adding either is a redesign, not a fix. Every string two things must agree on lives once in ScriptTest_Graphs.h."
+    },
+    "Tooling": {
+      "$comment": [
+        "NO GATE RAN NON-C++ CODE BEFORE THIS CATEGORY EXISTED, and two of the",
+        "three tickets in the 2026-09-20 /tick audit proved it. ZEN-79's whole",
+        "deliverable was Vitest coverage in Tools/Vault; ZEN-8's was a doc_lint",
+        "check plus a Tools/Test_*.ps1 assert script. Both went GREEN on the",
+        "Engine list -- eleven C++ game builds and Combat's suite -- having",
+        "executed ZERO lines of their own diff. The only real verification in",
+        "either case was a hand-run `npm test` / assert script.",
+        "",
+        "No `project` key, so tickets file on the checkout default (ZEN) and",
+        "inherit `direct` branching. This category exists mostly to be UNIONED",
+        "in: any diff touching the paths below pulls these gates whatever the",
+        "ticket was filed as.",
+        "",
+        "THE PATHS ARE SCOPED, NOT `Tools/**`, and the exclusions are the point:",
+        "  * `Tools/unit_baselines.json` is deliberately NOT matched. It holds",
+        "    every game's pin, and a one-line bump must not drag a 5-minute",
+        "    Vault suite behind it -- the same reasoning that keeps Tools/**",
+        "    out of the Engine category's paths.",
+        "  * `Tools/Middleware/**` is vendored third-party source (freetype,",
+        "    imgui). `Tools/*.ps1` is single-segment on purpose so it cannot",
+        "    reach into it.",
+        "Verified against the real selector in cli/legacy-pure/routing.mjs, not",
+        "a reimplementation of its glob matcher.",
+        "",
+        "Every line below was observed green on 2026-09-20 before being added.",
+        "A gate list that starts red is a gate list people learn to ignore."
+      ],
+      "paths": [
+        "Tools/*.ps1",
+        "Tools/zagent/**",
+        "Tools/Vault/**"
+      ],
+      "gates": [
+        "pwsh -NoProfile -File Tools\\Test_TickGates.ps1",
+        "pwsh -NoProfile -File Tools\\Test_UnitBaselineManifest.ps1",
+        "pwsh -NoProfile -File Tools\\Test_T0Harness_SessionCloseFlagsExist.ps1",
+        "pwsh -NoProfile -File Tools\\Test_DocLintKeyCitations.ps1",
+        "pwsh -NoProfile -File Tools\\zagent\\Test-ZagentClient.ps1",
+        "pwsh -NoProfile -File Tools\\zagent\\Test-BuildPrompt.ps1",
+        "pwsh -NoProfile -Command \"Set-Location Tools/Vault; npm test\"",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game DevilsPlayground",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Foundry",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Undervault",
+        "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Hearth"
+      ],
+      "conventions": "Tools/ is the asset bake plus the agent-loop tooling; Tools/CLAUDE.md is binding for the bake. PowerShell here follows the surrounding scripts (Set-StrictMode -Version Latest, $ErrorActionPreference = 'Stop', a printed assertion count, exit 0/1) and NOT the engine's C++ naming rules. Tools/Vault is Node: ESM .mjs, Vitest, the helpers under Tools/Vault/test/helpers. A doc_lint check runs against EVERY game, so a change to one must be proven against all five."
     },
     "Undervault": {
       "$comment": [

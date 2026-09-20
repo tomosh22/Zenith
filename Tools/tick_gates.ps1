@@ -350,6 +350,39 @@ function Get-CreatedSourceFiles {
     return , $created.ToArray()
 }
 
+function Get-CreatedIncludeFiles {
+    # ** A CREATED .inl IS NOT A TRANSLATION UNIT, SO THE BY-NAME BUILD-LOG
+    # ASSERTION CANNOT SEE IT -- AND THIS REPO'S UNIT SUITES ARE .inl FILES.
+    #
+    # Every Flux module hosts its tests in `<Module>.Tests.inl`, #included
+    # from the bottom of its .cpp (Flux_HiZ.cpp:315, Flux_Decals.cpp:683, and
+    # ~20 more). Such a file needs no regen -- it is not its own TU -- so the
+    # extension filter above correctly leaves it out of the regen decision.
+    # But it was left out of the PROOF as well, and that is the same silent
+    # hole the .cpp assertion exists to close: create a .Tests.inl, forget the
+    # #include, and the build is green, the unit count does not move, and
+    # nothing says a word. Measured on ZEN-40, where tick_gates printed "no
+    # created source files; skipping regen" while a new .Tests.inl sat in its
+    # own `changed` list.
+    #
+    # The compiler cannot answer this one, so the check is static: something
+    # tracked must #include the file.
+    param([string]$RepoRoot = $script:RepoRoot)
+    $out = @(& git -C $RepoRoot status --porcelain 2>$null)
+    $created = New-Object System.Collections.Generic.List[string]
+    foreach ($row in $out) {
+        if ([string]::IsNullOrWhiteSpace($row)) { continue }
+        $status = $row.Substring(0, 2)
+        $path = $row.Substring(3)
+        if ($path -match '\s->\s') { $path = ($path -split '\s->\s', 2)[1] }
+        $path = $path.Trim().Trim('"')
+        if ($status -notmatch '[A?R]') { continue }
+        if ($path -notmatch '\.inl$') { continue }
+        $created.Add($path)
+    }
+    return , $created.ToArray()
+}
+
 # =============================================================================
 if ($NoRun) { return }
 
@@ -455,6 +488,30 @@ try {
             }
             if ($uncompiled.Count -gt 0) {
                 Write-Result 3 "$($uncompiled.Count) created file(s) never reached the compiler -- the build is green and the deliverable is not in it" @{ uncompiled = $uncompiled.ToArray() }
+                exit 3
+            }
+        }
+
+        # 3b. Every created .inl must be #included by SOMETHING tracked.
+        # See Get-CreatedIncludeFiles: the build log names TUs, so a .Tests.inl
+        # that nothing includes is invisible to check 3 and to the compiler.
+        $newIncludes = @(Get-CreatedIncludeFiles)
+        if ($newIncludes.Count -gt 0) {
+            Write-Banner 'proving the created .inl files are included somewhere'
+            $orphans = New-Object System.Collections.Generic.List[string]
+            foreach ($inc in $newIncludes) {
+                $leaf = Split-Path -Leaf $inc
+                # `git grep -l` searches TRACKED files only, which is what we
+                # want: an include added in an untracked scratch file proves
+                # nothing. The created .inl itself is excluded so a file that
+                # merely names itself in a comment does not pass.
+                $hits = @(& git -C $RepoRoot grep -l --fixed-strings -- $leaf 2>$null) |
+                    Where-Object { $_ -and ($_ -replace '\\', '/') -ne ($inc -replace '\\', '/') }
+                if ($hits.Count -gt 0) { Write-Line "  included: $leaf" 'Green' }
+                else { Write-Line "  INCLUDED BY NOTHING: $leaf" 'Red'; $orphans.Add($inc) }
+            }
+            if ($orphans.Count -gt 0) {
+                Write-Result 3 "$($orphans.Count) created .inl file(s) are #included by nothing -- the build is green, the unit count has not moved, and the deliverable is not in the binary" @{ uncompiled = $orphans.ToArray() }
                 exit 3
             }
         }

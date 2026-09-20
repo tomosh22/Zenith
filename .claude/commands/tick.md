@@ -8,18 +8,19 @@ Run **exactly ONE** ticket. Never start a second in the same tick.
 
 # Where things live
 
-Everything this tick needs is in THIS repo. The board is a web
-application that may be running on another machine entirely, and nothing
-here knows or needs to know where its source is.
+Everything this tick needs is in THIS repo, **including the board**. It is not
+a remote web application: the Vault IS this checkout, its rows are files here,
+and every mutation is a commit. See step 0 for the three rules that follow.
 
 | Thing | Home |
 | --- | --- |
 | This skill | `.claude/commands/tick.md` |
 | The worker and reviewer | `.claude/agents/zagent-worker.md`, `.claude/agents/zagent-reviewer.md` — subagent definitions whose tool lists omit Bash |
-| Gates, pinned baselines, conventions, categories | `zagent.project.json` (committed, sent to the board with every request) |
-| The client | `Tools/zagent/` — a PowerShell script, no Node |
-| Run scratch | `.zagent/last.json`, `.zagent/run/<KEY>/` (gitignored) |
-| The board account, model routing, guardrail floors | the board itself |
+| Gates, pinned baselines, conventions, categories | `zagent.project.json` (committed) |
+| The client | `Tools/zagent/` — a shim that execs the Node CLI below |
+| The board itself | `Tools/Vault/` (the CLI and server), `**/Docs/Board/tickets/` (ticket bodies), `metadata.md` (the knowledge databases) |
+| Run scratch | `.zagent/last.json`, `.zagent/last.exit`, `.zagent/run/<KEY>/` (gitignored) |
+| Model routing, guardrail floors | resolved by the Vault from `zagent.project.json` plus its own policy |
 
 **A bare `claude` started in this repo is the whole setup** — no
 `--add-dir`, no second checkout. `zagent` needs nothing but this
@@ -238,80 +239,71 @@ mistake for you:
 
 ## 0. Pre-flight (first firing after a restart only)
 
-**Vault backend:** if `Tools/zagent/backend.json` selects `backend: "vault"`,
-use the local Vault preflight below instead of the legacy board/client row-count
-check in this section. Resolve `zagent` to this repository's launcher, run
-`zagent doctor --json`, and require exit 0, `ok: true`, and no index diagnostics.
-Check the actual repository branch and cleanliness and that the configured gate
-executables resolve before claiming. There is no remote agent-account or token
-check. Claims persist a `claimAttempt` in `.zagent/run/<KEY>/ticket.json`; retain
-that scratch for the attempt. The client supplies its token to later mutations;
-never replace a stale token with the token from a fresh board read.
+**There is ONE backend: the local Vault, and it IS this checkout.** No token,
+no URL, no board machine to reach. `zagent.ps1` is a thin shim that execs
+`node Tools/Vault/cli/client.mjs --vault <repoRoot>` and exits with its code.
 
-The paragraphs below apply to the legacy HTTP backend.
+> ★★ **This section used to gate the Vault preflight on
+> `Tools/zagent/backend.json`, with a "legacy HTTP backend" written out below
+> it. That file was DELETED when the HTTP backend was removed**, so the
+> condition could never be true and every tick was routed into the dead
+> branch — which then mandated a `doctor` row-count check that now returns 0,
+> whose stated consequence was *"you are running the wrong `zagent`, stop"*.
+> A literal reading halted every tick, and blamed a stale `PATH` shim that was
+> not the cause. The legacy branch is gone from this file;
+> `Docs/TickProtocolHistory.md` keeps it. If you find yourself reading about
+> tokens, lanes or an agent account, the doc is stale.
 
-`zagent doctor`. A failing check here explains most "the loop did
-nothing for an hour" incidents. Report and stop if the agent account,
-the lanes, or a gate executable is missing.
-
-The report is assembled from BOTH sides: the board answers for the
-database, the lanes and the agent account; this machine answers for the
-repo's branch and cleanliness and whether each gate executable resolves.
-A board cannot answer the second set — it would be reporting about its
-own disk — so a `zagent doctor` that shows only board rows means the
-client half never ran.
-
-**Check that mechanically; do not eyeball it.** A `doctor` whose client
-half never ran still exits **0**, so branching on the exit code alone
-sails straight past the one check written to catch this:
+Run it and read the JSON, not prose rows:
 
 ```
-zagent doctor | Select-String -Quiet 'client repo:|repo branch:|repo clean:'
+zagent doctor --json
 ```
 
-**In a POSIX shell** — and read the count, not an exit code:
+Require **exit 0** (from `.zagent/last.exit`), `ok: true`, and an empty
+`diagnostics` array. The payload also carries `projects` and `ticketCount`,
+which is the cheap sanity check that the vault actually loaded:
 
+```json
+{"ok":true,"diagnostics":[],"projects":["ZEN","ZM","DP","UV","HE","FD"],"ticketCount":544}
 ```
-zagent doctor > doctor.txt 2>&1
-grep -c 'client repo:\|repo branch:\|repo clean:' doctor.txt     # must be 3
-```
 
-Both spellings are here because the paragraph below says the answer is
-shell-dependent and must be re-run in whichever shell you actually use. Giving
-only one of them makes the reader translate the single check written to catch a
-wrong-client mutation, which is the worst possible place for a translation error.
+A failing check here explains most "the loop did nothing for an hour"
+incidents. Report and stop if `ok` is false or any diagnostic is present.
 
-False → **you are running the wrong `zagent`** and must stop. The usual
-cause is a stale shim earlier on `PATH` — an older client that talks
-straight to the database instead of over HTTP, which also violates the
-`Never` list above. Resolve `zagent` and confirm it is this repo's
-`Tools/zagent/zagent.ps1` before going further. `PATH` is ordered, so
-appending this repo's directory is not enough when a stale entry already
-sits ahead of it; it has to come first.
+**And `zagent` must be run from inside the checkout.** The client walks up from
+the CURRENT directory for `zagent.project.json`, the way git walks up for
+`.git`. From outside it cannot find the vault at all.
 
-**★ RUN THIS CHECK IN THE SHELL YOU WILL ACTUALLY USE, and re-run it if you
-switch.** It is written as a PowerShell pipeline, and the answer is
-shell-dependent: `zagent` resolves differently in PowerShell and in a POSIX
-shell, so passing it in one proves nothing about the other. That is not
-hypothetical — `Tools/zagent/` held only `zagent.ps1` and `zagent.cmd`, neither
-of which a POSIX shell will run from a bare name, so Git Bash walked past this
-repo's directory (already first on `PATH`) and found a pnpm global shim for the
-old upstream Node client. Board half only, 18 rows, **exit 0**. An orchestrator
-that ran step 0 in PowerShell and its work through Bash sailed past the one
-check written to catch this and mutated the board through the wrong client.
+**`Tools/zagent/zagent`** — extensionless, LF-pinned in `.gitattributes` — is
+what makes a bare `zagent` work in a POSIX shell as well as in PowerShell. If
+that file is missing, a Git Bash tick will find something else on `PATH`.
 
-`Tools/zagent/zagent` — extensionless, LF-pinned in `.gitattributes` — is what
-closes it. If that file is missing, this is happening again.
+### ★★ The board COMMITS INTO THIS REPOSITORY. Three rules follow.
 
-**And `zagent` must be run from inside the checkout.** `Find-ClientRepo` walks up
-from the CURRENT directory for `zagent.project.json`; from outside, the client
-sends no `client` half and the board answers from its own config. The failure is
-partial and therefore confusing — `queue` still works while `show`, `check` and
-`doctor` fail with `Project <KEY> is not mapped in agent.config.json`, naming a
-file on the BOARD's disk that you did not misconfigure and cannot see.
+Every board mutation — `claim`, `next`, `comment`, `move`, `update`, `link`,
+`decide`, `finish` — writes a file and makes a commit (`board: next`,
+`board: decide`, …). Ticket bodies live in `**/Docs/Board/tickets/`, the
+knowledge databases in `metadata.md` at the repo root. On the audit that found
+this, **11 of the last 12 commits on `master` were board commits**.
 
-The `project <KEY> gates` row is the one that most often explains a
-silent tick: a project resolving to no gate lines can never merge.
+1. **Step 3's precondition checks the TREE, and board writes do not dirty it.**
+   They commit. So `git status --porcelain` stays empty while HEAD moves under
+   you. That is fine — it is what the precondition wants — but do not read a
+   clean tree as "nothing has happened since I started".
+2. **★ NO BOARD WRITE BETWEEN `-Phase measure` AND `zagent guard`.** `guard`
+   overrides a would-be PASS whose `tick_gates.json` `headSha` no longer
+   matches HEAD (step 6.4). A board write in that window moves HEAD and turns
+   a green run into a guard failure for a reason that has nothing to do with
+   the code. Step 6 invites `comment`/`update`/label writes at several points:
+   do them BEFORE `measure` or AFTER `guard`. Resolving a Suggestions row
+   mid-`measure` is exactly how this was found.
+3. **Your ticket commit and the board's commits interleave**, so
+   `<baseBranch>...HEAD` is not "what this ticket changed". Use the working
+   tree (step 6.4) and `changed.txt`, which is what `guard` and `finish`
+   already do. Measured: two `board: decide` commits landed between a ticket
+   commit and `finish` and the commit-completeness check was unaffected,
+   because it reads `changed.txt` rather than a commit range.
 
 ## 1. Pick the ticket
 
@@ -351,22 +343,25 @@ Then read `.zagent/last.json` and branch on the exit code:
 - Targeted mode: **report the error and change nothing.** A human is
   waiting and just asked for this ticket by name — do not Block it.
 
-  **★★ BUT VERIFY THE REFUSAL DID NOT ALREADY CLAIM IT.** "Change nothing"
-  was written assuming an exit 4 had written nothing, and that was false:
-  the board's claim transaction mutates FIRST and validates SECOND, so
-  `zagent claim <needs-human key>` returned exit 4 having already written
-  `status: To Do -> In Progress` and `assignee: none -> the agent`. The row
-  then holds the I5 one-ticket-per-repo lock — the next `zagent next`
-  returns **exit 5, repo busy** — so one `/tick` on a ticket the contract
-  says no machine may take **stops every project this checkout serves**,
-  and "change nothing" keeps it stopped.
+  **A refused claim changes nothing, and that is now PROVEN rather than
+  hoped for.** `executeOperation` (`Tools/Vault/server/operations.mjs`) calls
+  `prepare` before it writes the journal or commits, and every refusal inside
+  `claim`'s prepare throws before the change set is built — so no field moves
+  and no commit exists. Pinned by
+  `Tools/Vault/test/claim-refusal-atomicity.test.mjs`: `needs-human`, EPIC,
+  blocked-by-predecessor and queue-empty each assert byte-identical vault
+  files, unchanged `status`/`assignee`/`claimAttempt`, unmoved HEAD and no
+  added commit, with a control test around an ACCEPTED claim so none of that
+  can pass vacuously. See `ZEN-D-007`.
 
-  The client rolls this back for you now (`Restore-RefusedClaim`: the lane
-  from `previousStatus`, and the assignee, because the claim query skips
-  ANY assigned ticket). It prints what it did on stderr. **Read that line
-  rather than assuming it happened**, and if it says the rollback failed,
-  fix it by hand before you stop:
-  `zagent move <KEY> "To Do" && zagent update <KEY> --assignee none`.
+  > ★ **This paragraph used to say the opposite, and then to describe a
+  > rollback that no longer exists.** The mutate-before-validate defect was
+  > real on the OLD SQL board; the Vault CLI is a different implementation and
+  > does not have it. The rollback it told you to read a stderr line from —
+  > `Restore-RefusedClaim` — went when `zagent.ps1` became a Node shim, so the
+  > instruction was to verify something that could never print. The eight ZEN
+  > tickets once found "assigned while still To Do" were imported in that state
+  > by the activation snapshot (`ZEN-D-008`), not produced here.
 
 **Reachability — read the Definition of Done BEFORE dispatching a worker.**
 `contractValid: true` used to mean only that the ticket could be ROUTED —
@@ -429,7 +424,16 @@ Check those against the DoD text.
 
 **Two shapes that were rows here are now refused by the claim query**,
 so you no longer read for them. An EPIC comes back exit 4 from `zagent
-check`, on the queue AND by name — it is a rollup container, and its
+check`, on the queue AND by name — **including while another ticket holds the
+repo lock, which was not true until ZEN-76 was fixed.** `check`'s exit ladder
+tested the lock before the contract, so with anything in flight it answered 5
+(repo busy) for an EPIC, a `needs-human` ticket or a contract failure alike:
+it reported the obstacle that clears by itself and hid the one that does not,
+in exactly the situation a running loop is always in. It now prefers the
+DURABLE verdict and carries it on the payload as `check.durable`, while still
+reporting the lock as `check.inFlight`. `claim` and `next` are deliberately
+unchanged — they mutate, and refusing to steal outranks everything. An EPIC is
+a rollup container, and its
 "Every child issue Done" would be inlined into a worker prompt as the
 specification under I3. A ticket in a PLANNED sprint is skipped by the
 queue but still claimable BY NAME on purpose: `/tick ZM-46` is how you
@@ -855,6 +859,23 @@ to falsify before it edits anything:
 > list before making a single edit.** Say what the survey found even if it found
 > nothing.
 
+**`build_prompt.ps1` EMITS THIS CLAUSE NOW — you no longer paste it by hand.**
+It was mandated here and absent from the script (ZEN-89), so every tick that
+trusted the script silently lost the one control that catches an under-scoped
+list; `Test-BuildPrompt.ps1` now asserts the prompt OPENS with it, not merely
+that it contains it. **So run `build_prompt.ps1` for every dispatch, including
+a fix-forward.** A hand-written prompt also skips `filelist.txt`, and `finish`
+then reports excursions as UNVERIFIED rather than clean — which is what
+happened on two of the three tickets in the 2026-09-20 audit.
+
+★ **A STALE `filelist.txt` IS WORSE THAN AN ABSENT ONE, AND NOTHING TELLS THEM
+APART.** `finish` warns loudly when the file is missing. When a fix-forward
+dispatch reuses the file list from the FIRST dispatch — which is what happens
+if you re-run the worker without re-running the script — the file is present,
+stale, and silently describes the wrong scope: on ZEN-40 it would have flagged
+six legitimate files as excursions. Re-run `build_prompt.ps1` with the
+corrected `-Files` before every re-dispatch.
+
 Three tickets paid for this clause. ZM-23 under-scoped despite a careful survey,
 because a ruling asserted the missing file was unaffected. On ZM-67 the same
 prompt clause found a comment that the ticket's own change had falsified, in a
@@ -905,6 +926,31 @@ Three things to check, in this order:
 3. The ticket's central claim. A DoD saying "X has no Y" when X grew a Y
    last week describes work that is already done, and a worker handed
    that will invent something to do.
+
+   **★★ AND ITS PROPOSED MECHANISM, WHICH IS A SEPARATE CLAIM AND THE MORE
+   EXPENSIVE ONE TO GET WRONG.** A Goal does not only assert a symptom; it
+   usually asserts a CAUSE, and nothing else in this pipeline checks that.
+   `contractValid` answers routing. The drift resolver checks that citations
+   RESOLVE, not that they are true. The reachability scan reads paths. A
+   plausible, confidently-worded, wrong diagnosis passes all three and then —
+   because I3 inlines the Goal verbatim — becomes a standing instruction
+   competing with the evidence.
+
+   Measured on ZEN-40, whose Goal read *"which teardown order (asset handles
+   releasing after the registry, or a render-resource release after the memory
+   manager, in the pattern `d45bd7b3` fixed for handles)"* and named the
+   Vulkan allocator. There was no ordering defect at all: the bug was
+   unbounded accumulation in `Flux_Primitives`, two subsystems away, and the
+   allocator was the DETECTOR. That cost a full dispatch — recovered only
+   because the worker hit its boundary and reported a corrected file list
+   instead of editing files that did not contain the bug.
+
+   Its symptom claim was false too, in the same ticket: *"every windowed run
+   exits non-zero"*, when two of three measured windowed runs exited 0 and
+   only the photo tours reproduced. **Reproduce the symptom yourself before
+   you inline a cause**, and if the ticket's mechanism does not survive
+   contact with the code, say so in the prompt as measured evidence and let
+   the worker read the code rather than the theory.
 4. **Any claim YOU are about to make about what existing code DOES —
    checked against the code, never against its comment.** This file
    already distrusts documents; it applies that suspicion only to tickets
@@ -1195,8 +1241,30 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    | --- | --- |
    | regens when the tree holds a created source file, and treats a non-zero regen as FATAL | Sharpmake bakes the file list into the vcxproj, so a new `.cpp` enters the build only at a regen — and `regen.ps1` exits 3 regenerating NOTHING while stale projects stay on disk. ZM-27: 3 new files, build exit 0, zero occurrences of the new TU in the log |
    | asserts every created `.cpp` BY NAME in the build log | a green build proves what was IN the project compiled. The unit count still moves, by however many tests landed in files that already existed — and the pin bump then ratchets it in |
+   | asserts every created `.inl` is `#include`d by something tracked | an `.inl` is not its own TU, so the by-name build-log check cannot see it — and every Flux unit suite in this repo is a `<Module>.Tests.inl` included from the bottom of its `.cpp`. Create one, forget the `#include`, and the build is green, the unit count does not move, and nothing says a word. Measured on ZEN-40, where the script printed "no created source files; skipping regen" with a new `.Tests.inl` in its own changed list |
    | runs the unit gate ALONE first, and stops | the count must be OBSERVED before it can be narrated, so the doc edit necessarily lands after a gate run. ZM-27 spent ~25 minutes re-certifying three comment edits only `doc_lint` reads |
    | owns each gate as a child process, waits unbounded, sweeps stray game exes on every exit path | `zenith test Zenithmon --headless` runs past 20 minutes. A killed gate reports no exit code — a timeout is indistinguishable from a failure — and leaves the exe holding build outputs |
+
+   **★★ ASK WHETHER THE GATE LIST EXECUTES THE DIFF AT ALL — a green run over
+   code you did not change is not verification.** The union covers whole
+   directories, not languages, and for a long time nothing in any list ran
+   anything that was not C++. Two of the three tickets in the 2026-09-20 audit
+   went green on eleven C++ game builds having executed **zero lines** of their
+   own diff: ZEN-79 delivered Vitest coverage in `Tools/Vault`, ZEN-8 a
+   `doc_lint` check plus a `Tools/Test_*.ps1` assert script. In both cases the
+   only real verification was a hand run.
+
+   The `Tooling` category now owns `Tools/*.ps1`, `Tools/zagent/**` and
+   `Tools/Vault/**` and runs the assert scripts, the Vault Vitest suite and
+   `doc_lint` for every game, so that hole is closed for `Tools/`. The habit is
+   not: when the gate list finishes, check that something in it actually ran
+   the changed lines, and if nothing did, **run the suite yourself and record
+   it in the Coverage row** rather than reporting the gates' colour. That row
+   exists for exactly this, and "nothing" is a legal answer.
+
+   (`Tools/unit_baselines.json` is deliberately NOT in the `Tooling` paths: a
+   one-line pin bump must not drag a five-minute Vault suite behind it, the
+   same reasoning that keeps `Tools/**` out of `Engine`.)
 
    **Never hand-assemble the list, and never run a line in the foreground.**
    `zagent gates` takes the same changed set `guard` computes and UNIONS in
@@ -1605,6 +1673,21 @@ A red is therefore not reliably a fact about the tree.
 Without this, flakes consume the fix-forward budget, `maxConsecutiveBlocked`
 trips the breaker on tickets that were never broken, and an unattended loop
 resolves the ambiguity against the ticket every time.
+
+**★★ BOTH BRANCHES ASSUME THE SUITE WAS GREEN WHEN YOU ARRIVED. BASELINE IT
+BEFORE YOU DISPATCH.** Nothing above tells you to, and on a ticket whose
+deliverable is a test that is the difference between "zero regressions" and a
+guess. Measured on ZEN-79: `npm test` in `Tools/Vault` was **already red on a
+clean tree** — `1 failed | 714 passed (715)`, in the retired-name guard under
+`Tools/Vault/test/` —
+before a line was changed. Taking that number first is the only reason the
+after-state could be stated as *"+5 passing, zero regressions, same single
+pre-existing failure"* rather than argued about.
+
+Run whatever suite the ticket's deliverable actually lives in, BEFORE the
+worker touches anything, and write the number in the work log. This applies
+hardest where no gate runs that suite — see the `Tooling` category in
+`zagent.project.json` for which ones now do.
 
 **And the assert text will not be there.** `Zenith_DebugBreak()` kills the
 process with the log buffer unflushed, so a hard abort leaves the gate output

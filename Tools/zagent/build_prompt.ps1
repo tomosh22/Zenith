@@ -342,6 +342,24 @@ $filesInline = $normalisedFiles -join ', '
 # script exists to remove.
 
 $lines = [System.Collections.Generic.List[string]]::new()
+
+# ─── The blast-radius survey (ZEN-89) ─────────────────
+#
+# tick.md step 5 mandates this as the worker's FIRST instruction, and this
+# script did not emit it -- so every tick that trusted the script silently
+# lost the one control that catches an under-scoped file list. It is emitted
+# here, verbatim from the protocol, rather than left to each orchestrator to
+# remember: a clause that has to be pasted by hand is a clause that is
+# sometimes not pasted.
+#
+# Why it is the WORKER's job and not the orchestrator's: deriving the list
+# happens before anyone has read the code the ticket is about, while the
+# worker has the task context and a fresh budget. Making the list a hypothesis
+# the worker must falsify is what caught ZM-69's missing scene-registry row
+# and ZEN-40's entirely wrong subsystem -- in the latter case the worker made
+# ZERO edits and returned a corrected list pointing two directories away.
+[void]$lines.Add('**Step zero, before you edit anything.** For every identifier and every behaviour you intend to change, grep the whole repository and confirm each hit that must CHANGE is inside the file list below. Read the UNITS that reference them, not just the file names — a test can pin your change without naming it in a way that greps. A file list bounds WRITES, not READS: read as widely as you need. **If ANY hit that must change lands outside the list, STOP and report the complete corrected list before making a single edit.** Say what the survey found even if it found nothing.')
+[void]$lines.Add('')
 [void]$lines.Add('**DO NOT** attempt to run **CI gate command lines**, build, test, commit, push, or touch the board — you have no shell; the orchestrator does all of that.')
 [void]$lines.Add("**Files you may edit:** $filesInline.")
 [void]$lines.Add("**Conventions:** $conventions")

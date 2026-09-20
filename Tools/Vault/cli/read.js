@@ -248,9 +248,20 @@ export function claimDecision(index, ticket, { queue = false } = {}) {
     ?? breakerReason
     ?? lockReason
     ?? queueReason(index, ticket, projectKey, category, { invalidRepository });
+  // The same verdict with the I5 repo lock left OUT. The lock is TRANSIENT --
+  // it clears when the ticket in flight finishes -- while a contract failure,
+  // an EPIC, a needs-human label or an assignment to somebody else is still
+  // true afterwards. `claim`/`next` must keep reporting the lock first (they
+  // MUTATE, and refusing to steal is the point), but a read-only `check` that
+  // reports only "repo busy" hides the durable answer the caller asked for.
+  // See ZEN-76.
+  const durableReason = invalidRepository
+    ?? (assignedToOther ? `it is assigned to ${assignee}` : null)
+    ?? contract.error;
   return {
     queue: { would: queueError === null, reason: queueError },
     targeted: { would: targetedReason === null, reason: targetedReason },
+    durable: { blocked: durableReason !== null, reason: durableReason },
     inFlight: holdingKey,
     breaker,
     queueRequested: Boolean(queue),
@@ -283,13 +294,28 @@ function checkPayload(index, ticket, projectKey, options = {}) {
   payload.check = {
     queue: decision.queue,
     targeted: decision.targeted,
+    durable: decision.durable,
     inFlight: decision.inFlight,
   };
   if (decision.breaker?.limit > 0) payload.check.breaker = decision.breaker;
+  // ★ THE DURABLE VERDICT WINS OVER THE TRANSIENT LOCK — for `check` only.
+  //
+  // `check` is read-only and answers "would a claim take this ticket?". With
+  // the lock tested first it answered "repo busy" for an EPIC, a needs-human
+  // ticket or a contract failure, i.e. it reported the one obstacle that will
+  // go away and hid the one that will not. Measured during the /tick audit:
+  // `zagent check ZEN-1` on an EPIC returned 5 while a ticket was in flight,
+  // so the tick protocol's own documented behaviour ("an EPIC comes back exit
+  // 4 from `zagent check`") was false whenever it mattered.
+  //
+  // `claim` and `next` are untouched and still return 5 first: they mutate,
+  // and refusing to steal an in-flight ticket outranks everything.
   const exitCode = decision.breaker?.open
     ? 6
     : decision.targeted.would
     ? EXIT_CODES.OK
+    : decision.durable?.blocked
+    ? 4
     : decision.inFlight && decision.inFlight !== metadata.key
       ? EXIT_CODES.NOT_OWNED
       : 4;

@@ -85,6 +85,67 @@ Assert-That 'IGNORES a mere modification -- the vcxproj already knows that file'
     } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+Write-Host "`n=== Get-CreatedIncludeFiles ===" -ForegroundColor Cyan
+# A .Tests.inl is NOT a translation unit, so the by-name build-log assertion
+# cannot see it -- and every Flux unit suite in this repo is one, #included
+# from the bottom of its .cpp. Create one, forget the #include, and the build
+# is green, the unit count does not move, and nothing reports it. Measured on
+# ZEN-40, where tick_gates printed "no created source files; skipping regen"
+# with a new .Tests.inl in its own changed list.
+
+Assert-That 'sees a created .inl, which the .cpp filter deliberately excludes' {
+    $repo = New-GitFixture
+    try {
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Tests/Probe.Tests.inl') -Value '// new' -Encoding utf8
+        # PLAIN ASSIGNMENT, not `@(...)`. These helpers return `, $arr` so a
+        # one-element result is not unrolled into a bare string (the trap this
+        # file's header describes). Wrapping the CALL in `@()` re-wraps that
+        # envelope instead of flattening it: you get a 1-element array whose
+        # element is the array, `$x[0]` is a String[], and `-like` silently
+        # fails. The object-valued assertions above only survive it because
+        # `.Path` member-enumerates across the nested array.
+        $inl = Get-CreatedIncludeFiles -RepoRoot $repo
+        $cpp = Get-CreatedSourceFiles -RepoRoot $repo
+        # The two lists are disjoint ON PURPOSE: an .inl needs no regen (it is
+        # not its own TU) but does need the inclusion proof.
+        (@($inl).Count -eq 1) -and ($inl[0] -like '*Probe.Tests.inl') -and (@($cpp).Count -eq 0)
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'IGNORES a modified .inl -- only a CREATED one can be orphaned' {
+    $repo = New-GitFixture
+    try {
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Tests/Tracked.inl') -Value '// tracked' -Encoding utf8
+        & git -C $repo add -A 2>$null | Out-Null
+        & git -C $repo commit -m inl --quiet 2>$null | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Games/Probe/Tests/Tracked.inl') -Value '// edited'
+        (Get-CreatedIncludeFiles -RepoRoot $repo).Count -eq 0
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'the inclusion probe distinguishes an INCLUDED .inl from an orphan' {
+    # This is the predicate the gate branches on, exercised directly: `git
+    # grep -l` over TRACKED files, with the .inl itself excluded so a file
+    # that merely names itself in a comment cannot pass.
+    $repo = New-GitFixture
+    try {
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Tests/Orphan.Tests.inl') -Value '// nobody includes me' -Encoding utf8
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Tests/Wired.Tests.inl') -Value '// included below' -Encoding utf8
+        Add-Content -LiteralPath (Join-Path $repo 'Games/Probe/Tests/Existing.cpp') -Value '#include "Wired.Tests.inl"'
+        & git -C $repo add -A 2>$null | Out-Null
+        & git -C $repo commit -m wire --quiet 2>$null | Out-Null
+
+        $probe = {
+            param($leaf, $self)
+            @(& git -C $repo grep -l --fixed-strings -- $leaf 2>$null) |
+                Where-Object { $_ -and ($_ -replace '\\', '/') -ne $self }
+        }
+        $wired = @(& $probe 'Wired.Tests.inl' 'Games/Probe/Tests/Wired.Tests.inl')
+        $orphan = @(& $probe 'Orphan.Tests.inl' 'Games/Probe/Tests/Orphan.Tests.inl')
+        ($wired.Count -gt 0) -and ($orphan.Count -eq 0)
+    } finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 Assert-That 'sees a DELETED .cpp, marked NOT new' {
     # A deletion needs a regen too -- the vcxproj still lists the file -- but
     # the by-name build assertion must not run on it, because a deleted file
