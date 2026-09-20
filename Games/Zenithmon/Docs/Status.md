@@ -1382,7 +1382,7 @@ ZM boot `4559`; engine boot (Null Combat) `2706`; Null RenderTest `2809`; regist
 > bytes each, entity counts unchanged, same two-boot proof as the rock set.
 >
 > ★ **The Clay set had to be BUILT first, and the second stage is easy to miss.** Stage 1
-> (`ExportAllTextures`, `Zenith/Core/Zenith_Engine.cpp`) converts every jpg under the
+> (`ExportAllTextures`, `Zenith/EngineComposition/Zenith_Engine.cpp`) converts every jpg under the
 > engine assets tree to a BC1 `.ztxtr` on ANY tools boot. Stage 2 — the packed
 > roughness+metallic map the terrain shader samples as `xRM.gb` — is written ONLY by
 > `RenderTest_PackTerrainRoughnessMetallic`, from a hand-maintained list of set

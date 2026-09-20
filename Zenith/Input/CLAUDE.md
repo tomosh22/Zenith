@@ -1,5 +1,15 @@
 # Input System
 
+## Build (Sharpmake library)
+
+Compiled into `ZenithInput` (`Build/Sharpmake_ZenithInput.cs`) — 4 TUs
+(`Zenith_Input.cpp`, `Zenith_InputActions.cpp`, `Zenith_InputSimulator.cpp`,
+`Zenith_Pointers.cpp`), which clears the ≥4-TU threshold — own PCH, Create TU
+`Internal/Zenith_InputPCH.cpp`. Depends only on `ZenithCore` (mandatory). Note
+GLFW is called directly from two files here but this library does NOT call
+`AddGlfwLibs` — `ZenithWindows` owns that edge; see
+`Zenith/Windows/CLAUDE.md`.
+
 ## Overview
 
 Three layers, bottom to top, plus one persisted setting:

@@ -2,6 +2,10 @@
 
 Custom container implementations optimized for engine use.
 
+**Library:** headers-only (zero `.cpp`). Joined into `ZenithCore`
+(`Build/Sharpmake_ZenithCore.cs`) via `AdditionalSourceRootPaths`, purely so
+this directory's headers are owned by exactly one project for IDE browsing.
+
 ## Files
 
 - `Zenith_Vector.h` - Dynamic array

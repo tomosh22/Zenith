@@ -766,7 +766,7 @@ them.
 - **Never launch ANY game exe bare with `--exit-after-frames N`** -- this is an
   ENGINE flag, not a Zenithmon one. It is parsed by
   `Zenith_AutomatedTestRunner::ParseCommandLine`
-  ([Zenith_AutomatedTest.cpp](../../../Zenith/Core/Zenith_AutomatedTest.cpp)
+  ([Zenith_AutomatedTest.cpp](../../../Zenith/EngineComposition/Zenith_AutomatedTest.cpp)
   :610) as a per-TEST max-frames OVERRIDE, consumed ONLY while an automated test
   runs. Without `--automated-test <name>` / `--all-automated-tests` it does
   nothing and a tools build idles in the editor FOREVER (orphaned processes).

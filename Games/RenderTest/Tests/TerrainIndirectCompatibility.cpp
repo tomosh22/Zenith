@@ -95,7 +95,7 @@
 // Telemetry: the ZENITH_TESTING per-device recorder counters (Phase 6) —
 // used to prove WHICH execution tier ran (native vs padded-multi vs
 // padded-single), not just that the CLI flag was set. Only compiled in a
-// Vulkan build (the entire Zenith/Vulkan/ directory is compiled out of
+// Vulkan build (the entire Zenith/RenderBackends/Vulkan/ directory is compiled out of
 // Null/D3D12 configs). The counters are zero-cost in production (gated
 // on ZENITH_TESTING in the recorder).
 #ifdef ZENITH_VULKAN

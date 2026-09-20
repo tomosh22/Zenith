@@ -59,8 +59,8 @@ The dependency is architectural, not fundamental:
 - `Zenith/Flux/Shaders/Terrain/Flux_TerrainCulling.slang` atomically compacts visible chunks into a prefix. Culled chunks return without writing an indirect record.
 - `Zenith/Flux/Shaders/Terrain/Flux_TerrainResetCounters.slang` clears only the visible counter.
 - `Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp` initializes the 4,096-record argument buffer to zero only when it is created.
-- `Zenith/Vulkan/Zenith_Vulkan_CommandBuffer.cpp` logs once and returns when native counted indirect is unavailable. The reset, culling, LOD, and streaming work still runs, but the terrain draw vanishes.
-- `Zenith/Vulkan/Zenith_Vulkan.cpp` logs that terrain streaming is disabled, which is inaccurate: only draw submission is skipped.
+- `Zenith/RenderBackends/Vulkan/Zenith_Vulkan_CommandBuffer.cpp` logs once and returns when native counted indirect is unavailable. The reset, culling, LOD, and streaming work still runs, but the terrain draw vanishes.
+- `Zenith/RenderBackends/Vulkan/Zenith_Vulkan.cpp` logs that terrain streaming is disabled, which is inaccurate: only draw submission is skipped.
 
 A direct substitution of `DrawIndexedIndirect(..., 4096)` is incorrect today. If frame A writes many commands and frame B has fewer visible chunks, the unwritten tail still contains frame A commands and replays stale terrain. A correct fixed-count fallback therefore requires one of these data layouts:
 
@@ -371,9 +371,9 @@ Regenerate checked-in artifacts with the canonical Tools=True FluxCompiler. Expe
 
 Files:
 
-- update `Zenith/Vulkan/Zenith_Vulkan.h`;
-- update `Zenith/Vulkan/Zenith_Vulkan.cpp`;
-- update `Zenith/Vulkan/Zenith_Vulkan_CommandBuffer.h/.cpp`.
+- update `Zenith/RenderBackends/Vulkan/Zenith_Vulkan.h`;
+- update `Zenith/RenderBackends/Vulkan/Zenith_Vulkan.cpp`;
+- update `Zenith/RenderBackends/Vulkan/Zenith_Vulkan_CommandBuffer.h/.cpp`.
 
 Device initialization must collect and store:
 
@@ -415,8 +415,8 @@ Correct the startup and recorder messages. They must say whether hardware count 
 Files:
 
 - update `Zenith/Flux/Terrain/Flux_Terrain.cpp`;
-- update `Zenith/Null/Zenith_Null.h` and `Zenith/Null/Zenith_Null_CommandBuffer.h`;
-- update `Zenith/D3D12/Zenith_D3D12.h` and `Zenith/D3D12/Zenith_D3D12_CommandBuffer.h`.
+- update `Zenith/RenderBackends/Null/Zenith_Null.h` and `Zenith/RenderBackends/Null/Zenith_Null_CommandBuffer.h`;
+- update `Zenith/RenderBackends/D3D12/Zenith_D3D12.h` and `Zenith/RenderBackends/D3D12/Zenith_D3D12_CommandBuffer.h`.
 
 At the terrain draw site:
 
@@ -431,7 +431,7 @@ Update Null/D3D12 getters and method signatures so all backend concepts compile.
 
 Files:
 
-- extend the barrier tests in `Zenith/Core/Zenith_UnitTests.Tests.inl` or add a focused render-graph test beside the existing terrain indirect-argument coverage;
+- extend the barrier tests in `Zenith/EngineComposition/Zenith_UnitTests.Tests.inl` or add a focused render-graph test beside the existing terrain indirect-argument coverage;
 - extend `Zenith/Flux/Terrain/Flux_Terrain.Tests.inl`;
 - add focused tests for the new neutral policy/header in the module-appropriate test file.
 
@@ -619,10 +619,10 @@ The implementation must also run the canonical shader regeneration above, releva
 | Terrain shaders | `Flux_TerrainIndirectCommon.slang`, `Flux_TerrainResetCounters.slang`, `Flux_TerrainCulling.slang` | shared ABI, full reset, unchanged compaction semantics |
 | Terrain graph/draw | `Zenith/Flux/Terrain/Flux_Terrain.cpp`, possibly `Flux_TerrainImpl.h` | declare/bind reset args, dispatch 64 groups, explicit padded policy |
 | Generated shaders | reset `.spv`, `.spv.refl`, `Zenith/Flux/Shaders/Generated/Terrain.h` | canonical regeneration only |
-| Vulkan device | `Zenith/Vulkan/Zenith_Vulkan.h/.cpp` | raw capabilities, optional count/multi-draw negotiation, max limit, truthful logs |
-| Vulkan recorder | `Zenith/Vulkan/Zenith_Vulkan_CommandBuffer.h/.cpp` | semantic selection, native count, padded batching, single loop, validation |
-| Stub backends | `Zenith/Null/*`, `Zenith/D3D12/*` | getter and signature conformance |
-| Unit tests | `Zenith/Flux/Terrain/Flux_Terrain.Tests.inl`, `Zenith/Core/Zenith_UnitTests.Tests.inl`, CLI tests | ABI, policy, batching, stale tail, barriers |
+| Vulkan device | `Zenith/RenderBackends/Vulkan/Zenith_Vulkan.h/.cpp` | raw capabilities, optional count/multi-draw negotiation, max limit, truthful logs |
+| Vulkan recorder | `Zenith/RenderBackends/Vulkan/Zenith_Vulkan_CommandBuffer.h/.cpp` | semantic selection, native count, padded batching, single loop, validation |
+| Stub backends | `Zenith/RenderBackends/Null/*`, `Zenith/RenderBackends/D3D12/*` | getter and signature conformance |
+| Unit tests | `Zenith/Flux/Terrain/Flux_Terrain.Tests.inl`, `Zenith/EngineComposition/Zenith_UnitTests.Tests.inl`, CLI tests | ABI, policy, batching, stale tail, barriers |
 | Graphics tests | `Games/RenderTest/Tests/TerrainIndirectCompatibility.cpp`, `Games/RenderTest/RunTerrainIndirectCompatibility.ps1`, smoke scripts/matrix | discovery, terrain-sentinel non-vacuity, three-process A/B, read-back tail proof, transitions, forced modes |
 | Documentation | terrain, Flux, Vulkan, Android, RenderTest `CLAUDE.md` files | architecture, mode flag, logs, validation workflow |
 
@@ -663,7 +663,7 @@ Update in the same change:
 
 - `Zenith/Flux/Terrain/CLAUDE.md`: reset → compact cull → native-or-padded draw, zero-tail invariant, fixed-mode cost, and corrected no-sort wording.
 - `Zenith/Flux/CLAUDE.md`: counted indirect is a semantic backend operation with an explicit caller-authorized fallback.
-- `Zenith/Vulkan/CLAUDE.md`: raw capability negotiation, max-count batching, multi-draw single-call tier, CLI override, and logs.
+- `Zenith/RenderBackends/Vulkan/CLAUDE.md`: raw capability negotiation, max-count batching, multi-draw single-call tier, CLI override, and logs.
 - `Zenith/Android/CLAUDE.md`: emulator/device validation steps and expected capability/effective-mode log lines.
 - `Games/RenderTest/CLAUDE.md`: graphics-required A/B test, artifacts, stale-tail sequence, and smoke matrix.
 - `Docs/BuildSystem.md` and exact unit-count pins if new engine tests change the observed baseline.
@@ -744,9 +744,9 @@ Do not fold either into the count fallback without separate capability, shader, 
 - `Zenith/Flux/Shaders/Terrain/Flux_Terrain_ToGBuffer.slang` and velocity variant: stable chunk ID from start-instance.
 - `Zenith/Flux/Terrain/Flux_TerrainStreamingManagerImpl.h`: persistent per-terrain argument/count/LOD buffers.
 - `Zenith/EntityComponent/Components/Zenith_TerrainComponent.cpp`: initial 4,096-record allocation/zero seed.
-- `Zenith/Vulkan/Zenith_Vulkan.cpp`: core/KHR negotiation and current feature enabling.
-- `Zenith/Vulkan/Zenith_Vulkan_CommandBuffer.cpp`: fixed and counted indexed-indirect recorders.
+- `Zenith/RenderBackends/Vulkan/Zenith_Vulkan.cpp`: core/KHR negotiation and current feature enabling.
+- `Zenith/RenderBackends/Vulkan/Zenith_Vulkan_CommandBuffer.cpp`: fixed and counted indexed-indirect recorders.
 - `Zenith/Flux/Backend/Concepts/Flux_Concept_Device.h`: portable device concept with no current capability record.
 - `Zenith/Flux/Backend/Concepts/Flux_Concept_CommandRecorder.h`: fixed/counted command requirements.
-- `Zenith/Core/Zenith_UnitTests.Tests.inl`: existing compute-write → indirect-read barrier coverage.
+- `Zenith/EngineComposition/Zenith_UnitTests.Tests.inl`: existing compute-write → indirect-read barrier coverage.
 - `Games/RenderTest/Tests/TAATemporalStability.cpp`: deterministic graphics capture/comparison infrastructure.

@@ -237,7 +237,7 @@ void Flux_ReleaseMaterialIndex(u_int uIndex)
 // code they cover, at the bottom of Flux_VertexPacker.cpp.)
 
 // Backend buffer-readback contract (Flux_MemoryManager::DownloadBufferData).
-// Hosted here rather than beside a backend: Zenith/Vulkan and Zenith/Null files
+// Hosted here rather than beside a backend: Zenith/RenderBackends/Vulkan and Zenith/RenderBackends/Null files
 // each compile in only their own configs, so a test living in either would
 // vanish from the other's unit count. This TU is backend-neutral and always
 // linked, and the test's GPU-real branch is gated at runtime.

@@ -4,6 +4,8 @@
 
 Engine-level save data system for persisting game state to disk. Built on `Zenith_DataStream` (serialization) and `Zenith_FileAccess` (file I/O). Cross-platform (Windows + Android).
 
+**Build system:** compiles into its own leaf static library, `ZenithSaveData` (`Build/Sharpmake_ZenithSaveData.cs`, Phase 4c) — 1 translation unit, no PCH. Depends on `ZenithCore` (mandatory), `ZenithDataStream`, and `ZenithFileAccess`.
+
 ## Files
 
 - `Zenith_SaveData.h` - Public API (namespace `Zenith_SaveData`)

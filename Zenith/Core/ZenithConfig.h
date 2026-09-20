@@ -35,9 +35,9 @@ namespace ZenithConfig {
 //   - Dynamic buffer per-frame allocations
 //
 // Files using this constant:
-//   - Zenith/Vulkan/Zenith_Vulkan_Swapchain.cpp
-//   - Zenith/Vulkan/Zenith_Vulkan_MemoryManager.cpp
-//   - Zenith/Vulkan/Zenith_Vulkan_CommandBuffer.cpp
+//   - Zenith/RenderBackends/Vulkan/Zenith_Vulkan_Swapchain.cpp
+//   - Zenith/RenderBackends/Vulkan/Zenith_Vulkan_MemoryManager.cpp
+//   - Zenith/RenderBackends/Vulkan/Zenith_Vulkan_CommandBuffer.cpp
 //   - Zenith/Flux/Flux_Buffers.h
 //   - Zenith/Editor/Zenith_Editor.cpp
 
@@ -65,8 +65,8 @@ static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 //              Reserve 1 for main thread, 1 for OS/background
 //
 // Files using this constant:
-//   - Zenith/Vulkan/Zenith_Vulkan.cpp
-//   - Zenith/Vulkan/Zenith_Vulkan_CommandBuffer.cpp
+//   - Zenith/RenderBackends/Vulkan/Zenith_Vulkan.cpp
+//   - Zenith/RenderBackends/Vulkan/Zenith_Vulkan_CommandBuffer.cpp
 //   - Zenith/Flux/Flux.cpp
 //   - Zenith/Flux/Flux.h
 

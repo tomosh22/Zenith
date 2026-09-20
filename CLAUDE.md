@@ -36,23 +36,26 @@ Zenith/
 │   ├── Perception/    # Sensory systems (see AI/Perception/CLAUDE.md)
 │   └── Squad/         # Squad tactics (see AI/Squad/CLAUDE.md)
 ├── Editor/            # Editor tools (see Editor/CLAUDE.md)
-├── TaskSystem/        # Task parallelism (see TaskSystem/CLAUDE.md)
+├── TaskSystem/        # Task parallelism — lib ZenithTaskSystem (see TaskSystem/CLAUDE.md)
 ├── Physics/           # Jolt Physics integration (see Physics/CLAUDE.md)
-├── Vulkan/            # Vulkan backend (see Vulkan/CLAUDE.md)
-├── D3D12/             # No-op null render backend (Flux neutrality proof) (see D3D12/CLAUDE.md)
+├── RenderBackends/    # The three render backends, grouped (see RenderBackends/CLAUDE.md)
+│   ├── Vulkan/        # Vulkan backend — lib ZenithRenderBackendVulkan, RenderBackend.Vulkan (win64+agde) (see RenderBackends/Vulkan/CLAUDE.md)
+│   ├── D3D12/         # No-op null render backend (Flux neutrality proof) — lib ZenithRenderBackendD3D12, win64 ONLY (see RenderBackends/D3D12/CLAUDE.md)
+│   └── Null/          # THE headless/CI backend — lib ZenithRenderBackendNull, win64 ONLY (see RenderBackends/Null/CLAUDE.md)
 ├── Core/              # Core utilities (see Core/CLAUDE.md)
+├── EngineComposition/ # The composition root: TUs that wire subsystems together + own g_xEngine (see EngineComposition/CLAUDE.md)
 ├── Collections/       # Custom containers (see Collections/CLAUDE.md)
 ├── Maths/             # GLM wrapper (see Maths/CLAUDE.md)
 ├── AssetHandling/     # Asset import/export (see AssetHandling/CLAUDE.md)
-├── Windows/           # Windows platform layer (see Windows/CLAUDE.md)
-├── Android/           # Android platform layer (see Android/CLAUDE.md)
+├── Windows/           # Windows platform layer — lib ZenithWindows, win64 ONLY (see Windows/CLAUDE.md)
+├── Android/           # Android platform layer — lib ZenithAndroid, agde ONLY (see Android/CLAUDE.md)
 ├── DataStream/        # Binary serialization (see DataStream/CLAUDE.md)
 ├── SaveData/          # Save/load persistence (see SaveData/CLAUDE.md)
-├── DebugVariables/    # Runtime debug variable tree (see DebugVariables/CLAUDE.md)
-├── Input/             # Input handling (see Input/CLAUDE.md)
-├── Profiling/         # CPU profiling system (see Profiling/CLAUDE.md)
+├── DebugVariables/    # Runtime debug variable tree — lib ZenithDebugVariables (see DebugVariables/CLAUDE.md)
+├── Input/             # Input handling — lib ZenithInput (see Input/CLAUDE.md)
+├── Profiling/         # CPU profiling system — lib ZenithProfiling (see Profiling/CLAUDE.md)
 ├── Telemetry/         # Runtime telemetry capture
-├── UnitTests/         # Unit-test harness
+├── UnitTests/         # Unit-test harness — lib ZenithUnitTests (see UnitTests/CLAUDE.md)
 ├── Prefab/            # Prefab system (see Prefab/CLAUDE.md)
 ├── UI/                # UI framework (see UI/CLAUDE.md)
 ├── Tools/             # The asset bake: importers + procedural exporters (see Tools/CLAUDE.md)
@@ -186,6 +189,18 @@ results, telemetry, and build logs are also never committed; runners write under
 `Build/artifacts/`. See **`Docs/GameProjects.md`** for the schema, validation rules,
 sln inventory, CI mapping, and troubleshooting.
 
+**The library structure's invariant (Phase 4h, complete):** every compiled
+source belongs to exactly one project per link target. Conditionality is
+expressed as target declaration (a project's own `AddTargets`) plus solution
+membership (a `Func<ZenithTarget,bool>` predicate in
+`Build/Sharpmake_EngineLibs.cs`) — never as a per-configuration source
+exclude (`conf.SourceFilesBuildExcludeRegex`). `ConfigurePlatformExcludes`,
+the last mechanism of that kind, is gone; `Tools/check_project_membership.ps1`
+enforces the invariant fatally by default (duplicate-owned / orphan /
+unowned / stray build-exclude findings all exit 1 — pass `-ReportOnly` for
+the old always-succeed behaviour). See **`Docs/BuildSystem.md`** §4 for the
+full library list and the Phase 4a-4h history.
+
 ### Build Configurations
 
 Each project supports these configurations. Every win64 config is prefixed by the
@@ -197,12 +212,20 @@ too, plus an ABI fragment** — `Vulkan_arm64_v8a_…` (devices) and `Vulkan_x86
 (the emulator, the only ABI a machine with no ARM device can run).
 
 > **HEADLESS IS A BUILD CONFIG, NOT A FLAG.** There is no `--headless`. A `Null_*`
-> config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null` instead of Vulkan,
+> config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/RenderBackends/Null` instead of Vulkan,
 > and creates its window hidden. Every render path still RUNS — pass callbacks,
 > uploads, the editor ImGui frame — against no-op backend calls, so a headless run
 > exercises the same code a windowed one does. `zenith build|test <G> --headless`
 > selects this config. Compile-time checks use `Zenith_IsNullRenderer()` (or
 > `#ifdef ZENITH_NULL_RENDERER` where one side cannot compile).
+
+**Backend selection is project membership per target, not a per-configuration
+source exclude.** Each of `Zenith/RenderBackends/{Vulkan,D3D12,Null}` is its
+own static library (`ZenithRenderBackendVulkan`/`…D3D12`/`…Null`) that
+declares only the `RenderBackend` fragment(s) it supports; a `Null_*`
+configuration simply has no Vulkan or D3D12 *project* in its solution — there
+is no source file to build-exclude, because there is no project membership to
+begin with. See `Zenith/RenderBackends/CLAUDE.md`.
 
 | Configuration | Platform | Tools | Description |
 |--------------|----------|-------|-------------|
@@ -252,8 +275,8 @@ font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
 > **Config-name prefix (RenderBackend fragment):** every win64 config is prefixed
 > with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer),
 > `Null_vs2022_Debug_Win64_True` (the GPU-less headless/CI backend; see
-> `Zenith/Null/CLAUDE.md`), or `D3D12_vs2022_Debug_Win64_False` (the reserved
-> backend kept as a link-neutrality proof; see `Zenith/D3D12/CLAUDE.md`). The
+> `Zenith/RenderBackends/Null/CLAUDE.md`), or `D3D12_vs2022_Debug_Win64_False` (the reserved
+> backend kept as a link-neutrality proof; see `Zenith/RenderBackends/D3D12/CLAUDE.md`). The
 > output dir is the lowercased config name. AGDE configs carry the Vulkan prefix
 > plus an ABI token (for example `Vulkan_arm64_v8a_vs2022_Debug_Agde_False`).
 
@@ -328,10 +351,27 @@ Located in `Build/`:
 - `zenith_config.psd1` - central config DATA (default/hub configs, CI-provisioned versions, artifact root); read via the psm1 accessors only
 - `regen.ps1` - canonical regenerator (worktree-guard -> validate -> codegen -> one Sharpmake run -> AGDE fixup -> orphan prune)
 - `fix_agde_vcxproj.ps1` - AGDE post-Sharpmake fixup (clang c++ standard token)
-- `Sharpmake_ZenithTools.cs` - Asset tools project
+- `Sharpmake_EngineLibs.cs` - single source-of-truth table of engine lib projects (`ZenithEngineLibs.All`), consumed by both solutions + the aggregate's dependency block
+- `Sharpmake_ZenithCore.cs` - Core module project (`Zenith/Core` + `Zenith/Collections` headers; compiles the shared `Zenith.pch`; mandatory dependency of every other engine lib/Sentinel)
+- `Sharpmake_ZenithMaths.cs` / `Sharpmake_ZenithDataStream.cs` / `Sharpmake_ZenithFileAccess.cs` - Maths/DataStream/FileAccess module projects (no PCH — below the ≥4-TU threshold)
+- `Sharpmake_ZenithDebugVariables.cs` / `Sharpmake_ZenithTaskSystem.cs` / `Sharpmake_ZenithUnitTests.cs` - DebugVariables/TaskSystem/UnitTests module projects (no PCH — below the ≥4-TU threshold)
+- `Sharpmake_ZenithInput.cs` - Input module project (4 TUs; own PCH, Create TU `Zenith/Input/Internal/Zenith_InputPCH.cpp`)
+- `Sharpmake_ZenithWindows.cs` - Windows platform module project (**win64 ONLY**; owns GLFW + the `imgui_impl_glfw`/`imgui_impl_win32` ImGui backend TUs; own PCH, Create TU `Zenith/Windows/Internal/Zenith_WindowsPCH.cpp`)
+- `Sharpmake_ZenithAndroid.cs` - Android platform module project (**agde ONLY**; own PCH, Create TU `Zenith/Android/Internal/Zenith_AndroidPCH.cpp`)
 - `Sharpmake_ZenithAI.cs` - AI module project
 - `Sharpmake_ZenithECS.cs` - ECS module project
-- `Sharpmake_ZenithPhysics.cs` - Physics module project
+- `Sharpmake_ZenithPhysics.cs` - Physics module project (3 TUs + PCH create TU; depends on `ZenithJolt`, no longer owns the vendored Jolt sources — Phase 4c)
+- `Sharpmake_ZenithJolt.cs` - vendored Jolt Physics module project (`Middleware/JoltPhysics-5.4.0`, 133 TUs; **no PCH ever** — Jolt never includes `Zenith.h`; no Sharpmake dependency of its own)
+- `Sharpmake_ZenithSaveData.cs` / `Sharpmake_ZenithTelemetry.cs` / `Sharpmake_ZenithPrefab.cs` - SaveData/Telemetry/Prefab module projects (1 TU each, no PCH — below the ≥4-TU threshold)
+- `Sharpmake_ZenithScripting.cs` - Scripting (Behaviour Graph) module project (5 TUs; own PCH, Create TU `Zenith/Scripting/Internal/Zenith_ScriptingPCH.cpp`)
+- `Sharpmake_ZenithImGui.cs` - vendored ImGui CORE module project (`Middleware/imgui-docking`'s 5 top-level TUs only — none of `backends/`; **no PCH ever**, same reasoning as `Sharpmake_ZenithJolt.cs`; no Sharpmake dependency of its own; targets win64 + agde, unlike Jolt)
+- `Sharpmake_ZenithAssetHandling.cs` - AssetHandling module project (21 TUs; own PCH, Create TU `Zenith/AssetHandling/Internal/Zenith_AssetHandlingPCH.cpp`; declares no dependency on `ZenithFlux` despite 11 files `#include`ing `Flux/**` headers — see its own header comment and `AssetHandling/CLAUDE.md`)
+- `Sharpmake_ZenithFlux.cs` - Flux renderer module project (84 TUs; own PCH, Create TU `Zenith/Flux/Internal/Zenith_FluxPCH.cpp`; declares `Flux -> AssetHandling`, the heavier direction of a genuine header cycle between the two — see `Flux/CLAUDE.md`; owns `slang.lib` conditionally on `win64 && RenderBackend.Vulkan`)
+- `Sharpmake_ZenithRenderBackendVulkan.cs` / `Sharpmake_ZenithRenderBackendD3D12.cs` / `Sharpmake_ZenithRenderBackendNull.cs` - one target-restricted library per render backend (`Zenith/RenderBackends/{Vulkan,D3D12,Null}`); each declares `-> ZenithFlux`, never the reverse
+- `Sharpmake_ZenithUI.cs` - UI module project (14 TUs; own PCH, Create TU `Zenith/UI/Internal/Zenith_UIPCH.cpp`; layer 5 — declares `-> ZenithFlux`/`ZenithAssetHandling`/`ZenithInput`/`ZenithProfiling`; needed `SHADER_SOURCE_ROOT` through the shared PCH chain alone, with no direct `#include` of the header that requires it — see `UI/CLAUDE.md`)
+- `Sharpmake_ZenithEntityComponent.cs` - EntityComponent module project (43 TUs; own PCH, Create TU `Zenith/EntityComponent/Internal/Zenith_EntityComponentPCH.cpp`; layer 6, the top of the measured header DAG — declares `-> ZenithFlux` (the heavy direction of the declared `EntityComponent <-> Flux` cycle), `ZenithECS`, `ZenithPhysics`, `ZenithAI`, `ZenithScripting`, `ZenithPrefab`, `ZenithUI`; the real `EntityComponent <-> Editor` edge is deliberately UNDECLARED in EITHER direction — see `EntityComponent/CLAUDE.md`)
+- `Sharpmake_ZenithEditor.cs` - Editor module project (56 TUs; own PCH, Create TU `Zenith/Editor/Internal/Zenith_EditorPCH.cpp`; **win64 x ToolsEnabled.True ONLY** — no `agde` target, and `ToolsEnabled` itself carries a single value, not `True | False`; declares `-> ZenithWindows` + everything `ZenithEntityComponent` depends on except `ZenithEntityComponent` itself, which stays deliberately UNDECLARED the other way too — see `Editor/CLAUDE.md`)
+- `Sharpmake_ZenithTools.cs` - repo-root `Tools/` asset-bake module project (17 TUs; own PCH, Create TU `Tools/Internal/Zenith_ToolsPCH.cpp`; **win64 x ToolsEnabled.True ONLY**, same target restriction as `ZenithEditor`; adopted an orphan — this project generated a `.vcxproj` since before Phase 4g but was added to no solution; declares `-> ZenithFlux` (MeshGeometry) + `ZenithEntityComponent` + `MsdfAtlasGenProject` — see `Tools/CLAUDE.md`)
 - `Sharpmake_SentinelAI.cs` / `Sharpmake_SentinelECS.cs` / `Sharpmake_SentinelPhysics.cs` - Sentinel test modules
 - `Sharpmake_FreeType.cs` / `Sharpmake_Msdfgen.cs` / `Sharpmake_MsdfAtlasGen.cs` - Font/text dependency projects
 - `Sharpmake_TilePuzzleLevelGen.cs` / `Sharpmake_TilePuzzleRegistryViewer.cs` - TilePuzzle tooling projects

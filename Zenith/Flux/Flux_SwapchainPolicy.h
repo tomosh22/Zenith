@@ -1,7 +1,7 @@
 #pragma once
 
 // Pure swapchain-configuration decisions, kept OUT of the Vulkan backend so they
-// are testable in every config. Zenith/Vulkan is excluded from the Null_* builds
+// are testable in every config. Zenith/RenderBackends/Vulkan is excluded from the Null_* builds
 // (Sharpmake_Common.cs SourceFilesBuildExcludeRegex), and Null_* is the only
 // config CI runs -- so anything living in the backend is untestable by the gate
 // BY CONSTRUCTION. These functions take plain integers, the backend passes its

@@ -289,7 +289,7 @@ public:
 	// serialization) maps it to a real EntityID, calls SetParent, then clears it.
 	//
 	// GetPendingParentFileIndex stays public: a unit test in
-	// Zenith/Core/Zenith_UnitTests.Tests.inl reads it directly and is not a friend.
+	// Zenith/EngineComposition/Zenith_UnitTests.Tests.inl reads it directly and is not a friend.
 	//--------------------------------------------------------------------------
 	uint32_t GetPendingParentFileIndex() const;
 
@@ -314,7 +314,7 @@ public:
 	// Serialization methods for Zenith_DataStream
 	//
 	// WriteToDataStream stays public: unit tests in
-	// Zenith/Core/Zenith_UnitTests.Tests.inl call it directly on an entity and are
+	// Zenith/EngineComposition/Zenith_UnitTests.Tests.inl call it directly on an entity and are
 	// not friends. ReadFromDataStream is part of the public load API.
 	//
 	// xFileIndices maps a live entity SLOT index to that entity's DENSE,

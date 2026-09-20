@@ -1,6 +1,11 @@
 #include "Zenith.h"
 #pragma warning(disable: 4005) // APIENTRY macro redefinition
 
+// g_xEngine was demoted out of the PCH by W5.3 (PCH slimming, see Zenith.h) --
+// every code user includes it itself. Pre-existing gap found while verifying
+// Phase 4d's Sharpmake changes to this project (TilePuzzleRegistryViewer is
+// not part of any regular build gate, so this went unnoticed until now).
+#include "Core/Zenith_Engine.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TilePuzzleLevelMetadata.h"
@@ -426,8 +431,8 @@ int main(int argc, char** argv)
 
 	// Minimal engine init (required for solver profiling in conditional validation)
 	Zenith_MemoryManagement::Initialise();
-	g_xEngine.Profiling().Initialise();
-	Zenith_Multithreading::RegisterThread(true);
+	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
+	g_xEngine.Threading().RegisterThread(true);
 
 	// Create application window
 	ImGui_ImplWin32_EnableDpiAwareness();

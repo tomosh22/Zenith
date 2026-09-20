@@ -1,5 +1,11 @@
 # DataStream - Binary Serialization
 
+**Library:** compiles into `ZenithDataStream`
+(`Build/Sharpmake_ZenithDataStream.cs`) — a 2-TU leaf lib
+(`Zenith_DataStream.cpp`, `Zenith_StreamEnvelope.cpp`) with no precompiled
+header (below the ≥4-TU threshold; see `Docs/BuildSystem.md` §4). Depends on
+`ZenithCore` only.
+
 ## Overview
 
 `Zenith_DataStream` is the engine's core binary serialization system. It provides a cursor-based read/write interface for serializing data to and from binary buffers. Used throughout the engine for scene files, assets, prefabs, and network data.

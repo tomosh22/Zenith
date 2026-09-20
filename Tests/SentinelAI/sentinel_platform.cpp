@@ -13,7 +13,7 @@
 
 // L0 platform + infra contract for the AI leaf
 // ===========================================
-// ZenithAI + ZenithPhysics + ZenithECS + ZenithBase reference a small, fixed set of
+// ZenithAI + ZenithPhysics + ZenithECS + ZenithCore reference a small, fixed set of
 // platform / infra symbols whose real implementations live engine-side (compiled
 // into the aggregate, NOT into any leaf lib) and would drag g_xEngine in:
 //   * Zenith_DebugBreak (assert hook)
@@ -109,77 +109,63 @@ void Zenith_Windows_Mutex_T<false>::Unlock()
 	LeaveCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(m_axCriticalSectionStorage));
 }
 
-// Unit-test + callstack seams of the L0 memory system
-// ====================================================
-// ZenithBase's memory TUs reference two more L0-adjacent facilities whose real
-// implementations stay in the aggregate (Core/Zenith_TestFramework.cpp,
-// Core/Callstack/):
-//   * Zenith_MemoryManagement registers its own unit tests (ZENITH_TESTING is
-//     on in every current config) and asserts through Zenith_TestRunner in
-//     DumpLargestAllocations.
-//   * Zenith_MemoryTracker captures + formats allocation callstacks at the
-//     FULL tracking tier (Debug).
-// The sentinel never runs unit tests or dumps allocations, so registration is
-// accepted-and-ignored and the runtime paths fail LOUD if ever reached. These
-// definitions keep the leaf-proof link honest without dragging the aggregate's
-// test framework (and its engine deps) into the sentinel.
-#ifdef ZENITH_TESTING
-Zenith_TestRunner& Zenith_TestRunner::Instance()
-{
-	static Zenith_TestRunner ls_xRunner;
-	return ls_xRunner;
-}
+// Unit-test + callstack seams of the L0 memory system -- REMOVED (Phase 4a).
+// ====================================================================
+// This TU used to stub Zenith_TestRunner::Instance/RegisterTest/AssertTrue/
+// AssertFalse/AssertNotNull and Zenith_Callstack::Initialise/Capture/
+// FormatCallstack here, because their real implementations
+// (Core/Zenith_TestFramework.cpp, Core/Callstack/) used to live ONLY in the
+// aggregate, which this sentinel never links. Phase 4a dissolved ZenithBase
+// and folded ALL of Zenith/Core (including Callstack/ and the top-level
+// Zenith_TestFramework.cpp) into ZenithCoreLibProject, which this sentinel
+// now links directly (see Sharpmake_SentinelAI.cs's mandatory ZenithCore
+// dependency). The REAL implementations are linked now, so redefining them
+// here would be a duplicate-symbol link error (LNK2005) -- do not re-add
+// these definitions. Neither file references g_xEngine / Flux_ (verified),
+// so linking them keeps the leaf-proof engine-free.
+//
+// They DO, however, reach a lower layer of PLATFORM hooks that still live
+// only in Zenith/Windows (compiled into the aggregate, never linked here):
+// Zenith_PlatformStdio::OpenFile (Zenith_TestRunner::RunAllTests writes a
+// results file -- unreachable at runtime here, but still an external the
+// whole Zenith_TestFramework.obj drags in once anything else in that .obj is
+// referenced), the assert-capture atomics (declared extern in
+// Core/Zenith_DebugBreak.h, defined in Zenith/Windows/Zenith_Windows_DebugBreak.cpp
+// / Zenith/UnitTests/Zenith_AssertCapture.cpp, neither linked here), and
+// Zenith_Callstack::Platform_Initialise/Platform_Shutdown/Platform_Capture/
+// Platform_Symbolicate (defined in Zenith/Windows/Callstack/
+// Zenith_Windows_Callstack.cpp, likewise not linked here). These four are the
+// new, lower floor of the same documented platform-dependency contract this
+// file has always stubbed -- trivial no-op definitions, since the sentinel
+// never runs unit tests or captures a real callstack.
+#include "Core/Zenith_PlatformStdio.h"
+#include "Core/Zenith_DebugBreak.h"
 
-void Zenith_TestRunner::RegisterTest(Zenith_TestCase* /*pxCase*/)
-{
-	// Static-init registrars from linked zenithbase TUs land here; the sentinel
-	// never calls RunAllTests, so the case list is not kept.
-}
+std::atomic<uint32_t> g_uAssertCaptureHitCount{ 0 };
+std::atomic<bool> g_bAssertCaptureActive{ false };
 
-void Zenith_TestRunner::AssertTrue(bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
+namespace Zenith_PlatformStdio
 {
-	if (!bExpr)
+	FILE* OpenFile(const char* /*szPath*/, const char* /*szMode*/)
 	{
-		fprintf(stderr, "sentinel: AssertTrue(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
-		Zenith_DebugBreak();
+		return nullptr;
 	}
 }
 
-// Zenith_AI.cpp's own units (Zenith_AI.Tests.inl) reach the AI lib this exe links
-// and use the FALSE / NOT_NULL forms as well; each stub is the same shape.
-
-void Zenith_TestRunner::AssertFalse(bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
-{
-	if (bExpr)
-	{
-		fprintf(stderr, "sentinel: AssertFalse(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
-		Zenith_DebugBreak();
-	}
-}
-
-void Zenith_TestRunner::AssertNotNull(const void* pPtr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
-{
-	if (pPtr == nullptr)
-	{
-		fprintf(stderr, "sentinel: AssertNotNull(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
-		Zenith_DebugBreak();
-	}
-}
-#endif
-
-void Zenith_Callstack::Initialise()
+void Zenith_Callstack::Platform_Initialise()
 {
 }
 
-u_int Zenith_Callstack::Capture(void** /*apFrames*/, u_int /*uMaxFrames*/, u_int /*uSkipFrames*/)
+void Zenith_Callstack::Platform_Shutdown()
+{
+}
+
+u_int Zenith_Callstack::Platform_Capture(void** /*apFrames*/, u_int /*uMaxFrames*/, u_int /*uSkipFrames*/)
 {
 	return 0u;
 }
 
-void Zenith_Callstack::FormatCallstack(void** /*apFrames*/, u_int /*uFrameCount*/, char* szBuffer, size_t ulBufferSize)
+bool Zenith_Callstack::Platform_Symbolicate(void* /*pAddress*/, Zenith_CallstackFrame& /*xFrameOut*/)
 {
-	if (szBuffer != nullptr && ulBufferSize > 0u)
-	{
-		szBuffer[0] = '\0';
-	}
+	return false;
 }

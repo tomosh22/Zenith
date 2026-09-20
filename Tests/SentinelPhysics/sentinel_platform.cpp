@@ -12,7 +12,7 @@
 
 // L0 platform contract for the Physics leaf
 // ========================================
-// ZenithPhysics + ZenithECS + ZenithBase reference a small, fixed set of platform
+// ZenithPhysics + ZenithECS + ZenithCore reference a small, fixed set of platform
 // symbols whose real implementations live in the Windows/ platform layer (compiled
 // into the engine aggregate, NOT into any leaf lib): Zenith_DebugBreak (assert
 // hook), three Zenith_FileAccess entry points (Zenith_DataStream file I/O the
@@ -20,15 +20,20 @@
 // Zenith_Windows_Mutex_T<true>::Lock (the profiling Zenith_Mutex behind
 // Zenith_EventDispatcher's deferred-event queue in zenithecs.lib). The Physics
 // layer itself adds NO new platform symbol: its deferred-collision queue uses the
-// non-profiling Zenith_Mutex (inline Lock), and the Jolt backend it owns is
-// self-contained inside zenithphysics.lib.
+// non-profiling Zenith_Mutex (inline Lock). As of Phase 4c the Jolt backend is
+// no longer inside zenithphysics.lib at all — it is the separate ZenithJolt leaf
+// (zenithjolt.lib, linked as a declared public dependency; see
+// Build/Sharpmake_SentinelPhysics.cs), so it adds no platform symbol here either:
+// Jolt's own sources never reference this file's shims.
 //
 // Their presence here is the EXPLICIT, COMPLETE enumeration of the leaf chain's
 // platform dependency floor. Note what is NOT here: no g_xEngine, no Flux_*, no
-// AI, no concrete Zenith_*Component. JPH:: is resolved from within
-// zenithphysics.lib (Physics OWNS Jolt), not shimmed. If the Physics core ever
-// grew an engine dependency it would surface as a NEW unresolved external at this
-// link (or in the dumpbin UNDEF scan that backs this proof) — never silently.
+// AI, no concrete Zenith_*Component. JPH:: is resolved from zenithjolt.lib (a
+// declared leaf dependency, not shimmed here or owned by ZenithPhysics anymore
+// — see the Phase 4c Jolt split in Build/Sharpmake_ZenithJolt.cs). If the
+// Physics core ever grew an engine dependency it would surface as a NEW
+// unresolved external at this link (or in the dumpbin UNDEF scan that backs
+// this proof) — never silently.
 
 void Zenith_DebugBreak()
 {
@@ -98,56 +103,62 @@ void Zenith_Windows_Mutex_T<false>::Unlock()
 	LeaveCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(m_axCriticalSectionStorage));
 }
 
-// Unit-test + callstack seams of the L0 memory system
-// ====================================================
-// ZenithBase's memory TUs reference two more L0-adjacent facilities whose real
-// implementations stay in the aggregate (Core/Zenith_TestFramework.cpp,
-// Core/Callstack/):
-//   * Zenith_MemoryManagement registers its own unit tests (ZENITH_TESTING is
-//     on in every current config) and asserts through Zenith_TestRunner in
-//     DumpLargestAllocations.
-//   * Zenith_MemoryTracker captures + formats allocation callstacks at the
-//     FULL tracking tier (Debug).
-// The sentinel never runs unit tests or dumps allocations, so registration is
-// accepted-and-ignored and the runtime paths fail LOUD if ever reached. These
-// definitions keep the leaf-proof link honest without dragging the aggregate's
-// test framework (and its engine deps) into the sentinel.
-#ifdef ZENITH_TESTING
-Zenith_TestRunner& Zenith_TestRunner::Instance()
-{
-	static Zenith_TestRunner ls_xRunner;
-	return ls_xRunner;
-}
+// Unit-test + callstack seams of the L0 memory system -- REMOVED (Phase 4a).
+// ====================================================================
+// This TU used to stub Zenith_TestRunner::Instance/RegisterTest/AssertTrue and
+// Zenith_Callstack::Initialise/Capture/FormatCallstack here, because their real
+// implementations (Core/Zenith_TestFramework.cpp, Core/Callstack/) used to live
+// ONLY in the aggregate, which this sentinel never links. Phase 4a dissolved
+// ZenithBase and folded ALL of Zenith/Core (including Callstack/ and the
+// top-level Zenith_TestFramework.cpp) into ZenithCoreLibProject, which this
+// sentinel now links directly (see Sharpmake_SentinelPhysics.cs's mandatory
+// ZenithCore dependency). The REAL implementations are linked now, so
+// redefining them here would be a duplicate-symbol link error (LNK2005) --
+// do not re-add these definitions. Neither file references g_xEngine / Flux_
+// (verified), so linking them keeps the leaf-proof engine-free.
+//
+// They DO, however, reach a lower layer of PLATFORM hooks that still live
+// only in Zenith/Windows (compiled into the aggregate, never linked here):
+// Zenith_PlatformStdio::OpenFile (Zenith_TestRunner::RunAllTests writes a
+// results file -- unreachable at runtime here, but still an external the
+// whole Zenith_TestFramework.obj drags in once anything else in that .obj is
+// referenced), the assert-capture atomics (declared extern in
+// Core/Zenith_DebugBreak.h, defined in Zenith/Windows/Zenith_Windows_DebugBreak.cpp
+// / Zenith/UnitTests/Zenith_AssertCapture.cpp, neither linked here), and
+// Zenith_Callstack::Platform_Initialise/Platform_Shutdown/Platform_Capture/
+// Platform_Symbolicate (defined in Zenith/Windows/Callstack/
+// Zenith_Windows_Callstack.cpp, likewise not linked here). These four are the
+// new, lower floor of the same documented platform-dependency contract this
+// file has always stubbed -- trivial no-op definitions, since the sentinel
+// never runs unit tests or captures a real callstack.
+#include "Core/Zenith_PlatformStdio.h"
+#include "Core/Zenith_DebugBreak.h"
 
-void Zenith_TestRunner::RegisterTest(Zenith_TestCase* /*pxCase*/)
-{
-	// Static-init registrars from linked zenithbase TUs land here; the sentinel
-	// never calls RunAllTests, so the case list is not kept.
-}
+std::atomic<uint32_t> g_uAssertCaptureHitCount{ 0 };
+std::atomic<bool> g_bAssertCaptureActive{ false };
 
-void Zenith_TestRunner::AssertTrue(bool bExpr, const char* strExpr, const char* strFile, int iLine, const char* /*strFormat*/, ...)
+namespace Zenith_PlatformStdio
 {
-	if (!bExpr)
+	FILE* OpenFile(const char* /*szPath*/, const char* /*szMode*/)
 	{
-		fprintf(stderr, "sentinel: AssertTrue(%s) FAILED at %s:%d\n", strExpr, strFile, iLine);
-		Zenith_DebugBreak();
+		return nullptr;
 	}
 }
-#endif
 
-void Zenith_Callstack::Initialise()
+void Zenith_Callstack::Platform_Initialise()
 {
 }
 
-u_int Zenith_Callstack::Capture(void** /*apFrames*/, u_int /*uMaxFrames*/, u_int /*uSkipFrames*/)
+void Zenith_Callstack::Platform_Shutdown()
+{
+}
+
+u_int Zenith_Callstack::Platform_Capture(void** /*apFrames*/, u_int /*uMaxFrames*/, u_int /*uSkipFrames*/)
 {
 	return 0u;
 }
 
-void Zenith_Callstack::FormatCallstack(void** /*apFrames*/, u_int /*uFrameCount*/, char* szBuffer, size_t ulBufferSize)
+bool Zenith_Callstack::Platform_Symbolicate(void* /*pAddress*/, Zenith_CallstackFrame& /*xFrameOut*/)
 {
-	if (szBuffer != nullptr && ulBufferSize > 0u)
-	{
-		szBuffer[0] = '\0';
-	}
+	return false;
 }

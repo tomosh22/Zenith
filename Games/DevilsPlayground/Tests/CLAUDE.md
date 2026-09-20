@@ -82,11 +82,11 @@ subject — it restores Playing itself at Step 540 and its `Verify` asserts the
 end state. Leave it alone.)
 
 The harness enters Playing exactly ONCE, at `HarnessPhase::EnterPlayingMode`
-during boot (`Zenith/Core/Zenith_AutomatedTest.cpp`), and
+during boot (`Zenith/EngineComposition/Zenith_AutomatedTest.cpp`), and
 `Zenith_Editor::ResetSessionForNextTest` **deliberately** never normalises the
 mode — mode and play-backup are two halves of one state machine. So Stopped,
 once set, stays set for the rest of the batch. Stopped clears
-`bShouldUpdateGameLogic` (`Zenith/Core/Zenith_Core.cpp`), so the world the
+`bShouldUpdateGameLogic` (`Zenith/EngineComposition/Zenith_Core.cpp`), so the world the
 between-tests reset rebuilds gets OnAwake but its pending-OnStart queue never
 drains — components whose `OnStart` does the real work never initialise, and the
 *later* test fails for reasons that have nothing to do with it.

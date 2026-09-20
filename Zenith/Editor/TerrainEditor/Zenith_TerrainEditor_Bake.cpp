@@ -434,7 +434,7 @@ void Zenith_TerrainEditor::RebuildGrass()
 	m_bGrassDirty = false;
 
 	// Tools-bake semantic: the grass maps are GPU textures, so a Null build
-	// deliberately does not author them (see Zenith/Null/CLAUDE.md).
+	// deliberately does not author them (see Zenith/RenderBackends/Null/CLAUDE.md).
 	//
 	// ZEN-6 AUDIT — CORRECT AS WRITTEN, and audited rather than changed. The
 	// ticket's rule is that a Null bail is a defect only when it skips ENTITY or

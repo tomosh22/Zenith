@@ -1,10 +1,51 @@
 # EntityComponent — concrete components + ECS↔engine glue
 
-This directory holds the **engine-side** half of the entity-component system: the
+> **Build ownership: `ZenithEntityComponent` (Phase 4f).** This whole
+> directory is one Sharpmake static library (`Build/Sharpmake_ZenithEntityComponent.cs`)
+> — 43 translation units + a definition-free PCH create TU. It sits at
+> **layer 6, the TOP of the measured header DAG** — it depends on nearly
+> every leaf below it: `ZenithCore` (mandatory), `ZenithMaths`,
+> `ZenithDataStream`, `ZenithFileAccess`, `ZenithProfiling`,
+> `ZenithDebugVariables`, `ZenithTaskSystem`, `ZenithInput`,
+> `ZenithAssetHandling`, `ZenithFlux`, `ZenithECS`, `ZenithPhysics`,
+> `ZenithAI`, `ZenithScripting`, `ZenithPrefab`, and `ZenithUI` (layer 5 —
+> see `UI/CLAUDE.md`). Two seams needed care, and a third turned out not to
+> be one:
+> - **`EntityComponent <-> Flux`** is the SAME shape as the pre-existing
+>   `Flux <-> AssetHandling` cycle (`Tools/complexity_profiles.json`'s
+>   `ignore_module_cycles` already lists `["EntityComponent", "Flux"]`):
+>   components own Flux types/handles by value, so the edge is declared
+>   one-way, `EntityComponent -> Flux` (the heavier direction) — Flux does
+>   not depend back.
+> - **`EntityComponent <-> Editor` is real and DELIBERATELY UNDECLARED.**
+>   `Components/Zenith_ModelComponent_Editor.cpp` and
+>   `Zenith_TerrainComponent_Editor.cpp` `#include Editor/Zenith_Editor*.h`
+>   directly (three pre-existing `layer-up:` entries in
+>   `Tools/architecture_allowlist.txt` already recorded this), but `Editor/`
+>   is not yet its own library — it is still aggregate-owned — and
+>   declaring an edge in EITHER direction here would create a Sharpmake
+>   dependency cycle the tool cannot represent. It compiles and links
+>   anyway: `ConfigureCommonIncludePaths` puts `/Zenith` on every project's
+>   include path, so the header resolves at compile time with no declared
+>   edge (`lib.exe` never resolves an external symbol), and any
+>   `Zenith_Editor::` symbol referenced out of line resolves at the final
+>   game exe link, where the aggregate (today's `Editor/` owner) is always
+>   present. **Do not "fix" this by adding a declared edge** — a future
+>   `ZenithEditor` extraction must likewise not declare a dependency back on
+>   this project.
+> - **`AI -> EntityComponent` turned out to be `.Tests.inl`-only, and
+>   nothing needed to move.** `ZenithAILibProject` carries no declared
+>   dependency on this project — the only "EntityComponent" references
+>   under `Zenith/AI` are three `.Tests.inl` files, each `#include`ing
+>   `Components/Zenith_TransformComponent.h` for test scaffolding, resolved
+>   by the same undeclared include-path mechanism as the Editor seam above.
+>
+> This directory holds the **engine-side** half of the entity-component system: the
 concrete built-in components and the glue that wires the generic ECS to the rest
-of the engine. Everything here compiles into the aggregate **`Zenith`** engine lib
-(NOT the leaf), because these files name concrete component / Flux / Physics /
-editor types.
+of the engine. Everything here compiles into its own leaf lib, **`ZenithEntityComponent`**
+(NOT the aggregate), because these files name concrete component / Flux / Physics /
+editor types — see `Sharpmake_ZenithEntityComponent.cs`'s own header comment for
+the full dependency list.
 
 > The **generic ECS machinery** — entities, scenes, queries, events, the
 > component-meta registry, the entity store — is the **`ZenithECS` leaf library**,
@@ -109,7 +150,7 @@ builds), SceneGuard, three D3D link proofs, and doc-lint all passed before C-1.
 - **`Zenith_GraphReload.h/cpp`** (ZENITH_TOOLS) — Behaviour-Graph hot reload: `NotifyAssetChanged()` (queued by the graph editor's Save and by the `Zenith_FileWatcher` on `game:Graphs/*.bgraph`), drained by `Update()` at the main loop's safe point (never mid-dispatch); calls `Zenith_GraphComponent::ReloadSlotsForAsset` on every loaded scene, migrating blackboards name+type-matched; a failed parse keeps the old graph live.
 
 ## How it wires to the leaf
-`Zenith_Engine::Initialise` (`../Core/Zenith_Engine.cpp`) installs everything the
+`Zenith_Engine::Initialise` (`../EngineComposition/Zenith_Engine.cpp`) installs everything the
 leaf needs through leaf-safe seams, so the leaf names no engine symbol:
 1. `SetComponentRegistrar(&Zenith_RegisterEngineComponents)` + `EnsureInitialized()` — the concrete component set.
 2. `Scenes().SetRuntimeHooks(xHooks)` — a `Zenith_ECSRuntimeHooks` with `m_pfnIsMainThread`, `m_pfnResetRenderSystems`, `m_pfnUnloadUnusedAssets`, `m_pfnResetPhysics`, and `m_pfnAddDefaultComponents` (the last adds a `Zenith_TransformComponent` on non-bare `CreateEntity`).

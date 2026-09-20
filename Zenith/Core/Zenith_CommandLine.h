@@ -7,7 +7,7 @@
 //
 // **HEADLESS IS BUILD-TIME, NOT A FLAG.** There is no `--headless`. A headless
 // run is a `Null_*` config: it defines `ZENITH_NULL_RENDERER`, compiles the
-// GPU-less `Zenith/Null` backend instead of Vulkan, and creates its window
+// GPU-less `Zenith/RenderBackends/Null` backend instead of Vulkan, and creates its window
 // hidden. Every render path therefore RUNS (pass callbacks, uploads, the editor
 // ImGui frame) against no-op backend calls, rather than being skipped by a
 // runtime branch -- which is what makes a headless CI run representative of a

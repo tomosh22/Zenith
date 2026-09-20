@@ -956,6 +956,83 @@ function Remove-ZenithOrphanGameArtifacts {
     return $removed.ToArray()
 }
 
+# --- Orphaned engine-level generated project prune ----------------------------
+
+function Remove-ZenithOrphanEngineArtifacts {
+    # Delete Build/*.vcxproj (+ .filters/.user) that the CURRENT Sharpmake run
+    # did not generate -- e.g. a hand-deleted engine-level Sharpmake project
+    # (ZenithBase's dissolution left zenithbase_{win64,agde}.vcxproj[.filters/.user]
+    # on disk after a regen, because Remove-ZenithOrphanGameArtifacts only
+    # knows about GAME artifacts under Games/<Name>, never engine-level ones
+    # directly under Build/). A stale project file here is a real hazard for a
+    # library-split refactor specifically: Tools/check_project_membership.ps1
+    # globs every .vcxproj on disk and would happily parse a stale one as if
+    # it were real, double-counting ownership that no longer exists.
+    #
+    # Conservative by design, matching Remove-ZenithOrphanGameArtifacts's own
+    # contract:
+    #   * Scope is ONLY Build/*.vcxproj / *.vcxproj.filters / *.vcxproj.user --
+    #     never Games/**, never the hand-written Build/Sharpmake_*.cs sources,
+    #     never anything else.
+    #   * "Did the current run generate this" is answered by parsing every
+    #     `Name = "..."` project/solution-name assignment out of the
+    #     hand-written Build/Sharpmake_*.cs files (excluding the GENERATED
+    #     Sharpmake_GameInstances.generated.cs -- its GameProject/GameSolution
+    #     subclasses set conf.ProjectPath/conf.SolutionPath under
+    #     Games/<Name>/, never Build/, so they can never own a Build/*.vcxproj
+    #     and must not be treated as "known" here). A `(?<![\w.])` lookbehind
+    #     keeps this from false-matching property names that merely END in
+    #     "Name" (ProjectFileName, SolutionFileName, GameName, ...).
+    #   * A generated file's on-disk basename is
+    #     "<project.Name-lowercased>_<platform-token>" (win64 or agde) per
+    #     every project's own `conf.ProjectFileName = "[project.Name]_[target.Platform]"`
+    #     — if that basename does not match any known name + platform
+    #     combination, it was NOT emitted this run and is pruned.
+    # Everything this prunes is gitignored/generated; a subsequent regen
+    # recreates whatever is still wanted. Returns the deleted paths.
+    [CmdletBinding()]
+    param([string]$RepoRoot)
+
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+    $buildDir = Join-Path $RepoRoot 'Build'
+    $removed = New-Object System.Collections.Generic.List[string]
+    if (-not (Test-Path -LiteralPath $buildDir)) { return $removed.ToArray() }
+
+    $known = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+    $csFiles = Get-ChildItem -LiteralPath $buildDir -Filter 'Sharpmake_*.cs' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne 'Sharpmake_GameInstances.generated.cs' }
+    foreach ($f in $csFiles) {
+        $text = Get-Content -LiteralPath $f.FullName -Raw
+        foreach ($m in [regex]::Matches($text, '(?<![\w.])Name\s*=\s*"([^"]+)"')) {
+            [void]$known.Add($m.Groups[1].Value)
+        }
+    }
+
+    $platformTokens = @('win64', 'agde')
+    $candidates = Get-ChildItem -LiteralPath $buildDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '\.vcxproj(\.(filters|user))?$' }
+
+    foreach ($file in $candidates) {
+        $base = $file.Name -replace '\.vcxproj\.(filters|user)$', '' -replace '\.vcxproj$', ''
+        $isKnown = $false
+        foreach ($tok in $platformTokens) {
+            foreach ($k in $known) {
+                if ($base -ieq ($k + '_' + $tok)) { $isKnown = $true; break }
+            }
+            if ($isKnown) { break }
+        }
+        if (-not $isKnown) {
+            Remove-Item -LiteralPath $file.FullName -Force -Confirm:$false -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $file.FullName)) { $removed.Add($file.FullName) }
+        }
+    }
+
+    foreach ($p in $removed) {
+        Write-Host "[regen] Pruned orphaned engine-level generated project: $p" -ForegroundColor Yellow
+    }
+    return $removed.ToArray()
+}
+
 # --- Worktree guard ----------------------------------------------------------
 
 function Test-ZenithInWorktree {
@@ -1046,5 +1123,6 @@ Export-ModuleMember -Function @(
     'Repair-ZenithRuntimeDlls',
     'Test-ZenithRegenDrift',
     'Get-ZenithProjectSourceDrift',
-    'Remove-ZenithOrphanGameArtifacts'
+    'Remove-ZenithOrphanGameArtifacts',
+    'Remove-ZenithOrphanEngineArtifacts'
 )

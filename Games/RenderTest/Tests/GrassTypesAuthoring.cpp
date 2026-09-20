@@ -26,7 +26,7 @@
 //
 // Windowed rather than headless for one reason: Apply/Save re-place the grass, and
 // a Null build deliberately skips the grass rebuild (the maps are GPU textures --
-// see Zenith/Null/CLAUDE.md). Headless would therefore assert a path that never ran.
+// see Zenith/RenderBackends/Null/CLAUDE.md). Headless would therefore assert a path that never ran.
 //
 // The three observable stages are asserted separately so a break localises:
 //   * the working table       -- the steps reached Zenith_TerrainEditor,

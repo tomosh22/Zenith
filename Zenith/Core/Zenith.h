@@ -60,7 +60,7 @@ static_assert(sizeof(u_int64) == 8);
 // Render-backend query (compile-time).
 //
 // HEADLESS IS A BUILD CONFIG, NOT A FLAG. A `Null_*` config defines
-// ZENITH_NULL_RENDERER, compiles the GPU-less Zenith/Null backend, and creates
+// ZENITH_NULL_RENDERER, compiles the GPU-less Zenith/RenderBackends/Null backend, and creates
 // its window hidden — that IS "headless". There is no runtime --headless.
 //
 // Prefer this constexpr helper over a raw `#ifdef` wherever BOTH sides should

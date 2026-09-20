@@ -3,8 +3,12 @@ using System;
 using System.IO;
 
 // ZenithECS — the L1 static library (ECS-leaf extraction, Phase 8). Carved out
-// of the monolithic engine lib the same way ZenithBase (L0) was, WITHOUT
-// changing runtime behaviour. It holds the ECS CORE only: the contents of
+// of the monolithic engine lib the same way the old ZenithBase (L0) was,
+// WITHOUT changing runtime behaviour. ZenithBase was itself dissolved in
+// Phase 4a into four single-directory leaf libs (ZenithCore/ZenithMaths/
+// ZenithDataStream/ZenithFileAccess — see Sharpmake_ZenithCore.cs); ZenithECS
+// now depends on those four directly instead. It holds the ECS CORE only: the
+// contents of
 // Zenith/EntityComponent EXCEPT the engine-side glue that physically lives in
 // that directory but belongs to the aggregate engine lib (the concrete
 // Components/ subtree, the editor "Add Component" registry, the component-meta
@@ -25,11 +29,12 @@ using System.IO;
 //   Zenith_SceneData_Serialization.cpp
 //   Zenith_ECS.cpp            (the PCH-create TU, added for this lib)
 //
-// LAYERING: ZenithECS depends on ZenithBase (L0). It does NOT depend on the
+// LAYERING: ZenithECS depends on the four L0 leaf libs (ZenithCore/
+// ZenithMaths/ZenithDataStream/ZenithFileAccess). It does NOT depend on the
 // aggregate engine lib — that is the whole point of the leaf-extraction. The
-// L0->L1 edge is AddPublicDependency<ZenithBaseLibProject> below.
+// L0->L1 edges are the four AddPublicDependency<...> calls below.
 //
-// THE PCH: like ZenithBase, this lib compiles its OWN per-lib Zenith.pch from a
+// THE PCH: like ZenithCore, this lib compiles its OWN per-lib Zenith.pch from a
 // trivial Create TU (Zenith_ECS.cpp, which is just `#include "Zenith.h"`). The
 // binary .pch cannot be shared across projects that compile with different
 // flags (e.g. ZENITH_TOOLS), so every consumer builds its own from the shared
@@ -40,20 +45,17 @@ using System.IO;
 // `ZenithBaseProject` in Sharpmake_Common.cs; the OUTPUT lib is named
 // "ZenithECS".
 //
-// NOTE ON SOURCE PARTITION (Phase 8 is INTENTIONALLY mid-split): the ECS-core
-// .cpp listed above currently compile into BOTH this lib AND the aggregate
-// ZenithProject (whose SourceRootPath = /Zenith still globs EntityComponent).
-// That is a deliberate, temporary duplicate-symbol state used to validate that
-// the ECS-core compiles standalone against ZenithBase. Phase 9 partitions it by
-// adding the matching SourceFilesBuildExcludeRegex to ZenithProject — at which
-// point the two memberships become a clean complement (no TU in both libs).
+// NOTE ON SOURCE PARTITION: Phase 9 partitioned the ECS-core .cpp set from the
+// aggregate — ZenithProject's ConfigureAll build-EXCLUDEs the whole
+// Zenith/ZenithECS/ subtree, so the ECS-core compiles ONLY here, never in
+// both libs (no duplicate-symbol state).
 [Sharpmake.Generate]
 public class ZenithECSLibProject : ZenithBaseProject
 {
-	// L1 leaf static lib (ECS core) — renderer-agnostic; must not link or propagate
-	// glfw/vulkan/slang (that is the whole point of the leaf boundary).
-	protected override bool LinksRendererBackend => false;
-
+	// L1 leaf static lib (ECS core) — renderer-agnostic; must not link or
+	// propagate glfw/vulkan/slang (that is the whole point of the leaf
+	// boundary), so ConfigureAll below calls none of the renderer-backend
+	// library helpers.
 	public ZenithECSLibProject()
 	{
 		Name = "ZenithECS";
@@ -94,10 +96,7 @@ public class ZenithECSLibProject : ZenithBaseProject
 	[Configure]
 	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
-		// Same platform-file excludes as the engine lib (drop Android files on
-		// Windows builds and vice-versa). Harmless here and keeps the platform
-		// partition identical to the aggregate.
-		ConfigurePlatformExcludes(conf, target);
+		// Phase 4h.3 -- ConfigurePlatformExcludes() call REMOVED: measured against the regenerated .vcxproj (Phase 4h.2), this project has zero members matching \Android\, _Android, \Windows\ or _Windows. See Sharpmake_Common.cs for the method's removal.
 
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -120,24 +119,36 @@ public class ZenithECSLibProject : ZenithBaseProject
 		// inside the monolith (no behavioural delta).
 		ConfigureCommonSettings(conf, target);
 		ConfigureCommonIncludePaths(conf, target);
-		ConfigureCommonLibraryPaths(conf, target);
+		// No AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs call:
+		// this leaf lib must not link or propagate the renderer backend.
 
-		// The PCH (Zenith.h) transitively pulls Zenith_DebugVariables.h →
-		// imgui.h AND Flux/Flux.h → Vulkan/vma/Jolt headers, so ZenithECS needs
-		// the SAME extra include paths the aggregate (and ZenithBase) add for
-		// their own PCH compile. Include paths only — ZenithECS links none of
-		// these libs; the -I flags merely let the PCH headers resolve.
-		conf.IncludePaths.Add(RootPath + "/Middleware/vma");
-		conf.IncludePaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
-		conf.IncludePaths.Add(RootPath + "/Zenith/Vulkan");
-		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
+		// Phase 5.3 CORRECTION: the comment this replaced claimed "the PCH
+		// (Zenith.h) transitively pulls imgui + Flux/Vulkan/vma/Jolt headers".
+		// It does not — grep against Zenith/Core/Zenith.h finds zero imgui.h /
+		// Flux.h / Vulkan / Jolt / vma includes anywhere in its closure (the
+		// closure is 17 project headers plus ~202 glm headers), and
+		// Zenith/ZenithECS/**/*.{h,cpp} itself references none of those four
+		// vendored trees either (grep: zero hits). All four IncludePaths.Add
+		// calls this comment used to justify were therefore dead weight, not
+		// verified-necessary — proven by removing them and getting a green
+		// SentinelECS build in every RenderBackend (Vulkan_/Null_/D3D12_) x
+		// win64, plus a green `zenith build engine` (Phase 5 verification).
+		// Deleted rather than kept "just in case".
 
 		conf.Output = Configuration.OutputType.Lib;
 
-		// Depend on the ZenithBase leaf lib (the L0 set). This is the L0->L1
-		// edge. PUBLIC so the edge re-exports through dependents the same way
-		// ZenithProject re-exports ZenithBase.
-		conf.AddPublicDependency<ZenithBaseLibProject>(target);
+		// Depend on the four Phase 4a leaf libs that replaced ZenithBase (the
+		// L0 set). This is the L0->L1 edge. PUBLIC so the edge re-exports
+		// through dependents the same way ZenithProject re-exports each of
+		// them. ZenithECS uses all four directly (FileAccess in the scene
+		// serializer's file I/O seam, DataStream heavily throughout scene/
+		// component serialization, Maths for transform math, Core for
+		// logging/asserts/collections) — see Sharpmake_ZenithCore.cs for why
+		// ZenithCore specifically is a MANDATORY dependency of every lib.
+		conf.AddPublicDependency<ZenithCoreLibProject>(target);
+		conf.AddPublicDependency<ZenithMathsLibProject>(target);
+		conf.AddPublicDependency<ZenithDataStreamLibProject>(target);
+		conf.AddPublicDependency<ZenithFileAccessLibProject>(target);
 
 		// Tools define: ZenithECS carries no tools-only code, but the PCH it
 		// compiles (Zenith.h) branches on ZENITH_TOOLS, so the binary .pch must

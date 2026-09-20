@@ -9,10 +9,25 @@ outright — there is no other gameplay-scripting path.
 
 ## Layering
 
-`Zenith/Scripting/` is a low-layer module: it depends on **ZenithBase + ZenithECS
-only** and never names Flux, Physics, AssetHandling, or any concrete component
+`Zenith/Scripting/` is a low-layer module: it depends on **the ZenithCore-family
+leaves (`ZenithCore`/`ZenithMaths`/`ZenithDataStream`/`ZenithFileAccess` —
+Phase 4a's replacement for the old single `ZenithBase`) + ZenithECS only** and
+never names Flux, Physics, AssetHandling, or any concrete component
 (enforced by the architecture gate; the module is declared in
 `Tools/complexity_profiles.json`). Everything engine-facing lives elsewhere:
+
+**Build system:** compiles into its own leaf static library, `ZenithScripting`
+(`Build/Sharpmake_ZenithScripting.cs`, Phase 4c) — 5 translation units
+(`Zenith_BehaviourGraph.cpp`, `Zenith_GraphBlackboard.cpp`,
+`Zenith_GraphBuilder.cpp`, `Zenith_GraphDefinitionValidator.cpp`,
+`Zenith_GraphNodeRegistry.cpp`) plus a definition-free PCH create TU
+(`Internal/Zenith_ScriptingPCH.cpp`) — the >= 4-TU threshold justifies its own
+binary PCH. Its actual DECLARED Sharpmake dependency set, from the measured
+header DAG, is `ZenithCore` (mandatory) + `ZenithDataStream` + `ZenithMaths` +
+`ZenithECS` — no direct `ZenithFileAccess` edge exists, since no file under
+this directory `#include`s `FileAccess/Zenith_FileAccess.h`; the paragraph
+above is the architectural-layer statement ("the ZenithCore-family"), not a
+literal list of every Sharpmake `AddPublicDependency` call.
 
 - `AssetHandling/Zenith_BehaviourGraphAsset` — the `.bgraph` asset wrapper
   (registered with `Zenith_AssetRegistry`; dead-strip anchored via a ForceLink

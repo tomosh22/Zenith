@@ -669,7 +669,7 @@ ZENITH_TEST(Animation, ControllerReleasesEveryAssetReferenceItHolds)
 // cache a `Flux_AnimationLayer*` and keep it, on the reasoning that
 // Flux_AnimationControllerStore heap-allocates the CONTROLLER so nothing inside
 // it ever moves. The controller half is true and is still pinned by the
-// `Animator` suite in Core/Zenith_UnitTests.Tests.inl. The layer half never
+// `Animator` suite in EngineComposition/Zenith_UnitTests.Tests.inl. The layer half never
 // was: BuildFromControllerDef deletes every layer and rebuilds the list from a
 // def, and ReadFromDataStream deletes every layer and re-reads it — so a cached
 // pointer is dangling from the first controller-asset load or scene deserialize

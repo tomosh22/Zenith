@@ -229,7 +229,7 @@ namespace
 				++uCount;
 				// A Null (headless) build never APPLIES grass -- the blades are
 				// GPU-only content the backend deliberately does not author (see
-				// Zenith/Null/CLAUDE.md) -- so applied-ness / scheduled work are
+				// Zenith/RenderBackends/Null/CLAUDE.md) -- so applied-ness / scheduled work are
 				// not available there. The CPU-side half (density map loaded, no
 				// terminal failure) IS, and stays asserted in every config; the
 				// windowed assertion is unchanged.

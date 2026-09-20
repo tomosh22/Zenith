@@ -23,7 +23,7 @@
 //
 // ★ NOT requiresGraphics, DELIBERATELY, and this is the one line to re-read
 // before "fixing" a failure here by setting it. ImGui is genuinely live on the
-// Null backend (Zenith/Null/CLAUDE.md): a real context, a rasterised font atlas,
+// Null backend (Zenith/RenderBackends/Null/CLAUDE.md): a real context, a rasterised font atlas,
 // a real GLFW window that is merely hidden, and therefore real layout and real
 // hit-testing — only the draw data is discarded. Nothing below reads a pixel.
 // The Graph Editor's equivalent IS marked requiresGraphics and that is a

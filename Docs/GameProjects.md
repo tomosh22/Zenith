@@ -91,7 +91,7 @@ Sharpmake lowercases solution filenames.
 
 | Solution | Location | Contents |
 |----------|----------|----------|
-| `<name>_win64.sln` | `Games/<Name>/` | ZenithBase/ECS/Physics/AI + Zenith aggregate + FluxCompiler (Vulkan) + font libs (tools) + **the one game** + its `extraSharpmakeProjects`. No Sentinels, no other games. |
+| `<name>_win64.sln` | `Games/<Name>/` | ZenithCore/Maths/DataStream/FileAccess/ECS/Physics/AI + Zenith aggregate + FluxCompiler (Vulkan) + font libs (tools) + **the one game** + its `extraSharpmakeProjects`. No Sentinels, no other games. |
 | `<name>_agde.sln` | `Games/<Name>/` | Same, Android — only for `android:true` games (5 of 7). |
 | `zenith_engine_win64.sln` | `Build/` | Engine libs + Sentinels (`_False`) + FluxCompiler + font libs + **ZenithHub**. **Zero games, ever.** Engine CI gates + pure engine work. |
 

@@ -3,6 +3,19 @@ using System;
 using System.IO;
 
 // TilePuzzleRegistryViewer project - ImGui-based registry browser (Windows only)
+//
+// Phase 4d — DUPLICATE-OWNED FIX: this project used to glob
+// Middleware/imgui-docking itself (the core TUs) on top of AddPublicDependency<ZenithProject>,
+// which already linked zenith.lib carrying its own copy of the SAME imgui core
+// TUs — check_project_membership.ps1 reported this as genuine same-executable
+// duplication (see Sharpmake_ZenithHub.cs's identical header comment for the
+// full count). The five core TUs now belong to ZenithImGui
+// (Sharpmake_ZenithImGui.cs) alone; this project's own imgui-docking
+// (non-backends) source root is REMOVED. imgui_impl_win32.cpp is ALSO removed
+// from this project's own backends glob — it is owned by ZenithWindows,
+// reached transitively via AddPublicDependency<ZenithProject>. Only
+// imgui_impl_dx11.cpp remains this project's OWN backend TU. The imgui-docking
+// *include* paths are kept (unaffected).
 [Sharpmake.Generate]
 public class TilePuzzleRegistryViewerProject : ZenithBaseProject
 {
@@ -11,13 +24,12 @@ public class TilePuzzleRegistryViewerProject : ZenithBaseProject
 		Name = "TilePuzzleRegistryViewer";
 		SourceRootPath = RootPath + "/TilePuzzleRegistryViewer";
 
-		// Include ImGui core sources
-		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/imgui-docking");
-
-		// Include only DX11 and Win32 backends
+		// DX11 backend only — win32 now comes from ZenithWindows and the core
+		// TUs from ZenithImGui, both transitively via AddPublicDependency<ZenithProject>
+		// below (see the file header comment).
 		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/imgui-docking/backends");
 
-		// Exclude all backends except Win32 and DX11
+		// Exclude every backend except DX11.
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_allegro.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_android.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_dx9.*");
@@ -31,11 +43,7 @@ public class TilePuzzleRegistryViewerProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_sdl.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_vulkan.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_wgpu.*");
-		// Exclude ImGui demo (not needed)
-		SourceFilesExcludeRegex.Add(@".*imgui_demo\.cpp");
-		// Exclude ImGui examples directory
-		SourceFilesExcludeRegex.Add(@".*imgui-docking\\examples\\.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-docking\\misc\\.*");
+		SourceFilesExcludeRegex.Add(@".*imgui_impl_win32.*");
 
 		// Windows-only tool
 		AddTargets(new ZenithTarget
@@ -120,5 +128,12 @@ public class TilePuzzleRegistryViewerProject : ZenithBaseProject
 
 		// Add dependency on Zenith library
 		conf.AddPublicDependency<ZenithProject>(target);
+
+		// Explicit edge for legibility, even though ZenithProject already
+		// re-exports it (ZenithEngineLibs.All -> ZenithImGuiLibProject) — see
+		// the file header comment's DUPLICATE-OWNED FIX paragraph. Supplies
+		// the five core imgui TUs this project's own DX11 backend TU links
+		// against (ImGui::* calls).
+		conf.AddPublicDependency<ZenithImGuiLibProject>(target);
 	}
 }

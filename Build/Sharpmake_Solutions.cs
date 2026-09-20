@@ -51,19 +51,24 @@ public class ZenithEngineSolution : Solution
 		conf.SolutionPath = @"[solution.SharpmakeCsPath]";
 
 		// Engine leaf libs (L0/L1/Physics/AI) + the aggregate engine lib.
-		conf.AddProject<ZenithBaseLibProject>(target);
-		conf.AddProject<ZenithECSLibProject>(target);
-		conf.AddProject<ZenithPhysicsLibProject>(target);
-		conf.AddProject<ZenithAILibProject>(target);
-		conf.AddProject<ZenithProject>(target);
+		ZenithEngineLibs.AddAllToSolution(conf, target);
 
 		// Sentinel leaf-proof exes: win64 + ToolsEnabled.False only (they declare
 		// only those configs; the guard must match the project's target set).
+		// Phase 5.2 added four more at the remaining cluster boundaries
+		// (SentinelCore, SentinelFlux, SentinelScripting, SentinelUI) — seven
+		// total, not thirty, because a sentinel is only informative where the
+		// declared dependency set is deliberately narrow (see each project's
+		// own header comment).
 		if (target.ToolsEnabled == ToolsEnabled.False)
 		{
 			conf.AddProject<SentinelECSProject>(target);
 			conf.AddProject<SentinelPhysicsProject>(target);
 			conf.AddProject<SentinelAIProject>(target);
+			conf.AddProject<SentinelCoreProject>(target);
+			conf.AddProject<SentinelFluxProject>(target);
+			conf.AddProject<SentinelScriptingProject>(target);
+			conf.AddProject<SentinelUIProject>(target);
 		}
 
 		// FluxCompiler (Slang -> SPIR-V) + the ZenithHub launcher: Vulkan-side only

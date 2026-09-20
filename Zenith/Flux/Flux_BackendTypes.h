@@ -13,9 +13,9 @@
 #include "Flux/Flux_Fwd.h"   // backend guard + forward-decls + Flux_* aliases
 
 #if defined(ZENITH_VULKAN)
-#include "Zenith_PlatformGraphics_Include.h"          // full Vulkan backend headers
+#include "Vulkan/Zenith_PlatformGraphics_Include.h"          // full Vulkan backend headers
 #elif defined(ZENITH_D3D12)
-#include "Zenith_PlatformGraphics_Include_D3D12.h"    // full D3D12 null-backend headers
+#include "D3D12/Zenith_PlatformGraphics_Include_D3D12.h"    // full D3D12 null-backend headers
 #elif defined(ZENITH_NULL_RENDERER)
-#include "Zenith_PlatformGraphics_Include_Null.h"     // full Null-backend headers
+#include "Null/Zenith_PlatformGraphics_Include_Null.h"     // full Null-backend headers
 #endif

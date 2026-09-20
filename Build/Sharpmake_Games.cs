@@ -67,15 +67,28 @@ public abstract class GameProject : ZenithBaseProject
 	[Configure]
 	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
-		// Configure platform-specific excludes
-		ConfigurePlatformExcludes(conf, target);
+		// Phase 4h.3 -- ConfigurePlatformExcludes() call REMOVED: measured against the regenerated .vcxproj (Phase 4h.2), this project has zero members matching \Android\, _Android, \Windows\ or _Windows. See Sharpmake_Common.cs for the method's removal.
 
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = RootPath + "/Games/" + GameName + "/Build";
 
 		ConfigureCommonSettings(conf, target);
 		ConfigureCommonIncludePaths(conf, target);
-		ConfigureCommonLibraryPaths(conf, target);
+
+		// glfw is the windowing backend for every render backend.
+		AddGlfwLibs(conf, target);
+		if (target.RenderBackend == RenderBackend.Vulkan)
+		{
+			AddVulkanBackendLibs(conf, target);
+			AddSlangLibs(conf, target);
+		}
+		else if (target.RenderBackend == RenderBackend.D3D12)
+		{
+			AddD3D12Libs(conf, target);
+		}
+		// RenderBackend.Null deliberately calls neither: no vulkan-1/slang, no
+		// d3d12/dxgi/dxguid. glfw above is the only graphics-adjacent lib it
+		// links (the window/input layer is shared by every backend).
 
 		// Game include paths -- BOTH are load-bearing:
 		//   * Games/<GameName> : this game's own root.
@@ -146,8 +159,18 @@ public abstract class GameProject : ZenithBaseProject
 			conf.AdditionalLinkerOptions.Add("-llog");
 			conf.AdditionalLinkerOptions.Add("-lvulkan");
 
-			// Force-include ANativeActivity_onCreate from libzenith.a
-			// (linker would otherwise discard it since game code doesn't reference it directly)
+			// Force-include ANativeActivity_onCreate (linker would otherwise
+			// discard it since game code doesn't reference it directly). The
+			// symbol is defined in the NDK-vendored android_native_app_glue.c,
+			// which lives under Zenith/Android/NativeGlue/ and — as of Phase
+			// 4b's ZenithAndroid extraction — is compiled into
+			// libzenithandroid.a, NOT libzenith.a (the aggregate no longer
+			// owns Zenith/Android/** at all; see Sharpmake_ZenithAndroid.cs).
+			// The `-u` force-pull still resolves correctly because the
+			// aggregate publicly re-exports ZenithAndroid transitively
+			// (ZenithEngineLibs.AddAllAsDependenciesOfAggregate), so every
+			// agde game link still carries libzenithandroid.a — verified by
+			// a green Combat agde build (Vulkan_x86_64_vs2022_Debug_Agde_False).
 			conf.AdditionalLinkerOptions.Add("-u ANativeActivity_onCreate");
 
 			// 16 KB page-size alignment (Google Play requirement, AGDE1112 without
@@ -322,11 +345,7 @@ public abstract class GameSolution : Solution
 		conf.SolutionPath = @"[solution.SharpmakeCsPath]/../Games/" + GameName;
 
 		// Engine leaf libs (visible/buildable on their own) + the aggregate engine.
-		conf.AddProject<ZenithBaseLibProject>(target);
-		conf.AddProject<ZenithECSLibProject>(target);
-		conf.AddProject<ZenithPhysicsLibProject>(target);
-		conf.AddProject<ZenithAILibProject>(target);
-		conf.AddProject<ZenithProject>(target);
+		ZenithEngineLibs.AddAllToSolution(conf, target);
 
 		// The game itself. Non-generic AddProject: the concrete project type comes
 		// from the descriptor-generated subclass, so this base needs no per-game code.

@@ -2,22 +2,38 @@
 
 Engine core utilities, configuration, and main loop.
 
+**Library:** all of `Zenith/Core` (every top-level `.cpp` + `Callstack/` +
+`Memory/` + `Multithreading/`, recursively, no exclusion) plus
+`Zenith/Collections`'s headers compile into `ZenithCore`
+(`Build/Sharpmake_ZenithCore.cs`) — the bottom leaf of the engine lib DAG and a
+mandatory dependency of every other engine lib and every Sentinel. See
+`Docs/BuildSystem.md` §4.
+
 ## Files
 
 ### Root
+★ **The composition TUs moved out (2026-09).** `Zenith_Engine.cpp`, `Zenith_Core.cpp`,
+`Zenith_Main.cpp`, `Zenith_BenchECS.cpp`, `Zenith_AutomatedTest.cpp`,
+`Zenith_UserSettings.cpp`, `Zenith_EnginePCH.cpp` and their `.Tests.inl` companions
+now live in `Zenith/EngineComposition/` (see its `CLAUDE.md`) — deliberately, so
+`Core` can be a bottom-layer library with no up-edges. **Their headers stay here**
+(`Zenith_Engine.h`, `Zenith_AutomatedTest.h`, ... — hundreds of includers, zero
+churn), which is why they are still listed below alongside the Core-resident `.h/cpp`
+pairs that did NOT move.
 - `Zenith.h/cpp` - Master header, type definitions, logging, assertions, GUID system
-- `Zenith_Core.h/cpp` - Main loop, frame timing
-- `Zenith_Engine.h/cpp` - Process-level engine owner (`g_xEngine`) — holds every mutable subsystem
+- `Zenith_Core.h` (cpp in `EngineComposition/`) - Main loop, frame timing
+- `Zenith_Engine.h` (cpp in `EngineComposition/`) - Process-level engine owner (`g_xEngine`) — holds every mutable subsystem
 - `FrameContext.h` - Per-frame timing state owned by the engine
 - `ZenithConfig.h` - Central configuration constants
 - `Zenith_String.h` - String utilities
+- `Zenith_DebugBreak.h` - Assert-hook indirection (`Zenith_DebugBreak()`), implemented per-platform (`Windows/`, `Android/`); moved here from the root of `Zenith/` (2026-09) so nothing at that root is left unowned once the aggregate project stops globbing it
 - `Zenith_TerrainChunkLayout.h` - The on-disk contract for a baked terrain chunk (element table, stride, byte offsets, the DEFAULT quantisation box, per-density vertex/index counts). In Core because it is read from both directions: Flux as a GPU vertex layout, the asset side as a file format
-- `Zenith_TerrainDimensions.h` - A terrain's SHAPE: chunk world size, quads per chunk edge (the density knob) and the grid extent in X and Z, plus the `TerrainDims.zdata` manifest a baked set carries so its chunks can be recognised as stale rather than decoded against the wrong box. Dependency-light (`<cstdint>`/`<cmath>`/`<cstring>`) so it is unit-testable in every configuration. Full contract: `Zenith/Flux/Terrain/CLAUDE.md` -> *Grid Layout*
+- `Zenith_TerrainDimensions.h` - A terrain's SHAPE: chunk world size, quads per chunk edge (the density knob) and the grid extent in X and Z, plus the `TerrainDims.zdata` manifest a baked set carries so its chunks can be recognised as stale rather than decoded against the wrong box. Dependency-light (`<cstdint>`/`<cmath>`/`<cstring>`) so it is unit-testable in every configuration. Full contract: `Zenith/Flux/Terrain/CLAUDE.md` -> *Grid Layout*. (Its `.Tests.inl` companion lives in `EngineComposition/`, included from `Zenith_Core.cpp`.)
 - `Zenith_CommandLine.h/cpp` - Parsed once at process start, read-only after. Every flag lives in the `Flags` struct there, commented at its field; the parsing contract of anything non-trivial is exposed as a PURE helper so it can be unit-tested without re-running `Parse` (which would clobber process-wide state for the rest of a test batch) — `ParseWindowSizeArg` for `--window-size <W>x<H>` (also accepts `X`/`*`; rejects a missing separator, a zero dimension, or >16384) and `ResolveIndirectCountMode` for `--indirect-count-mode`. `--window-size` overrides `Project_SetGraphicsOptions`' dimensions before the window is created, so a capture harness can photograph at a chosen resolution with no per-game option
 - `Zenith_ImGuiWidgets.h/cpp` - TOOLS-only ImGui widgets shared by every inspector (`Vec3Field`, `PropertyLabel`, `Note`). Lives here so component property panels in EntityComponent (layer 2) can use them without including `Editor/` (layer 4) — same precedent as `Zenith_EditorWindowNames.h` / `Zenith_EditorQuery.h`
 - `Zenith_EditorFontHook.h` - Declares `Zenith_EditorFonts_Load()` (defined in `Editor/Zenith_EditorUI.cpp`); the Vulkan and Null backends call it right after `ImGui::CreateContext` so the editor font enters the atlas before either backend builds it
 - `Zenith_GraphicsOptions.h/cpp` - Set once by `Project_SetGraphicsOptions`, read-only after
-- `Zenith_UserSettings.h/cpp` - The engine-owned PLAYER PREFERENCE store (B12): one SaveData slot (`"user_settings"`) per project, holding the persisted input-profile override. Instance class on `g_xEngine.UserSettings()`; loaded and applied by `InitialiseProject`'s four-step boot order (SaveData init → load → `Project_RegisterGameComponents` → validate + apply BY NAME). Full contract: `Zenith/Input/CLAUDE.md` → *Persisted settings*
+- `Zenith_UserSettings.h` (cpp in `EngineComposition/`) - The engine-owned PLAYER PREFERENCE store (B12): one SaveData slot (`"user_settings"`) per project, holding the persisted input-profile override. Instance class on `g_xEngine.UserSettings()`; loaded and applied by `InitialiseProject`'s four-step boot order (SaveData init → load → `Project_RegisterGameComponents` → validate + apply BY NAME). Full contract: `Zenith/Input/CLAUDE.md` → *Persisted settings*
 
 ### Subdirectories
 - `Callstack/` - Callstack capture and symbolication (`Zenith_Callstack`) used by memory tracking and editor panels
@@ -71,12 +87,15 @@ convenience that allocates.
 
 **★ IT LIVES IN `Zenith.cpp`, DELIBERATELY.** `Zenith_LogImpl` is `inline` in
 `Zenith.h` — the PCH every library compiles against, including the L0 leaf — so the
-sink symbol must resolve for **every** lib, including the Sentinel link proofs which
-link only `zenithbase.lib` + one leaf. ZenithBase's membership regex
-(`Build/Sharpmake_Zenith.cs`) strips every top-level `Core\Zenith*.cpp` **except
-`Zenith.cpp` and `Zenith_String.cpp`**, so a new `Core/Zenith_LogFileSink.cpp` would
-compile into the aggregate engine lib but *not* into ZenithBase, and the Sentinels
-would fail on an undefined symbol. Re-read that regex before moving it.
+sink symbol must resolve for **every** lib, including the Sentinel link proofs.
+Since Phase 4a, `ZenithCore` (`Build/Sharpmake_ZenithCore.cs`) owns ALL of
+`Zenith/Core` — every top-level `.cpp`, no exclusion regex — and is a MANDATORY,
+unconditional dependency of every other engine lib and every Sentinel, precisely
+so `Zenith_LogFileSinkWrite` always resolves. (The old `ZenithBase` used a
+negative-lookahead regex that kept only `Zenith.cpp` + `Zenith_String.cpp` from
+Core's top level; that subtractive-membership mechanism is what Phase 4a removed
+— a new `Core/Zenith_LogFileSink.cpp` today just joins `ZenithCore` automatically,
+no regex to remember.)
 
 Android is excluded (logcat is already a persistent, filterable, timestamped sink,
 and the writable directory is not known this early); non-Windows desktop gets no

@@ -13,7 +13,7 @@
 
     # HEADLESS config. Headless is BUILD-TIME (there is no --headless runtime
     # flag): a Null_* config defines ZENITH_NULL_RENDERER, compiles the GPU-less
-    # Zenith/Null backend and creates its window hidden. Every headless batch,
+    # Zenith/RenderBackends/Null backend and creates its window hidden. Every headless batch,
     # unit gate and CI run executes THIS exe. Tools=True so tools-only asset
     # authoring / test steps still compile.
     HeadlessConfigWin64   = 'Null_vs2022_Debug_Win64_True'

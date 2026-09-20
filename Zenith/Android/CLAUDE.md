@@ -4,6 +4,17 @@
 
 Android-specific implementations for windowing (ANativeWindow), threading (pthreads), and callstack capture (libunwind/dladdr). Mirrors the Windows platform layer API.
 
+## Build (Sharpmake library)
+
+Compiled into `ZenithAndroid` (`Build/Sharpmake_ZenithAndroid.cs`) — **agde
+ONLY** (no win64 target at all; see `Zenith/Windows/CLAUDE.md` for the mirror
+image). 8 top-level/subdirectory `.cpp` (the 5 top-level +
+`Callstack/`/`FileAccess/`/`Multithreading/`) plus the NDK-vendored
+`NativeGlue/android_native_app_glue.c` (compiled outside the PCH — it is a
+plain C file with no `Zenith.h` include), plus a definition-free PCH create
+TU (`Internal/Zenith_AndroidPCH.cpp`). Depends on `ZenithCore` (mandatory) +
+`ZenithFileAccess` + `ZenithProfiling` + `ZenithInput`.
+
 ## Files
 
 - `Zenith_Android_Window.h` - ANativeWindow wrapper (singleton)

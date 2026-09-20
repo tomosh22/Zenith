@@ -13,6 +13,28 @@ compiles none of it and loads whatever is already on disk.
 Because it runs pre-Flux there is **no device, no render graph and no scene**
 here. An exporter that needs one is in the wrong place.
 
+**Build system (Phase 4g):** this directory is its own static library,
+`ZenithTools` (`Build/Sharpmake_ZenithTools.cs`) — the 17 `Zenith_Tools_*.cpp`
+files listed below + its own PCH create TU (`Tools/Internal/Zenith_ToolsPCH.cpp`).
+It declares **win64 x ToolsEnabled.True ONLY** — no `agde` target, and
+`ToolsEnabled` carries a single value rather than `True | False`. The engine
+never `#include`s a Tools header: `Zenith_Engine::InitialiseAssets()`
+forward-declares `ExportAllMeshes()` / `ExportAllTextures()` /
+`ExportDefaultFontAtlas()` / `GenerateTestAssets()` as `extern` and calls them
+directly — resolved only at the final game exe link, where this library is
+always present in a `ToolsEnabled.True` build. This project existed as an
+orphan (generating a `.vcxproj` but added to no solution) since before Phase
+4g; adopting it into the solution surfaced — and fixed — several dormant
+defects: it previously compiled `Zenith/Flux/MeshGeometry/*.cpp` a second time
+via its own `AdditionalSourceRootPaths` (now a `ZenithFlux` dependency
+instead), had no exclude for the vendored `Tools/Middleware/freetype` (221
+`.cpp`) or `Tools/Middleware/msdf-atlas-gen` (47 `.cpp`) trees that
+`FreeTypeProject`/`MsdfgenProject`/`MsdfAtlasGenProject` already build
+separately (an ODR violation), and never called `ConfigureCommonSettings` /
+`ConfigureCommonIncludePaths` at all. See `Docs/BuildSystem.md` §4 for the
+full dependency list and defines (`ZENITH_ROOT`, `SHADER_SOURCE_ROOT`,
+`ENGINE_ASSETS_DIR`).
+
 ---
 
 ## The boot order, and why it is load-bearing

@@ -1,5 +1,12 @@
 # Components
 
+> **Build ownership:** this subdirectory is part of the `ZenithEntityComponent`
+> leaf library (`Build/Sharpmake_ZenithEntityComponent.cs`, Phase 4f) — see
+> `../CLAUDE.md`'s "Build ownership" callout for the full dependency list and
+> the two seams (`EntityComponent <-> Flux`, declared; `EntityComponent <->
+> Editor`, deliberately undeclared — the two `_Editor.cpp` files in this
+> directory are the concrete example of the latter).
+
 This directory contains all component types for the Entity-Component System.
 
 ## Existing Components
@@ -321,7 +328,7 @@ something asks. The graph-side asker is the **`EnsureNavAgent`** node — see
 
 `Zenith_AnimatorComponent` does **not** own a `Flux_AnimationController` by value any more. The controller lives in an owning Flux subsystem — `Flux_AnimationControllerStore` (`Flux/MeshAnimation/Flux_AnimationControllerStore.{h,cpp}`), reached via `g_xEngine.AnimationControllers()` — keyed by the entity's **stable `Zenith_EntityID` slot**. The component is a thin handle: every public accessor (`GetController`, `GetStateMachine`, `SetFloat`, `CrossFade`, `AddClipFromFile`, serialization, the editor panel, …) forwards into the store-owned controller. This is the ECS-side twin of WS18's `Zenith_TerrainComponent` → `Flux_TerrainStreamingState` relocation, and it lets `Zenith_AnimatorComponent.h` carry **zero** Flux includes (the heavy `Flux_AnimationController.h` header edge — old allowlist line 20 — is gone; the forwarding bodies' Flux includes live in the `.cpp`, which is allow-listed).
 
-Key invariants (pinned by the `Animator` regression suite in `Core/Zenith_UnitTests.Tests.inl`):
+Key invariants (pinned by the `Animator` regression suite in `EngineComposition/Zenith_UnitTests.Tests.inl`):
 
 - **Heap-stable storage.** The store allocates each `Flux_AnimationController` with `new` (`Zenith_Vector<Flux_AnimationController*>` + an index-by-entity-slot `Zenith_Vector<u_int>` for O(1) lookup). The pointer never moves, so the component's cached `m_pxController` survives a component-pool relocation (swap-and-pop / `Grow`) **and** a cross-scene `MoveEntityToScene`.
 - **★ THAT IS A CLAIM ABOUT THE CONTROLLER POINTER AND NOTHING INSIDE IT (WU-6.3 / D44).** This line used to extend the guarantee to "any game code caching `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects", which does not follow from heap-allocating the controller and was never true: `Flux_AnimationController::BuildFromControllerDef` deletes every layer and rebuilds the list from a def, and `ReadFromDataStream` deletes and re-reads it, so a cached layer pointer dangles from the first `.zanimctrl` load or scene deserialize onward — with no assert anywhere, because a freed layer usually still looks like one. **Game code holds the layer's stable `u_int` id and calls `Flux_AnimationController::GetLayerById` per use** (nullptr when the layer is gone, which every existing null guard already handles); `GetLayerByName` is the one-time lookup that produces the id after a build or a load. Ids are unique per controller and monotonic for its lifetime, are NOT in the `.zscen` bytes (a restored layer is minted a fresh one), and must never be persisted. Full contract: `Flux/MeshAnimation/CLAUDE.md` → *Stable layer IDs*. Worked consumer: `Games/RenderTest/Components/RenderTest_PlayerComponent.h`.

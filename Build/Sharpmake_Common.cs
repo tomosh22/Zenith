@@ -108,53 +108,40 @@ public abstract class ZenithBaseProject : Project
 		SourceFilesExcludeRegex.Add(@"\\Android\\\.gradle\\");
 	}
 
-	// Configure platform-specific file excludes (called during configuration)
-	// Uses conf.SourceFilesBuildExcludeRegex for configuration-level excludes
-	protected void ConfigurePlatformExcludes(Configuration conf, ZenithTarget target)
-	{
-		if (target.Platform == Platform.win64)
-		{
-			// Windows build: exclude Android platform files from compilation
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Android\\.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*_Android.*");
-		}
-		else if (target.Platform == Platform.agde)
-		{
-			// Android build: exclude Windows platform files and editor/tools from compilation
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Windows\\.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*_Windows.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Editor\\.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Tools\\.*");
-		}
-
-		// Render-backend source partition: a config compiles exactly one backend's
-		// tree. Path-segment based, so the Vulkan exclude also drops the moved
-		// platform surface under Zenith/Vulkan/Platform/Windows (and Android).
-		if (target.RenderBackend == RenderBackend.Vulkan)
-		{
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\D3D12\\.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Null\\.*");
-		}
-		else if (target.RenderBackend == RenderBackend.D3D12)
-		{
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Vulkan\\.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Null\\.*");
-			// The ImGui Vulkan backend is a filename, not a path segment, so the
-			// Vulkan exclude above misses it; it #includes <vulkan/vulkan.h> which
-			// the D3D12 config has no SDK path for. The null backend does no real
-			// ImGui rendering, so drop it (a real D3D12 backend would swap in
-			// imgui_impl_dx12).
-			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui_impl_vulkan.*");
-		}
-		else if (target.RenderBackend == RenderBackend.Null)
-		{
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\Vulkan\\.*");
-			conf.SourceFilesBuildExcludeRegex.Add(@".*\\D3D12\\.*");
-			// Same reasoning as the D3D12 arm: imgui_impl_vulkan is a filename,
-			// not a path segment, and the Null config has no Vulkan SDK path.
-			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui_impl_vulkan.*");
-		}
-	}
+	// ConfigurePlatformExcludes -- DELETED (Phase 4h.3). It used to
+	// conf.SourceFilesBuildExcludeRegex-strip \Android\/_Android files on
+	// win64 and \Windows\/_Windows files on agde, called from every single
+	// project's own ConfigureAll (~40 call sites). Phase 4h measured every
+	// generated .vcxproj against all four patterns and found exactly ONE
+	// call site where any of them ever matched a member file:
+	// ZenithRenderBackendVulkan, whose SourceRootPath (RenderBackends/Vulkan)
+	// held Platform/Windows/ and Platform/Android/ side by side while the
+	// project itself spanned both win64 and agde. Every other call site was
+	// dead on arrival -- either the project's own directory never contained
+	// a Windows/Android-named or -pathed file at all (the vast majority),
+	// or -- for ZenithWindows/ZenithAndroid themselves -- the project only
+	// ever configured the platform whose OWN files matched, so the OPPOSITE
+	// exclusion arm (the only one that could ever have found anything) never
+	// ran for it. (imgui_impl_android.cpp was a partial exception: it WAS
+	// live on win64 via this method's `.*_Android.*` arm, until Phase 4h.1
+	// converted its ownership to a constructor MEMBERSHIP exclude on the
+	// aggregate instead -- see Sharpmake_Zenith.cs.)
+	//
+	// The fix for the one genuine case was the same rule this whole refactor
+	// has applied everywhere else: one library per directory, declaring only
+	// the targets it supports. Zenith/RenderBackends/Vulkan/Platform/{Windows,
+	// Android} are now their own leaf libraries
+	// (Sharpmake_ZenithRenderBackendVulkanPlatformWindows.cs / ...Android.cs),
+	// membership-excluded from ZenithRenderBackendVulkan's own constructor,
+	// with conditionality expressed as target declaration + solution
+	// membership (Build/Sharpmake_EngineLibs.cs) rather than a per-file
+	// regex. With that split done, every call site in the codebase was dead,
+	// and every call site was removed (see each project's own ConfigureAll
+	// for a one-line comment recording what was measured). This method is
+	// the last piece: it now has no caller left. See Docs/BuildSystem.md §4
+	// for the invariant this completes -- every compiled source belongs to
+	// exactly one project per link target, expressed as declaration and
+	// membership, never as a per-configuration subtraction.
 
 	protected void ConfigureCommonSettings(Configuration conf, ZenithTarget target)
 	{
@@ -259,17 +246,21 @@ public abstract class ZenithBaseProject : Project
 			{
 				conf.IncludePaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Include");
 				conf.IncludePaths.Add(RootPath + "/Middleware/slang/include");
+				// Vulkan backend headers. Kept explicit (and symmetric with the D3D12/Null
+				// arms below) as a safety net for any bare-basename include that resolves
+				// through this directory being directly on the include path.
+				conf.IncludePaths.Add(RootPath + "/Zenith/RenderBackends/Vulkan");
 			}
 			else if (target.RenderBackend == RenderBackend.D3D12)
 			{
 				// Null D3D12 backend headers (the d3d12/dxgi system headers ship
 				// with the Windows SDK on the default include path).
-				conf.IncludePaths.Add(RootPath + "/Zenith/D3D12");
+				conf.IncludePaths.Add(RootPath + "/Zenith/RenderBackends/D3D12");
 			}
 			else if (target.RenderBackend == RenderBackend.Null)
 			{
 				// The GPU-less Null backend: headers only, no graphics SDK at all.
-				conf.IncludePaths.Add(RootPath + "/Zenith/Null");
+				conf.IncludePaths.Add(RootPath + "/Zenith/RenderBackends/Null");
 			}
 		}
 		else if (target.Platform == Platform.agde)
@@ -282,49 +273,95 @@ public abstract class ZenithBaseProject : Project
 		}
 	}
 
-	// True for projects that actually link the renderer backend (the aggregate
-	// engine lib + the games). FALSE for the L0/L1 leaf static libs (ZenithBase,
-	// ZenithECS) and the SentinelECS leaf-proof exe: those are renderer-agnostic
-	// and must NOT link OR PROPAGATE glfw/vulkan/slang. Propagating those libs out
-	// of the leaf static libs is exactly what let the SentinelECS link silently
-	// resolve an accidental ECS->renderer reference, defeating the leaf proof.
-	// (win64-only knob; agde links its system libs via Sharpmake_Games.cs.)
-	protected virtual bool LinksRendererBackend => true;
+	// ---------------------------------------------------------------------
+	// Explicit, additive per-subsystem library helpers.
+	//
+	// This replaces the old `LinksRendererBackend` virtual bool (a single
+	// switch that conflated glfw/vulkan/slang/d3d12 into one on/off knob,
+	// consulted by a since-removed ConfigureCommonLibraryPaths) with one call
+	// per subsystem. A project now links exactly the libraries it calls the
+	// helper for -- there is no bool to remember to override, and a leaf lib
+	// that must not link or propagate glfw/vulkan/slang (ZenithCore, ZenithMaths,
+	// ZenithDataStream, ZenithFileAccess, ZenithECS, ZenithPhysics, ZenithAI,
+	// and the Sentinel* leaf-proof exes) simply calls
+	// none of these helpers. That is structural purity: a project that never
+	// calls AddVulkanBackendLibs cannot acquire vulkan-1.lib by accident, the
+	// same guarantee the old subtractive bool existed to protect (an
+	// accidental ECS->renderer edge at SentinelECS would now fail the link
+	// with an undefined symbol, not silently succeed because some override
+	// was forgotten).
+	//
+	// Every helper is win64-only, matching the original single guard exactly
+	// (Android links its system Vulkan loader via --sysroot -- see
+	// Sharpmake_Games.cs -- so none of these ever apply to agde).
+	//
+	// FORWARD-LOOKING NOTE (do not act on this yet -- it belongs to a later
+	// phase that gives Flux and Windows their own static libraries):
+	//   * AddSlangLibs will eventually be owned by the Flux library, but it
+	//     must stay conditional on win64 && RenderBackend.Vulkan -- the Null
+	//     and D3D12 configs have no slang lib path at all, and the one TU that
+	//     calls the slang API (Zenith/Flux/Slang/Flux_SlangCompiler.cpp) is
+	//     already guarded by `#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)`.
+	//   * AddGlfwLibs is called directly (i.e. GLFW's own API, not just this
+	//     helper) from four directories today: Zenith/Windows/ (2 files),
+	//     Zenith/Input/ (2 files), the Vulkan backend (3 files), and -- until
+	//     Phase 2 moved it out of Core -- Zenith_Core.cpp. Owning
+	//     glfw3_mt.lib on a future ZenithWindows lib will leave ZenithInput
+	//     and the Vulkan backend with undeclared win64 symbols that would
+	//     only resolve at the consuming exe's link -- a future phase must
+	//     give those libraries their own AddGlfwLibs call too, not assume the
+	//     engine-lib call alone still covers every glfw-calling TU.
+	// ---------------------------------------------------------------------
 
-	protected void ConfigureCommonLibraryPaths(Configuration conf, ZenithTarget target)
+	// glfw: the windowing backend shared by every render backend (Vulkan,
+	// D3D12, and Null all link it -- only the graphics-API import libs differ
+	// below). Also carries the LIBCMT ignore, which exists solely because
+	// glfw3_mt.lib is built /MT.
+	protected void AddGlfwLibs(Configuration conf, ZenithTarget target)
 	{
-		if (target.Platform == Platform.win64 && LinksRendererBackend)
+		if (target.Platform != Platform.win64) { return; }
+
+		conf.LibraryPaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
+		conf.LibraryFiles.Add("glfw3_mt.lib");
+
+		// glfw3_mt.lib is compiled with /MT (release CRT), which pulls in LIBCMT.
+		// In debug builds we use /MTd (LIBCMTD), causing a linker conflict.
+		if (target.Optimization == Optimization.Debug)
 		{
-			// glfw is the windowing backend for both renderers.
-			conf.LibraryPaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
-			conf.LibraryFiles.Add("glfw3_mt.lib");
-
-			if (target.RenderBackend == RenderBackend.Vulkan)
-			{
-				conf.LibraryPaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Lib");
-				conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
-				conf.LibraryFiles.Add("vulkan-1.lib");
-				conf.LibraryFiles.Add("slang.lib");
-			}
-			else if (target.RenderBackend == RenderBackend.D3D12)
-			{
-				// Null D3D12 backend links the system D3D12 import libs (they ship
-				// with the Windows SDK on the default library search path).
-				conf.LibraryFiles.Add("d3d12.lib");
-				conf.LibraryFiles.Add("dxgi.lib");
-				conf.LibraryFiles.Add("dxguid.lib");
-			}
-			// RenderBackend.Null deliberately adds NOTHING here: no vulkan-1/slang,
-			// no d3d12/dxgi/dxguid. glfw3_mt above is the only graphics-adjacent lib
-			// it links (the window/input layer is shared by every backend).
-
-			// glfw3_mt.lib is compiled with /MT (release CRT), which pulls in LIBCMT.
-			// In debug builds we use /MTd (LIBCMTD), causing a linker conflict.
-			if (target.Optimization == Optimization.Debug)
-			{
-				conf.Options.Add(new Options.Vc.Linker.IgnoreSpecificLibraryNames("LIBCMT"));
-			}
+			conf.Options.Add(new Options.Vc.Linker.IgnoreSpecificLibraryNames("LIBCMT"));
 		}
-		// Android links against system Vulkan loader via --sysroot (see Sharpmake_Games.cs)
+	}
+
+	// The Vulkan render backend's loader import lib.
+	protected void AddVulkanBackendLibs(Configuration conf, ZenithTarget target)
+	{
+		if (target.Platform != Platform.win64) { return; }
+
+		conf.LibraryPaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Lib");
+		conf.LibraryFiles.Add("vulkan-1.lib");
+	}
+
+	// Flux's Slang shader-compiler dependency. Only the Vulkan backend calls
+	// into Slang today (see the forward-looking note above), so every call
+	// site pairs this with AddVulkanBackendLibs under the same Vulkan guard.
+	protected void AddSlangLibs(Configuration conf, ZenithTarget target)
+	{
+		if (target.Platform != Platform.win64) { return; }
+
+		conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
+		conf.LibraryFiles.Add("slang.lib");
+	}
+
+	// The D3D12 render backend's system import libs. These ship with the
+	// Windows SDK on the default library search path, so no LibraryPaths
+	// entry is needed (matches the original ConfigureCommonLibraryPaths,
+	// which never added a D3D12 lib path either).
+	protected void AddD3D12Libs(Configuration conf, ZenithTarget target)
+	{
+		if (target.Platform != Platform.win64) { return; }
+
+		conf.LibraryFiles.Add("d3d12.lib");
+		conf.LibraryFiles.Add("dxgi.lib");
+		conf.LibraryFiles.Add("dxguid.lib");
 	}
 }

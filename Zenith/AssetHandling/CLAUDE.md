@@ -1,5 +1,29 @@
 # Asset Handling System
 
+> **Build ownership: `ZenithAssetHandling` (Phase 4d).** This whole directory
+> is one Sharpmake static library (`Build/Sharpmake_ZenithAssetHandling.cs`) —
+> 21 translation units + a definition-free PCH create TU. There is a genuine
+> header cycle with `Flux/`: 11 files here (`Zenith_AnimationAsset.cpp`,
+> `Zenith_AnimatorControllerAsset.h`, `Zenith_BoneMaskAsset.cpp`,
+> `Zenith_FontAsset.cpp`, `Zenith_GrassTypeTableAsset.h`,
+> `Zenith_MaterialAsset.cpp`, `Zenith_MeshAsset.{h,cpp}`,
+> `Zenith_MeshGeometryAsset.cpp`, `Zenith_TextureAsset.{h,cpp}`) `#include` a
+> `Flux/**` header directly — the asset classes own Flux types (or GPU
+> resource handles) BY VALUE, not by pointer, so these are not
+> forward-declarable away. `ZenithFlux` declares the single project-level
+> dependency edge for the pair — `Flux -> AssetHandling`, the heavier
+> direction (23 includes that way) — so this project deliberately does **not**
+> depend back on `ZenithFlux`: that would make the edge genuinely circular in
+> Sharpmake's graph, not just in `#include` terms. Compiling a static lib
+> never needs to resolve an external symbol (`lib.exe` does not link), so the
+> 11 reverse includes resolve fine off the plain `/Zenith` include path every
+> leaf already carries; any `Flux_::` symbol referenced out-of-line resolves
+> at the final game exe link, where `ZenithFlux` is always present
+> transitively. The real fix — splitting this directory into a handle/registry
+> half and a GPU-resource half, so the cycle has somewhere to end — is a
+> design change for its own future ticket, not attempted here. See
+> `Zenith/Flux/CLAUDE.md`'s matching note.
+
 ## Overview
 
 The asset handling system manages the import, export, and runtime loading of game assets. It uses Assimp for importing from standard formats (FBX, glTF, OBJ) and exports to Zenith's binary formats for optimized runtime loading.
@@ -463,7 +487,7 @@ mip chain (a v2 `.ztxtr`).
 > unit tests pinning the heuristic passed throughout. See
 > `Docs/design/Photorealism.md` §1.10.
 
-It runs at boot on **any** `ZENITH_TOOLS` build, from `Zenith/Core/Zenith_Engine.cpp`,
+It runs at boot on **any** `ZENITH_TOOLS` build, from `Zenith/EngineComposition/Zenith_Engine.cpp`,
 before Flux comes up. There is no opt-in and **no freshness check** -- every image is
 re-exported on every boot; `--skip-tool-exports` turns the whole export phase off.
 So dropping new images into an asset directory, **declaring them in that root's

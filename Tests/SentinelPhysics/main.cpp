@@ -3,15 +3,18 @@
 // =============================================================================
 // SentinelPhysics — leaf-proof executable for the ZenithPhysics extraction.
 //
-// This exe links ONLY zenithphysics.lib + zenithecs.lib + zenithbase.lib (see
-// Build/Sharpmake_SentinelPhysics.cs). ZenithPhysics owns the Jolt backend, so
-// every JPH:: symbol resolves from within zenithphysics.lib — no aggregate engine
-// lib, no Flux, no AI, no concrete component. If it links and runs, the Physics
-// core has no undefined ENGINE externals — i.e. ZenithPhysics really is a
-// self-contained leaf over ZenithBase + ZenithECS + Jolt. A new engine-coupling
-// leak (g_xEngine / Flux / a concrete component) would surface here as an
-// unresolved external at link time (caught by the build gate) or in the dumpbin
-// UNDEF scan that backs this proof.
+// This exe links ONLY zenithphysics.lib + zenithecs.lib + zenithcore.lib +
+// zenithjolt.lib (see Build/Sharpmake_SentinelPhysics.cs). As of Phase 4c,
+// ZenithPhysics no longer owns the Jolt backend directly — the vendored Jolt
+// tree is its own leaf library, ZenithJolt (Build/Sharpmake_ZenithJolt.cs) —
+// so every JPH:: symbol resolves from zenithjolt.lib instead of from inside
+// zenithphysics.lib. No aggregate engine lib, no Flux, no AI, no concrete
+// component. If it links and runs, the Physics core has no undefined ENGINE
+// externals — i.e. ZenithPhysics really is a self-contained leaf over
+// ZenithCore + ZenithECS + ZenithJolt. A new engine-coupling leak (g_xEngine /
+// Flux / a concrete component) would surface here as an unresolved external
+// at link time (caught by the build gate) or in the dumpbin UNDEF scan that
+// backs this proof.
 //
 // The driver constructs Zenith_Physics directly (the engine normally owns the
 // instance), brings up Zenith_SceneSystem so the Update -> deferred-collision
@@ -41,7 +44,7 @@ static void Expect(bool bCond, const char* szWhat)
 int main()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST,
-		"SentinelPhysics: Physics leaf-proof starting (zenithphysics.lib + zenithecs.lib + zenithbase.lib + Jolt only)");
+		"SentinelPhysics: Physics leaf-proof starting (zenithphysics.lib + zenithecs.lib + zenithcore.lib + zenithjolt.lib only)");
 
 	// Zenith_Physics::Update -> ProcessDeferredCollisionEvents reaches
 	// Zenith_SceneSystem::Get(); construct the scene system so that reference has a

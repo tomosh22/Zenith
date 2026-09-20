@@ -192,7 +192,7 @@ The frame sequence (the plan's zero-padded invariant):
 > `vkCreateDevice`, rather than silently forcing an unsupported feature bit
 > to `VK_TRUE`. Native count and `multiDrawIndirect` are optional: fixed
 > multi-draw batches are used without count, and one-record indirect calls
-> are used when multi-draw is also absent. See `Zenith/Vulkan/CLAUDE.md`.
+> are used when multi-draw is also absent. See `Zenith/RenderBackends/Vulkan/CLAUDE.md`.
 
 ### Shadow casting — per-cascade cull slots, one dispatch, no new pass
 

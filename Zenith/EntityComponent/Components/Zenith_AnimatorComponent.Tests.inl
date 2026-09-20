@@ -161,7 +161,7 @@ namespace
 	//--------------------------------------------------------------------------
 	// Scene-stream framing, for the schema-refusal test.
 	//
-	// ★ DUPLICATED, NOT CALLED. The equivalents in Core/Zenith_UnitTests.Tests.inl
+	// ★ DUPLICATED, NOT CALLED. The equivalents in EngineComposition/Zenith_UnitTests.Tests.inl
 	// live in another translation unit inside an anonymous namespace, so they have
 	// internal linkage and are unreachable from here. Copying them is the only
 	// option that does not push a test-only helper into a shared header.

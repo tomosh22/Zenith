@@ -22,9 +22,9 @@ using System.IO;
 [Sharpmake.Generate]
 public class ZenithAILibProject : ZenithBaseProject
 {
-	// Renderer-agnostic leaf static lib — must not link or propagate glfw/vulkan/slang.
-	protected override bool LinksRendererBackend => false;
-
+	// Renderer-agnostic leaf static lib — must not link or propagate
+	// glfw/vulkan/slang, so ConfigureAll below calls none of the
+	// renderer-backend library helpers.
 	public ZenithAILibProject()
 	{
 		Name = "ZenithAI";
@@ -55,7 +55,7 @@ public class ZenithAILibProject : ZenithBaseProject
 	[Configure]
 	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
-		ConfigurePlatformExcludes(conf, target);
+		// Phase 4h.3 -- ConfigurePlatformExcludes() call REMOVED: measured against the regenerated .vcxproj (Phase 4h.2), this project has zero members matching \Android\, _Android, \Windows\ or _Windows. See Sharpmake_Common.cs for the method's removal.
 
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -70,21 +70,41 @@ public class ZenithAILibProject : ZenithBaseProject
 
 		ConfigureCommonSettings(conf, target);
 		ConfigureCommonIncludePaths(conf, target);
-		ConfigureCommonLibraryPaths(conf, target);
+		// No AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs call:
+		// this leaf lib must not link or propagate the renderer backend.
 
-		// The PCH (Zenith.h) transitively pulls imgui + Flux/Vulkan/vma/Jolt headers;
-		// AI also includes Physics headers (Zenith_Physics.h / _Fwd.h). Include paths
-		// only — no libs linked (cross-leaf symbols resolve at the consuming link).
-		conf.IncludePaths.Add(RootPath + "/Middleware/vma");
+		// Phase 5.3 CORRECTION: the comment this replaced claimed "the PCH
+		// (Zenith.h) transitively pulls imgui + Flux/Vulkan/vma/Jolt headers".
+		// Zenith.h itself pulls none of them (grep: its closure is 17 project
+		// headers + ~202 glm headers, zero imgui/Flux/Vulkan/vma/Jolt). The
+		// Jolt path below is real, but for a DIFFERENT and narrower reason:
+		// five files here (Zenith_NavMeshAgent.cpp, Zenith_NavMeshGenerator.Tests.inl,
+		// Zenith_PerceptionSystem.cpp, Zenith_TacticalPoint.cpp,
+		// Zenith_AIWorldHooks.h) #include "Physics/Zenith_Physics.h", which itself
+		// #includes <Jolt/Jolt.h> + <Jolt/Physics/Collision/ContactListener.h>
+		// directly — so THIS path must stay (verified: removing it breaks the
+		// build). vma/RenderBackends/imgui-docking had no such justification —
+		// grep finds zero imgui/vulkan/vma references anywhere under Zenith/AI —
+		// and are removed, verified by a green SentinelAI build in every
+		// RenderBackend x win64 plus a green `zenith build engine`.
 		conf.IncludePaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
-		conf.IncludePaths.Add(RootPath + "/Zenith/Vulkan");
-		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
 
 		conf.Output = Configuration.OutputType.Lib;
 
-		// L0 + L1 + sibling-leaf edges. ZenithPhysics re-exports ZenithECS+ZenithBase,
-		// so those are technically transitive; stated explicitly to mirror ZenithProject.
-		conf.AddPublicDependency<ZenithBaseLibProject>(target);
+		// L0 + L1 + sibling-leaf edges. ZenithCore is MANDATORY for every
+		// engine lib (see Sharpmake_ZenithCore.cs — Zenith_LogFileSinkWrite
+		// must resolve for every TU). ZenithMaths/ZenithDataStream/
+		// ZenithFileAccess are direct dependencies too — the AI core's own
+		// TUs use Zenith_Maths types heavily (steering/perception geometry),
+		// DataStream (behaviour-tree / blackboard serialization) and
+		// FileAccess (asset loading seams). ZenithPhysics re-exports
+		// ZenithECS + all four L0 leaves, so those edges are technically
+		// transitive; stated explicitly to mirror ZenithProject and to
+		// document AI's actual direct usage.
+		conf.AddPublicDependency<ZenithCoreLibProject>(target);
+		conf.AddPublicDependency<ZenithMathsLibProject>(target);
+		conf.AddPublicDependency<ZenithDataStreamLibProject>(target);
+		conf.AddPublicDependency<ZenithFileAccessLibProject>(target);
 		conf.AddPublicDependency<ZenithECSLibProject>(target);
 		conf.AddPublicDependency<ZenithPhysicsLibProject>(target);
 

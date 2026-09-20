@@ -325,7 +325,7 @@ param(
     # conveniences byte-match hand-built nodes). Observed 2026-08-11 on a
     # Null_ Combat build (1590 ran / 1589 passed / 0 failed / 1 skipped).
     # 1590 -> 1600: +10 input-program WP6 + its reconciliation micro-WP.
-    # 9 Zenith_UserSettings units (Zenith/Core/Zenith_UserSettings.Tests.inl):
+    # 9 Zenith_UserSettings units (Zenith/EngineComposition/Zenith_UserSettings.Tests.inl):
     # the canned v1 byte fixture both directions, corrupt/short blob ->
     # defaults, absent file -> defaults, override-name byte-stable round trip,
     # corrupt on-disk file -> defaults, too-long profile name REFUSED (never

@@ -6,7 +6,7 @@
 // ★ THESE DRIVE A REAL ImGui FRAME, HEADLESS, AND NONE OF THEM IS
 // requiresGraphics. ImGui is genuinely live on the Null backend — the context is
 // real, the font atlas is rasterised, layout and hit-testing behave exactly as
-// they do windowed, and only the draw data is discarded (Zenith/Null/CLAUDE.md).
+// they do windowed, and only the draw data is discarded (Zenith/RenderBackends/Null/CLAUDE.md).
 // The boot-time unit batch runs inside Zenith_Init AFTER Flux has created that
 // context and BEFORE the main loop's first frame, so a NewFrame/EndFrame pair
 // here is a legal, self-contained frame. AnimPanelImGuiFrame below is the whole

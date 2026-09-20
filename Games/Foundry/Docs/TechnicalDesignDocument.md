@@ -115,7 +115,7 @@ Stated explicitly so their absence is legible as a decision:
 
 ### The engine gives you wall-clock float dt and nothing else
 
-`Zenith_Core::UpdateTimers` (`Zenith/Core/Zenith_Core.cpp`) produces an **unclamped wall-clock float** dt into `g_xEngine.Frame()`; the engine's two fixed-step accumulators are unusable for a game tick (the ECS one is hard-coded private 50 Hz with a 16-substep burst policy — `Zenith/ZenithECS/Zenith_SceneSystem.h`; the physics one is 1/60 with an 8-substep cap that *discards* remainder — `Zenith/Physics/Zenith_Physics.cpp`). Foundry rolls its own accumulator inside `FD_GameComponent::OnUpdate`, which also owns policies the engine loop shouldn't: sim speed, pause, and catch-up.
+`Zenith_Core::UpdateTimers` (`Zenith/EngineComposition/Zenith_Core.cpp`) produces an **unclamped wall-clock float** dt into `g_xEngine.Frame()`; the engine's two fixed-step accumulators are unusable for a game tick (the ECS one is hard-coded private 50 Hz with a 16-substep burst policy — `Zenith/ZenithECS/Zenith_SceneSystem.h`; the physics one is 1/60 with an 8-substep cap that *discards* remainder — `Zenith/Physics/Zenith_Physics.cpp`). Foundry rolls its own accumulator inside `FD_GameComponent::OnUpdate`, which also owns policies the engine loop shouldn't: sim speed, pause, and catch-up.
 
 ```cpp
 void FD_GameComponent::OnUpdate(float fDt)
@@ -141,7 +141,7 @@ void FD_GameComponent::OnUpdate(float fDt)
 
 ### The command queue is the ONLY write path into SimCore
 
-Frame ordering hazard, verified: `UI().Update` runs **after** `Scenes().Update` in the frame (`Zenith/Core/Zenith_Core.cpp`, `SubmitRenderWork` vs `UpdateGameLogic`), so UI button callbacks fire *outside* the tick. All mutations — UI callbacks, gestures, objective scripts, debug tools — are therefore expressed as **commands** (`PlaceBuilding{archetype, tile, rot}`, `SetRecipe{handle, recipe}`, `StampBlueprint{...}`, `MarkDeconstruct{rect, filter}` …) appended to a queue that `FD_Sim::Tick()` drains **first**, in order.
+Frame ordering hazard, verified: `UI().Update` runs **after** `Scenes().Update` in the frame (`Zenith/EngineComposition/Zenith_Core.cpp`, `SubmitRenderWork` vs `UpdateGameLogic`), so UI button callbacks fire *outside* the tick. All mutations — UI callbacks, gestures, objective scripts, debug tools — are therefore expressed as **commands** (`PlaceBuilding{archetype, tile, rot}`, `SetRecipe{handle, recipe}`, `StampBlueprint{...}`, `MarkDeconstruct{rect, filter}` …) appended to a queue that `FD_Sim::Tick()` drains **first**, in order.
 
 This single rule buys four things at once:
 1. **Determinism** — sim state changes only at tick boundaries, in recorded order.

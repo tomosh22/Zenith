@@ -5,9 +5,11 @@ using System.IO;
 // SentinelECS -- leaf-proof executable for the ECS-leaf extraction (Phase 9b).
 //
 // This exe exists for ONE reason: to prove that ZenithECS is a self-contained
-// leaf on top of ZenithBase, with NO undefined engine externals. It links
-// EXACTLY zenithecs.lib + zenithbase.lib (the two AddPublicDependency calls
-// below) and NOTHING else -- no ZenithProject (the aggregate engine lib), no
+// leaf on top of ZenithCore (formerly ZenithBase, dissolved Phase 4a), with
+// NO undefined engine externals. It links EXACTLY zenithecs.lib +
+// zenithcore.lib (the two AddPublicDependency calls below; ZenithECS also
+// re-exports zenithmaths.lib/zenithdatastream.lib/zenithfileaccess.lib
+// transitively) and NOTHING else -- no ZenithProject (the aggregate engine lib), no
 // Flux, no Physics, no game. Its single TU (Tests/SentinelECS/main.cpp) drives
 // the ECS core end-to-end (construct the SceneSystem, register a stub component,
 // create a scene + bare entity, AddComponent, Query, Destroy) without ever
@@ -36,12 +38,11 @@ using System.IO;
 public class SentinelECSProject : ZenithBaseProject
 {
 	// Leaf-proof exe — must link ONLY the two leaf libs (ZenithBase + ZenithECS),
-	// never the renderer backend (glfw/vulkan/slang). With this false, neither this
-	// project's own ConfigureCommonLibraryPaths nor the propagated LibraryFiles from
-	// the (also-LinksRendererBackend=false) leaf-lib dependencies add those libs, so
-	// any accidental ECS->renderer edge surfaces as a hard undefined-symbol error.
-	protected override bool LinksRendererBackend => false;
-
+	// never the renderer backend (glfw/vulkan/slang). ConfigureAll below calls
+	// none of the renderer-backend library helpers, and the two leaf-lib
+	// dependencies (which also call none of them) do not propagate those libs
+	// either, so any accidental ECS->renderer edge surfaces as a hard
+	// undefined-symbol error.
 	public SentinelECSProject()
 	{
 		Name = "SentinelECS";
@@ -69,9 +70,7 @@ public class SentinelECSProject : ZenithBaseProject
 	[Configure]
 	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
-		// Drop Android platform files (there are none here, but keeps the
-		// platform partition identical to every other project).
-		ConfigurePlatformExcludes(conf, target);
+		// Phase 4h.3 -- ConfigurePlatformExcludes() call REMOVED: measured against the regenerated .vcxproj (Phase 4h.2), this project has zero members matching \Android\, _Android, \Windows\ or _Windows. See Sharpmake_Common.cs for the method's removal.
 
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -85,35 +84,42 @@ public class SentinelECSProject : ZenithBaseProject
 		// ECS core was compiled with (no ABI / macro skew across the link).
 		ConfigureCommonSettings(conf, target);
 		ConfigureCommonIncludePaths(conf, target);
-		ConfigureCommonLibraryPaths(conf, target);
+		// No AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs call:
+		// this leaf-proof exe must not link or propagate the renderer backend.
 
-		// LEAF-PROOF INTEGRITY: because LinksRendererBackend is overridden to false
-		// (above), ConfigureCommonLibraryPaths did NOT add glfw3_mt/vulkan-1/slang for
-		// this project, and the two leaf-lib dependencies below (also
-		// LinksRendererBackend=false) do not propagate them either. So the sentinel
-		// links EXACTLY zenithbase.lib + zenithecs.lib + the CRT/Win32 import libs the
+		// LEAF-PROOF INTEGRITY: because ConfigureAll calls none of the
+		// renderer-backend library helpers, this project did NOT add
+		// glfw3_mt/vulkan-1/slang, and the two leaf-lib dependencies below
+		// (which also call none of them) do not propagate them either. So the
+		// sentinel links EXACTLY zenithbase.lib + zenithecs.lib + the CRT/Win32
+		// import libs the
 		// toolchain adds + the four documented L0 platform shims in
 		// Tests/SentinelECS/sentinel_platform.cpp. Any accidental ECS edge onto the
 		// renderer (or anything beyond ZenithBase) now fails the link with a hard
 		// undefined-symbol error -- which is the entire point of the sentinel.
 
-		// PCH header transitively pulls imgui + Flux/Vulkan/vma/Jolt headers --
-		// include paths only (no libs linked). Mirrors ZenithECS/ZenithBase.
-		conf.IncludePaths.Add(RootPath + "/Middleware/vma");
-		conf.IncludePaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
-		conf.IncludePaths.Add(RootPath + "/Zenith/Vulkan");
-		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
+		// Phase 5.3 CORRECTION: this comment (and Sharpmake_ZenithECS.cs's
+		// identical one) claimed "the PCH transitively pulls imgui + Flux/
+		// Vulkan/vma/Jolt headers". Zenith.h's own closure is 17 project
+		// headers + ~202 glm headers -- zero imgui/Flux/Vulkan/vma/Jolt -- and
+		// this sentinel's own main.cpp reaches only ZenithECS + DataStream
+		// headers, none of which touch any of the four vendored trees either.
+		// All four IncludePaths.Add calls were dead weight; removed, verified
+		// by a green build in every RenderBackend (Vulkan_/Null_/D3D12_) x
+		// win64.
 
 		// Executable (console subsystem by default for `int main()`).
 		conf.Output = Configuration.OutputType.Exe;
 
-		// THE WHOLE POINT: link EXACTLY the ECS leaf + the base leaf, nothing
-		// more. No ZenithProject, no Flux, no Physics, no game deps. The ECS edge
-		// (ZenithECS) re-exports ZenithBase publicly, so the second dependency is
-		// technically transitive -- it is stated explicitly to make the
-		// "links only these two" contract obvious and self-documenting.
+		// THE WHOLE POINT: link EXACTLY the ECS leaf + ZenithCore, nothing
+		// more. No ZenithProject, no Flux, no Physics, no game deps. The ECS
+		// edge (ZenithECS) re-exports ZenithCore/ZenithMaths/ZenithDataStream/
+		// ZenithFileAccess publicly, so the ZenithCore dependency here is
+		// technically transitive -- it is stated explicitly per the mandatory
+		// rule (Sharpmake_ZenithCore.cs: Zenith_LogFileSinkWrite must resolve
+		// for every TU) and to make the "links only these" contract obvious.
 		conf.AddPublicDependency<ZenithECSLibProject>(target);
-		conf.AddPublicDependency<ZenithBaseLibProject>(target);
+		conf.AddPublicDependency<ZenithCoreLibProject>(target);
 
 		// No ZENITH_TOOLS branch: this project is ToolsEnabled.False only (see
 		// AddTargets above). The runtime PCH path needs no tools/editor include

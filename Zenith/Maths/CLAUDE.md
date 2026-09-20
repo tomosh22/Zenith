@@ -2,6 +2,10 @@
 
 GLM wrapper with engine-specific extensions.
 
+**Library:** compiles into `ZenithMaths` (`Build/Sharpmake_ZenithMaths.cs`) — a
+single-TU leaf lib (`Zenith_Maths.cpp`) with no precompiled header (below the
+≥4-TU threshold; see `Docs/BuildSystem.md` §4). Depends on `ZenithCore` only.
+
 ## Files
 
 - `Zenith_Maths.h/cpp` - Type aliases, wrapper functions

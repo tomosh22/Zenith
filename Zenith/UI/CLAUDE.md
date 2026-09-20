@@ -1,5 +1,28 @@
 # UI System
 
+> **Build ownership: `ZenithUI` (Phase 4f).** This whole directory is one
+> Sharpmake static library (`Build/Sharpmake_ZenithUI.cs`) — 14 translation
+> units + a definition-free PCH create TU. It sits at **layer 5** of the
+> measured header DAG, directly below `ZenithEntityComponent` (layer 6, the
+> top): `EntityComponent/Components/Zenith_UIComponent.h` `#include`s
+> `UI/Zenith_UI.h` (a pre-existing `layer-up:` allowlist entry in
+> `Tools/architecture_allowlist.txt` already recorded this direction) and
+> `EntityComponent/Zenith_UISystem.cpp` drives every `Zenith_UIComponent`'s
+> canvas through this library's `Zenith_UICanvas`/`Zenith_UIElement` surface —
+> so `ZenithEntityComponent` declares `AddPublicDependency<ZenithUILibProject>`
+> and this project does **not** declare the reverse. This library depends on
+> `ZenithCore` (mandatory) + `ZenithMaths` + `ZenithDataStream` +
+> `ZenithAssetHandling` (sprite/font texture handles) + `ZenithFlux` (the
+> quad/text render path) + `ZenithInput` (pointer/action input, including the
+> B9 virtual controls) + `ZenithProfiling`. **It needed `SHADER_SOURCE_ROOT`
+> despite no `.cpp` here referencing the token or including
+> `Flux/Flux_GraphicsImpl.h` directly** — the shared `Zenith.h` PCH this
+> library `/Yu`'s against still transitively reaches the active backend's
+> Pipeline header on a `Null_`/`D3D12_` config, which references it unguarded;
+> confirmed the hard way (C2065 on every `Zenith_UI*.cpp` TU) building
+> `Combat --headless` before the define was added. See
+> `Sharpmake_ZenithUI.cs`'s own header comment for the full edge list.
+
 ## Overview
 
 Screen-space UI framework with a canvas-based element hierarchy. Renders via `Flux_QuadsImpl` (quads with UV mapping, corner radius, and gradients) and `Flux_TextQueue` (text batching system). All classes are in the `Zenith_UI` namespace.

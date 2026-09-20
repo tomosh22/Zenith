@@ -6,6 +6,14 @@ Lock-free, low-overhead CPU profiler with hierarchical timing zones, a unified
 in-engine ImGui visualizer (tools builds), and a compile-out switch for shipping.
 Held on `g_xEngine.Profiling()`.
 
+## Build (Sharpmake library)
+
+Compiled into `ZenithProfiling` (`Build/Sharpmake_ZenithProfiling.cs`) — 1 TU,
+no PCH (below the ≥4-TU threshold; compiles `Zenith.h` textually). Depends on
+`ZenithCore` (mandatory) + `ZenithDebugVariables` (direct `#include` — exposes
+profiler toggles as debug variables). Consumed directly by `ZenithWindows` and
+`ZenithAndroid` (both instrument thread-name/priority calls).
+
 ## Files
 
 - `Zenith_Profiling.h` — public API: zone macros, the `ScopeZone` RAII helper, the

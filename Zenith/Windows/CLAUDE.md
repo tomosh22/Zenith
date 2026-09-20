@@ -4,6 +4,21 @@
 
 Windows-specific implementations for windowing (GLFW), threading (CRITICAL_SECTION), and callstack capture (DbgHelp).
 
+## Build (Sharpmake library)
+
+Compiled into `ZenithWindows` (`Build/Sharpmake_ZenithWindows.cs`) — **win64
+ONLY** (no agde target at all; see `Zenith/Android/CLAUDE.md` for the mirror
+image). 9 TUs from this directory (the 6 top-level + `Callstack/`,
+`FileAccess/`, `Multithreading/`) plus the two ImGui platform-backend TUs this
+library OWNS (`Middleware/imgui-docking/backends/imgui_impl_glfw.cpp` /
+`imgui_impl_win32.cpp`), plus a definition-free PCH create TU
+(`Internal/Zenith_WindowsPCH.cpp`). `ZenithWindows` is the ONLY project that
+calls `AddGlfwLibs` — it owns GLFW even though GLFW is called directly from
+three other places too (`Zenith/Input/`, the Vulkan render backend, formerly
+`Zenith_Core.cpp`); see the Sharpmake file's own header comment for the full
+account of why that is accepted, not a bug. Depends on `ZenithCore`
+(mandatory) + `ZenithInput` + `ZenithProfiling`.
+
 ## Files
 
 - `Zenith_Windows_Window.h` - GLFW-based window (singleton)

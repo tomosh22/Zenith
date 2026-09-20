@@ -430,7 +430,11 @@ function Invoke-ZenithBuild {
             @{ Target = 'Zenith'; Config = $config },
             @{ Target = 'SentinelECS'; Config = $sentinelConfig },
             @{ Target = 'SentinelPhysics'; Config = $sentinelConfig },
-            @{ Target = 'SentinelAI'; Config = $sentinelConfig }
+            @{ Target = 'SentinelAI'; Config = $sentinelConfig },
+            @{ Target = 'SentinelCore'; Config = $sentinelConfig },
+            @{ Target = 'SentinelFlux'; Config = $sentinelConfig },
+            @{ Target = 'SentinelScripting'; Config = $sentinelConfig },
+            @{ Target = 'SentinelUI'; Config = $sentinelConfig }
         )
         foreach ($s in $steps) {
             Write-CliInfo "[build] $($s.Target) ($($s.Config))..."

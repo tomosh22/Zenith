@@ -6,33 +6,31 @@ using System.IO;
 // engine lib the same way ZenithECS (L1) and ZenithBase (L0) were, WITHOUT
 // changing runtime behaviour. It holds the Physics CORE only: the contents of
 // Zenith/Physics (the Jolt-backed simulation manager + the renderer-neutral
-// collision-mesh generator). The engine-side glue that needs concrete components
-// (Zenith_PhysicsQuery, Zenith_PhysicsDebugDraw) stays behind in
+// collision-mesh generator) — 4 translation units total (the 3 real Physics
+// .cpp + its own PCH create TU). The engine-side glue that needs concrete
+// components (Zenith_PhysicsQuery, Zenith_PhysicsDebugDraw) stays behind in
 // Zenith/EntityComponent and compiles into the aggregate engine lib.
 //
-// LAYERING: ZenithPhysics is a strict leaf over ZenithBase (L0) + ZenithECS (L1)
-// (+ Jolt, which it OWNS once the Phase-3 partition moves the Jolt sources here).
-// It must NOT name g_xEngine, Flux, AI, UI, Editor, AssetHandling, or any concrete
-// component — that is the whole point of the leaf boundary, proven by the
-// SentinelPhysics link-proof exe + the dumpbin FORBIDDEN_EXTERNALS scan.
-//
-// SCAFFOLD PHASE (P2): this project compiles ONLY the Physics .cpp set. The Jolt
-// sources still live in the aggregate; the Physics TUs therefore have undefined
-// JPH:: externals here — harmless for a static lib (lib.exe does not resolve
-// externals). The Phase-3 partition moves Jolt ownership into this lib and adds
-// the matching aggregate build-excludes, making the two memberships a clean
-// complement. Until then, Physics .cpp compile into BOTH this lib AND the
-// aggregate (a deliberate, temporary duplicate-symbol state that is never
-// co-linked — games depend only on the aggregate this phase).
+// LAYERING: ZenithPhysics is a strict leaf over the L0 leaves (ZenithCore +
+// ZenithMaths directly; ZenithDataStream/ZenithFileAccess transitively via
+// ZenithECS — see the dependency comment below) + ZenithECS (L1) + ZenithJolt
+// (Phase 4c: the vendored Jolt backend split OUT into its own leaf library —
+// see Sharpmake_ZenithJolt.cs — this project no longer owns those sources,
+// it depends on the library that does). It must NOT name g_xEngine, Flux, AI,
+// UI, Editor, AssetHandling, or any concrete component — that is the whole
+// point of the leaf boundary, proven by the SentinelPhysics link-proof exe +
+// the dumpbin FORBIDDEN_EXTERNALS scan.
 //
 // THE PCH: like ZenithBase/ZenithECS, this lib compiles its OWN per-lib Zenith.pch
 // from a trivial Create TU (Internal/Zenith_PhysicsPCH.cpp = `#include "Zenith.h"`).
+// It sits exactly AT the >= 4-TU PCH threshold (3 Physics TUs + the PCH create
+// TU itself) — do not let this shrink further without revisiting the PCH.
 [Sharpmake.Generate]
 public class ZenithPhysicsLibProject : ZenithBaseProject
 {
-	// Renderer-agnostic leaf static lib — must not link or propagate glfw/vulkan/slang.
-	protected override bool LinksRendererBackend => false;
-
+	// Renderer-agnostic leaf static lib — must not link or propagate
+	// glfw/vulkan/slang, so ConfigureAll below calls none of the
+	// renderer-backend library helpers.
 	public ZenithPhysicsLibProject()
 	{
 		Name = "ZenithPhysics";
@@ -58,30 +56,16 @@ public class ZenithPhysicsLibProject : ZenithBaseProject
 
 		// The whole Physics directory. The "Zenith.h" PrecompHeader lookup resolves
 		// through ConfigureCommonIncludePaths (which adds /Zenith + /Zenith/Core).
+		// Phase 4c: the Jolt AdditionalSourceRootPaths + its nine membership
+		// excludes moved to Sharpmake_ZenithJolt.cs, which now owns that tree —
+		// this project depends on it instead (see the AddPublicDependency below).
 		SourceRootPath = RootPath + "/Zenith/Physics";
-
-		// ZenithPhysics OWNS the Jolt backend (moved out of the aggregate at the
-		// Phase-3 partition): the simulation core that names JPH:: lives here, so the
-		// lib is self-contained over ZenithBase + ZenithECS + Jolt and the
-		// SentinelPhysics link-proof resolves every JPH:: symbol without the engine.
-		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
-
-		// Jolt's own samples / tests / tools are not part of the runtime backend.
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Docs.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\UnitTests.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Samples.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\TestFramework.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\PerformanceTest.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\JoltViewer.*");
-		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\HelloWorld.*");
-		SourceFilesExcludeRegex.Add(@".*cmake.*");
 	}
 
 	[Configure]
 	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
-		ConfigurePlatformExcludes(conf, target);
+		// Phase 4h.3 -- ConfigurePlatformExcludes() call REMOVED: measured against the regenerated .vcxproj (Phase 4h.2), this project has zero members matching \Android\, _Android, \Windows\ or _Windows. See Sharpmake_Common.cs for the method's removal.
 
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -93,28 +77,53 @@ public class ZenithPhysicsLibProject : ZenithBaseProject
 		// Per-lib PCH: ZenithPhysics CREATEs Zenith.pch from Zenith_PhysicsPCH.cpp.
 		conf.PrecompHeader = "Zenith.h";
 		conf.PrecompSource = "Zenith_PhysicsPCH.cpp";
-		// Jolt's third-party .cpp do not begin with `#include "Zenith.h"`, so they
-		// must compile WITHOUT the engine PCH (mirrors the aggregate's handling).
-		conf.PrecompSourceExcludeFolders.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
+		// Phase 4c: the Jolt PrecompSourceExcludeFolders entry that used to sit here
+		// is gone — the Jolt tree is no longer part of THIS project's source set at
+		// all (ZenithJoltLibProject owns it now, with no PCH of its own), so there
+		// is nothing in this lib's own glob left to exclude from its PCH.
 
 		ConfigureCommonSettings(conf, target);
 		ConfigureCommonIncludePaths(conf, target);
-		ConfigureCommonLibraryPaths(conf, target);
+		// No AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs call:
+		// this leaf lib must not link or propagate the renderer backend.
 
-		// The PCH (Zenith.h) transitively pulls imgui + Flux/Vulkan/vma/Jolt headers,
-		// and the Physics .cpp themselves include the Jolt headers directly. Include
-		// paths only — no libs linked (undefined JPH:: resolve at the consuming link).
-		conf.IncludePaths.Add(RootPath + "/Middleware/vma");
+		// Phase 5.3 CORRECTION: the comment this replaced claimed "the PCH
+		// (Zenith.h) transitively pulls imgui + Flux/Vulkan/vma/Jolt headers".
+		// Zenith.h's own closure carries none of the four (grep: 17 project
+		// headers + ~202 glm headers). The Jolt path below IS still needed,
+		// but for the reason this comment already named correctly — the
+		// Physics .cpp themselves #include the Jolt headers directly — not
+		// because of any PCH reach. vma/imgui-docking/RenderBackends had no
+		// such justification (grep finds zero imgui/vulkan/vma references
+		// anywhere under Zenith/Physics) and are removed, verified by a green
+		// SentinelPhysics build in every RenderBackend x win64 plus a green
+		// `zenith build engine`.
 		conf.IncludePaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
-		conf.IncludePaths.Add(RootPath + "/Zenith/Vulkan");
-		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
 
 		conf.Output = Configuration.OutputType.Lib;
 
-		// L0 + L1 edges. ZenithECS publicly re-exports ZenithBase, so the base edge
-		// is technically transitive; stated explicitly to mirror ZenithProject.
-		conf.AddPublicDependency<ZenithBaseLibProject>(target);
+		// L0 + L1 edges. ZenithCore is MANDATORY for every engine lib (see
+		// Sharpmake_ZenithCore.cs — Zenith_LogFileSinkWrite must resolve for
+		// every TU). ZenithMaths is a direct dependency: the Physics core's
+		// own TUs call glm:: math through Zenith_Maths types (collision
+		// shapes, transforms). ZenithDataStream/ZenithFileAccess are NOT
+		// listed explicitly — Physics's own sources reference neither
+		// directly, and ZenithECS (below) already re-exports them publicly,
+		// so they still reach any final link that includes this lib.
+		// ZenithECS publicly re-exports ZenithCore/ZenithMaths/ZenithDataStream/
+		// ZenithFileAccess too, so the ZenithCore/ZenithMaths edges here are
+		// technically transitive; stated explicitly to mirror ZenithProject
+		// and to document Physics's actual direct usage.
+		conf.AddPublicDependency<ZenithCoreLibProject>(target);
+		conf.AddPublicDependency<ZenithMathsLibProject>(target);
 		conf.AddPublicDependency<ZenithECSLibProject>(target);
+
+		// Phase 4c: ZenithJolt — the Jolt backend now lives in its own leaf
+		// library (Sharpmake_ZenithJolt.cs) instead of compiling as part of
+		// this project. PUBLIC so every JPH:: symbol Physics's own TUs call
+		// out-of-line resolves at the consuming link (SentinelPhysics, every
+		// game exe) without those consumers needing their own Jolt edge.
+		conf.AddPublicDependency<ZenithJoltLibProject>(target);
 
 		// Tools define: ZenithPhysics carries no tools-only code, but the shared PCH
 		// (Zenith.h) branches on ZENITH_TOOLS, so the binary .pch must be built with

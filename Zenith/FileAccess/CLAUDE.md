@@ -1,5 +1,13 @@
 # File Access System
 
+**Library:** the top-level `.cpp` here (`Zenith_FileAccess.cpp`) compiles into
+`ZenithFileAccess` (`Build/Sharpmake_ZenithFileAccess.cs`) — a 1-TU leaf lib
+with no precompiled header (below the ≥4-TU threshold; see
+`Docs/BuildSystem.md` §4). Depends on `ZenithCore` only. The platform
+implementations in `Windows/FileAccess/` and `Android/FileAccess/` are
+SIBLING directories, not part of this lib — they stay compiled into the
+aggregate `Zenith` engine lib.
+
 ## Overview
 
 Platform-agnostic file I/O via namespace functions. Platform implementations in `Windows/FileAccess/` and `Android/FileAccess/`.

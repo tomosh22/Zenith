@@ -4,6 +4,8 @@
 
 Reusable entity templates that can be instantiated into scenes. Supports a variant system where derived prefabs inherit from a base and only store property overrides.
 
+**Build system:** compiles into its own leaf static library, `ZenithPrefab` (`Build/Sharpmake_ZenithPrefab.cs`, Phase 4c) — 1 translation unit, no PCH. Depends on `ZenithCore` (mandatory), `ZenithDataStream`, `ZenithMaths`, `ZenithECS`, and `ZenithProfiling`. Its `AssetHandling`/`EntityComponent` #includes resolve include-path-only — neither is its own library yet, both still compile into the aggregate `Zenith` project.
+
 ## Files
 
 - `Zenith_Prefab.h/cpp` - Prefab class and PropertyOverride struct

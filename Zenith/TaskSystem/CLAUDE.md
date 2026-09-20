@@ -1,5 +1,12 @@
 # Task System
 
+## Build (Sharpmake library)
+
+Compiled into `ZenithTaskSystem` (`Build/Sharpmake_ZenithTaskSystem.cs`) — 1
+TU, no PCH (below the ≥4-TU threshold; compiles `Zenith.h` textually).
+Depends on `ZenithCore` (mandatory) + `ZenithDebugVariables` (direct
+`#include` — worker/queue-depth debug variables).
+
 ## Files
 
 - `Zenith_TaskSystem.h` - Task and data-parallel task declarations

@@ -695,7 +695,7 @@ namespace
 		Zenith_EntityID uPlayerID = INVALID_ENTITY_ID;
 		// The StickFigure rig is BAKE output, not committed:
 		// GenerateStickFigureAssets writes it under ENGINE_ASSETS_DIR on every
-		// tools boot, before Flux comes up (Zenith/Core/Zenith_Engine.cpp:573).
+		// tools boot, before Flux comes up (Zenith/EngineComposition/Zenith_Engine.cpp:573).
 		std::string strModelPath;
 		// Did the animator actually bind to a skeleton instance? Only the event
 		// case needs this — Flux_AnimationController::Update early-outs without one
@@ -969,7 +969,7 @@ ZENITH_TEST(RenderTestInput, LayeredAnimatorEventsFirePerLayerNotPerDuplicate)
 		"rig not baked — cannot verify: the animator never bound a skeleton instance, so "
 		"the controller cannot be ticked and no event can fire (modelLoaded=%s "
 		"modelHasSkeleton=%s). '%s' is written by GenerateStickFigureAssets on every "
-		"ZENITH_TOOLS boot before Flux comes up (Zenith/Core/Zenith_Engine.cpp:573); "
+		"ZENITH_TOOLS boot before Flux comes up (Zenith/EngineComposition/Zenith_Engine.cpp:573); "
 		"reaching here without it is a broken bake, not a case to skip",
 		xFix.bModelLoaded ? "yes" : "no",
 		xFix.bModelHasSkeleton ? "yes" : "no",

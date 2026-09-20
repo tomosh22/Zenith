@@ -2,7 +2,7 @@
 // helpers introduced with it. Included into Zenith_EditorCommands.cpp under
 // ZENITH_TESTING; runs on every backend (nothing here needs a GPU).
 
-#include "UnitTests/Zenith_EditorTestFixture.h"
+#include "Editor/Zenith_EditorTestFixture.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorActions.h"
 #include "Editor/Zenith_EditorPrefs.h"

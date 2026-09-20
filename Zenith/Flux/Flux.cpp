@@ -814,7 +814,7 @@ bool Flux_RendererImpl::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 }
 
 // Unit tests for the backend-neutral swapchain policy. Hosted HERE rather than in
-// Zenith/Vulkan because that whole directory is compiled out of the Null_* config
+// Zenith/RenderBackends/Vulkan because that whole directory is compiled out of the Null_* config
 // -- the only one CI runs -- so tests living there could never gate anything.
 #include "Flux/Flux_SwapchainPolicy.Tests.inl"
 

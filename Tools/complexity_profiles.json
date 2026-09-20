@@ -21,7 +21,8 @@
             "dist"
         ],
         "exclude_globs": [
-            "**/*.Tests.inl"
+            "**/*.Tests.inl",
+            "**/Zenith_EditorTestFixture.*"
         ],
         "ignore_macros": [
             "ZENITH_ASSERT",
@@ -66,13 +67,8 @@
                 { "name": "FileAccess", "layer": 0, "globs": ["Zenith/FileAccess/**"] },
                 { "name": "Windows", "layer": 0, "globs": ["Zenith/Windows/**"] },
                 { "name": "Android", "layer": 0, "globs": ["Zenith/Android/**"] },
-                { "name": "Core", "layer": 0, "globs": ["Zenith/Core/**", "Zenith/*.h", "Zenith/*.cpp"] },
-                { "name": "EngineComposition", "layer": 5, "globs": [
-                    "Zenith/Core/Zenith_Engine.cpp", "Zenith/Core/Zenith_Core.cpp",
-                    "Zenith/Core/Zenith_Main.cpp", "Zenith/Core/Zenith_BenchECS.cpp",
-                    "Zenith/Core/Zenith_AutomatedTest.cpp",
-                    "Zenith/Core/Zenith_UserSettings.cpp"
-                ] },
+                { "name": "Core", "layer": 0, "globs": ["Zenith/Core/**"] },
+                { "name": "EngineComposition", "layer": 5, "globs": ["Zenith/EngineComposition/**"] },
                 { "name": "Profiling", "layer": 0, "globs": ["Zenith/Profiling/**"] },
                 { "name": "DebugVariables", "layer": 0, "globs": ["Zenith/DebugVariables/**"] },
                 { "name": "ZenithECS", "layer": 1, "globs": ["Zenith/ZenithECS/**"], "public_headers": ["Zenith/ZenithECS/*.h"], "leaf": true },
@@ -81,9 +77,9 @@
                 { "name": "Input", "layer": 1, "globs": ["Zenith/Input/**"] },
                 { "name": "SaveData", "layer": 1, "globs": ["Zenith/SaveData/**"] },
                 { "name": "Telemetry", "layer": 1, "globs": ["Zenith/Telemetry/**"] },
-                { "name": "Vulkan", "layer": 2, "globs": ["Zenith/Vulkan/**"] },
-                { "name": "D3D12", "layer": 2, "globs": ["Zenith/D3D12/**"] },
-                { "name": "Null", "layer": 2, "globs": ["Zenith/Null/**"] },
+                { "name": "Vulkan", "layer": 2, "globs": ["Zenith/RenderBackends/Vulkan/**"] },
+                { "name": "D3D12", "layer": 2, "globs": ["Zenith/RenderBackends/D3D12/**"] },
+                { "name": "Null", "layer": 2, "globs": ["Zenith/RenderBackends/Null/**"] },
                 { "name": "Flux", "layer": 2, "globs": ["Zenith/Flux/**"] },
                 { "name": "EntityComponent", "layer": 2, "globs": ["Zenith/EntityComponent/**"] },
                 { "name": "Physics", "layer": 2, "globs": ["Zenith/Physics/**"], "public_headers": ["Zenith/Physics/*.h"], "leaf": true },
@@ -92,7 +88,14 @@
                 { "name": "Prefab", "layer": 2, "globs": ["Zenith/Prefab/**"] },
                 { "name": "UI", "layer": 3, "globs": ["Zenith/UI/**"] },
                 { "name": "Editor", "layer": 4, "globs": ["Zenith/Editor/**"] },
-                { "name": "ZenithHub", "layer": 4, "globs": ["ZenithHub/**"] }
+                { "name": "ZenithHub", "layer": 4, "globs": ["ZenithHub/**"] },
+                { "name": "SentinelAI", "layer": 5, "globs": ["Tests/SentinelAI/**"] },
+                { "name": "SentinelECS", "layer": 5, "globs": ["Tests/SentinelECS/**"] },
+                { "name": "SentinelPhysics", "layer": 5, "globs": ["Tests/SentinelPhysics/**"] },
+                { "name": "SentinelCore", "layer": 5, "globs": ["Tests/SentinelCore/**"] },
+                { "name": "SentinelFlux", "layer": 5, "globs": ["Tests/SentinelFlux/**"] },
+                { "name": "SentinelScripting", "layer": 5, "globs": ["Tests/SentinelScripting/**"] },
+                { "name": "SentinelUI", "layer": 5, "globs": ["Tests/SentinelUI/**"] }
             ],
             "rules": {
                 "forbid_up_edges": true,
@@ -134,12 +137,12 @@
                 "_doc": "Engine-wide g_xEngine reach as a per-file COUNT ratchet (shrink-only). Distinct from the leaf_ratchet (which gates g_xEngine to ZERO inside the ECS leaf only). Baseline counts in Tools/engine_singleton_allowlist.txt; a file's count may never exceed its baseline, and a new in-scope file (no entry => 0) fails. The composition root that legitimately wires the global (EngineComposition TUs + the engine header) is excluded. This is the measurement spine for the Wave-4 de-globalisation effort.",
                 "glob": "Zenith/**",
                 "exclude_globs": [
-                    "Zenith/Core/Zenith_Engine.cpp",
+                    "Zenith/EngineComposition/Zenith_Engine.cpp",
                     "Zenith/Core/Zenith_Engine.h",
-                    "Zenith/Core/Zenith_Core.cpp",
-                    "Zenith/Core/Zenith_Main.cpp",
-                    "Zenith/Core/Zenith_BenchECS.cpp",
-                    "Zenith/Core/Zenith_AutomatedTest.cpp"
+                    "Zenith/EngineComposition/Zenith_Core.cpp",
+                    "Zenith/EngineComposition/Zenith_Main.cpp",
+                    "Zenith/EngineComposition/Zenith_BenchECS.cpp",
+                    "Zenith/EngineComposition/Zenith_AutomatedTest.cpp"
                 ],
                 "allowlist_file": "Tools/engine_singleton_allowlist.txt"
             }

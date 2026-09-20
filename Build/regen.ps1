@@ -148,6 +148,15 @@ foreach ($stale in @('zenith_win64.sln', 'zenith_agde.sln')) {
 # 7.5. Prune orphaned generated artifacts (deleted games / dropped android) ----
 Remove-ZenithOrphanGameArtifacts -RepoRoot $repoRoot -Descriptors $scan.Descriptors | Out-Null
 
+# 7.6. Prune orphaned ENGINE-LEVEL generated projects (e.g. a deleted
+# Sharpmake_Zenith<Name>.cs whose zenith<name>_{win64,agde}.vcxproj[.filters/.user]
+# would otherwise linger under Build/ and be mistaken for a live project by
+# Tools/check_project_membership.ps1) ------------------------------------------
+$prunedEngine = Remove-ZenithOrphanEngineArtifacts -RepoRoot $repoRoot
+if ($prunedEngine.Count -eq 0) {
+    Write-Host "[regen] No orphaned engine-level generated projects found." -ForegroundColor DarkGray
+}
+
 # 8. Print the generated .sln inventory ---------------------------------------
 Write-Host ""
 Write-Host "[regen] Generated solutions:" -ForegroundColor Green

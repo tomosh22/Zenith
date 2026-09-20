@@ -375,7 +375,7 @@ Heap-stable owning store of one `Flux_AnimationController` per entity (`Flux_Ani
 - `Destroy(Zenith_EntityID)` — **idempotent** (no-op when absent); returns whether it removed one.
 - `GetCount()` — live controller count (test/diagnostic).
 
-**Why heap-stable matters:** the component caches a `Flux_AnimationController*` for the hot path. Because the controller is keyed by the **stable** `EntityID` slot and never relocates, that pointer survives a component-pool relocation (swap-and-pop / `Grow`) and a cross-scene `MoveEntityToScene`. Pinned by the `Animator` suite in `Core/Zenith_UnitTests.Tests.inl`.
+**Why heap-stable matters:** the component caches a `Flux_AnimationController*` for the hot path. Because the controller is keyed by the **stable** `EntityID` slot and never relocates, that pointer survives a component-pool relocation (swap-and-pop / `Grow`) and a cross-scene `MoveEntityToScene`. Pinned by the `Animator` suite in `EngineComposition/Zenith_UnitTests.Tests.inl`.
 
 ★ **AND IT SAYS NOTHING ABOUT WHAT IS INSIDE THE CONTROLLER (WU-6.3 / D44).** This paragraph used to read "…and games cache `Flux_AnimationLayer*` / `Flux_AnimationStateMachine*` into the controller's sub-objects… those pointers survive", which does not follow and was never true. Heap stability is a property of the store's ALLOCATION, and two ordinary controller verbs delete every layer it owns: `BuildFromControllerDef` rebuilds the layer list wholesale from a def, and `ReadFromDataStream` deletes and re-reads it. A game holding the pointer its `AddLayer` returned is reading freed memory from the first `.zanimctrl` load or scene deserialize onward — silently, because a freed layer usually still looks like one. **Hold the layer ID and call `GetLayerById` per use** (below). A state machine reached THROUGH a layer has the same lifetime as that layer and the same rule; the controller's own top-level `m_pxStateMachine` is a separate object with the controller's lifetime, replaced only by `CreateStateMachine` / `BuildStateMachineFromDef` / a stream read.
 
@@ -570,7 +570,7 @@ States can contain nested state machines via `Flux_AnimationState::CreateSubStat
 `Flux_AnimationStateMachine::EvaluateState` called it with `(fDt, xOutPose, xSkeleton)` and
 nothing else — so no parameter value could ever reach a 1D or 2D blend space. The only
 thing that could move one was `SetParameter`, and **`SetParameter` had no caller outside
-the unit tests** (grep: `Core/Zenith_UnitTests.Tests.inl`, `Flux_BlendTree.Tests.inl`,
+the unit tests** (grep: `EngineComposition/Zenith_UnitTests.Tests.inl`, `Flux_BlendTree.Tests.inl`,
 `Flux_AnimationController.Tests.inl` — zero in `Games/**`). A blend space was
 unusable in a shipping game and the units all passed.
 
@@ -844,7 +844,7 @@ through `ResolveBaseLayer()` / `ResolveAimLayer()` at each use — the null guar
 call sites already needed for the pre-`OnStart` case cover a vanished layer too.
 Pinned by the four `WU6_3_*` units in `Flux_AnimationController.Tests.inl` and by
 `Animator.LayerIdAddressesTheSameLayerAcrossACrossSceneMove` in
-`Core/Zenith_UnitTests.Tests.inl`.
+`EngineComposition/Zenith_UnitTests.Tests.inl`.
 
 ### Hot reload — a changed def onto a LIVE controller (WU-6.4, D45)
 

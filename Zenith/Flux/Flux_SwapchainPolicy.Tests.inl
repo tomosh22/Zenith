@@ -2,7 +2,7 @@
 #include "Flux/Flux_SwapchainPolicy.h"
 
 // These run in EVERY config, including the Null_* headless one CI executes --
-// which is the whole reason the policy lives outside Zenith/Vulkan. The bugs
+// which is the whole reason the policy lives outside Zenith/RenderBackends/Vulkan. The bugs
 // they pin were all found on the Vulkan path, where no gate can reach them.
 
 // --- SelectPreTransform ------------------------------------------------------

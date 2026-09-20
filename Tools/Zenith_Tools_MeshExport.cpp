@@ -1,6 +1,15 @@
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
+// NOMINMAX is defined unconditionally for every configuration by
+// ConfigureCommonSettings (Build/Sharpmake_Common.cs), so the local guard
+// that used to sit here is redundant. It is also actively harmful now that
+// this file compiles under ZenithTools' own precompiled header (Phase 4g,
+// Build/Sharpmake_ZenithTools.cs — this project previously excluded all of
+// Tools/ from PCH use, via the aggregate's own PrecompSourceExcludeFolders,
+// precisely because of files like this one): a #define preceding the PCH
+// include is checked for consistency against the PCH's own recorded macro
+// state, and NOMINMAX already being set via /D triggers C4005 macro
+// redefinition -> C2220 under TreatWarningsAsErrors. Removed rather than
+// PCH-excluding the whole directory, since every other Tools/*.cpp already
+// begins cleanly with `#include "Zenith.h"` and benefits from the PCH.
 #include "Zenith.h"
 #include <cmath>   // std::isfinite / std::sqrt — the tangent-frame guards
 #include "Zenith_Tools_TextureExport.h"

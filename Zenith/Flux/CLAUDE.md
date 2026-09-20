@@ -1,5 +1,22 @@
 # Flux Rendering System
 
+> **Build ownership: `ZenithFlux` (Phase 4d).** This whole directory is one
+> Sharpmake static library (`Build/Sharpmake_ZenithFlux.cs`) — 84 translation
+> units + a definition-free PCH create TU. It declares
+> `Flux -> AssetHandling` as a project dependency (the heavier direction of a
+> genuine header cycle: 23 `Flux/**` files reach into `AssetHandling/**`
+> against 11 the other way). The reverse includes are NOT broken by moving
+> files — `Flux_AnimatorControllerDef.h` / `Flux_GrassTypeTable.h` look like
+> leaf data but pull in three more Flux headers each, so a partial move only
+> relocates the edge — they resolve at the final executable link instead,
+> which is fine for a static lib (compiling never needs to resolve an
+> external symbol). See `Zenith/AssetHandling/CLAUDE.md`'s own build-ownership
+> note for the AssetHandling side. `ZenithFlux` also owns `slang.lib`,
+> conditionally on `win64 && RenderBackend.Vulkan` — the Null and D3D12
+> configs link no slang lib at all, matching the one Flux TU
+> (`Flux/Slang/Flux_SlangCompiler.cpp`) that calls the slang API, itself
+> guarded by `#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)`.
+
 > **Changing how a frame LOOKS? Read [Docs/design/Photorealism.md](../../Docs/design/Photorealism.md) first.**
 > It is the calibration authority for the image: every exposure / bloom / cloud /
 > sun / shadow / fog constant that is not a physical quantity is recorded there
@@ -131,7 +148,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `Fog/` - Volumetric fog system (see Fog/CLAUDE.md)
   - Four techniques: Simple, Froxel, Raymarch, God Rays
   - Runtime technique selection via debug variables
-  - Requires 3D texture support (see Vulkan/CLAUDE.md)
+  - Requires 3D texture support (see ../RenderBackends/Vulkan/CLAUDE.md)
 - `Particles/` - Particle systems. **TWO simulation paths, one draw pass and one billboard pipeline pair.** A `Flux_ParticleEmitterConfig` picks with `m_bUseGPUCompute`. The **CPU** path simulates in `Zenith_ParticleEmitterComponent`, is gathered EC-side into `Zenith_ParticleEmitterRenderData`, and is uploaded into two per-blend-mode dynamic vertex buffers each frame. The **GPU** path (`Flux_ParticleGPUImpl`) is fully GPU-driven: emitters reserve a slice of one 4096-particle pool, spawns are ring-buffered into a ping-pong SSBO, `Flux_ParticleUpdate.slang` integrates them **one dispatch per emitter** (gravity/drag/turbulence/blend mode all ride the push constants, which is why the 96 B particle record carries no emitter back-reference), and each survivor is compacted into its blend partition of a vertex-usable instance buffer while atomically bumping that partition's `VkDrawIndexedIndirectCommand`. The draw records two `DrawIndexedIndirect` — nothing is ever read back to size it, and the partition base is applied by the vertex-stream **bind offset**, not `firstInstance` (which would need `drawIndirectFirstInstance`). Both paths draw through the same `Flux_ParticlesImpl` pass, so an emitter's look does not depend on which one it uses. In-tree GPU consumer: Combat's arena candles.
 - `Skybox/` - Sky rendering
 - `Text/` - Text rendering

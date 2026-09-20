@@ -611,7 +611,7 @@ Break any of these and the failure is quiet:
 
 Tests: `Zenith_SkinDeform.Tests.inl`, `Zenith_Tools_HumanSkinBind.Tests.inl`,
 `Zenith_Tools_HumanModelExport.Tests.inl`,
-`Zenith_Tools_TestAssetExport.Tests.inl`, `Zenith/Core/Zenith_UnitTests.Tests.inl`
+`Zenith_Tools_TestAssetExport.Tests.inl`, `Zenith/EngineComposition/Zenith_UnitTests.Tests.inl`
 (`StickFigureMeshJointAlignment`), `Games/Zenithmon/Tests/ZM_Tests_HumanGen.cpp`.
 
 Pinned unit baselines live in `Tools/unit_baselines.json` and nowhere else.

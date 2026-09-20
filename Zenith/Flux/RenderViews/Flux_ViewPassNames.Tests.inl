@@ -299,7 +299,7 @@ ZENITH_TEST(ViewPassNames, EveryHistoricalPreviewNameReproduced)
 // ----------------------------------------------------------------------------
 // 9. The bases this pool is FOR are the ones the live graph actually declares.
 //    The unit suite runs after Flux LateInitialise -> SetupRenderGraph
-//    (Core/Zenith_Engine.cpp:811, then RunAllTests at :916), so the built graph
+//    (EngineComposition/Zenith_Engine.cpp:811, then RunAllTests at :916), so the built graph
 //    is readable here. This is the only test that reaches outside the pool: a
 //    table of bases that no longer matches the engine would make tests 1-8 a
 //    self-consistent fiction. Asserts nothing when the graph is absent — a

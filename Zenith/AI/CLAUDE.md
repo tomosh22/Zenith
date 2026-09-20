@@ -33,8 +33,10 @@ AI/
                                 #   body, nav agent, parallel-for, TOOLS debug-draw)
 ```
 
-> **`Zenith/AI/` is the strict-leaf `ZenithAI` static library** (over
-> ZenithBase + ZenithECS + ZenithPhysics). It names no concrete component, no Flux
+> **`Zenith/AI/` is the strict-leaf `ZenithAI` static library** (over the four
+> L0 leaves — `ZenithCore`, `ZenithMaths`, `ZenithDataStream`,
+> `ZenithFileAccess`, which replaced the old `ZenithBase` in Phase 4a — plus
+> `ZenithECS` + `ZenithPhysics`). It names no concrete component, no Flux
 > type, no `g_xEngine`, and no `TaskSystem` — it reaches the engine only through the
 > `Zenith_AIWorldHooks` function-pointer seam (wired engine-side by
 > `EntityComponent/Zenith_AIWorldHooksInstall.cpp`). The concrete

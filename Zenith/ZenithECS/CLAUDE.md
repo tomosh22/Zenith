@@ -2,11 +2,16 @@
 
 `ZenithECS` is the **L1 leaf static library** of the engine: the generic
 entity-component machinery (entities, scenes, queries, events, the component-meta
-registry). It depends **only on `ZenithBase` (L0)** and has **no** link/symbol
-dependency on `g_xEngine`, Flux, Physics/Jolt, UI, Editor, AssetHandling, AI, or
-any concrete component. That boundary is enforced three ways: the Sharpmake
-source partition (`Build/Sharpmake_ZenithECS.cs`), the `SentinelECS` link-proof
-exe (links only `zenithecs.lib + zenithbase.lib`), and the ECS-leaf ratchet
+registry). It depends **only on the four L0 leaves** — `ZenithCore`,
+`ZenithMaths`, `ZenithDataStream`, `ZenithFileAccess` (Phase 4a dissolved the
+old single `ZenithBase` into these four; see `Docs/BuildSystem.md` §4) — and
+has **no** link/symbol dependency on `g_xEngine`, Flux, Physics/Jolt, UI,
+Editor, AssetHandling, AI, or any concrete component. That boundary is
+enforced three ways: the Sharpmake source partition
+(`Build/Sharpmake_ZenithECS.cs`), the `SentinelECS` link-proof exe (links only
+`zenithecs.lib + zenithcore.lib`, with `zenithmaths.lib`/
+`zenithdatastream.lib`/`zenithfileaccess.lib` re-exported transitively), and
+the ECS-leaf ratchet
 enforced by `Tools/analyze_code_complexity.py` (the `engine-ci`
 `architecture.leaf_ratchet` + the `g_xEngine` lint, via the `layering-gate` CI
 check — this subsumes the retired `Tools/layering_gate.ps1`). The leaf allowlist

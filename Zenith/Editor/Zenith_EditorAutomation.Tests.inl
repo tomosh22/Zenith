@@ -1,7 +1,7 @@
 #include "Core/Zenith_Engine.h"
 
 #ifdef ZENITH_TOOLS
-#include "UnitTests/Zenith_EditorTestFixture.h"
+#include "Editor/Zenith_EditorTestFixture.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
 #include "ZenithECS/Zenith_Scene.h"

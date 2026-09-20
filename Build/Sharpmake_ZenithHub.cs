@@ -5,6 +5,22 @@ using System.IO;
 // ZenithHub project -- Unity-Hub-style launcher (ImGui + Win32 + D3D11, no Vulkan
 // renderer dependency). Structural clone of TilePuzzleRegistryViewer. Windows-only.
 // Engine-sln membership only (added by Sharpmake_Solutions.cs on Vulkan configs).
+//
+// Phase 4d — DUPLICATE-OWNED FIX: this project used to glob
+// Middleware/imgui-docking itself (the core TUs) on top of AddPublicDependency<ZenithProject>,
+// which already linked zenith.lib carrying its own copy of the SAME imgui core
+// TUs — check_project_membership.ps1 reported this as genuine same-executable
+// duplication (10 (source, exe) pairs across ZenithHub + TilePuzzleRegistryViewer,
+// x4 configs = the 40 DUPLICATE findings this refactor removes). The five core
+// TUs now belong to ZenithImGui (Sharpmake_ZenithImGui.cs) alone; this project's
+// own imgui-docking (non-backends) source root is REMOVED. imgui_impl_win32.cpp
+// is ALSO removed from this project's own backends glob for the same reason —
+// it is owned by ZenithWindows (Sharpmake_ZenithWindows.cs), reached transitively
+// via AddPublicDependency<ZenithProject> (ZenithEngineLibs.All adds ZenithWindows
+// for every win64 target, and this project only ever builds win64). Only
+// imgui_impl_dx11.cpp remains this project's OWN backend TU — nobody else
+// compiles a DX11 backend. The imgui-docking *include* paths are kept (both
+// core headers and backends/ headers still resolve from here, unaffected).
 [Sharpmake.Generate]
 public class ZenithHubProject : ZenithBaseProject
 {
@@ -13,11 +29,12 @@ public class ZenithHubProject : ZenithBaseProject
 		Name = "ZenithHub";
 		SourceRootPath = RootPath + "/ZenithHub";
 
-		// ImGui core + Win32/DX11 backends.
-		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/imgui-docking");
+		// DX11 backend only — win32 now comes from ZenithWindows and the core
+		// TUs from ZenithImGui, both transitively via AddPublicDependency<ZenithProject>
+		// below (see the file header comment).
 		AdditionalSourceRootPaths.Add(RootPath + "/Middleware/imgui-docking/backends");
 
-		// Keep only the Win32 + DX11 backends.
+		// Keep only the DX11 backend.
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_allegro.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_android.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_dx9.*");
@@ -31,9 +48,7 @@ public class ZenithHubProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_sdl.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_vulkan.*");
 		SourceFilesExcludeRegex.Add(@".*imgui_impl_wgpu.*");
-		SourceFilesExcludeRegex.Add(@".*imgui_demo\.cpp");
-		SourceFilesExcludeRegex.Add(@".*imgui-docking\\examples\\.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-docking\\misc\\.*");
+		SourceFilesExcludeRegex.Add(@".*imgui_impl_win32.*");
 
 		// Windows-only tool (Vulkan configs; matches the engine it links).
 		AddTargets(new ZenithTarget
@@ -106,5 +121,12 @@ public class ZenithHubProject : ZenithBaseProject
 		}
 
 		conf.AddPublicDependency<ZenithProject>(target);
+
+		// Explicit edge for legibility, even though ZenithProject already
+		// re-exports it (ZenithEngineLibs.All -> ZenithImGuiLibProject) — see
+		// the file header comment's DUPLICATE-OWNED FIX paragraph. Supplies
+		// the five core imgui TUs this project's own DX11 backend TU links
+		// against (ImGui::* calls).
+		conf.AddPublicDependency<ZenithImGuiLibProject>(target);
 	}
 }

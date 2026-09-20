@@ -12,9 +12,9 @@ The engine boots in a fixed sequence. Knowing this order is enough to debug 80% 
 
 ```
 main()                                   Zenith/Windows/Zenith_Windows_Main.cpp
-  └─ Zenith_Core::Zenith_Main()          Zenith/Core/Zenith_Main.cpp:231
+  └─ Zenith_Core::Zenith_Main()          Zenith/EngineComposition/Zenith_Main.cpp:231
        ├─ Zenith_Window::Initialise()    GLFW window
-       ├─ Zenith_Init()                  Zenith/Core/Zenith_Main.cpp:59
+       ├─ Zenith_Init()                  Zenith/EngineComposition/Zenith_Main.cpp:59
        │     ├─ MemoryManagement
        │     ├─ Multithreading           main thread registers itself
        │     ├─ Profiling
@@ -59,7 +59,7 @@ Five subsystems, easiest to hardest. Read each subsystem's CLAUDE.md first, then
 After those five, you'll be ready for the harder ones in any order:
 [ECS](../../Zenith/EntityComponent/CLAUDE.md),
 [Flux renderer](../../Zenith/Flux/CLAUDE.md),
-[Vulkan backend](../../Zenith/Vulkan/CLAUDE.md),
+[Vulkan backend](../../Zenith/RenderBackends/Vulkan/CLAUDE.md),
 [AI](../../Zenith/AI/CLAUDE.md),
 [Editor](../../Zenith/Editor/CLAUDE.md),
 [Tools / the asset bake](../../Tools/CLAUDE.md).
@@ -77,7 +77,7 @@ artist's `.glb` becomes a skinned character on the engine's one shared rig.
 | Core / main loop | [Core/CLAUDE.md](../../Zenith/Core/CLAUDE.md) | `Zenith/Core/Zenith_Core.h`, `Zenith.h` |
 | ECS | [EntityComponent/CLAUDE.md](../../Zenith/EntityComponent/CLAUDE.md) | `Zenith_SceneManager.h`, `Zenith_Entity.h`, `Zenith_Scene.h` |
 | Renderer | [Flux/CLAUDE.md](../../Zenith/Flux/CLAUDE.md) | `Flux.h`, `Flux_RenderGraph.h`, `Flux_ShaderBinder.h` |
-| Vulkan backend | [Vulkan/CLAUDE.md](../../Zenith/Vulkan/CLAUDE.md) | `Zenith_Vulkan.h`, `Zenith_PlatformGraphics_Include.h` |
+| Vulkan backend | [Vulkan/CLAUDE.md](../../Zenith/RenderBackends/Vulkan/CLAUDE.md) | `Zenith_Vulkan.h`, `Zenith_PlatformGraphics_Include.h` |
 | Physics | [Physics/CLAUDE.md](../../Zenith/Physics/CLAUDE.md) | `Zenith_Physics.h`, `Zenith_ColliderComponent.h` |
 | Tasks | [TaskSystem/CLAUDE.md](../../Zenith/TaskSystem/CLAUDE.md) | `Zenith_TaskSystem.h` |
 | AI | [AI/CLAUDE.md](../../Zenith/AI/CLAUDE.md) | `Zenith_NavMesh.h`, `Zenith_AIAgentComponent.h`, `Zenith_PerceptionSystem.h` |
@@ -157,7 +157,7 @@ Things that have surprised people. If you hit one, this section saves you a debu
 | Render graph order | Pass execution order is the *topological sort* of declared reads/writes, NOT the order of `AddPass()` calls. To inspect at runtime: trigger the `Flux/PrintPassOrder` debug button. | [Flux/CLAUDE.md](../../Zenith/Flux/CLAUDE.md) |
 | Async asset loaders | Currently unimplemented for all asset types — calls log a warning and return `nullptr`. Use the synchronous `registry.Get<T>(path)` path. | [AssetHandling/CLAUDE.md](../../Zenith/AssetHandling/CLAUDE.md) |
 | NavMesh winding order | Polygon winding direction is critical — wrong winding produces inverted normals and broken pathfinding. | `Zenith/AI/Navigation/Zenith_NavMeshGenerator.cpp` (per-phase comments) |
-| Vulkan platform names | `Flux_CommandBuffer`, `Flux_PlatformAPI` etc. are `using` aliases for `Zenith_Vulkan_*` types in [Zenith_PlatformGraphics_Include.h](../../Zenith/Vulkan/Zenith_PlatformGraphics_Include.h). IDE jump-to-definition leads to the alias, not the implementation. |
+| Vulkan platform names | `Flux_CommandBuffer`, `Flux_PlatformAPI` etc. are `using` aliases for `Zenith_Vulkan_*` types in [Zenith_PlatformGraphics_Include.h](../../Zenith/RenderBackends/Vulkan/Zenith_PlatformGraphics_Include.h). IDE jump-to-definition leads to the alias, not the implementation. |
 | Prefab variants | A variant prefab inherits its base's components and applies its own property overrides on top. Cycles (A → B → A) are detected at variant creation. Nested property paths like `"Position.x"` are not yet supported (use whole-field overrides). | [Prefab/CLAUDE.md](../../Zenith/Prefab/CLAUDE.md) |
 | Build configurations | Both `*_True` (editor/tools) and `*_False` (runtime-only) configs are green and CI-gated. First build+run of a NEW game must be `*_True` to bake its boot-authored scene; thereafter `_False` loads it. Full reference: [Docs/BuildSystem.md](../BuildSystem.md). | `Build/Sharpmake_*.cs` |
 
@@ -167,7 +167,7 @@ Things that have surprised people. If you hit one, this section saves you a debu
 
 Common "huh?" moments and how to read them.
 
-- **`Flux_CommandBuffer` has no class definition you can jump to.** It's a `using` alias declared in `Zenith/Vulkan/Zenith_PlatformGraphics_Include.h:22-33`, mapping to `Zenith_Vulkan_CommandBuffer`. Search by the underlying name.
+- **`Flux_CommandBuffer` has no class definition you can jump to.** It's a `using` alias declared in `Zenith/RenderBackends/Vulkan/Zenith_PlatformGraphics_Include.h:22-33`, mapping to `Zenith_Vulkan_CommandBuffer`. Search by the underlying name.
 - **`Zenith_SceneData` looks like the wrong place for ECS ownership** — it's the actual storage, exposed only to `Zenith_SceneManager`. Game code uses `Zenith_Scene` and `Zenith_Entity` handles.
 - **`Zenith_SceneManager.h` is split across three sibling headers.** The top file (`Zenith_SceneManager.h`) holds only the public game-facing API. Engine internals live in `Zenith_SceneManagerInternal.h`; nested RAII guards in `Zenith_SceneManagerGuards.h`. Both are included from inside the class body, so call sites resolve unchanged. Read the public header first; reach for the internal one only when working on the engine itself.
 - **There is no `std::function` anywhere.** Engine convention forbids it for performance. Callbacks are raw function pointers (e.g. `Zenith_TaskFunction`, `UIButtonCallback`).

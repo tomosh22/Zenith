@@ -4,6 +4,14 @@
 
 Hierarchical debug variable tree for runtime inspection and modification of engine parameters. Tools-only (`#ifdef ZENITH_TOOLS`). Uses ImGui for rendering.
 
+## Build (Sharpmake library)
+
+Compiled into `ZenithDebugVariables` (`Build/Sharpmake_ZenithDebugVariables.cs`)
+— 1 TU, no PCH (below the ≥4-TU threshold; compiles `Zenith.h` textually).
+Depends only on `ZenithCore` (mandatory). Consumed directly by
+`ZenithProfiling` and `ZenithTaskSystem`, both of which expose their own
+runtime knobs as debug variables.
+
 ## Files
 
 - `Zenith_DebugVariables.h` - Registration API and tree structure

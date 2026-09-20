@@ -12,6 +12,19 @@
 
 Integration with Jolt Physics library for rigid body dynamics. Features fixed 60 Hz timestep, multi-threaded simulation, and deferred collision event processing for thread safety.
 
+**Build system:** this directory compiles into its own leaf static library,
+`ZenithPhysics` (`Build/Sharpmake_ZenithPhysics.cs`) — 3 Physics `.cpp` + its
+own PCH create TU. **`ZenithPhysics` does NOT own the vendored Jolt sources —
+`Middleware/JoltPhysics-5.4.0` is its own leaf library, `ZenithJolt`
+(`Build/Sharpmake_ZenithJolt.cs`, Phase 4c)**, which `ZenithPhysics` links via
+a public dependency (so every `JPH::` symbol Physics calls out-of-line
+resolves transitively at any consuming link). Before Phase 4c, Jolt compiled
+AS PART OF this project via `AdditionalSourceRootPaths`; that ownership moved
+out because the same "one library per directory" rule that carved every other
+subsystem out of the monolithic engine lib applies just as well to a vendored
+tree living in its own directory. `ZenithJolt` carries no PCH and no
+Sharpmake dependency of its own — Jolt's sources never `#include "Zenith.h"`.
+
 ## Jolt Integration
 
 Uses Jolt Physics types internally:

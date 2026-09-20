@@ -92,8 +92,23 @@ Command notes beyond the obvious:
 Sharpmake run over the `Build/Sharpmake_*.cs` glob → AGDE vcxproj fixup →
 obsolete-monolith deletion → **orphan prune** (`Remove-ZenithOrphanGameArtifacts`:
 generated slns/vcxprojs of game dirs with no descriptor, and stale agde
-artifacts of `android:false` games — never sources, never directories) → sln
-inventory print. Details of validation/codegen/manifest-guard:
+artifacts of `android:false` games — never sources, never directories) →
+**engine-level orphan prune** (`Remove-ZenithOrphanEngineArtifacts`: a
+`Build/*.vcxproj` + its `.filters`/`.user` that the run just completed did NOT
+generate — e.g. a deleted `Sharpmake_Zenith<Name>.cs` whose
+`zenith<name>_{win64,agde}.vcxproj*` would otherwise linger under `Build/`.
+Scope is `Build/*.vcxproj*` only — never `Games/**`, never the hand-written
+`Sharpmake_*.cs` sources. "Known" is every `Name = "..."` project/solution-name
+assignment parsed out of the hand-written `Build/Sharpmake_*.cs` files
+(excluding the generated `Sharpmake_GameInstances.generated.cs`, whose
+game project/solution classes live under `Games/<Name>/`, never `Build/`); a
+`Build/*.vcxproj` whose basename doesn't match `<known-name>_<win64|agde>` was
+not emitted this run and is deleted. This closed a real gap: when `ZenithBase`
+was dissolved (Phase 4a), stale `Build/zenithbase_{win64,agde}.vcxproj[.filters/.user]`
+and `Build/obj/ZenithBase/` lingered after a regen and had to be deleted by
+hand — `Tools/check_project_membership.ps1` globs every `.vcxproj` on disk, so
+a stale one is silently parsed as if it were still real) → sln inventory
+print. Details of validation/codegen/manifest-guard:
 [GameProjects.md](GameProjects.md).
 
 **Regenerate-first policy: nothing Sharpmake emits is git-tracked** — every
@@ -155,7 +170,7 @@ is exactly what makes hardcoding either spelling silently wrong — see
 `ZenithAndroidAbi.ConfigToken` vs `.DirName`.
 
 > **Headless is a build config, not a flag.** There is no `--headless` engine
-> flag. A `Null_*` config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/Null`
+> flag. A `Null_*` config defines `ZENITH_NULL_RENDERER`, compiles `Zenith/RenderBackends/Null`
 > in place of the Vulkan backend, and creates the window hidden. Crucially every
 > render path still RUNS (pass callbacks, buffer uploads, the editor ImGui frame)
 > against no-op backend calls, so a headless run exercises the same code as a
@@ -176,25 +191,681 @@ Layout:
 | Game exe | `Games/<Name>/Build/output/win64/<lowercase config>/<name>.exe` |
 | Game intermediates | `Games/<Name>/Build/obj/…` |
 | Engine libs | `Build/output/win64/<lowercase config>/*.lib` |
-| Engine/leaf intermediates | `Build/obj/<Lib>/…` (distinct per lib — PCH collision guard) |
+| Engine/leaf intermediates | `Build/obj/<Lib>/…` (distinct per lib — PCH collision guard) — one subdir per project: `ZenithCore`, `ZenithMaths`, `ZenithDataStream`, `ZenithFileAccess`, `ZenithDebugVariables`, `ZenithProfiling`, `ZenithTaskSystem`, `ZenithInput`, `ZenithWindows`, `ZenithAndroid`, `ZenithUnitTests`, `ZenithECS`, `ZenithSaveData`, `ZenithTelemetry`, `ZenithPrefab`, `ZenithScripting`, `ZenithJolt`, `ZenithPhysics`, `ZenithAI`, `ZenithImGui`, `ZenithAssetHandling`, `ZenithFlux`, `ZenithRenderBackendVulkan`, `ZenithRenderBackendD3D12`, `ZenithRenderBackendNull`, `ZenithUI`, `ZenithEntityComponent`, `ZenithEditor`, `ZenithTools` |
 
-**Library structure:** `ZenithBase` (L0: maths/collections/streams/file/memory/
-threading) ← `ZenithECS` (L1) ← `ZenithPhysics` ← `ZenithAI` ← `Zenith`
-(aggregate: Flux, EntityComponent, Editor, everything else). Each lib compiles
-its own `Zenith.pch` (a binary PCH cannot be shared across projects with
+**Library structure (Phase 4a — `ZenithBase` dissolved):** the old `ZenithBase`
+was ONE bottom-leaf library spanning five directories (`Maths/`,
+`Collections/`, `DataStream/`, `FileAccess/`, and a subtractive-regex slice of
+`Core/`), held together only by a negative-lookahead regex over `Core`'s
+top-level `.cpp` files — additive-glob-minus-subtractive-regex, global
+membership that let a new file under an already-extracted directory silently
+compile into two libraries. It is now FOUR single-directory leaf libraries,
+each globbed additively by exactly one project:
+
+- `ZenithCore` (`Zenith/Core` WHOLE — every top-level `.cpp` and every
+  subdirectory: `Callstack/`, `Memory/`, `Multithreading/`, no exclusion regex
+  — plus `Zenith/Collections`' headers, which have zero `.cpp` of their own
+  and join purely for IDE-browsing ownership). ~15 TUs; compiles the shared
+  `Zenith.pch` (`Zenith.cpp` is the Create TU).
+- `ZenithMaths` (`Zenith/Maths`, 1 TU), `ZenithDataStream`
+  (`Zenith/DataStream`, 2 TUs), `ZenithFileAccess` (top-level
+  `Zenith/FileAccess` only — NOT `Zenith/Windows/FileAccess`, the platform
+  impl, which stays in the aggregate — 1 TU). None of these three carries a
+  PCH (see the rule below); each compiles `Zenith.h` textually.
+
+**Library structure (Phase 4b — seven more leaves):** `ZenithDebugVariables`
+(`Zenith/DebugVariables`, 1 TU), `ZenithProfiling` (`Zenith/Profiling`, 1 TU;
+depends on `ZenithDebugVariables` — the profiler exposes debug-variable
+toggles), `ZenithTaskSystem` (`Zenith/TaskSystem`, 1 TU; also depends on
+`ZenithDebugVariables`), `ZenithInput` (`Zenith/Input`, 4 TUs; gets its own
+PCH — see the ≥4-TU rule below), `ZenithWindows` (`Zenith/Windows`'s 9 TUs +
+the `imgui_impl_glfw.cpp`/`imgui_impl_win32.cpp` ImGui backend pair it now
+OWNS = 11 TUs; PCH; **win64 ONLY**; depends on `ZenithInput` + `ZenithProfiling`;
+OWNS glfw — see below), `ZenithAndroid` (`Zenith/Android`'s 8 `.cpp` +
+`NativeGlue/android_native_app_glue.c` = 9 TUs; PCH; **agde ONLY**; depends on
+`ZenithFileAccess` + `ZenithProfiling` + `ZenithInput`), `ZenithUnitTests`
+(`Zenith/UnitTests`, 1 TU — `Zenith_AssertCapture.cpp` — after
+`Zenith_EditorTestFixture.{h,cpp}` moved to `Zenith/Editor/`, the only
+directory that consumes it, leaving this a clean leaf with no
+Editor/EntityComponent/Input header edge).
+
+`ZenithWindows` and `ZenithAndroid` are the first two entries in
+`Build/Sharpmake_EngineLibs.cs`'s table to restrict their own target set (no
+`agde`/`win64` `AddTargets` call respectively) — every call site that adds a
+project unconditionally (`conf.AddProject`/`conf.AddPublicDependency`) throws
+if the target being configured is not one the callee itself declared, so both
+are wired in with an explicit `Func<ZenithTarget,bool>` predicate
+(`t => t.Platform == Platform.win64` / `.agde`) instead of a hand-written `if`
+at each of the three consumer call sites.
+
+**`ZenithWindows` owns GLFW.** GLFW is called directly from FOUR directories:
+`Zenith/Windows/` (now including the two ImGui backend TUs it owns),
+`Zenith/Input/`, the Vulkan render backend (still aggregate-owned), and
+formerly `Zenith_Core.cpp` (moved to `Zenith/EngineComposition/` earlier,
+leaving `ZenithCore` itself clean of GLFW calls). Only `ZenithWindows` calls
+`AddGlfwLibs`. This links correctly at every game exe (the aggregate every
+game links always carries `ZenithWindows` transitively), but leaves
+`ZenithInput` and the Vulkan backend as libraries with undeclared win64 GLFW
+symbols of their own — accepted, not a bug, this phase. A future `ZenithInput`
+or Vulkan-backend Sentinel would need `ZenithWindows` added to its own link
+set to prove either leaf standalone.
+
+**The two ImGui platform-backend TUs**
+(`Middleware/imgui-docking/backends/imgui_impl_glfw.cpp` /
+`imgui_impl_win32.cpp`) are now members of `ZenithWindows` instead of being
+globbed by the aggregate and per-configuration build-excluded on `agde`. Two of
+the aggregate's four `agde`-only ImGui build-excludes became dead as a result
+(glfw/win32 — deleted) while two stayed live (`imgui_impl_android`, which
+compiles nowhere at all today, and `imgui_impl_vulkan`, still owned by the
+aggregate/Vulkan-backend).
+
+**Library structure (Phase 4c — five more, including the Jolt split):**
+`ZenithSaveData` (`Zenith/SaveData`, 1 TU; depends on `ZenithDataStream` +
+`ZenithFileAccess`), `ZenithTelemetry` (`Zenith/Telemetry`, 1 TU; depends on
+`ZenithDataStream` + `ZenithMaths` + `ZenithECS` — a genuine extracted-library
+edge, not include-path-only: it records entity IDs), `ZenithPrefab`
+(`Zenith/Prefab`, 1 TU; depends on `ZenithDataStream` + `ZenithMaths` +
+`ZenithECS` + `ZenithProfiling`; its `AssetHandling`/`EntityComponent`
+`#include`s stay include-path-only — neither is its own library yet, both
+still compile into the aggregate), `ZenithScripting` (`Zenith/Scripting`'s 5
+TUs + its own PCH create TU = 6; PCH; depends on `ZenithDataStream` +
+`ZenithMaths` + `ZenithECS`). None of the first three carries a PCH (below the
+≥4-TU threshold); `ZenithScripting` clears it and CREATEs its own from
+`Internal/Zenith_ScriptingPCH.cpp` (definition-free, same AGDE/clang rationale
+as `ZenithInput`/`ZenithWindows`/`ZenithAndroid`).
+
+**The Jolt split.** The vendored `Middleware/JoltPhysics-5.4.0` tree —
+previously compiled AS PART OF `ZenithPhysicsLibProject` via
+`AdditionalSourceRootPaths` — is now its own leaf library, `ZenithJolt`
+(133 TUs in scope, the same nine `Build`/`Docs`/`UnitTests`/`Samples`/
+`TestFramework`/`PerformanceTest`/`JoltViewer`/`HelloWorld`/`cmake`
+vendored-tree membership excludes moved verbatim from `ZenithPhysics`).
+`ZenithJolt` carries **no PCH at all** (not a TU-count judgement call — Jolt's
+sources never `#include "Zenith.h"`, so there is no shared master header for
+them to share) and **no Sharpmake dependency of its own**: the mandatory
+`ZenithCore` edge every other library in this table carries is justified by
+every PCH-consuming TU referencing the inline `Zenith_LogImpl` →
+`Zenith_LogFileSinkWrite`, and that justification does not hold for a library
+whose TUs never see the PCH. `ZenithPhysics` shrinks to its own 4 TUs (3
+Physics `.cpp` + its PCH create TU — exactly at the ≥4-TU PCH threshold) and
+gains a public dependency on `ZenithJolt`, so every `JPH::` symbol it calls
+out-of-line still resolves transitively at any consuming link.
+`SentinelPhysics` — the leaf-purity proof exe for `ZenithPhysics` — gained a
+fourth `AddPublicDependency<ZenithJoltLibProject>` alongside its existing
+three, and now proves a *stricter* claim than before the split: previously a
+missing engine edge was the only way this link could fail; now a missing
+`ZenithJolt` edge would fail it too, in exactly the same "declared leaf set,
+nothing hidden" way.
+
+**Library structure (Phase 4d — three more, including the Flux/AssetHandling
+split and the imgui-core split):** `ZenithImGui` (`Middleware/imgui-docking`'s
+5 top-level TUs — `imgui.cpp`/`imgui_demo.cpp`/`imgui_draw.cpp`/
+`imgui_tables.cpp`/`imgui_widgets.cpp` — confirmed against what the aggregate
+compiled before this split; win64 + agde). It is the SECOND library in this
+table (after `ZenithJolt`) to carry no PCH and no Sharpmake dependency at
+all — imgui's core TUs never `#include "Zenith.h"`, so there is no shared
+master header and no honest `ZenithCore` edge to declare, exactly `ZenithJolt`'s
+reasoning. None of `backends/` belongs to it: `imgui_impl_glfw.cpp` /
+`imgui_impl_win32.cpp` stay `ZenithWindows`'s (Phase 4b), `imgui_impl_vulkan.cpp`
+stays aggregate-owned pending the not-yet-extracted Vulkan-backend library, and
+`imgui_impl_android.cpp` is compiled by nothing, as before.
+
+`ZenithAssetHandling` (`Zenith/AssetHandling`, 21 TUs; PCH, Create TU
+`Internal/Zenith_AssetHandlingPCH.cpp`; depends on `ZenithMaths` +
+`ZenithDataStream` + `ZenithScripting`) and `ZenithFlux`
+(`Zenith/Flux`, 84 TUs; PCH, Create TU `Internal/Zenith_FluxPCH.cpp`; depends
+on `ZenithMaths` + `ZenithDataStream` + `ZenithFileAccess` + `ZenithProfiling`
++ `ZenithDebugVariables` + `ZenithTaskSystem` + `ZenithECS` +
+`ZenithAssetHandling`) split a GENUINE header cycle between the two — 23
+`Flux/**` files `#include` an `AssetHandling/**` header against 11 the other
+way. The cycle is declared, not broken: `ZenithFlux` depends on
+`ZenithAssetHandling` (the heavier direction); `ZenithAssetHandling` does
+**not** depend back, so the two reverse includes resolve only via the plain
+`/Zenith` include path every leaf carries, and any out-of-line `Flux_::`
+symbol they call resolves at the final exe link (a static lib never resolves
+an external symbol at its own build step). Moving files to break the cycle was
+tried on paper and rejected: `Flux_AnimatorControllerDef.h` /
+`Flux_GrassTypeTable.h` look like leaf data `AssetHandling` reaches into, but
+each pulls in two-to-three more `Flux/**` headers, so relocating them alone
+either drags the rest across or leaves the edge in place either way. The real
+fix — splitting `AssetHandling` into a handle/registry half and a
+GPU-resource half — is a design change for a future ticket. `ZenithFlux`
+additionally owns `slang.lib`, conditionally on `win64 && RenderBackend.Vulkan`
+only (the one Flux TU that calls the slang API,
+`Flux/Slang/Flux_SlangCompiler.cpp`, is itself guarded by
+`#if defined(ZENITH_WINDOWS) && defined(ZENITH_VULKAN)`; the `Null`/`D3D12`
+configs link no slang lib at all, matching `ConfigureCommonLibraryPaths`'s
+historical behaviour). Both `ZenithAssetHandling` and `ZenithFlux` needed
+`SHADER_SOURCE_ROOT` defined directly (not just reachable through the PCH) —
+several TUs in each (`Zenith_TextureAsset.cpp` via `Flux_GraphicsImpl.h` →
+the active backend's Pipeline header; `Flux.cpp`/`Flux_ShaderHotReload.cpp`/
+`Flux_SlangCompiler.cpp` directly) reference it unguarded, the same defect
+class `ZenithDebugVariables` (Phase 4b) already hit; `ZenithFlux` also needed
+`ENGINE_ASSETS_DIR` (`Flux_Particles.cpp`).
+
+**Library structure (Phase 4e — the render-backend split, this phase's
+headline):** `Zenith/RenderBackends/` becomes THREE target-restricted leaf
+libraries instead of one library that globs all three backends and
+build-excludes two — that would reintroduce exactly the per-configuration
+subtraction mechanism this refactor exists to remove. `ZenithRenderBackendVulkan`
+(`Zenith/RenderBackends/Vulkan`'s 17 TUs + the owned `imgui_impl_vulkan.cpp`
+ImGui backend TU + its own PCH create TU = 19; PCH; `RenderBackend.Vulkan`
+ONLY, but BOTH win64 and agde, since agde is always Vulkan; depends on
+`ZenithCore` + `ZenithFlux` + `ZenithDebugVariables` + `ZenithTaskSystem`),
+`ZenithRenderBackendD3D12` (`Zenith/RenderBackends/D3D12`'s 3 TUs + its own
+PCH create TU = 4, exactly at the ≥4-TU PCH threshold; `RenderBackend.D3D12`,
+**win64 ONLY**; depends on `ZenithCore` + `ZenithFlux`), `ZenithRenderBackendNull`
+(`Zenith/RenderBackends/Null`'s 3 TUs + its own PCH create TU = 4; `RenderBackend.Null`,
+**win64 ONLY**; depends on `ZenithCore` + `ZenithFlux`).
+
+**Conditionality moved from a per-configuration source exclude to project
+membership + solution wiring.** Each library declares ONLY the `RenderBackend`
+fragment(s) it supports via its own `AddTargets`; `conf.AddProject`/
+`conf.AddPublicDependency` THROW for a target the callee itself never
+declared, so every one of the three is wired into
+`Build/Sharpmake_EngineLibs.cs`'s table with a `Func<ZenithTarget,bool>`
+predicate (`t => t.RenderBackend == RenderBackend.Vulkan` for the Vulkan
+library — true for win64 AND agde; the other two additionally require
+`t.Platform == Platform.win64`, since neither D3D12 nor Null is an agde
+config at all). The whole render-backend `SourceFilesBuildExcludeRegex` block
+that used to live in `ConfigurePlatformExcludes`
+(`Build/Sharpmake_Common.cs` — three per-file `\Vulkan\`/`\D3D12\`/`\Null\`
+path-segment excludes plus an `imgui_impl_vulkan` filename exclude on the two
+inactive backends) is DELETED; a `Null_*` config simply has no Vulkan or
+D3D12 *project* in its solution, so there is no source file to exclude — a
+config with no such project at all still links (verified: `zenith build
+Combat --headless`). `SourceFilesBuildExcludeRegex` occurrences across
+`Build/Sharpmake_*.cs` dropped from 24 to 17 as a result.
+
+**The platform arm of `ConfigurePlatformExcludes` (win64 excludes `\Android\`;
+agde excludes `\Windows\`/`\Editor\`/`\Tools\`) was load-bearing for
+`ZenithRenderBackendVulkan` specifically** at the time this section was
+written: that library spanned both win64 and agde and its source tree
+contained `Platform/Windows/Zenith_Windows_Vulkan.cpp` and
+`Platform/Android/Zenith_Android_Vulkan.cpp` side by side, so a single
+project needed the platform partition WITHIN itself. Whether to split
+`Platform/Windows/` and `Platform/Android/` into their own target-restricted
+sub-libraries, or keep this intra-project partition, was left to a future
+phase — **Phase 4h.3 did the split; see §4's own Phase 4h entry below.**
+`ConfigurePlatformExcludes` no longer exists at all.
+**CORRECTION, found by Phase 4h's measurement:** the claim that this
+mechanism "also still applies, unchanged, to every other multi-platform
+project in the table (`ZenithFlux`, `ZenithImGui`, `ZenithAssetHandling`,
+the aggregate itself)" was never re-verified after it was first written and
+turned out to be **false** for all four — none of those four projects' own
+generated `.vcxproj` ever contained a single member matching `\Android\`,
+`_Android`, `\Windows\` or `_Windows`; the call was defensive dead weight in
+every one of them. See the Phase 4h entry for the full measurement.
+
+**THE Flux <-> RenderBackends cycle is declared `backend -> Flux`** — the
+backend implements the Flux concepts (~41 unique header edges that direction
+across the three backends combined); Flux's only reverse edges are the 3
+concrete-type-alias includes in `Flux/Flux_BackendTypes.h`, which resolve
+purely by include path (`RootPath + "/Zenith/RenderBackends"`, added by
+`ZenithFlux`'s own `ConfigureAll`), not by a Sharpmake dependency edge — so
+`ZenithFlux` does not depend back on any of the three backends, mirroring
+exactly how Phase 4d declared the `ZenithFlux <-> ZenithAssetHandling` cycle
+one-way. This relies on `ZENITH_VULKAN`/`ZENITH_D3D12`/`ZENITH_NULL_RENDERER`
+coming from `ConfigureCommonSettings` (the explicit three-way `if`/`else
+if`/`else throw` on `target.RenderBackend`) rather than from the dependency
+edge — unchanged by this phase, still the sole definer.
+
+**GLFW stays undeclared here too**, the same acceptance `ZenithInput` already
+established (Phase 4b): all three backend libraries call `glfwXxx(...)`
+and/or read `Zenith_Window::GetInstance()` (owned by `ZenithWindows`)
+directly, but none of the three calls `AddGlfwLibs` or declares a
+`ZenithWindows` dependency — the composition root every actual exe links
+always carries `ZenithWindows` on win64 regardless. `ZenithRenderBackendVulkan`
+DOES call `AddVulkanBackendLibs` (win64-only, matching the helper's own
+guard — agde links its system Vulkan loader via `--sysroot`) but not
+`AddSlangLibs` (`ZenithFlux` owns `slang.lib`); `ZenithRenderBackendD3D12`
+calls `AddD3D12Libs`; `ZenithRenderBackendNull` calls **none** of the four
+library helpers — the structural guarantee that a GPU-less backend cannot
+acquire a graphics import library by accident.
+
+**The duplicate-owned fix.** `ZenithHubProject` and
+`TilePuzzleRegistryViewerProject` each used to glob
+`Middleware/imgui-docking` (the core TUs) AND `imgui_impl_win32.cpp`
+themselves, ON TOP OF `AddPublicDependency<ZenithProject>` — which already
+linked `zenith.lib` carrying the SAME imgui core TUs (and, transitively,
+`zenithwindows.lib` carrying the same `imgui_impl_win32.cpp`). Same-executable
+duplication, hidden only by first-definition-wins at link:
+`Tools/check_project_membership.ps1` reported exactly 40 DUPLICATE findings
+(10 (source, exe) pairs × 4 configs) before this phase and 0 after. Both
+projects now own only their DX11 backend TU (`imgui_impl_dx11.cpp`) and
+declare an explicit `AddPublicDependency<ZenithImGuiLibProject>` for
+legibility, even though `ZenithProject` already re-exports it.
+
+**Library structure (Phase 4f — the two top-of-the-DAG leaves):** the
+densest, highest-fan-in pair in the engine finally split out of the
+aggregate. `ZenithUI` (`Zenith/UI`'s 14 TUs + its own PCH create TU = 15;
+PCH; depends on `ZenithCore` + `ZenithMaths` + `ZenithDataStream` +
+`ZenithAssetHandling` + `ZenithFlux` + `ZenithInput` + `ZenithProfiling`) and
+`ZenithEntityComponent` (`Zenith/EntityComponent`'s 43 TUs across
+`Components/` + the top-level ECS↔engine glue, + its own PCH create TU = 44;
+PCH; depends on `ZenithCore` + `ZenithMaths` + `ZenithDataStream` +
+`ZenithFileAccess` + `ZenithProfiling` + `ZenithDebugVariables` +
+`ZenithTaskSystem` + `ZenithInput` + `ZenithAssetHandling` + `ZenithFlux` +
+`ZenithECS` + `ZenithPhysics` + `ZenithAI` + `ZenithScripting` +
+`ZenithPrefab` + `ZenithUI`). `ZenithEntityComponent` sits at the TOP of the
+measured header DAG (layer 6); `ZenithUI` sits directly below it (layer 5).
+
+**Two seams, handled two different ways.** `EntityComponent <-> Flux` is the
+SAME shape as the `Flux <-> AssetHandling` cycle Phase 4d declared: a genuine
+header cycle (`Tools/complexity_profiles.json`'s
+`architecture.rules.ignore_module_cycles` already listed `["EntityComponent",
+"Flux"]`), declared one-way as `EntityComponent -> Flux` (the heavier
+direction — components own Flux types/handles by value); Flux does not
+depend back. `EntityComponent <-> Editor` is different in kind: it is real
+(`Zenith_ModelComponent_Editor.cpp` / `Zenith_TerrainComponent_Editor.cpp`
+`#include Editor/Zenith_Editor*.h` directly — three pre-existing
+`layer-up:` entries in `Tools/architecture_allowlist.txt` already recorded
+it) but is **not** a declared Sharpmake edge in either direction, because
+`Editor/` is not yet its own library (still aggregate-owned) and declaring
+either direction would create a cycle the tool cannot represent anyway. It
+resolves the same way every other undeclared cross-directory `#include` in
+this refactor does: `ConfigureCommonIncludePaths` puts `/Zenith` on every
+project's include path, so the header resolves at compile time with no
+declared edge, and any out-of-line symbol resolves at the final game exe
+link, where the aggregate (today's owner of `Editor/`) is always present.
+**A third seam turned out not to be one at all**: the plan flagged
+`AI -> EntityComponent` as possibly real, but `ZenithAILibProject`
+(`Sharpmake_ZenithAI.cs`) carries no declared dependency on this project
+today and never has — the only "EntityComponent" references under
+`Zenith/AI` are three `.Tests.inl` files each `#include`ing
+`EntityComponent/Components/Zenith_TransformComponent.h`, which already
+compile off the same undeclared-include-path mechanism. Nothing to drop, no
+file to move.
+
+**SHADER_SOURCE_ROOT, again.** Both new libraries needed it —
+`ZenithEntityComponent` directly (it `#include`s `Flux/Flux_GraphicsImpl.h`,
+which reaches the active backend's Pipeline header), and `ZenithUI`
+*indirectly*, through the shared `Zenith.h` PCH alone (no `.cpp` in
+`Zenith/UI` references the token or includes `Flux_GraphicsImpl.h` at all,
+yet the `Null_` build still failed with C2065 on every `Zenith_UI*.cpp` TU
+until the define was added) — the first library in this refactor where the
+PCH chain alone, not a direct `#include`, was enough to need it. Neither
+needed `ENGINE_ASSETS_DIR`.
+
+Dependency order: `ZenithCore` ← {`ZenithMaths`, `ZenithDataStream`,
+`ZenithFileAccess`} ← {`ZenithDebugVariables` ← `ZenithProfiling`,
+`ZenithTaskSystem`} ← `ZenithInput` ← {`ZenithWindows` (win64), `ZenithAndroid`
+(agde, also ← `ZenithFileAccess`)} ← `ZenithUnitTests` ← `ZenithECS` (L1) ←
+{`ZenithSaveData`, `ZenithTelemetry`, `ZenithPrefab`, `ZenithScripting`} ←
+(`ZenithJolt`, standalone) ← `ZenithPhysics` ← `ZenithAI` ←
+(`ZenithImGui`, standalone) ← `ZenithAssetHandling` ← `ZenithFlux` ←
+{`ZenithRenderBackendVulkan` (win64+agde, also ← `ZenithDebugVariables` +
+`ZenithTaskSystem`), `ZenithRenderBackendD3D12` (win64), `ZenithRenderBackendNull`
+(win64)} ← `ZenithUI` (layer 5, also ← `ZenithAssetHandling` + `ZenithFlux` +
+`ZenithInput` + `ZenithProfiling`) ← `ZenithEntityComponent` (layer 6, the top
+of the DAG — also ← `ZenithECS` + `ZenithPhysics` + `ZenithAI` +
+`ZenithScripting` + `ZenithPrefab` + `ZenithUI`) ← `Zenith` (aggregate:
+Editor, EngineComposition, everything else — Flux + AssetHandling +
+imgui-core + the three render backends + UI + EntityComponent all moved OUT
+across Phases 4d/4e/4f).
+**`ZenithCore` is a MANDATORY, unconditional dependency of every other engine
+library and every Sentinel**, even where the edge would be transitive
+anyway — `Zenith_LogFileSinkWrite` (defined in `Zenith.cpp`, in `ZenithCore`)
+is called from the *inline* `Zenith_LogImpl` in the shared `Zenith.h` header,
+so every translation unit in every library emits a reference to it.
+
+**The ≥4-TU precompiled-header rule:** a library gets its own binary
+`Zenith.pch` only once it compiles at least 4 translation units. A win64
+`Zenith.pch` is 119–192 MB and `Build/obj` runs into the gigabytes, so a 1-TU
+library that CREATEs its own PCH pays a full `glm` header parse TWICE (once
+building the PCH, once — for nothing, since there is only the one consuming
+TU) instead of once. `ZenithMaths`/`ZenithDataStream`/`ZenithFileAccess`
+(Phase 4a) and `ZenithDebugVariables`/`ZenithTaskSystem`/`ZenithUnitTests`
+(Phase 4b — each 1 TU) fall below the threshold and leave
+`conf.PrecompHeader`/`conf.PrecompSource` unset, compiling `Zenith.h` as a
+plain textual include exactly like the Sentinels and the game executables
+already do (verify `NotUsing` in the generated `.vcxproj`). `ZenithInput`
+(4 TUs), `ZenithWindows` (11 TUs) and `ZenithAndroid` (9 TUs) clear the
+threshold and each CREATE their own PCH from a definition-free create TU
+under `Internal/` (`Zenith_InputPCH.cpp` / `Zenith_WindowsPCH.cpp` /
+`Zenith_AndroidPCH.cpp` — a one-line `#include "Zenith.h"`, nothing else:
+AGDE/clang precompiles the entire `PrecompSource` via `-xc++-header`, so a
+definition-bearing create TU would bake its own symbols into the binary
+`.pch` and every `/Yu` consumer would re-emit them). Each lib that DOES
+compile a
+PCH builds its own (a binary `.pch` cannot be shared across projects with
 different defines). The lockstep rule: `ZENITH_TOOLS`,
 `ZENITH_PROFILING_ENABLED`, `ZENITH_MEMORY_TRACKING_LEVEL` must be identical
-across the base lib and every consumer (ODR).
+across every leaf lib and every consumer (ODR) — including the three
+PCH-less libs, which set `ZENITH_TOOLS` in a `True` config even though
+nothing in their own source reads it.
 
-**Sentinels** (`SentinelECS`/`SentinelPhysics`/`SentinelAI`,
-`Tests/Sentinel*/`): leaf-purity proof exes that link EXACTLY the leaf libs —
+**Sentinels — SEVEN, not one per library** (`Tests/Sentinel*/`): leaf-purity
+proof exes that link EXACTLY a deliberately-narrow declared dependency set —
 an accidental leaf→engine edge fails their link with an unresolved external.
+A sentinel is only informative where the declared set is genuinely narrow;
+for a library whose declared dependencies are "everything below me", linking
+standalone is guaranteed by construction and proves nothing, which is why
+this is seven sentinels at cluster boundaries rather than thirty-two (one per
+leaf library):
+
+| Sentinel | Proves | Links |
+|---|---|---|
+| `SentinelECS` | ZenithECS is a self-contained leaf | zenithecs.lib + zenithcore.lib |
+| `SentinelPhysics` | ZenithPhysics is a self-contained leaf | zenithphysics.lib + zenithecs.lib + zenithcore.lib + zenithjolt.lib |
+| `SentinelAI` | ZenithAI is a self-contained leaf | zenithai.lib + zenithphysics.lib + zenithecs.lib + zenithcore.lib |
+| `SentinelCore` | the Core cluster (ZenithCore + ZenithMaths + ZenithDataStream + ZenithFileAccess) links with nothing above it — the floor every other sentinel already stands a slice of | those four only |
+| `SentinelScripting` | ZenithScripting links against its declared set | zenithscripting.lib + zenithecs.lib + zenithdatastream.lib + zenithmaths.lib + zenithcore.lib |
+| `SentinelFlux` | the Flux cluster (ZenithFlux + ZenithAssetHandling + the ACTIVE render backend) links without reaching Editor/EntityComponent/UI | ZenithFlux's own declared set + the target's active `ZenithRenderBackend{Vulkan,D3D12,Null}` |
+| `SentinelUI` | ZenithUI's declared dependency edges resolve, and its own GPU-free Flux/Core surface links | zenithui.lib's declared set + a GPU-free `Zenith_RenderBus::RecordDrawCall` touch — **see the caveat below** |
+
 They exist only in `ToolsEnabled=False` configs. The known, deliberate platform
 seams of the leaf libs (file access, debug break, the non-profiling mutex, the
 unit-test registrar, callstack capture, the profiler's string-zone markers) are
 supplied by each sentinel's `sentinel_platform.cpp` — extend THAT file when a
 leaf lib grows a new sanctioned seam; anything else unresolved is a real leak.
-CI builds AND runs all three (engine-gate, §8).
+CI builds AND runs all seven (engine-gate, §8; the array appears twice in
+`.github/workflows/engine-gate.yml` — build step and run step, the latter
+lowercased for the executable path — a human edit, see the Phase 5.2 entry
+below).
+
+**`SentinelUI` proves a WEAKER claim than its six siblings, and the gap is a
+real finding, not a workaround.** `Tests/SentinelUI/main.cpp`'s own header
+comment has the full account: constructing ANY concrete `Zenith_UIElement`
+(the SentinelECS-style "drive a real object" proof every other sentinel uses)
+pulls `Zenith_UIElement.obj` — the base class every widget's constructor
+needs — which ALSO defines `Zenith_UIElement::CreateElement(UIElementType)` (a
+factory `new`-ing every sibling widget by enum, including `Zenith_UIOverlay`)
+and `Zenith_UIElement::Render(Zenith_UICanvas&)`, which calls
+`g_xEngine.Input().GetMousePosition(...)` directly. Because Sharpmake links at
+`.obj` granularity, that one file's unrelated content comes along for free,
+cascading through `Zenith_UICanvas.obj` into ~25 `Zenith_Engine::<Subsystem>()`
+accessors, four `Zenith_Active*()` free functions and a dozen
+`Zenith_Vulkan_*` backend methods — 113 unresolved externals, measured, none
+of them declared anywhere in `Sharpmake_ZenithUI.cs`'s dependency list because
+they route through `g_xEngine`, which no leaf project (not even `ZenithFlux`
+itself) declares an edge to. This is architecturally correct — a widget's job
+is to submit real draw calls to the live renderer — it just means `ZenithUI`,
+unlike `ZenithECS`/`ZenithPhysics`/`ZenithAI`/`ZenithScripting`, is not
+severable from `EngineComposition` at this granularity. Stubbing the ~110-symbol
+surface was rejected as dishonest (it would be hand-faking the renderer, not
+supplying a platform shim) in favour of scoping the sentinel to what IS true
+without that reach.
+
+**Library structure (Phase 4g — the two Tools-only leaves, and a headline
+mechanism change):** `ZenithEditor` (`Zenith/Editor`'s 56 TUs across
+`Animation/` + `Panels/` + `TerrainEditor/` + the top level, + its own PCH
+create TU = 57; PCH; depends on `ZenithCore` + `ZenithMaths` +
+`ZenithDataStream` + `ZenithFileAccess` + `ZenithProfiling` +
+`ZenithDebugVariables` + `ZenithInput` + `ZenithAssetHandling` + `ZenithFlux` +
+`ZenithECS` + `ZenithPhysics` + `ZenithScripting` + `ZenithPrefab` +
+`ZenithWindows`) and `ZenithTools` (repo-root `Tools/`'s 17 TUs + its own PCH
+create TU = 18; PCH; depends on `ZenithCore` + `ZenithMaths` +
+`ZenithDataStream` + `ZenithFileAccess` + `ZenithTaskSystem` +
+`ZenithAssetHandling` + `ZenithFlux` + `ZenithEntityComponent` +
+`MsdfAtlasGenProject`). `ZenithTools` adopts a project that already existed —
+it had generated `zenithtools_win64.vcxproj` since before this phase but was
+added to no solution, which is exactly what made it the repo's one orphan
+project (plus 7 orphan-duplicate findings, `check_project_membership.ps1`).
+Both new libraries declare **win64 × ToolsEnabled.True ONLY** — no `agde`
+target at all, and (unlike every earlier win64-only leaf) `ToolsEnabled`
+itself carries a single value rather than `True | False`. That is a NEW
+target-restriction shape: a predicate on both `target.Platform` AND
+`target.ToolsEnabled` at once
+(`t => t.Platform == Platform.win64 && t.ToolsEnabled == ToolsEnabled.True`
+in `Build/Sharpmake_EngineLibs.cs`).
+
+**Target restriction replaces the per-configuration Editor/Tools build
+excludes.** Before this phase, `Zenith/Editor/` and the repo-root `Tools/`
+were owned by the monolithic aggregate and kept out of configurations that
+should not have them via FOUR separate `conf.SourceFilesBuildExcludeRegex`
+entries: `ConfigurePlatformExcludes`'s `agde` arm (`\Editor\` and `\Tools\`),
+`Sharpmake_Zenith.cs`'s own `agde`-only `\Editor\` exclude in `ConfigureAll`,
+and its `ToolsEnabled.False`-branch `\Tools\` exclude. All four are DELETED,
+not merely moved: a `_False` or `agde` configuration now simply has no
+`ZenithEditorLibProject` / `ZenithToolsProject` in its solution at all — an
+absent project, not an empty one, the same shape Phase 4e's three
+render-backend leaves already established for `RenderBackend`. This is safe
+for Editor specifically because all 56 of its `.cpp` files were independently
+already wrapped start-to-end in `#ifdef ZENITH_TOOLS` (verified by script) —
+the library does not add a new restriction, it makes an existing
+content-level one structural. `Zenith/Editor`'s aggregate MEMBERSHIP exclude
+(`SourceFilesExcludeRegex` in `Sharpmake_Zenith.cs`'s constructor) is new this
+phase too — earlier phases never needed one because Editor's per-file
+`#ifdef` was already doing the job in a `_False` config, and win64
+`ToolsEnabled.True` was the one configuration where the aggregate and the new
+library would otherwise have compiled the same 56 files into two different
+`.lib`s.
+
+**The repo-root `Tools/` tree gets a single owner for the first time.**
+`ZenithToolsProject`'s own `AdditionalSourceRootPaths.Add(.../Zenith/Flux/MeshGeometry)`
+is dropped — it depends on `ZenithFluxLibProject` (which owns that directory
+whole) instead of compiling a second copy of `Flux_MeshGeometry.cpp` /
+`Flux_MeshInstance.cpp` — and the aggregate's own
+`AdditionalSourceRootPaths.Add(RootPath + "/Tools")` is dropped entirely, so
+`ZenithToolsProject` is the sole owner of the tree. Adopting a project that
+had never actually been built also surfaced real, previously-dormant defects
+in its own `ConfigureAll`: no call to `ConfigureCommonSettings` /
+`ConfigureCommonIncludePaths` at all (missing the render-backend define
+`Zenith_BackendAliases.h` `#error`s without, C++20, warnings-as-errors,
+memory-tracking level), no PCH, no distinct `IntermediatePath`, and — the
+build-breaking one — no exclude for `Tools/Middleware/freetype` (221 `.cpp`)
+or `Tools/Middleware/msdf-atlas-gen` (47 `.cpp`), which
+`FreeTypeProject`/`MsdfgenProject`/`MsdfAtlasGenProject` already build as
+separate projects linked as prebuilt `.lib`s — an ODR violation that was
+silently dormant only because the project never compiled. All fixed by
+rewriting the file onto the same `ConfigureCommonSettings`/
+`ConfigureCommonIncludePaths` foundation every other leaf uses.
+
+**The tools-only link surface split three ways, not moved wholesale.** The
+aggregate's old `ToolsEnabled.True` block bundled `OPENDDLPARSER_BUILD`,
+`ZENITH_ROOT`, the Tools/Middleware + assimp include paths, the assimp
+library path + `.lib` file, `PrecompSourceExcludeFolders(Tools)`, and the
+`MsdfAtlasGenProject` dependency. Each piece moved only to the project whose
+own compiled TUs actually reference it: `ZenithToolsProject` keeps all of it
+(its `Zenith_Tools_FontExport.cpp` genuinely calls `msdf-atlas-gen` directly —
+the only Tools/Editor consumer of freetype/msdf-atlas-gen this phase).
+`ZenithEditorLibProject` gets NONE of it — grep across every
+`Zenith/Editor/**/*.{h,cpp}` finds zero references to assimp, freetype or
+msdf-atlas-gen, so copying the block wholesale would have been exactly the
+"do not just relocate the whole block" mistake the phase's own brief warned
+against. **`ZENITH_ROOT` is the one exception that stayed on BOTH**: build
+verification found `Zenith/EngineComposition/Zenith_UnitTests.Tests.inl`
+(`#include`d from the aggregate's own `Zenith_Core.cpp`, unconditionally on
+every `ToolsEnabled.True` win64 config) references it too, unguarded — a
+grep across `Tools/*.cpp` alone (3 files) was not the whole picture, so the
+aggregate keeps its own copy of the define alongside `ZenithTools`'s.
+
+**SHADER_SOURCE_ROOT, a third time, and the same lesson twice more.**
+`ZenithEditorLibProject` needs it directly (8 files `#include`
+`Flux/Flux_GraphicsImpl.h`, which reaches the active backend's Pipeline
+header) plus `ENGINE_ASSETS_DIR` (3 `TerrainEditor/*.cpp` files, unguarded).
+`ZenithToolsProject` was assumed NOT to need it — no direct
+`Flux_GraphicsImpl.h` / Pipeline-header `#include` anywhere under `Tools/` —
+but a real `Null_..._True` build failed C2065 on 7 Tools TUs
+(`…RockAssetExport.cpp`, `…MeshExport.cpp`, `…HumanModelExport.cpp`,
+`…TerrainExport.cpp`, `…TextureExport.cpp`, `…GlbImport.cpp`,
+`…TreeAssetExport.cpp`) that reach `RenderBackends/Null/Zenith_Null_Pipeline.h`
+TRANSITIVELY through `Flux/MeshGeometry` headers. Exactly the same class of
+defect Phase 4f already logged for `ZenithUI` (needed the define with ZERO
+textual occurrences of the token anywhere in its own directory) — a second,
+independent confirmation that a direct-`#include` grep is not sufficient and
+only a real `Null_` build build-verifies it.
+
+**One source fix, not a PCH exclusion.** `Zenith_Tools_MeshExport.cpp` had an
+`#ifndef NOMINMAX` / `#define NOMINMAX` guard preceding its
+`#include "Zenith.h"` — harmless under the aggregate's old
+`PrecompSourceExcludeFolders.Add(Tools)` (which meant NO Tools file ever used
+`/Yu`), but a C4005 macro-redefinition warning (→ C2220 under
+`TreatWarningsAsErrors`) the moment the file compiles under `ZenithTools`'s
+own PCH, since `NOMINMAX` is already defined for every configuration via
+`ConfigureCommonSettings`. Removed the now-redundant guard rather than
+reintroducing a PCH exclusion for the whole directory — every other
+`Tools/*.cpp` already begins cleanly with `#include "Zenith.h"` and benefits
+from the PCH `ZenithTools` earns at 17 TUs.
+
+**`EntityComponent <-> Editor` stays undeclared, from the OTHER side now
+too.** `ZenithEntityComponentLibProject` already promised (Phase 4f) not to
+depend on a future Editor library; `ZenithEditorLibProject` now keeps the
+other half of that promise — it does not declare
+`AddPublicDependency<ZenithEntityComponentLibProject>` even though 17 of its
+own files `#include EntityComponent/Components/*.h` directly. Both directions
+would create a Sharpmake cycle the tool cannot represent; the include
+resolves off the plain `/Zenith` include path at compile time (a static lib
+never needs to resolve an external symbol at its own link step), and any
+out-of-line symbol resolves at the final game exe link, where
+`ZenithEntityComponent` is always present.
+
+**Library structure (Phase 4h — the final tier: `ConfigurePlatformExcludes`
+deleted, the library-split refactor's closing move).** The refactor's
+invariant — every compiled source belongs to exactly one project per link
+target, expressed as target declaration + solution membership, never as a
+per-configuration subtraction — now holds with **zero** exceptions.
+
+*4h.1 — three easy conversions.* The legacy `ZenithECS`/`Physics`/`AI`
+per-configuration build-excludes in `Sharpmake_Zenith.cs`'s `ConfigureAll`
+(left over from the original leaf extractions, back when only the `.cpp`
+subtraction had been done and the constructor MEMBERSHIP-exclude conversion
+every other leaf got was still pending) became constructor
+`SourceFilesExcludeRegex` lines, anchored `.*\\Zenith\\<Dir>\\.*` (re-verified
+safe: `\Zenith\Physics\` does not match `Middleware\JoltPhysics-5.4.0\`,
+`\Zenith\AI\` matches nothing under `EntityComponent\`). `imgui_impl_android.cpp`
+converted the same way — **contradicting this phase's own brief**, which
+guessed the exclude might already be dead "now that ZenithImGui owns the
+imgui tree and the aggregate no longer globs `Middleware/imgui-docking`": the
+aggregate's `AdditionalSourceRootPaths(/Middleware/imgui-docking)` call was
+never removed, and `imgui_impl_android.cpp` was never one of the per-file
+membership excludes carved out of it — it compiled nowhere on any platform,
+but for two DIFFERENT reasons (an agde-only `ConfigureAll` build-exclude, and
+`ConfigurePlatformExcludes`' win64 `.*_Android.*` arm), not because it was
+already ownerless.
+
+*4h.2 — the measurement.* Every generated `.vcxproj`'s `ClCompile` membership
+was checked against all four `ConfigurePlatformExcludes` patterns
+(`\Android\`, `_Android`, `\Windows\`, `_Windows`). Result: **one genuinely
+load-bearing call site in the entire codebase** —
+`ZenithRenderBackendVulkan`, whose `RenderBackends/Vulkan` source root held
+`Platform/Windows/` and `Platform/Android/` side by side while the project
+itself spanned both win64 and agde. Every other one of the ~40 call sites
+(every other engine leaf, every game via `Sharpmake_Games.cs`, the three
+Sentinels) was dead: either the project's own directory held no
+Windows/Android-named-or-pathed file at all, or — for `ZenithWindows`/
+`ZenithAndroid` themselves — the project only ever configured the platform
+whose own files matched, so the *opposite* exclusion arm (the only one that
+could ever have found anything) never ran. This directly falsifies the prior
+Phase 4e entry's claim that the mechanism stayed load-bearing for
+`ZenithFlux`/`ZenithImGui`/`ZenithAssetHandling`/the aggregate — none of the
+four ever had a matching member.
+
+*4h.3 — the fix, and the deletion.* `Zenith/RenderBackends/Vulkan/Platform/{Windows,Android}`
+each became a one-TU leaf library
+(`ZenithRenderBackendVulkanPlatformWindows`, win64 × `RenderBackend.Vulkan`
+only; `ZenithRenderBackendVulkanPlatformAndroid`, agde only — no PCH, one TU
+apiece, both well under the ≥4-TU threshold), membership-excluded from
+`ZenithRenderBackendVulkan`'s own constructor and wired into
+`Build/Sharpmake_EngineLibs.cs` (taking the table to 32 entries). Both depend
+on `ZenithCore` + `ZenithRenderBackendVulkan` (the `Zenith_Vulkan_Platform.h`
+interface they implement); the Windows one also depends on `ZenithWindows`
+for `Zenith_Window::GetInstance()`; the Android one leaves
+`Zenith_Android_GetNativeWindow()` an accepted undeclared `extern` symbol,
+resolved only at the final game `.so` link, the same precedent
+`ZenithInput`'s glfw calls already established. With that split done, every
+`ConfigurePlatformExcludes` call site in the codebase was dead, and every
+call site was removed (32 leaves + the aggregate + the Vulkan backend + the
+three Sentinels + `Sharpmake_Games.cs` = every caller). `ConfigurePlatformExcludes`
+itself — the method, and the four `conf.SourceFilesBuildExcludeRegex.Add`
+lines it contained — was then deleted from `Sharpmake_Common.cs` outright,
+having no caller left. **`SourceFilesBuildExcludeRegex.Add(...)` call sites
+across `Build/Sharpmake_*.cs` (excluding the vendored `FreeType`/`Msdfgen`/
+`MsdfAtlasGen` projects, which never adopted the mechanism): zero.**
+
+*4h.4 — the instrument flips to fatal.* `Tools/check_project_membership.ps1`
+now defaults to **fatal** (duplicate-owned / orphan / orphan-duplicate /
+genuine-unowned / un-allowlisted-build-exclude findings all exit 1); the old
+always-exit-0 behaviour survives as an explicit `-ReportOnly` escape hatch.
+The build-exclude grep gate is fatal too, narrowed from "any line mentioning
+the identifier" (which would have permanently red-lit the very comments
+documenting this section) to "an actual `.Add(...)` call site, not inside a
+`//` comment" — with an allowlist for any deliberate, documented survivor.
+**The allowlist is empty**: Phase 4h.3 left nothing to allow. The script
+exits 0 on the current tree in its new default mode.
+
+*4h.5 — the invariant, stated plainly.* Every compiled source belongs to
+exactly one project per link target. Conditionality is expressed as target
+declaration (a project's own `AddTargets`) plus solution membership (a
+`Func<ZenithTarget,bool>` predicate in `Build/Sharpmake_EngineLibs.cs`), never
+as a per-configuration source exclude. `Tools/check_project_membership.ps1`
+enforces this by construction, fatally, by default — this is the definition
+of done for the library-split refactor's structure.
+
+**Phase 5 — the aggregate becomes the composition root, and four more
+Sentinels.** By Phase 4h every OTHER engine subsystem was its own leaf
+library; the aggregate `ZenithProject` was the one structurally-wrong thing
+left, still globbing the whole `/Zenith` tree recursively (330 TUs) and
+subtracting every extracted library back out with ~30 constructor
+`SourceFilesExcludeRegex` lines — the exact greedy-glob-minus-subtraction
+shape this whole refactor exists to remove, just at the top instead of a
+leaf.
+
+*5.1 — re-rooted.* `Build/Sharpmake_Zenith.cs` now sets `SourceRootPath =
+RootPath + "/Zenith/EngineComposition"` — the aggregate's ENTIRE source tree
+is the 7 `.cpp` + 5 `.Tests.inl` files that directory already held (moved
+there in an earlier phase specifically so this phase could re-root onto it;
+see `Zenith/EngineComposition/CLAUDE.md`). Every `SourceFilesExcludeRegex`
+line that existed only to subtract an already-extracted leaf is deleted
+outright — verified-dead, not merely unneeded, since the narrowed glob no
+longer reaches any of those directories to begin with — and so are the
+`AdditionalSourceRootPaths` entries for `Middleware/imgui-docking` and
+repo-root `/Tools` (owned whole by `ZenithImGui` / `ZenithTools` now; the one
+file this drops from the aggregate's membership,
+`imgui_impl_android.cpp`, compiled nowhere before this change either and
+sits outside `Zenith/**`, so it is invisible to
+`Tools/check_project_membership.ps1`'s UNOWNED check both before and after).
+Games, `FluxCompiler`, `ZenithHub` and both TilePuzzle projects needed ZERO
+edits — they keep their one `AddPublicDependency<ZenithProject>` edge, and
+`ZenithEngineLibs.AddAllAsDependenciesOfAggregate` still re-exports every
+other leaf through it. `dbghelp.lib`/`psapi.lib` — carried unconditionally on
+the aggregate for every win64 config since before this phase — moved to the
+libraries that actually call them: `dbghelp.h` (`SymInitialize`/`SymFromAddr`/
+`StackWalk64`) is used only in `Zenith/Windows/Callstack/Zenith_Windows_Callstack.cpp`
+(now `ZenithWindows`'s own `conf.LibraryFiles.Add`), and `GetProcessMemoryInfo`
+only in `Zenith/Editor/Panels/Zenith_EditorPanel_Memory.cpp` (now
+`ZenithEditor`'s own, gated `win64 x ToolsEnabled.True` — tighter than the
+aggregate's old unconditional-for-every-win64-config placement, since nothing
+in a `_False` build ever called it). **Correction to this phase's own brief,
+found by grep before moving either line:** both were assumed to live in
+`Zenith/Core/`; neither does — `Zenith/Core/Zenith_Win32.h` merely `#include`s
+`psapi.h` for the `PROCESS_MEMORY_COUNTERS` type, which costs nothing at link
+time until something calls an actual psapi-exported function.
+
+*5.2 — four more Sentinels, seven total.* See the Sentinels table above for
+what each new one proves. `SentinelFlux` is the one sentinel that
+deliberately is NOT renderer-abstinent — it adds the target's active
+`ZenithRenderBackend{Vulkan,D3D12,Null}` project (conditionally, since each
+backend project declares only its own `RenderBackend` value) because the
+whole point of "the Flux cluster" is the render-backend boundary; its
+`main.cpp` stays GPU-free (`Zenith_RenderBus::RecordDrawCall`, the one
+top-level Flux `.cpp` with zero `g_xEngine` references, confirmed by grep
+against all 17 top-level `Flux/*.cpp`) because the sentinel proves LINKING,
+not live rendering — creating an actual device is what the backend's own API
+requires and what a headless link-proof exe has no business doing.
+`SentinelUI` could not follow the same "construct one real object" pattern —
+see the caveat in the Sentinels table above. All four new sentinels'
+`sentinel_platform.cpp` started from `SentinelECS`'s existing L0 floor
+(`Zenith_DebugBreak`, three `Zenith_FileAccess` entries,
+`Zenith_Windows_Mutex_T<true>`/`<false>`, `Zenith_PlatformStdio::OpenFile`,
+the four `Zenith_Callstack::Platform_*` hooks, the assert-capture atomics) and
+needed **zero new stub symbols** beyond that floor — `SentinelCore`,
+`SentinelFlux` and `SentinelScripting` all linked clean against it on the
+first `zenith build engine` pass. That is itself a finding: it confirms the
+Core-cluster platform floor is a genuine constant across every narrow leaf
+this refactor has produced, not something each new sentinel reinvents.
+`SentinelUI`'s finding was categorically different (a composition-root reach,
+not a missing platform stub) and is documented in the Sentinels table above
+rather than papered over with one.
+
+`Tools/complexity_profiles.json`'s `architecture.modules` gained one entry
+per new sentinel (`SentinelCore`/`SentinelFlux`/`SentinelScripting`/
+`SentinelUI`, each `layer: 5`, each globbing only its own `Tests/Sentinel*/**`
+— a single `Tests/**` module was tried first for the original three and
+FAILED `max_module_fanout=8` at 9, because unioning independent harnesses
+into one node merges their dependency footprints; one module per sentinel is
+the shape that scales).
 
 ## 5. Testing
 
