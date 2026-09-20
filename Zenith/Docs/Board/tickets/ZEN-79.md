@@ -16,13 +16,14 @@ position: 79
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T02:16:48.022Z"
+updatedAt: "2026-09-20T02:49:27.496Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
 claimAttempt: "f083cb4a-cde6-4e2b-862b-a4d0bcc0b15a"
+links: [{"key":"ZEN-76","type":"RELATES_TO","reason":"Same observability gap from opposite ends. ZEN-76 is 'the contract verdict (exit 4) wins over repo-busy (exit 5)' for zagent check; that short-circuit is exactly why ZEN-79's defect cannot be reproduced live from inside a tick - the tick already holds a ticket, so any second claim returns 5 before the contract check is ever reached. ZEN-79's proof had to drive the write layer directly through dispatchWrite instead."}]
 ---
 ## Goal
 Suggestions row 2026-08-24 (CRITICAL): *"zagent claim MUTATES BEFORE IT VALIDATES. A targeted claim on a needs-human ticket (reproduced on ZM-64) writes status To Do -> In Progress and assignee none -> the agent, THEN returns exit 4 refusing it."* That was the SQL board; the Vault CLI's `claim` is a new implementation (`Tools/Vault/cli/write.mjs`), and eight ZEN tickets were found assigned to the agent while still To Do on 2026-09-19, which is the same shape.
