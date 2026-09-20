@@ -3,7 +3,7 @@ id: "9780d773-2301-4b69-bd25-3931d0dee0d9"
 key: "ZEN-78"
 type: "TASK"
 title: "tick_gates measure phase reports deferred gate lines and the automated-test registry count"
-category: "Engine"
+category: "Tooling"
 parent: "ZEN-28"
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 78
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:18.693Z"
+updatedAt: "2026-09-20T23:31:42.812Z"
 flagged: false
 severity: null
 reproducibility: null
