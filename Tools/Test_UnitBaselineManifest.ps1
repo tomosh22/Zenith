@@ -94,16 +94,56 @@ Assert-That 'run_unit_gate.ps1 no longer carries a hardcoded default baseline' {
 
 Write-Host "`n=== every consumer names a game the manifest knows ===" -ForegroundColor Cyan
 
+# A -Game only belongs to this manifest when it is passed to run_unit_gate.ps1.
+# Scanning a consumer as raw TEXT does not establish that, and the difference is
+# not academic: zagent.project.json's own prose carries the words
+# "named by some workflow's -Game or declared advisory", so a bare
+# '-Game\s+(\w+)' scan read "or" as a game name and this assertion was RED on
+# master with nothing wrong anywhere in the repo. The doc_lint.ps1 exception it
+# used to carry was the same defect patched once by hand -- doc_lint takes a
+# -Game and is not a baseline consumer either. Anchoring on the gate script
+# covers both, and needs no exception list for the next -Game-taking tool to be
+# forgotten from. The ungated-row assertion below already anchors this way.
+function Get-GateGameNames {
+    param([string]$Text)
+    # Join PowerShell backtick continuations FIRST: test_scaffold.ps1 and
+    # engine-gate.yml both put -Exe/-Game on the line AFTER the script name, so a
+    # strictly per-physical-line scan would find no consumer at all and this
+    # assertion would pass vacuously -- the exact failure mode this file exists
+    # to prevent.
+    $logical = [regex]::Replace($Text, '`[ \t]*\r?\n\s*', ' ')
+    $names = @()
+    foreach ($line in [regex]::Split($logical, '\r?\n')) {
+        if ($line -notmatch 'run_unit_gate\.ps1') { continue }
+        foreach ($m in [regex]::Matches($line, '-Game\s+([A-Za-z0-9_]+)')) {
+            $names += $m.Groups[1].Value
+        }
+    }
+    return ,$names
+}
+
+$script:seenGateGames = @()
+foreach ($file in $consumers) {
+    $script:seenGateGames += Get-GateGameNames -Text (Get-Content -LiteralPath $file -Raw -Encoding utf8)
+}
+
+# The sensitivity check for the assertion below, and it is not optional. "No
+# unknown game was found" is also exactly what a scanner matching NOTHING
+# reports, so a regex that silently stopped matching would read as green. The
+# two have to be asserted together.
+Assert-That 'the consumer scan actually finds the gate invocations' {
+    $seen = @($script:seenGateGames)
+    if ($seen.Count) { Write-Host ("       gate -Game: {0}" -f (($seen | Sort-Object -Unique) -join ', ')) -ForegroundColor DarkGray }
+    ('Zenithmon' -in $seen) -and ('Combat' -in $seen)
+}
+
 Assert-That 'every -Game passed by a consumer has a manifest row' {
     $known = @($games | ForEach-Object { $_.Name })
     $missing = @()
     foreach ($file in $consumers) {
-        $text = Get-Content -LiteralPath $file -Raw -Encoding utf8
-        foreach ($m in [regex]::Matches($text, '-Game\s+([A-Za-z0-9_]+)')) {
-            $g = $m.Groups[1].Value
-            # doc_lint.ps1 also takes a -Game and is not a baseline consumer.
-            if ($text -match [regex]::Escape("doc_lint.ps1 -Game $g")) { continue }
-            if ($g -notin $known) { $missing += "$(Split-Path -Leaf $file):$g" }
+        $leaf = Split-Path -Leaf $file
+        foreach ($g in (Get-GateGameNames -Text (Get-Content -LiteralPath $file -Raw -Encoding utf8))) {
+            if ($g -notin $known) { $missing += "${leaf}:$g" }
         }
     }
     if ($missing.Count) { Write-Host ("       unknown: {0}" -f ($missing -join ', ')) -ForegroundColor Yellow }

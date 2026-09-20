@@ -29,36 +29,97 @@
 // a method on `Zenith_EditorMaterialUI` and needs the class qualifier
 // explicitly.
 
-Flux_ImGuiTextureHandle Zenith_EditorMaterialUI::GetOrCreateTexturePreviewHandle(const Zenith_TextureAsset* pxTexture)
+// How many frames an entry may go undrawn before it is dropped. The panels that
+// use this cache redraw every frame they are visible, so "not touched recently"
+// means "not on screen" -- closing the Material Editor releases its pins shortly
+// after, and a session that browses many materials does not accumulate them.
+static constexpr u_int uTEXTURE_PREVIEW_EVICT_AFTER_FRAMES = 120;
+
+bool Zenith_EditorMaterialUI::ShouldEvictPreviewEntry(u_int uNow, u_int uLastTouched)
+{
+	// Both operands are u_int and the subtraction stays u_int, so a wrapped
+	// counter yields the true small age by modular arithmetic. Widening either
+	// side (to u_int64, or to a signed type) breaks exactly that.
+	return (uNow - uLastTouched) > uTEXTURE_PREVIEW_EVICT_AFTER_FRAMES;
+}
+
+Flux_ImGuiTextureHandle Zenith_EditorMaterialUI::GetOrCreateTexturePreviewHandle(Zenith_TextureAsset* pxTexture)
 {
 	if (!pxTexture || !pxTexture->m_xVRAMHandle.IsValid() || !pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
 		return Flux_ImGuiTextureHandle();
 	}
 
-	u_int64 ulKey = pxTexture->m_xVRAMHandle.AsUInt();
-	u_int64 ulImageViewHandle = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
+	Zenith_EditorMaterialUI& xSelf = g_xEngine.EditorMaterialUI();
+	xSelf.SweepTexturePreviewCache();
 
-	TexturePreviewCacheEntry* pxEntry = g_xEngine.EditorMaterialUI().m_xTexturePreviewCache.TryGet(ulKey);
+	// The key is the PINNED asset address (see the header). Not the VRAM handle:
+	// that is a recycled free-list index, so two different textures collide on it.
+	const u_int64 ulKey = reinterpret_cast<u_int64>(pxTexture);
+	const u_int64 ulImageViewHandle = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
+	const u_int uFrame = g_xEngine.Frame().GetFrameIndex();
+
+	TexturePreviewCacheEntry* pxEntry = xSelf.m_xTexturePreviewCache.TryGet(ulKey);
 	if (pxEntry != nullptr)
 	{
-		// Check if image view changed (e.g., texture was reloaded)
+		pxEntry->m_uLastTouchedFrame = uFrame;
+		// Still meaningful with the pin in place: a reload REPLACES the GPU
+		// resources of the SAME asset object (ReleaseGPU then a fresh upload), so
+		// the pointer is unchanged while the view underneath it is not.
 		if (pxEntry->m_ulImageViewHandle == ulImageViewHandle)
 		{
 			return pxEntry->m_xHandle;
 		}
-		// Image view changed - unregister old and create new
 		Flux_ImGuiIntegration::UnregisterTexture(pxEntry->m_xHandle);
+		pxEntry->m_xHandle = Flux_ImGuiIntegration::RegisterTexture(pxTexture->m_xSRV, g_xEngine.FluxGraphics().m_xClampSampler);
+		pxEntry->m_ulImageViewHandle = ulImageViewHandle;
+		return pxEntry->m_xHandle;
 	}
 
-	// Register new texture with ImGui
-	Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
-		pxTexture->m_xSRV,
-		g_xEngine.FluxGraphics().m_xClampSampler
-	);
+	TexturePreviewCacheEntry xNew;
+	// Set() AddRefs, which is the whole point: the descriptor set built below
+	// outlives nothing, because the asset behind it cannot now be collected.
+	xNew.m_xTexture.Set(pxTexture);
+	xNew.m_xHandle = Flux_ImGuiIntegration::RegisterTexture(pxTexture->m_xSRV, g_xEngine.FluxGraphics().m_xClampSampler);
+	xNew.m_ulImageViewHandle = ulImageViewHandle;
+	xNew.m_uLastTouchedFrame = uFrame;
 
-	g_xEngine.EditorMaterialUI().m_xTexturePreviewCache[ulKey] = { xHandle, ulImageViewHandle };
-	return xHandle;
+	xSelf.m_xTexturePreviewCache[ulKey] = xNew;
+	return xNew.m_xHandle;
+}
+
+void Zenith_EditorMaterialUI::SweepTexturePreviewCache()
+{
+	Zenith_EditorMaterialUI& xSelf = g_xEngine.EditorMaterialUI();
+	const u_int uFrame = g_xEngine.Frame().GetFrameIndex();
+	if (uFrame == xSelf.m_uTexturePreviewSweepFrame)
+	{
+		return;   // at most one sweep per frame
+	}
+	xSelf.m_uTexturePreviewSweepFrame = uFrame;
+
+	Zenith_HashMap<u_int64, TexturePreviewCacheEntry>& xCache = xSelf.m_xTexturePreviewCache;
+
+	// Collect first: Zenith_HashMap's Iterator asserts on mid-iteration mutation.
+	Zenith_Vector<u_int64> xExpired;
+	for (Zenith_HashMap<u_int64, TexturePreviewCacheEntry>::Iterator xIt(xCache); !xIt.Done(); xIt.Next())
+	{
+		const TexturePreviewCacheEntry& xEntry = xIt.GetValue();
+		if (ShouldEvictPreviewEntry(uFrame, xEntry.m_uLastTouchedFrame))
+		{
+			xExpired.PushBack(xIt.GetKey());
+		}
+	}
+
+	for (u_int u = 0; u < xExpired.GetSize(); u++)
+	{
+		TexturePreviewCacheEntry* pxEntry = xCache.TryGet(xExpired.Get(u));
+		if (pxEntry != nullptr && pxEntry->m_xHandle.IsValid())
+		{
+			Flux_ImGuiIntegration::UnregisterTexture(pxEntry->m_xHandle);
+		}
+		xCache.Remove(xExpired.Get(u));   // destroys the TextureHandle, releasing the pin
+	}
 }
 
 void Zenith_EditorMaterialUI::ClearTexturePreviewCache()
@@ -68,6 +129,7 @@ void Zenith_EditorMaterialUI::ClearTexturePreviewCache()
 	{
 		Flux_ImGuiIntegration::UnregisterTexture(xIt.GetValue().m_xHandle);
 	}
+	// Clear() destroys every TextureHandle, releasing the pins with the handles.
 	xCache.Clear();
 }
 
@@ -113,7 +175,7 @@ void Zenith_EditorMaterialUI::SetTexturePathForSlot(Zenith_MaterialAsset& xMater
 	}
 }
 
-const Zenith_TextureAsset* Zenith_EditorMaterialUI::GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
+Zenith_TextureAsset* Zenith_EditorMaterialUI::GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
 {
 	switch (eSlot)
 	{
@@ -249,7 +311,7 @@ static void ResolveTextureSlotDisplay(
 	Zenith_EditorMaterialUI::TextureSlotType eSlot,
 	std::string& strCurrentPathOut,
 	std::string& strTextureNameOut,
-	const Zenith_TextureAsset*& pxCurrentTextureOut,
+	Zenith_TextureAsset*& pxCurrentTextureOut,
 	bool& bHasTextureOut)
 {
 	strCurrentPathOut = g_xEngine.EditorMaterialUI().GetTexturePathForSlot(xMaterial, eSlot);
@@ -321,7 +383,7 @@ void Zenith_EditorMaterialUI::RenderTextureSlot(
 	ImGui::PushID(szLabel);
 
 	std::string strCurrentPath, strTextureName;
-	const Zenith_TextureAsset* pxCurrentTexture = nullptr;
+	Zenith_TextureAsset* pxCurrentTexture = nullptr;
 	bool bHasTexture = false;
 	ResolveTextureSlotDisplay(xMaterial, eSlot, strCurrentPath, strTextureName, pxCurrentTexture, bHasTexture);
 
@@ -379,4 +441,8 @@ void Zenith_EditorMaterialUI::RenderAllTextureSlots(Zenith_MaterialAsset& xMater
 }
 
 // (namespace Zenith_Editor_MaterialUI closing brace removed — class collapse)
+#ifdef ZENITH_TESTING
+#include "Editor/Zenith_Editor_MaterialUI.Tests.inl"
+#endif
+
 #endif // ZENITH_TOOLS

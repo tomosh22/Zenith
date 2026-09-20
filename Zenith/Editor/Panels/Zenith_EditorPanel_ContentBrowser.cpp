@@ -109,10 +109,33 @@ namespace
 
 	//=========================================================================
 	// Texture thumbnail cache
+	//
+	// ★ THE CACHE MUST OWN A REFERENCE TO EVERY TEXTURE IT HAS REGISTERED, and
+	// that is not defensive book-keeping. RegisterTexture resolves the SRV's
+	// Flux_ImageViewHandle to a raw vk::ImageView and bakes THAT into an ImGui
+	// descriptor set, once, at registration time — nothing ever revalidates it,
+	// so the descriptor set outlives the texture unless the cache pins it.
+	//
+	// It did not. The entry stored a TextureHandle, but it was filled with
+	// SetPath() (stores a path; does NOT load and does NOT AddRef) and the asset
+	// came from GetView() (a documented NON-owning view that "MUST NOT outlive an
+	// UnloadUnused()/scene transition"). Every thumbnail therefore sat in the
+	// registry at refcount 0. SCENE_LOAD_SINGLE — Play, then New Game, then any
+	// Dawnmere warp — fires Zenith_SceneSystem::UnloadUnusedAssets(), which
+	// deletes every refcount-0 asset, and ~Zenith_TextureAsset queues its image
+	// view for destruction. Zenith_Vulkan_MemoryManager's image-view registry is a
+	// LIFO free list with NO generation counter, so the next view allocated — a
+	// resized scene colour target, the material preview's LDR — took the freed
+	// slot and the tiles drew THAT through the stale descriptor set. Hence
+	// thumbnails that vaguely resemble the game view or the material preview.
+	//
+	// Acquire<T>() AddRefs under the registry lock, so the pin is race-free and the
+	// view cannot be freed while a tile still points at it. The pin is released by
+	// ClearThumbnailCache() (navigation), which also unregisters the descriptor set.
 	//=========================================================================
 	struct TextureThumbnailEntry
 	{
-		TextureHandle m_xTexture;  // Handle manages ref counting
+		TextureHandle m_xTexture;  // OWNING — keeps the image view alive under the descriptor set
 		Flux_ImGuiTextureHandle m_xImGuiHandle;
 		bool m_bLoadAttempted = false;
 	};
@@ -124,45 +147,6 @@ namespace
 	}
 
 	constexpr size_t MAX_CACHED_THUMBNAILS = 100;
-
-	Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
-	{
-		Zenith_HashMap<std::string, TextureThumbnailEntry>& xCache = ThumbnailCache();
-		TextureThumbnailEntry* pxExisting = xCache.TryGet(strPath);
-		if (pxExisting != nullptr)
-		{
-			return pxExisting->m_xImGuiHandle;   // invalid when the load failed
-		}
-		if (xCache.GetSize() >= MAX_CACHED_THUMBNAILS)
-		{
-			return Flux_ImGuiTextureHandle();
-		}
-
-		TextureThumbnailEntry xEntry;
-		xEntry.m_bLoadAttempted = true;
-		xEntry.m_xTexture.SetPath(strPath);
-		Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(strPath);
-		if (pxTexture && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
-		{
-			xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(pxTexture->m_xSRV, g_xEngine.FluxGraphics().m_xClampSampler);
-		}
-		xCache[strPath] = xEntry;
-		return xEntry.m_xImGuiHandle;
-	}
-
-	void ClearThumbnailCache()
-	{
-		Zenith_HashMap<std::string, TextureThumbnailEntry>& xCache = ThumbnailCache();
-		for (Zenith_HashMap<std::string, TextureThumbnailEntry>::Iterator xIt(xCache); !xIt.Done(); xIt.Next())
-		{
-			TextureThumbnailEntry& xEntry = xIt.GetValueMutable();
-			if (xEntry.m_xImGuiHandle.IsValid())
-			{
-				Flux_ImGuiIntegration::UnregisterTexture(xEntry.m_xImGuiHandle);
-			}
-		}
-		xCache.Clear();
-	}
 
 	//=========================================================================
 	// Folder tree cache — rebuilt on refresh, not every frame.
@@ -474,7 +458,7 @@ namespace
 		bool bDrewImage = false;
 		if (!xEntry.m_bIsDirectory && xEntry.m_strExtension == ZENITH_TEXTURE_EXT)
 		{
-			const Flux_ImGuiTextureHandle xThumb = GetTextureThumbnail(xEntry.m_strFullPath);
+			const Flux_ImGuiTextureHandle xThumb = Zenith_EditorPanelContentBrowser::GetTextureThumbnail(xEntry.m_strFullPath);
 			if (xThumb.IsValid())
 			{
 				pxDraw->AddImageRounded((ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xThumb), xPrevMin, xPrevMax, ImVec2(0, 0), ImVec2(1, 1), 0xFFFFFFFF, fRound * 0.6f);
@@ -541,6 +525,52 @@ namespace
 
 namespace Zenith_EditorPanelContentBrowser
 {
+
+// Cache entry points. Live in the panel namespace (not the file's anonymous one)
+// so a unit can drive the pin/release cycle the cache comment above describes.
+Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
+{
+	Zenith_HashMap<std::string, TextureThumbnailEntry>& xCache = ThumbnailCache();
+	TextureThumbnailEntry* pxExisting = xCache.TryGet(strPath);
+	if (pxExisting != nullptr)
+	{
+		return pxExisting->m_xImGuiHandle;   // invalid when the load failed
+	}
+	if (xCache.GetSize() >= MAX_CACHED_THUMBNAILS)
+	{
+		return Flux_ImGuiTextureHandle();
+	}
+
+	TextureThumbnailEntry xEntry;
+	xEntry.m_bLoadAttempted = true;
+	// OWNING acquire (see the cache comment above) — NOT SetPath + GetView, which
+	// left the texture at refcount 0 and let UnloadUnused() free the image view out
+	// from under the ImGui descriptor set registered just below.
+	xEntry.m_xTexture = Zenith_AssetRegistry::Acquire<Zenith_TextureAsset>(strPath);
+	Zenith_TextureAsset* pxTexture = xEntry.m_xTexture.Resolve();
+	if (pxTexture && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
+	{
+		xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(pxTexture->m_xSRV, g_xEngine.FluxGraphics().m_xClampSampler);
+	}
+	xCache[strPath] = xEntry;
+	return xEntry.m_xImGuiHandle;
+}
+
+void ClearThumbnailCache()
+{
+	Zenith_HashMap<std::string, TextureThumbnailEntry>& xCache = ThumbnailCache();
+	for (Zenith_HashMap<std::string, TextureThumbnailEntry>::Iterator xIt(xCache); !xIt.Done(); xIt.Next())
+	{
+		TextureThumbnailEntry& xEntry = xIt.GetValueMutable();
+		if (xEntry.m_xImGuiHandle.IsValid())
+		{
+			Flux_ImGuiIntegration::UnregisterTexture(xEntry.m_xImGuiHandle);
+		}
+	}
+	// Clear() destroys every TextureHandle, releasing the pins taken above.
+	xCache.Clear();
+}
+
 
 //=============================================================================
 // Pure helpers
@@ -1090,5 +1120,9 @@ void NavigateToParent(Zenith_EditorContentBrowserState& xState)
 }
 
 } // namespace Zenith_EditorPanelContentBrowser
+
+#ifdef ZENITH_TESTING
+#include "Editor/Panels/Zenith_EditorPanel_ContentBrowser.Tests.inl"
+#endif
 
 #endif // ZENITH_TOOLS

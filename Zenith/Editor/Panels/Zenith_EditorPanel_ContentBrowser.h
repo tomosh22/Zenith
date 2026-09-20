@@ -26,6 +26,15 @@ namespace Zenith_EditorPanelContentBrowser
 
 	void RefreshDirectoryContents(Zenith_EditorContentBrowserState& xState);
 
+	// Texture thumbnail cache. GetTextureThumbnail pins the asset with an OWNING
+	// handle for as long as the entry lives — the ImGui descriptor set it returns
+	// bakes in the texture's raw image view and is never revalidated, so an
+	// unpinned texture freed by UnloadUnused() (every SCENE_LOAD_SINGLE) leaves the
+	// tile sampling whatever view later took the recycled slot. ClearThumbnailCache
+	// unregisters and drops those pins; navigation is its production caller.
+	Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath);
+	void ClearThumbnailCache();
+
 	// Navigate to a directory; bAddToHistory=false when walking back/forward.
 	void NavigateToDirectory(Zenith_EditorContentBrowserState& xState, const std::string& strPath, bool bAddToHistory = true);
 	void NavigateToParent(Zenith_EditorContentBrowserState& xState);
