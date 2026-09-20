@@ -5,10 +5,13 @@
 // barrier synthesizer lowers into vk::AccessFlagBits + vk::PipelineStageFlags).
 //
 // ====================================================================
-// HEADLESS-SAFETY. These tests run only in a ZENITH_VULKAN config, because the
-// entire Zenith/Vulkan/ directory is compiled out of Null_* builds (the headless
-// CI config) and out of D3D12_* builds — see Zenith/Null/CLAUDE.md and
-// Zenith/D3D12/CLAUDE.md. The test bodies are pure integer/enum comparisons
+// HEADLESS-SAFETY. These tests run only in a ZENITH_VULKAN config, because
+// Zenith/RenderBackends/Vulkan/ is owned by ZenithRenderBackendVulkan, which
+// DECLARES RenderBackend.Vulkan only — so a Null_* build (the headless CI
+// config) or a D3D12_* build simply has no such project in it. Since Phase 4e
+// that is target-restricted project membership, not a per-configuration source
+// exclude; see Zenith/RenderBackends/Null/CLAUDE.md and
+// Zenith/RenderBackends/D3D12/CLAUDE.md. The test bodies are pure integer/enum comparisons
 // over the translated (layout, access mask, pipeline stage) triple, so they
 // require no device and no command buffer; a Vulkan build runs them as part
 // of the boot-time unit batch.

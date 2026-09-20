@@ -10,7 +10,7 @@
 //
 // The Null backend performs zero real rendering: it is the GPU-less backend the
 // headless/CI builds run on, and it compiles + links against the backend-neutral
-// Flux surface. See Zenith/Null/CLAUDE.md.
+// Flux surface. See Zenith/RenderBackends/Null/CLAUDE.md.
 // ============================================================================
 
 // A real graphics backend pulls <windows.h> transitively via its native header

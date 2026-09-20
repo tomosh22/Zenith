@@ -1644,8 +1644,10 @@ void Zenith_Vulkan_CommandBuffer::EndGPUTimer(u_int uTimerIdx)
 // integer/enum comparisons against the translated (layout, access mask,
 // pipeline stage) triple, headless-safe on a Vulkan build.
 //
-// Note: the entire Zenith/Vulkan/ directory is compiled out of Null_* and
-// D3D12_* configs, so these tests never register in the headless CI gate —
+// Note: Zenith/RenderBackends/Vulkan/ is owned by ZenithRenderBackendVulkan,
+// which declares RenderBackend.Vulkan only, so a Null_* or D3D12_* config has
+// no such project in it at all (target-restricted membership since Phase 4e,
+// not a source exclude) and these tests never register in the headless gate —
 // they are a Vulkan-ONLY gate (the design plan's explicit "do not infer
 // native stage/access values from the neutral graph test" requirement).
 //

@@ -10,7 +10,7 @@
 //
 // The D3D12 backend is a NO-OP "null" backend: it compiles + links against the
 // backend-neutral Flux surface to prove the concepts are renderer-agnostic, but
-// performs zero real rendering. See Zenith/D3D12/CLAUDE.md.
+// performs zero real rendering. See Zenith/RenderBackends/D3D12/CLAUDE.md.
 // ============================================================================
 
 // A real D3D12 backend would include <d3d12.h>, which transitively pulls

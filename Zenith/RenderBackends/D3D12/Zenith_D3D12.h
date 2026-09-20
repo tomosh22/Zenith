@@ -152,7 +152,7 @@ public:
 	// backend creates the context and initialises the RENDERER-AGNOSTIC GLFW
 	// platform backend (ImGui_ImplGlfw_InitForOther); only the RENDERER backend
 	// (ImGui_ImplVulkan_*) is absent, so the composed draw data is simply never
-	// rasterised. Kept identical to the Null twin (Zenith/Null/CLAUDE.md lists
+	// rasterised. Kept identical to the Null twin (Zenith/RenderBackends/Null/CLAUDE.md lists
 	// the only intended divergences). Out-of-line (Zenith_D3D12.cpp): the bodies
 	// need imgui.h + the GLFW backend header, neither of which belongs in this
 	// seam-reachable header.
