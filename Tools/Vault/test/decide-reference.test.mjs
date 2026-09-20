@@ -167,6 +167,64 @@ test('ZEN-90: a decision written is a decision readable', async t => {
   assert.equal(rows[0].values.ID, 'FD-D-001');
 });
 
+// ZEN ticket (2026-09-20): `appendKnowledgeRow` minted a reference only when
+// `--project` was passed explicitly, unlike the four other derivations in
+// this same file (`queueCandidate` :594, `create` :844, `sprint` :1006 and
+// `version` :1103), which also fall back through
+// `policyOf(index).clientFile.project` (the checkout's declared default
+// project, e.g. `zagent.project.json`'s `project: "ZEN"`) and then
+// `index.boardRoots?.[0]?.project`. So `zagent decide --file x.md` with
+// neither `--ticket` nor `--project` minted no ID at all and stored the row
+// with `ID: null` -- silently unciteable, which is the exact failure the
+// minting in `mintDecisionId` was added to eliminate. `zagent finish`
+// refuses to close a ticket whose "Durable findings" line cannot name a
+// `PROJ-D-N` reference, so this made the omission unrecoverable at closing
+// time rather than at filing time.
+//
+// The fix gives ONLY the minted-ID prefix that wider fallback -- the
+// variable that decides where the row is WRITTEN, and that refuses the
+// write outright when nothing names a project and no catalog exists, keeps
+// its original narrow derivation (`write.mjs`'s `appendKnowledgeRow`, the
+// `project` vs `mintProject` split). Widening the routing variable too once
+// turned a deliberate refusal into a silent write to a guessed project --
+// see `write-branches.test.mjs`'s "knowledge falls back to the metadata
+// catalog and to a new knowledge file" case, which exists to catch exactly
+// that.
+//
+// Repairing an already-written null-ID row is NOT mechanical, and the two
+// shapes are not interchangeable:
+//   - A null-ID row that is a BYTE-IDENTICAL duplicate of a row already
+//     carrying a minted ID elsewhere must not get a second ID minted for
+//     it -- that puts two different decision references on one decision,
+//     which a citing ticket cannot disambiguate. The repair there is a
+//     human judgement call about which row (if either) to remove or
+//     annotate, not a script.
+//   - A null-ID row that is a genuine orphan (no minted twin) can go
+//     through the ordinary write path (or a dedicated migration written the
+//     same way) to acquire one -- never a manual edit to `metadata.md`,
+//     which races the same live storage `zagent decide` itself commits to.
+test('decide with neither --ticket nor --project mints from the checkout default project', async t => {
+  const root = await makeVault(t);
+  const res = await write(root, ['decide', '--text', 'No flags at all.']);
+  assert.equal(res.exitCode, 0, res.payload?.error);
+  assert.equal(res.payload.values.ID, 'FD-D-001', 'minted from policy.client.file.project, not left null');
+});
+
+test('an explicit --project still wins over the checkout default when both could apply', async t => {
+  const root = await makeVault(t);
+  const res = await write(root, ['decide', '--text', 'Explicit project.', '--project', 'ZZ']);
+  assert.equal(res.exitCode, 0, res.payload?.error);
+  assert.equal(res.payload.values.ID, 'ZZ-D-001', 'the explicit --project prefixes the minted ID, not the checkout default (FD)');
+});
+
+test('an explicitly supplied ID still wins even with no --ticket and no --project', async t => {
+  const root = await makeVault(t);
+  const body = JSON.stringify({ ID: 'FD-D-099', Decision: 'Renumbered by hand, no flags.' });
+  const res = await write(root, ['decide', '--text', body]);
+  assert.equal(res.exitCode, 0, res.payload?.error);
+  assert.equal(res.payload.values.ID, 'FD-D-099');
+});
+
 test('the stale-organisation database is left untouched', async t => {
   // Proves the previous test is not passing because BOTH databases got a row.
   const root = await makeVault(t);

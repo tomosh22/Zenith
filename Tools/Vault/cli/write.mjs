@@ -1366,10 +1366,34 @@ function mintDecisionId(index, command, project, values) {
   return { ...values, ID: `${prefix}${String(next).padStart(3, '0')}` };
 }
 
+// ★ ONE NAME, TWO QUESTIONS -- DO NOT LET THEM SHARE A DERIVATION.
+//
+// `project` below answers "where does this row go, and is that even
+// answerable" -- it feeds `knowledgeRecord` (which per-project knowledge
+// file, if any) and the `!project` refusal a few lines down, whose entire
+// job is to say "this vault has nowhere obvious to put this" when neither
+// `--ticket` nor `--project` was given and no catalog exists either.
+// Widening THIS derivation with the checkout default
+// (`policyOf(index).clientFile.project`) or the first configured board root
+// turns that refusal into "guess a project and write anyway" -- exactly the
+// regression `write-branches.test.mjs`'s "knowledge falls back to the
+// metadata catalog and to a new knowledge file" case exists to catch: a
+// bare `zagent ask` with no ticket, no project and no catalog silently
+// created `FD/knowledge/questions.md` and returned exit 0 instead of
+// refusing.
+//
+// `mintProject` below answers a narrower question -- "what prefix goes on a
+// freshly minted PROJ-D-N reference" -- and CAN afford the wider fallback,
+// the same one `queueCandidate` (:594), `create` (:844), `sprint` (:1006)
+// and `version` (:1103) already use: a decision needs a name even when
+// nothing else in the call named a project, and guessing a prefix from the
+// checkout's declared default is harmless in a way guessing whether to
+// write at all is not.
 function appendKnowledgeRow(index, command, input, ticketKey, argv = []) {
   const project = projectOf(index, findTicket(index, ticketKey), ticketKey) ?? String(valueOf(argv, 'project') ?? '').toUpperCase();
+  const mintProject = projectOf(index, findTicket(index, ticketKey), ticketKey) ?? String(valueOf(argv, 'project') ?? policyOf(index).clientFile.project ?? index.boardRoots?.[0]?.project ?? '').toUpperCase();
   const direct = knowledgeRecord(index, project, command);
-  const values = mintDecisionId(index, command, project, knowledgeValues(command, input, argv, ticketKey));
+  const values = mintDecisionId(index, command, mintProject, knowledgeValues(command, input, argv, ticketKey));
   if (direct) {
     const rows = array(direct.fields?.rows).slice();
     rows.push({ id: randomUUID(), values, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
