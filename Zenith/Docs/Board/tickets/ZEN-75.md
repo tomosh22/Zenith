@@ -3,7 +3,7 @@ id: "b700418d-1b50-4f43-a8a2-ee054ef5f4e6"
 key: "ZEN-75"
 type: "TASK"
 title: "zagent writes .zagent/last.exit on every exit path"
-category: "Engine"
+category: "Tooling"
 parent: "ZEN-28"
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 75
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:07.178Z"
+updatedAt: "2026-09-20T23:31:31.170Z"
 flagged: false
 severity: null
 reproducibility: null
