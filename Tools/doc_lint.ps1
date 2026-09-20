@@ -21,6 +21,10 @@
 #      file the gate actually reads) and with the registry the tests declare.
 #      EQUALITY, both directions -- understating is the direction drift always
 #      travels, so an overshoot-only check is blind to the common case.
+#   9. Bare bracketed ticket-key citations (`[ZM-50 / ZEN-2]`, not a markdown
+#      link) resolve to a real ticket file. Both directions matter: a key
+#      that never resolved (dangling), and a key that resolves NOW to an
+#      unrelated ticket because keys are allocated sequentially (wrong).
 #
 # Usage:
 #   pwsh -NoProfile -File Tools/doc_lint.ps1
@@ -580,10 +584,164 @@ function Check-ArtBriefTicks {
 
     Report-Pass 'C8' "ArtBrief.md tick rows consistent ($ticked of $total ticked, $($seen.Count) unique ids)"
 }
+
+# =============================================================================
+# Check 9: bare bracketed ticket-key citations resolve to a real ticket.
+#
+# Prose in the living docs cites tickets as a bare bracket -- `[ZM-50 /
+# ZEN-2]` -- not as a markdown link, so C6 (which matches only `](target)`
+# and explicitly skips http(s)/mailto targets) never looks at these at all.
+# THIS IS THE FIRST CHECK TO VERIFY A TICKET-KEY CITATION -- it does not
+# complement an existing one; nothing else in this file resolves a key.
+#
+# Both failure directions are live in this repo:
+#   * DANGLING -- a key that resolves to no ticket file.
+#   * WRONG -- a key that resolved to nothing when written and, because keys
+#     are allocated sequentially, now resolves to an unrelated ticket filed
+#     later. Questions.md tagged a question `[ZM-50 / ZEN-2]` meaning "and an
+#     engine twin, unfiled"; filing an unrelated engine ticket later handed
+#     ZEN-2 to someone else's work, and the citation silently now points at
+#     it. Equality-of-existence is all this check can assert -- it cannot
+#     know the citation meant something else, only that the key it names
+#     exists (or does not).
+#
+# THE REGISTRY IS PER-CATEGORY, AND THERE ARE SIX OF THEM, NOT ONE. Each
+# category mirrors its own tickets under ITS OWN living-docs tree:
+# Games/<Game>/Docs/Board/tickets/<KEY>.md for a game (verified on this tree
+# -- Games/Zenithmon/Docs/Board/tickets holds ZM-*.md, Games/Foundry/...
+# holds FD-*.md, and so on), and Zenith/Docs/Board/tickets/<KEY>.md for the
+# Engine, which has no Games/<Name> home of its own. A citation can name ANY
+# project's key -- the motivating case in this check's own history is a
+# Zenithmon doc citing a ZEN twin -- so the known-key set is the UNION of
+# every registry this checkout declares (zagent.project.json: ZM, ZEN, DP,
+# UV, HE, FD), not just the one for whichever -Game is currently being
+# linted. An earlier version of this check read ONLY Zenith/Docs/Board/tickets
+# regardless of -Game, which would have reported essentially every ZM/FD/UV/HE
+# citation in every non-Engine game's docs as dangling -- hundreds of them,
+# confirmed by grepping the real docs during review. Read ONCE into a
+# hashtable, not probed per citation. Each registry directory is deliberately
+# outside its own $docsDir (excluded from every other check here, via
+# Get-LivingMarkdownFiles' Board/ exclusion); it is read as a registry, never
+# linted.
+#
+# WHAT IS DELIBERATELY NOT REPORTED, so this check does not get muted the
+# way a naive version would on its first run:
+#   * a key inside a FENCED code block (``` or ~~~) -- the docs quote
+#     example keys constantly.
+#   * a key inside an INLINE code span (one or more backticks) -- same
+#     reason, one line instead of a fence.
+#   * a key inside a markdown LINK's bracket text -- `[ZM-53](./Foo.md)` is
+#     a link, and resolving it is C6's job. Reporting it here too would be a
+#     second, weaker copy of that check (this one has no notion of a
+#     relative-path target), not a genuinely new signal.
+#   * a DECISION key (`ZM-D-203`, `ZEN-D-007`) -- decisions are never filed
+#     as tickets, so a resolvable-TICKET check must not treat one as
+#     dangling. The key pattern requires a digit immediately after the
+#     project's hyphen, which already excludes `-D-` on its own; the
+#     `(?!D-)` below documents that exclusion rather than adding a second
+#     mechanism to keep in sync with the first.
+#
+# EDGE CASES DELIBERATELY NOT HANDLED (conservative under-reporting beats a
+# check that fires on quoted examples and gets muted):
+#   * a citation split across more than one line.
+#   * a reference-style link DEFINITION (`[ZM-50]: https://...`) -- read as
+#     a bare bracket and checked like any other, which is arguably the
+#     wrong home for it, but the shape does not appear in these docs today.
+#   * nested brackets inside one citation (`[[ZM-50]]`) -- the bracket regex
+#     is deliberately non-nesting.
+# =============================================================================
+function Get-KnownTicketKeys {
+    $registryDirs = @(
+        (Join-Path $RepoRoot 'Zenith/Docs/Board/tickets'),             # ZEN
+        (Join-Path $RepoRoot 'Games/Zenithmon/Docs/Board/tickets'),    # ZM
+        (Join-Path $RepoRoot 'Games/DevilsPlayground/Docs/Board/tickets'), # DP
+        (Join-Path $RepoRoot 'Games/Undervault/Docs/Board/tickets'),   # UV
+        (Join-Path $RepoRoot 'Games/Hearth/Docs/Board/tickets'),       # HE
+        (Join-Path $RepoRoot 'Games/Foundry/Docs/Board/tickets')       # FD
+    )
+    $known = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($ticketsDir in $registryDirs) {
+        if (-not (Test-Path -LiteralPath $ticketsDir)) { continue }
+        Get-ChildItem -LiteralPath $ticketsDir -Filter '*.md' -File | ForEach-Object {
+            [void]$known.Add([System.IO.Path]::GetFileNameWithoutExtension($_.Name))
+        }
+    }
+    return $known
+}
+
+# Masks inline code spans -- one or more backticks, closed by a run of the
+# SAME length (so a 2-backtick span containing a lone backtick is not closed
+# early) -- with 'x' filler of identical length, so a bracket match inside
+# one vanishes without disturbing the line's length.
+function Hide-InlineCodeSpans {
+    param([string]$Line)
+    return [regex]::Replace($Line, '(`+)(?:(?!\1).)*?\1', { param($m) 'x' * $m.Value.Length })
+}
+
+# Project prefixes this checkout declares (zagent.project.json): ZM, ZEN, DP,
+# UV, HE, FD. `(?!D-)` excludes a decision key (ZM-D-203) explicitly -- see
+# the block comment above for why that is belt-and-braces, not load-bearing.
+$script:ticketKeyPattern = '\b(ZM|ZEN|DP|UV|HE|FD)-(?!D-)(\d+)\b'
+
+function Check-KeyCitations {
+    $known = Get-KnownTicketKeys
+    if ($known.Count -eq 0) {
+        Report-Pass 'C9' "no ticket registry found under any of the six Board/tickets directories -- check does not apply"
+        return
+    }
+
+    Get-LivingMarkdownFiles | ForEach-Object {
+        $name = $_.Name
+        # @()-wrapped: Get-Content returns a bare String (not a 1-element
+        # array) for a single-line file, and the loop below iterates a
+        # String by CHARACTER -- so an unwrapped call silently checks
+        # nothing on any one-line doc. See Test_DocLintKeyCitations.ps1's
+        # deliberately single-line fixture, which pins this exact bug.
+        $lines = @(Get-Content $_.FullName)
+        $inFence = $false
+        $fenceChar = ''
+        $fenceLen = 0
+
+        for ($i = 0; $i -lt $lines.Length; $i++) {
+            $line = $lines[$i]
+
+            # Fenced code block toggle -- same shape as C8's, extended to
+            # ~~~ as well as ```, tracking the opening delimiter's length so
+            # a valid close needs at least as many of the same character.
+            if (-not $inFence -and $line -match '^\s*(`{3,}|~{3,})') {
+                $inFence = $true
+                $fenceChar = $matches[1].Substring(0, 1)
+                $fenceLen = $matches[1].Length
+                continue
+            }
+            if ($inFence) {
+                if ($line -match "^\s*([$fenceChar]{$fenceLen,})\s*`$") { $inFence = $false }
+                continue
+            }
+
+            $masked = Hide-InlineCodeSpans $line
+            foreach ($b in [regex]::Matches($masked, '\[([^\[\]]+)\]')) {
+                # A markdown link's bracket text, `[...](target)`. C6
+                # resolves the target; skip here rather than double-report.
+                $after = $b.Index + $b.Length
+                if ($after -lt $masked.Length -and $masked[$after] -eq '(') { continue }
+
+                foreach ($k in [regex]::Matches($b.Groups[1].Value, $script:ticketKeyPattern)) {
+                    $key = "$($k.Groups[1].Value)-$($k.Groups[2].Value)"
+                    if (-not $known.Contains($key)) {
+                        Report-Violation 'C9' "${name}:$($i+1): cites '$key' in '[$($b.Groups[1].Value)]', which resolves to no ticket in any known ticket registry"
+                    }
+                }
+            }
+        }
+    }
+    Report-Pass 'C9' "bracketed ticket-key citations resolve ($($known.Count) known tickets)"
+}
+
 # =============================================================================
 # Run all checks.
 # =============================================================================
-Write-Host "doc_lint.ps1: running 8 checks against $docsDir" -ForegroundColor Cyan
+Write-Host "doc_lint.ps1: running 9 checks against $docsDir" -ForegroundColor Cyan
 Check-TestCount
 Check-MvpArchetypeNames
 Check-RoadmapUniqueIds
@@ -592,6 +750,7 @@ Check-StaleClaims
 Check-MarkdownLinks
 Check-LivePin
 Check-ArtBriefTicks
+Check-KeyCitations
 
 Write-Host ""
 if ($script:violations -eq 0) {
