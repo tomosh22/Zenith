@@ -40,13 +40,15 @@
         See Zenith/Flux/Shadows/CLAUDE.md -> Diagnosing "X stopped casting a
         shadow", and Docs/design/Photorealism.md for the whole programme.
 
-  EXIT CODE. Exactly ONE known teardown fault is forgiven, and only when its exact
-  signature ("Worker N scratch buffer overflow") is in the log: it fires after the
-  test reports PASSED and after every capture is on disk. Any OTHER nonzero exit is
-  reported, with the tail of the log -- forgiving all of them once DONE appeared is
-  a fail-open, and it hid a real grass-handle lifetime bug for as long as it existed.
-  A held-asset warning at registry shutdown is surfaced too, and the crop step's own
-  exit code propagates.
+  EXIT CODE. No teardown fault is forgiven. Any nonzero exit after the test reports
+  DONE is reported, with the tail of the log -- forgiving one (by signature or,
+  worse, unconditionally once DONE appeared) is a fail-open: it hid a real
+  grass-handle lifetime bug for as long as it existed, and a since-fixed defect
+  (ZEN-40: the debug primitive queues were never drained while
+  Graphics/Primitives/Enabled was off, so a tour-length backlog overflowed a
+  Vulkan worker's scratch partition at teardown) for as long as it was pinned by
+  signature. A held-asset warning at registry shutdown is surfaced too, and the
+  crop step's own exit code propagates.
 #>
 param(
     [Parameter(Mandatory = $true)][ValidateSet('RenderTest', 'Zenithmon')][string]$Game,
@@ -109,31 +111,31 @@ $p.WaitForExit()
 Write-Host "[phototour] exit=$($p.ExitCode) in $([int]$sw.Elapsed.TotalSeconds)s"
 Select-String -Path $log -Pattern 'PhotoTour\]' | ForEach-Object { $_.Line } | Select-Object -Last 40
 
-# ONE known teardown fault is forgiven, BY ITS EXACT SIGNATURE, and nothing else.
-#
-# The fault: the world-reset path records command-buffer scratch after the last
-# per-frame reset, so it overflows a worker partition at any partition size. It
-# fires AFTER the test reports PASSED and after every screenshot is on disk.
+# No forgiven signature. There used to be exactly one, pinned to
+# "Worker N scratch buffer overflow": a photo tour disables
+# Graphics/Primitives/Enabled for its whole duration, and
+# Flux_PrimitivesImpl::ExecuteGBuffer drained its six debug instance queues only
+# while that option was on, so the tour-length backlog of Add*() submissions
+# accumulated unbounded and was drawn in one frame -- enough BindDrawConstants
+# calls to overflow a Vulkan worker's scratch partition -- the instant the
+# option was re-enabled at teardown. Fixed at ZEN-40 (the queues are now
+# Clear()'d at every frame boundary regardless of the option), so there is
+# nothing left to forgive here: any nonzero exit after DONE is reported as-is.
 #
 # ★ THIS USED TO FORGIVE *ANY* NONZERO EXIT once DONE appeared, which is a
 # fail-open: DONE is logged before engine shutdown, so every teardown regression
 # after it was invisible. It hid a real one -- grass texture handles outliving the
 # asset registry (Flux_GrassImpl::ReleaseAssetReferences was never called), which
 # the log had been reporting as "still held with 4 refs" the whole time. A
-# suppression that is not pinned to a signature is a suppression of the future.
+# suppression that is not pinned to a signature is a suppression of the future --
+# and a suppression still pinned to a signature that no longer occurs is a live
+# fail-open of exactly the same shape, so it is removed rather than left inert.
 $doneLine = Select-String -Path $log -Pattern 'PhotoTour\] DONE' | Select-Object -Last 1
 $exitCode = $p.ExitCode
-$knownTeardown = 'Assertion failed: Worker \d+ scratch buffer overflow'
 if ($doneLine -and $exitCode -ne 0) {
-    $sig = Select-String -Path $log -Pattern $knownTeardown | Select-Object -Last 1
-    if ($sig) {
-        Write-Host "[phototour] tour completed; ignoring the KNOWN teardown fault (exit $exitCode): $($sig.Line.Trim())"
-        $exitCode = 0
-    } else {
-        Write-Host "[phototour] tour reached DONE but exited $exitCode with no known-teardown signature -- reporting it."
-        Write-Host "[phototour] last 15 log lines:"
-        Get-Content $log -Tail 15 | ForEach-Object { Write-Host "    $_" }
-    }
+    Write-Host "[phototour] tour reached DONE but exited $exitCode -- reporting it."
+    Write-Host "[phototour] last 15 log lines:"
+    Get-Content $log -Tail 15 | ForEach-Object { Write-Host "    $_" }
 }
 
 # A held asset at registry shutdown is a leaked handle, and the next thing it does

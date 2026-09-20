@@ -747,12 +747,21 @@ pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marke
   Driven by `Tools/phototour_run.ps1` (`-Game Zenithmon|RenderTest -Tag <name>
   [-Compare <tag>]`), which launches it windowed, crops via
   `Tools/phototour_crop.py` and writes contact/compare sheets under
-  `Build/artifacts/zenithmon/phototour/<tag>/`. Exactly ONE known teardown fault is
-  forgiven, and only by its signature (`Worker N scratch buffer overflow`); any
-  other nonzero exit is reported with the log tail. Forgiving every nonzero exit
-  once `DONE` appeared was a fail-open -- `DONE` is logged before engine shutdown --
-  and it hid a real grass-handle lifetime bug. The runner also warns on any
-  `still held with N refs` line. A reused `-Tag` is CLEARED before the run and a
+  `Build/artifacts/zenithmon/phototour/<tag>/`. No teardown fault is forgiven --
+  any nonzero exit is reported with the log tail. There used to be exactly one
+  forgiven signature (`Worker N scratch buffer overflow`): the tour disables
+  `Graphics/Primitives/Enabled` for its duration, and
+  `Flux_PrimitivesImpl::ExecuteGBuffer` drained its six debug instance queues
+  only while that option was on, so the tour-length backlog of `Add*()`
+  submissions accumulated unbounded and was drawn in one frame -- enough draw
+  calls to overflow a Vulkan worker's scratch partition -- the instant the
+  option was restored in Teardown. Fixed at ZEN-40 (the queues are now consumed
+  at every frame boundary regardless of the option), so the forgiveness was
+  removed rather than left pinned to a fault that no longer occurs. Forgiving
+  every nonzero exit once `DONE` appeared was ALSO a fail-open -- `DONE` is
+  logged before engine shutdown -- and it hid a real grass-handle lifetime bug.
+  The runner also warns on any `still held with N refs` line. A reused `-Tag`
+  is CLEARED before the run and a
   `-Compare` that does not pair every shot on both sides fails naming the unmatched
   ones (`-AllowPartialCompare` opts out): the cropper enumerates every `.tga` in the
   directory, so a stale capture both joins this run's contact sheet and SATISFIES

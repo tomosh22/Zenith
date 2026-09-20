@@ -82,17 +82,19 @@ the tours run at 3840x2160.
 > 0.265 — below the wind noise floor — so it reads as a coin flip and means nothing.
 > Check a pose's ON-vs-OFF signal before believing its verdict.)
 
-> **A tour is judged by the captures it can prove, and by a PINNED exit signature.**
-> A pre-existing teardown fault (the world-reset path records command-buffer scratch
-> after the last per-frame reset, so it overflows a worker partition at *any*
-> partition size — raising the buffer 1 MB -> 4 MB -> 16 MB just moved the number in
-> the assert) fires AFTER the test reports PASSED and every screenshot is on disk.
-> `phototour_run.ps1` forgives that ONE fault, and only when its signature
-> (`Worker N scratch buffer overflow`) is in the log; any other nonzero exit is
-> reported with the log tail. It also warns on any `still held with N refs` line
-> from the asset registry, and the crop step fails when it finds no readable
-> captures. Fixing the teardown fault is worth doing; it is not a rendering bug and
-> it never affected a capture.
+> **A tour is judged by the captures it can prove.** `phototour_run.ps1` reports
+> any nonzero exit with the log tail — there is no forgiven signature. (There used
+> to be one: a photo tour disables `Graphics/Primitives/Enabled` for its whole
+> duration, and `Flux_PrimitivesImpl::ExecuteGBuffer` drained its six debug
+> instance queues only while that option was on, so a tour-length backlog of
+> `AddSphere`/`AddCube`/… submissions accumulated unbounded and was drawn in one
+> frame — enough `BindDrawConstants` calls to overflow a Vulkan worker's scratch
+> partition — the instant the option was re-enabled at teardown. Fixed at ZEN-40:
+> the debug queues are now consumed, i.e. `Clear()`'d, at every frame boundary
+> regardless of the option, exactly like `Flux_TextImpl`'s `DiscardPendingFrame`
+> already did for its sibling channel. It also warns on any `still held with N
+> refs` line from the asset registry, and the crop step fails when it finds no
+> readable captures.)
 >
 > ★ **It used to forgive EVERY nonzero exit once `DONE` appeared**, which is a
 > fail-open of the kind `Tools/tick_gates.ps1` exists to prevent: `DONE` is logged
@@ -429,8 +431,6 @@ terrain `normal.jpg` sets are `BC5_RG_UNORM`, the `diffuse` sets are
 
 ## 4. Known gaps
 
-* **The teardown scratch overflow** (see §0). Cosmetic, but it makes every windowed
-  run exit non-zero.
 * **SSGI remains off by default**, and correctly so: it *replaces* the sky
   irradiance with a single screen-space albedo bounce rather than adding indirect
   on top of it, so turning it on makes shadowed geometry darker and flatter. It

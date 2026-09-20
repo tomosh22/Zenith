@@ -716,6 +716,60 @@ void Flux_PrimitivesImpl::Clear()
 	m_xInstanceMutex.Unlock();
 }
 
+// ZEN-40: the debug + gameplay instance queues are frame-local — see
+// Flux_TextImpl::ExecuteRenderGraphPass's DiscardPendingFrame for the sibling
+// channel that already had this discipline. Consume the frame boundary
+// UNCONDITIONALLY: copy the debug queues out only when the option is on, but
+// Clear() every queue regardless, so a disabled channel cannot accumulate a
+// backlog that later replays in one frame the moment it is re-enabled.
+void Flux_PrimitivesImpl::ConsumeFrameBoundary(bool bDebugPrimitivesEnabled,
+	Zenith_Vector<Flux_PrimitivesSphereInstance>& xOutSphere,
+	Zenith_Vector<Flux_PrimitivesCubeInstance>& xOutCube,
+	Zenith_Vector<Flux_PrimitivesLineInstance>& xOutLine,
+	Zenith_Vector<Flux_PrimitivesCapsuleInstance>& xOutCapsule,
+	Zenith_Vector<Flux_PrimitivesCylinderInstance>& xOutCylinder,
+	Zenith_Vector<Flux_PrimitivesTriangleInstance>& xOutTriangle,
+	Zenith_Vector<Flux_PrimitivesSphereInstance>& xOutGameplaySphere,
+	Zenith_Vector<Flux_PrimitivesCylinderInstance>& xOutGameplayCylinder)
+{
+	Zenith_ScopedMutexLock xLock(m_xInstanceMutex);
+
+	if (bDebugPrimitivesEnabled)
+	{
+		for (u_int i = 0; i < m_xSphereInstances.GetSize(); ++i) xOutSphere.PushBack(m_xSphereInstances.Get(i));
+		for (u_int i = 0; i < m_xCubeInstances.GetSize(); ++i) xOutCube.PushBack(m_xCubeInstances.Get(i));
+		for (u_int i = 0; i < m_xLineInstances.GetSize(); ++i) xOutLine.PushBack(m_xLineInstances.Get(i));
+		for (u_int i = 0; i < m_xCapsuleInstances.GetSize(); ++i) xOutCapsule.PushBack(m_xCapsuleInstances.Get(i));
+		for (u_int i = 0; i < m_xCylinderInstances.GetSize(); ++i) xOutCylinder.PushBack(m_xCylinderInstances.Get(i));
+		for (u_int i = 0; i < m_xTriangleInstances.GetSize(); ++i) xOutTriangle.PushBack(m_xTriangleInstances.Get(i));
+	}
+	// Unconditional: these are frame-local queues, so the frame boundary is
+	// consumed whether or not the debug option drew from it this frame.
+	m_xSphereInstances.Clear();
+	m_xCubeInstances.Clear();
+	m_xLineInstances.Clear();
+	m_xCapsuleInstances.Clear();
+	m_xCylinderInstances.Clear();
+	m_xTriangleInstances.Clear();
+
+	// The gameplay channel was always drained unconditionally (see Clear()'s
+	// history / Flux_Primitives/CLAUDE.md) — unchanged here.
+	for (u_int i = 0; i < m_xGameplaySphereInstances.GetSize(); ++i) xOutGameplaySphere.PushBack(m_xGameplaySphereInstances.Get(i));
+	for (u_int i = 0; i < m_xGameplayCylinderInstances.GetSize(); ++i) xOutGameplayCylinder.PushBack(m_xGameplayCylinderInstances.Get(i));
+	m_xGameplaySphereInstances.Clear();
+	m_xGameplayCylinderInstances.Clear();
+}
+
+u_int Flux_PrimitivesImpl::GetDebugInstanceQueueSizeForTesting() const
+{
+	return m_xSphereInstances.GetSize()
+		+ m_xCubeInstances.GetSize()
+		+ m_xLineInstances.GetSize()
+		+ m_xCapsuleInstances.GetSize()
+		+ m_xCylinderInstances.GetSize()
+		+ m_xTriangleInstances.GetSize();
+}
+
 // ========== RENDERING ==========
 
 // Compute rotation aligning unit Y-axis (0,1,0) with the direction from xStart to xEnd.
@@ -965,9 +1019,9 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	// reached via g_xEngine at point of use (mirrors ExecuteSSAOGenerate).
 	Flux_PrimitivesImpl& xPrimitives = g_xEngine.Primitives();
 
-	// Drain the instance queues under lock — Add*() runs on game-thread workers while
-	// ExecuteGBuffer runs on the render thread, so we copy out & clear while holding
-	// xPrimitives.m_xInstanceMutex.
+	// Add*() runs on game-thread workers while ExecuteGBuffer runs on the render
+	// thread, so the copy-out + Clear() below happens under xPrimitives.m_xInstanceMutex
+	// inside ConsumeFrameBoundary.
 	Zenith_Vector<SphereInstance> xLocalSphereInstances;
 	Zenith_Vector<CubeInstance> xLocalCubeInstances;
 	Zenith_Vector<LineInstance> xLocalLineInstances;
@@ -978,41 +1032,25 @@ static void ExecuteGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 	Zenith_Vector<CylinderInstance> xLocalGameplayCylinderInstances;
 	const bool bDebugPrimitivesEnabled =
 		Zenith_GraphicsOptions::Get().m_bPrimitivesEnabled;
+
+	// Consume the frame boundary unconditionally — see ConsumeFrameBoundary's
+	// comment and ZEN-40. This both copies out (when enabled) AND clears
+	// every queue every frame, so a disabled debug channel cannot accumulate
+	// an unbounded backlog the way it used to.
+	xPrimitives.ConsumeFrameBoundary(bDebugPrimitivesEnabled,
+		xLocalSphereInstances, xLocalCubeInstances, xLocalLineInstances,
+		xLocalCapsuleInstances, xLocalCylinderInstances, xLocalTriangleInstances,
+		xLocalGameplaySphereInstances, xLocalGameplayCylinderInstances);
+
+	if (xLocalSphereInstances.GetSize() == 0 && xLocalCubeInstances.GetSize() == 0
+		&& xLocalLineInstances.GetSize() == 0 && xLocalCapsuleInstances.GetSize() == 0
+		&& xLocalCylinderInstances.GetSize() == 0 && xLocalTriangleInstances.GetSize() == 0
+		&& xLocalGameplaySphereInstances.GetSize() == 0 && xLocalGameplayCylinderInstances.GetSize() == 0)
 	{
-		Zenith_ScopedMutexLock xLock(xPrimitives.m_xInstanceMutex);
-		const bool bHaveDebugPrimitives = bDebugPrimitivesEnabled
-			&& (xPrimitives.m_xSphereInstances.GetSize() != 0
-				|| xPrimitives.m_xCubeInstances.GetSize() != 0
-				|| xPrimitives.m_xLineInstances.GetSize() != 0
-				|| xPrimitives.m_xCapsuleInstances.GetSize() != 0
-				|| xPrimitives.m_xCylinderInstances.GetSize() != 0
-				|| xPrimitives.m_xTriangleInstances.GetSize() != 0);
-		const bool bHaveGameplayPrimitives =
-			xPrimitives.m_xGameplaySphereInstances.GetSize() != 0
-			|| xPrimitives.m_xGameplayCylinderInstances.GetSize() != 0;
-		if (!bHaveDebugPrimitives && !bHaveGameplayPrimitives)
-		{
-			return;
-		}
-		if (bDebugPrimitivesEnabled)
-		{
-			for (u_int i = 0; i < xPrimitives.m_xSphereInstances.GetSize(); ++i) xLocalSphereInstances.PushBack(xPrimitives.m_xSphereInstances.Get(i));
-			for (u_int i = 0; i < xPrimitives.m_xCubeInstances.GetSize(); ++i) xLocalCubeInstances.PushBack(xPrimitives.m_xCubeInstances.Get(i));
-			for (u_int i = 0; i < xPrimitives.m_xLineInstances.GetSize(); ++i) xLocalLineInstances.PushBack(xPrimitives.m_xLineInstances.Get(i));
-			for (u_int i = 0; i < xPrimitives.m_xCapsuleInstances.GetSize(); ++i) xLocalCapsuleInstances.PushBack(xPrimitives.m_xCapsuleInstances.Get(i));
-			for (u_int i = 0; i < xPrimitives.m_xCylinderInstances.GetSize(); ++i) xLocalCylinderInstances.PushBack(xPrimitives.m_xCylinderInstances.Get(i));
-			for (u_int i = 0; i < xPrimitives.m_xTriangleInstances.GetSize(); ++i) xLocalTriangleInstances.PushBack(xPrimitives.m_xTriangleInstances.Get(i));
-			xPrimitives.m_xSphereInstances.Clear();
-			xPrimitives.m_xCubeInstances.Clear();
-			xPrimitives.m_xLineInstances.Clear();
-			xPrimitives.m_xCapsuleInstances.Clear();
-			xPrimitives.m_xCylinderInstances.Clear();
-			xPrimitives.m_xTriangleInstances.Clear();
-		}
-		for (u_int i = 0; i < xPrimitives.m_xGameplaySphereInstances.GetSize(); ++i) xLocalGameplaySphereInstances.PushBack(xPrimitives.m_xGameplaySphereInstances.Get(i));
-		for (u_int i = 0; i < xPrimitives.m_xGameplayCylinderInstances.GetSize(); ++i) xLocalGameplayCylinderInstances.PushBack(xPrimitives.m_xGameplayCylinderInstances.Get(i));
-		xPrimitives.m_xGameplaySphereInstances.Clear();
-		xPrimitives.m_xGameplayCylinderInstances.Clear();
+		// Nothing to draw this frame (either the queues were empty, or the
+		// debug option is off and nothing was copied out) — the queues are
+		// already drained above, so it's safe to skip pipeline setup + record.
+		return;
 	}
 
 	Flux_ShaderBinder xBinder(*pxCmdList);
@@ -1266,3 +1304,5 @@ void Flux_PrimitivesImpl::AddAxes(const Zenith_Maths::Vector3& xOrigin, float fS
 	AddArrow(xOrigin, xOrigin + Zenith_Maths::Vector3(0.0f, 0.0f, fSize),
 		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
 }
+
+#include "Flux/Primitives/Flux_Primitives.Tests.inl"

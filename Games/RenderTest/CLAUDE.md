@@ -521,14 +521,21 @@ pwsh -NoProfile -File Tools\phototour_run.ps1 -Game RenderTest -Tag after -Compa
 The runner launches it windowed, crops via `Tools/phototour_crop.py` and writes
 contact/compare sheets under `Build/artifacts/rendertest/phototour/<tag>/`.
 
-**Exit code:** exactly ONE known teardown fault is forgiven, and only when its
-signature (`Worker N scratch buffer overflow`) is in the log — it fires after the
-test reports PASSED and after every capture is on disk. Any other nonzero exit is
-reported with the log tail. It used to forgive *every* nonzero exit once `DONE`
-appeared, which is a fail-open: `DONE` is logged before engine shutdown, so it hid
-a real grass-handle lifetime bug for as long as it existed. The runner also warns
-on any `still held with N refs` line, and the crop step fails when it finds no
-readable captures.
+**Exit code:** no teardown fault is forgiven — any nonzero exit after the test
+reports PASSED and every capture is on disk is reported with the log tail. There
+used to be exactly one forgiven signature (`Worker N scratch buffer overflow`):
+the tour disables `Graphics/Primitives/Enabled` for its whole duration, and
+`Flux_PrimitivesImpl::ExecuteGBuffer` drained its six debug instance queues only
+while that option was on, so the tour-length backlog of `Add*()` submissions
+accumulated unbounded and was drawn in one frame — enough draw calls to overflow
+a Vulkan worker's scratch partition — the instant the option was restored in
+Teardown. Fixed at ZEN-40 (the queues are now consumed at every frame boundary
+regardless of the option), so the signature no longer occurs and the forgiveness
+was removed rather than left pinned to a fault that can't fire. It used to forgive
+*every* nonzero exit once `DONE` appeared, which is a fail-open: `DONE` is logged
+before engine shutdown, so it hid a real grass-handle lifetime bug for as long as
+it existed. The runner also warns on any `still held with N refs` line, and the
+crop step fails when it finds no readable captures.
 
 **A reused `-Tag` is cleared before the run**, and a `-Compare` that does not pair
 every shot on both sides fails, naming the unmatched ones (`-AllowPartialCompare`

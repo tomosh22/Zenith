@@ -17,11 +17,58 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-19):
-ZM boot `4551`; engine boot (Null Combat) `2698`; Null RenderTest `2801`; registry **73**.**
+**★ LIVE PIN (UPDATED 2026-09-20):
+ZM boot `4559`; engine boot (Null Combat) `2706`; Null RenderTest `2809`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **★ +3 EVERY GAME (2026-09-20, ZEN-40) — THE DEBUG-PRIMITIVE QUEUES ARE DRAINED
+> EVERY FRAME.** Zenithmon 4556 -> **4559**, Combat 2703 -> **2706**,
+> RenderTest 2806 -> **2809**. **ALL THREE OBSERVED**, each from its own `Null_`
+> run, none computed — Combat and Zenithmon from the tick's own
+> `-Phase measure` (`.zagent/run/ZEN-40/tick_gates.json`), RenderTest by hand,
+> because nothing gates that row. The three new units are the `FluxPrimitives`
+> suite in `Zenith/Flux/Primitives/Flux_Primitives.Tests.inl` — CPU-side queue
+> bookkeeping with no device, graph or engine singleton, so backend-neutral and
+> every game's row moves by the same amount. Registry unchanged at 73.
+>
+> ★ **This line was +5 stale before this edit**, reading 4551/2698/2801 against a
+> `unit_baselines.json` that already held 4556/2703/2806. Ticks between ZEN-12
+> and this one bumped the authority and did not narrate here. The three values
+> above are this tick's own observations; the un-narrated +5 is NOT reconstructed
+> here, because no run of mine produced it and inventing a derivation would be
+> worse than leaving the gap named.
+>
+> ★★ **Why that drift survived is a GATE-SELECTION gap, not a missing check** —
+> and the first draft of this block said the opposite, which the ZEN-40 review
+> caught. `Tools/doc_lint.ps1` Check 7 (`Check-LivePin`) exists precisely to
+> reconcile this LIVE PIN line against `Tools/unit_baselines.json`, and its own
+> header records the same incident one bump smaller (*"LIVE PIN read `3387` while
+> `Tools/unit_baselines.json` held `3388`"*). It would have failed on 4551-vs-4556
+> the moment it ran. It did not run: `doc_lint.ps1 -Game Zenithmon` is a
+> **Zenithmon-category** gate, reached only when a diff's path union pulls in
+> `Games/Zenithmon/**`, and the **Engine** gate list carries no `doc_lint` line at
+> all, for any game. So an engine-only ticket that bumps a backend-neutral pin —
+> which is every ticket that moves all three rows at once — never runs the one
+> check written to notice. This tick ran it only because the diff happens to
+> touch `Games/Zenithmon/Docs/`.
+>
+> What changed: `Flux_PrimitivesImpl::ExecuteGBuffer` drained and `Clear()`d its
+> six debug instance queues only inside `if (bDebugPrimitivesEnabled)`, and its
+> early-return path skipped the clear entirely. A photo tour disables the option
+> for its whole duration (`Games/RenderTest/Tests/PhotoTour.cpp:353-354`,
+> restored at :572), so the queues accumulated unboundedly and the entire backlog
+> was recorded in one frame when Teardown restored the option — one
+> `BindDrawConstants` per instance, 80 bytes rounded up to the device's
+> `minUniformBufferOffsetAlignment` (128 on the machine that reported this; it is
+> queried at runtime in `Zenith_Vulkan.cpp`, not a compile-time constant), against
+> a 131072-byte per-worker scratch partition, i.e. an overflow at 1024 draws on
+> that device. That is
+> the `Worker 1 scratch buffer overflow (offset=262144, size=128, end=262144)`
+> that made `RT_PhotoTour` exit `0x80000003`. The new `ConsumeFrameBoundary`
+> consumes the frame boundary unconditionally, mirroring
+> `Flux_TextImpl::DiscardPendingFrame`.
 
 > **★ +1 EVERY GAME (2026-09-19, ZEN-12) — `FLUX_RENDER_VIEW_PREVIEW` REMOVED.**
 > Zenithmon 4550 -> **4551**, Combat 2697 -> **2698**, RenderTest 2800 -> **2801**.

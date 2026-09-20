@@ -14,7 +14,7 @@ bug here:
 |---|---|---|
 | Submit API | `AddSphere` / `AddCube` / `AddLine` / `AddCapsule` / `AddCylinder` / `AddTriangle` (+ the `AddCross`/`AddCircle`/`AddArrow`/`AddConeOutline`/`AddArc`/`AddPolygonOutline`/`AddGrid`/`AddAxes` composites, all of which decompose into `AddLine`) | `SubmitGameplayCylinderAndSphere` |
 | CPU queues | `m_xSphereInstances`, `m_xCubeInstances`, `m_xLineInstances`, `m_xCapsuleInstances`, `m_xCylinderInstances`, `m_xTriangleInstances` | `m_xGameplaySphereInstances`, `m_xGameplayCylinderInstances` |
-| `Graphics/Primitives/Enabled` (debug variable bound to `Zenith_GraphicsOptions::m_bPrimitivesEnabled`, default true) | **Gates it.** Unchecked -> not drained, not drawn. | **Ignored.** Drained and drawn either way. |
+| `Graphics/Primitives/Enabled` (debug variable bound to `Zenith_GraphicsOptions::m_bPrimitivesEnabled`, default true) | **Gates drawing, not draining.** Unchecked -> still drained (`Clear()`'d) every frame boundary, just not copied out or drawn — see `ConsumeFrameBoundary` below (ZEN-40). | **Ignored.** Drained and drawn either way. |
 | Shading | matte default-lit: ambient 0.2, roughness 0.8, metallic 0, `GBUFFER_SHADING_DEFAULT_LIT` | `GBUFFER_SHADING_UNLIT` + HDR emissive (`colour * 0.5`); DeferredShading's unlit branch returns `diffuse + emissive` and skips all lighting |
 | Intended use | editor/diagnostic overlays, physics and navmesh visualisation, anything a developer toggles | shipping player-facing cues that must survive a tools user unchecking the debug variable |
 
@@ -31,6 +31,7 @@ and it is recorded as a defect (`Games/Zenithmon/Docs/Shortfalls.md` 1.8-3c).
 | `Flux_PrimitivesImpl.h` | The `Flux_PrimitivesImpl` class + the six `Flux_Primitives*Instance` POD types |
 | `Flux_Primitives.cpp` | Procedural mesh generation, both submit channels, the `ExecuteGBuffer` graph callback, the render helpers |
 | `Flux_Primitives_Shaders.h` | The feature's `Flux_ShaderDecl` + `apxALL` (see Flux/CLAUDE.md "Each feature OWNS its shaders") |
+| `Flux_Primitives.Tests.inl` | Unit tests (`FluxPrimitives` category), included at the bottom of `Flux_Primitives.cpp` — pins the `ConsumeFrameBoundary` frame-boundary invariant headlessly |
 
 Shader source: `Flux/Shaders/Primitives/Flux_Primitives.slang`; generated
 reflection header `Flux/Shaders/Generated/Primitives.h`.
@@ -84,29 +85,52 @@ unreachable in every default run, because TAA ships ON.
 > API a caller-supplied identity, i.e. changing every `Add*` / `SubmitGameplay*`
 > call site — do that deliberately, not as a side effect of a TAA change.
 
-## The drain, and the two halves of the early-return bug
+## The drain, and the frame-boundary bug (ZEN-40)
 
 `ExecuteGBuffer` is a non-capturing `void(*)(Flux_CommandBuffer*, void*)`
-trampoline, so it recovers the singleton via `g_xEngine.Primitives()`. Under one
-`m_xInstanceMutex` lock it copies the queues it is going to draw into locals,
-clears them, and releases the lock before recording — so recording never holds
-the submit mutex.
+trampoline, so it recovers the singleton via `g_xEngine.Primitives()`. It calls
+`ConsumeFrameBoundary` under one `m_xInstanceMutex` lock to copy the queues it
+is going to draw into locals and clear every queue, then releases the lock
+before recording — so recording never holds the submit mutex — then early-
+returns before touching the pipeline/binder if nothing ended up in any local.
 
-**The early return is `!bHaveDebugPrimitives && !bHaveGameplayPrimitives`, and it
-is the whole point.** The function used to bail on `!m_bPrimitivesEnabled` before
-touching anything, which cost two bugs at once:
+**This function used to bail on `!m_bPrimitivesEnabled` before touching
+anything, which cost two bugs at once:**
 
-1. a gameplay cue on this subsystem was silently lost when the debug variable was
-   unchecked; and
-2. the debug queues were never drained while it was unchecked, so producers kept
-   appending into queues nothing consumed.
+1. a gameplay cue on this subsystem was silently lost when the debug variable
+   was unchecked (fixed first — the gameplay queues are drained
+   unconditionally regardless of the option); and
+2. the debug queues were never drained while it was unchecked, so producers
+   kept appending into queues nothing consumed.
 
-Now the gameplay queues are drained unconditionally and the debug queues are
-drained only when the option is on. **Half (2) is still open for the DEBUG
-queues specifically** — with the option off they still accumulate, and
-`s_uMaxTriangles = 8192` bounds only the triangle *buffer*, not the queue. That
-is pre-existing behaviour, unchanged by the gameplay channel, and it is the
-reason `Clear()` exists as a public escape hatch.
+Half (2) was fixed at ZEN-40. The drain used to live inline in
+`ExecuteGBuffer`, and the `Clear()` calls for the six DEBUG queues sat inside
+`if (bDebugPrimitivesEnabled)` — so with the option off, every `Add*()` call
+accumulated into those queues forever, and the whole backlog was drawn in one
+frame — thousands of `BindDrawConstants` calls in a single `ExecuteGBuffer` — the
+instant the option was re-enabled. A `RT_PhotoTour` / `ZM_PhotoTour_Test` run
+disables the option for the tour's entire duration and restores it in Teardown
+(`Games/RenderTest/Tests/PhotoTour.cpp`), which is exactly the shape that
+accumulates and then floods a Vulkan worker's scratch-buffer partition at
+teardown.
+
+The fix is `Flux_PrimitivesImpl::ConsumeFrameBoundary` (declared in
+`Flux_PrimitivesImpl.h`, defined beside `Clear()` in `Flux_Primitives.cpp`):
+it copies the six debug queues into the caller's locals only when
+`bDebugPrimitivesEnabled` is true, but `Clear()`s all six — and the two
+gameplay queues — unconditionally, in every call. `ExecuteGBuffer` calls it
+once per frame instead of inlining the drain. This mirrors
+`Flux_TextImpl::ExecuteRenderGraphPass`'s `DiscardPendingFrame` on its disabled
+path: the queues are frame-local state, so the frame boundary is consumed
+whether or not anything was drawn from it. `Flux_Primitives.Tests.inl` pins the
+invariant headlessly (no device, no graph, no engine singleton — the queues are
+plain `Zenith_Vector`s): repeated submit-then-`ConsumeFrameBoundary(false, …)`
+cycles must leave `GetDebugInstanceQueueSizeForTesting() == 0` after every one.
+`s_uMaxTriangles = 8192` still bounds only the triangle *buffer* — the drawn
+count per frame — not the queue; that queue is now bounded indirectly, by being
+drained every frame regardless of the option. `Clear()` remains a public
+escape hatch for a caller that wants to drop everything outside a frame
+boundary (e.g. a scene/world reset).
 
 ## Why `SubmitGameplayCylinderAndSphere` returns a count
 

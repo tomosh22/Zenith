@@ -115,6 +115,33 @@ public:
 
 	void Clear();
 
+	// The frame boundary the render-thread drain consumes every frame — see
+	// ExecuteGBuffer in Flux_Primitives.cpp and ZEN-40. Pure CPU-side queue
+	// mutation (copy-out + Clear()), no GPU calls, so it is reachable headless.
+	// The six DEBUG queues are copied into the xOut* locals only when
+	// bDebugPrimitivesEnabled is true, but EVERY queue — debug and gameplay
+	// alike — is cleared unconditionally: they are frame-local state, and the
+	// option controls only what gets DRAWN, never whether the backlog is
+	// retired. Leaving the debug queues unconsumed while the option was off
+	// was the defect: unbounded accumulation, replayed as one giant frame the
+	// instant the option is re-enabled.
+	void ConsumeFrameBoundary(bool bDebugPrimitivesEnabled,
+		Zenith_Vector<Flux_PrimitivesSphereInstance>& xOutSphere,
+		Zenith_Vector<Flux_PrimitivesCubeInstance>& xOutCube,
+		Zenith_Vector<Flux_PrimitivesLineInstance>& xOutLine,
+		Zenith_Vector<Flux_PrimitivesCapsuleInstance>& xOutCapsule,
+		Zenith_Vector<Flux_PrimitivesCylinderInstance>& xOutCylinder,
+		Zenith_Vector<Flux_PrimitivesTriangleInstance>& xOutTriangle,
+		Zenith_Vector<Flux_PrimitivesSphereInstance>& xOutGameplaySphere,
+		Zenith_Vector<Flux_PrimitivesCylinderInstance>& xOutGameplayCylinder);
+
+	// Test-only: total pending count across the six DEBUG queues (not the two
+	// gameplay ones), sampled WITHOUT draining. Flux_Primitives.Tests.inl uses
+	// this to observe the invariant ConsumeFrameBoundary exists to hold: the
+	// debug queues must not grow across repeated frame boundaries regardless
+	// of whether bDebugPrimitivesEnabled was true or false on any given one.
+	u_int GetDebugInstanceQueueSizeForTesting() const;
+
 	void AddCross(const Zenith_Maths::Vector3& xCenter, float fSize, const Zenith_Maths::Vector3& xColor);
 	void AddCircle(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor,
 		const Zenith_Maths::Vector3& xNormal = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), uint32_t uSegments = 32);
