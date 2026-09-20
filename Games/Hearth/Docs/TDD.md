@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Game | **Hearth** — mobile-first life sim (see [GDD.md](GDD.md)) |
+| Game | **Hearth** — mobile-first life sim (see [GameDesignDocument.md](GameDesignDocument.md)) |
 | Engine | Zenith @ current master (`5605b8d4` era) |
 | Primary platform | Android (AGDE, Vulkan 1.1, minSdk 26, arm64-v8a + x86_64) |
 | Secondary | Windows Vulkan (`_False` ship, `_True` authoring); Null configs = CI/tests |

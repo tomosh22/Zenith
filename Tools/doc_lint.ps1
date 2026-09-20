@@ -149,7 +149,7 @@ function Check-TestCount {
     foreach ($docFile in $docFiles) {
         $path = Join-Path $docsDir $docFile
         if (-not (Test-Path $path)) { continue }
-        $lines = Get-Content $path
+        $lines = @(Get-Content $path)
         for ($i = 0; $i -lt $lines.Length; $i++) {
             $line = $lines[$i]
             # Skip approximate / future-projection mentions (~N tests).
@@ -259,7 +259,7 @@ function Check-RoadmapUniqueIds {
     if (-not (Test-Path $path)) { return }
 
     $seen = @{}
-    $lines = Get-Content $path
+    $lines = @(Get-Content $path)
     for ($i = 0; $i -lt $lines.Length; $i++) {
         if ($lines[$i] -match '\*\*(MVP-\d+\.\d+\.\d+)\*\*') {
             $id = $matches[1]
@@ -279,7 +279,7 @@ function Check-RoadmapUniqueIds {
 function Check-SupersededMarkers {
     Get-ChildItem -Path $docsDir -Filter '*.md' | ForEach-Object {
         if ($_.Name -eq 'DecisionLog.md') { return }
-        $lines = Get-Content $_.FullName
+        $lines = @(Get-Content $_.FullName)
         for ($i = 0; $i -lt $lines.Length; $i++) {
             $line = $lines[$i]
             # Skip backtick-quoted occurrences (the literal `[SUPERSEDED]`
@@ -312,7 +312,7 @@ function Get-LivingMarkdownFiles {
 function Check-StaleClaims {
     Get-LivingMarkdownFiles | ForEach-Object {
         $name = $_.Name
-        $lines = Get-Content $_.FullName
+        $lines = @(Get-Content $_.FullName)
         for ($i = 0; $i -lt $lines.Length; $i++) {
             $line = $lines[$i]
             # Match patterns like "FOO.bar does not exist" or "FOO.bar is missing".
@@ -346,7 +346,7 @@ function Check-MarkdownLinks {
     Get-LivingMarkdownFiles | ForEach-Object {
         $name = $_.Name
         $dir = $_.DirectoryName
-        $lines = Get-Content $_.FullName
+        $lines = @(Get-Content $_.FullName)
         for ($i = 0; $i -lt $lines.Length; $i++) {
             $line = $lines[$i]
             # Match markdown link targets like (./File.md) or (../Path/File.md).
@@ -431,7 +431,7 @@ function Check-LivePin {
         return
     }
 
-    $lines = Get-Content $statusPath
+    $lines = @(Get-Content $statusPath)
     $pinIdx = -1
     for ($i = 0; $i -lt $lines.Length; $i++) {
         if ($lines[$i] -match 'LIVE PIN') { $pinIdx = $i; break }
@@ -516,7 +516,7 @@ function Check-ArtBriefTicks {
         return
     }
 
-    $lines = Get-Content $path
+    $lines = @(Get-Content $path)
     $seen = @{}
     $ticked = 0
     $total = 0

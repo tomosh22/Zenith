@@ -48,6 +48,46 @@ function isSelf(relPath) {
   return relPath.replace(/\\/g, '/') === SELF_RELATIVE_PATH;
 }
 
+// The sibling guard. `legacy-backend-guard.test.mjs` names this file in its
+// own comments (it copied the self-exemption reasoning from here and says
+// so), so it necessarily contains the hunted string for a structural reason,
+// exactly as this file does. Listed by exact path, not by a `*-guard` glob:
+// a pattern would exempt any future file that merely ends in `-guard`, which
+// is precisely the silent widening the header warns about.
+const ALLOWED_SIBLING_GUARDS = ['Tools/Vault/test/legacy-backend-guard.test.mjs'];
+
+function isSiblingGuard(relPath) {
+  return ALLOWED_SIBLING_GUARDS.includes(relPath.replace(/\\/g, '/'));
+}
+
+// ★ THE BOARD'S OWN DATA IS A HISTORICAL RECORD, AND THIS GUARD'S PREMISE
+// BROKE WHEN THAT DATA MOVED INTO THE REPO.
+//
+// This check was written when the board was a remote web application, so
+// "the retired name appears nowhere in the tree" was a statement about
+// SOURCE AND CONFIGURATION. At the Vault cutover (2026-09-16, ZEN-23) the
+// board became this checkout: ticket bodies live in `**/Docs/Board/`, and
+// `metadata.md` at the repo root is the export's repository-wide table store
+// (see Tools/Vault/server/scanner.js).
+//
+// Those rows are a record of what happened, and some of what happened is
+// that a thing with this name was retired. ZEN-9's closure note has to be
+// able to say the remote board was retired; decision ZEN-D-008 has to be
+// able to name `agent@saas.invalid` as the identity the cutover renamed,
+// because that rename is the whole explanation for eight tickets that looked
+// like a live defect and were not. A guard that forbids naming the past
+// makes the record less accurate, not the codebase cleaner.
+//
+// So the guard keeps its teeth where a reappearance would be a REGRESSION --
+// source, scripts, config, docs written by hand -- and stops policing rows
+// the board writes about its own history. It is a narrow carve-out: only the
+// board's two durable stores, matched structurally rather than by listing
+// individual ticket files, which would go stale on the next `board: create`.
+function isBoardRecord(relPath) {
+  const normalised = relPath.replace(/\\/g, '/');
+  return normalised === 'metadata.md' || /(^|\/)Docs\/Board\//.test(normalised);
+}
+
 test('no tracked file mentions the retired "saas" repo name', () => {
   let stdout;
   try {
@@ -78,7 +118,10 @@ test('no tracked file mentions the retired "saas" repo name', () => {
     .split('\n')
     .map(line => line.trim())
     .filter(Boolean)
-    .filter(relPath => !isAllowedMsaaFalsePositive(relPath) && !isSelf(relPath));
+    .filter(relPath => !isAllowedMsaaFalsePositive(relPath)
+      && !isSelf(relPath)
+      && !isSiblingGuard(relPath)
+      && !isBoardRecord(relPath));
 
   assert.deepEqual(
     offenders,
@@ -107,4 +150,31 @@ test('the self-exemption matches this file and nothing else', () => {
   assert.equal(isSelf('Tools/Vault/test/saas-guard-other.test.mjs'), false);
   assert.equal(isSelf('Tools/Vault/shared/jira/board.js'), false);
   assert.match(SELF_RELATIVE_PATH, /^Tools\/Vault\/test\//);
+});
+
+test('the sibling-guard exemption is one exact path, not a pattern', () => {
+  // A `*-guard.test.mjs` glob here would exempt any future file that merely
+  // ends in `-guard`, which is the one way this check can fail silently.
+  assert.equal(isSiblingGuard('Tools/Vault/test/legacy-backend-guard.test.mjs'), true);
+  assert.equal(isSiblingGuard('Tools\\Vault\\test\\legacy-backend-guard.test.mjs'), true);
+  assert.equal(isSiblingGuard('Tools/Vault/test/some-other-guard.test.mjs'), false);
+  assert.equal(isSiblingGuard('Tools/Vault/cli/legacy-backend-guard.test.mjs'), false);
+  assert.equal(ALLOWED_SIBLING_GUARDS.length, 1);
+});
+
+test('the board-record carve-out covers the two durable stores and nothing else', () => {
+  // Board data is a historical record and may name what was retired; source,
+  // scripts and hand-written docs may not. These assertions are the line.
+  assert.equal(isBoardRecord('metadata.md'), true);
+  assert.equal(isBoardRecord('Zenith/Docs/Board/tickets/ZEN-9.md'), true);
+  assert.equal(isBoardRecord('Games/Zenithmon/Docs/Board/tickets/ZM-53.md'), true);
+  assert.equal(isBoardRecord('Games\\Zenithmon\\Docs\\Board\\tickets\\ZM-53.md'), true);
+
+  // Still guarded: a hand-written living doc sitting beside the board tree,
+  // anything under Tools/, and a nested metadata.md that is not the store.
+  assert.equal(isBoardRecord('Games/Zenithmon/Docs/Status.md'), false);
+  assert.equal(isBoardRecord('Zenith/Docs/TickProtocolHistory.md'), false);
+  assert.equal(isBoardRecord('Tools/zagent/README.md'), false);
+  assert.equal(isBoardRecord('Tools/Vault/artifacts/final-migrated-fixture/metadata.md'), false);
+  assert.equal(isBoardRecord('Docs/Boardroom/notes.md'), false);
 });

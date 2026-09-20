@@ -183,6 +183,30 @@ See [ZM-50, ZM-999] for both.
         ($violations.Count -eq 1) -and ($violations[0].Value -match "cites 'ZM-999'") -and ($violations[0].Value -notmatch "cites 'ZM-50'")
     }
 
+    Write-Host "`n=== every line-oriented check survives a SINGLE-LINE document (ZEN-98) ===" -ForegroundColor Cyan
+
+    # Get-Content on a one-line file returns a String, not an array, so an
+    # unwrapped `$lines = Get-Content $f` makes the loop below it iterate
+    # CHARACTERS and the check silently reports nothing. C9 shipped with that
+    # bug; the other seven line-oriented checks carried it latently, hidden
+    # only because every real living doc is multi-line. See ZEN-D-009.
+    #
+    # This asserts the property BEHAVIOURALLY on a check other than C9, so it
+    # fails if anyone unwraps one of them again, and STRUCTURALLY over the
+    # whole file, so it fails for a check this test does not otherwise drive.
+    Assert-That 'a previously-affected check (C4) still fires on a one-line document' {
+        $r = Invoke-DocLintScenario -Root $fixtureRoot -GameName 'OneLineC4' -NotesContent '[SUPERSEDED] on a single line with no trailing newline.'
+        ($r.ExitCode -eq 1) -and ($r.Output -match 'VIOLATION \[C4\]')
+    }
+
+    Assert-That 'no `$lines = Get-Content` in doc_lint.ps1 is left unwrapped' {
+        $doc = Get-Content $docLintPath -Raw
+        # Wrapped reads are fine; a bare one is the defect. -Raw reads are
+        # deliberately NOT wrapped (they want one string) and use a different
+        # variable, so this pattern does not catch them.
+        -not ($doc -match '\$lines\s*=\s*Get-Content')
+    }
+
     Write-Host "`n=== the check id and location are grep-able, like every other check here ===" -ForegroundColor Cyan
 
     Assert-That 'the violation line names the file and 1-based line number, matching the house style' {
