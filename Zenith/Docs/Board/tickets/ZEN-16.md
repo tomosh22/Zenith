@@ -5,8 +5,8 @@ title: Move Vulkan, D3D12 and Null render backends into dedicated RenderBackends
 category: Engine
 parent: "ZEN-24"
 sprint: null
-status: To Do
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: MEDIUM
 complexity: "MODERATE"
 risk: LOW
@@ -42,7 +42,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:03.307Z"
+updatedAt: "2026-09-20T20:28:37.994Z"
+claimAttempt: "7e86e250-ccd9-48ec-a740-32e48e0ee02f"
 ---
 ## Goal
 `Zenith/Vulkan`, `Zenith/D3D12` and `Zenith/Null` are the three render backends and sit as top-level engine directories beside unrelated modules. Move them under a new `Zenith/RenderBackends/` (`RenderBackends/Vulkan`, `RenderBackends/D3D12`, `RenderBackends/Null`) so the backend set is one directory the `RenderBackend` config fragment selects from.
