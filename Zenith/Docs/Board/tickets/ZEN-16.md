@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T20:28:37.994Z"
+updatedAt: "2026-09-20T20:33:13.519Z"
 claimAttempt: "7e86e250-ccd9-48ec-a740-32e48e0ee02f"
 ---
 ## Goal
@@ -51,7 +51,7 @@ claimAttempt: "7e86e250-ccd9-48ec-a740-32e48e0ee02f"
 Mechanics: `git mv` the three directories; update every `#include "Vulkan/..."`, `"Null/..."`, `"D3D12/..."` across engine and games; update `Build/Sharpmake_Common.cs` and `Sharpmake_Zenith.cs` where the backend fragment picks which directory compiles (`Null_` configs compile `Zenith/Null` instead of Vulkan; `D3D12_` is the link-neutrality proof); move the three `CLAUDE.md` files and fix the root `CLAUDE.md` directory table and `Docs/BuildSystem.md`; re-path any layering/allowlist entries. Regenerate and build every configuration prefix (`Vulkan_`, `Null_`, `D3D12_`), because a path mistake in one backend is invisible from the other two.
 
 ## Definition of Done
-- [ ] The three backends live under `Zenith/RenderBackends/` and nothing remains at the old paths
-- [ ] `Vulkan_`, `Null_` and `D3D12_` configurations all build for the engine and every game after `Build\regen.ps1`
-- [ ] Allowlists are re-pathed, not loosened; the architecture gates stay green
-- [ ] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the three backend `CLAUDE.md` files describe the new layout
+- [x] The three backends live under `Zenith/RenderBackends/` and nothing remains at the old paths
+- [x] `Vulkan_`, `Null_` and `D3D12_` configurations all build for the engine and every game after `Build\regen.ps1`
+- [x] Allowlists are re-pathed, not loosened — 14 `lints_allowlist.txt` and 13 `engine_singleton_allowlist.txt` entries carry `RenderBackends` paths, ZERO old-path entries remain, and the architecture gate reports no `unmapped:` finding
+- [x] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the three backend `CLAUDE.md` files describe the new layout
