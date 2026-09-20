@@ -3,7 +3,7 @@ id: "a938f3df-66f8-4ccc-9357-6bd0a8ae454e"
 key: "ZEN-98"
 type: "BUG"
 title: "doc_lint: wrap the seven remaining Get-Content reads so a single-line doc cannot silently disable a check"
-category: "Engine"
+category: "Tooling"
 parent: null
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 98
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T03:21:14.037Z"
+updatedAt: "2026-09-20T23:32:00.535Z"
 flagged: false
 severity: null
 reproducibility: null
