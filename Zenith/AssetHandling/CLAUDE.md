@@ -1,28 +1,95 @@
 # Asset Handling System
 
-> **Build ownership: `ZenithAssetHandling` (Phase 4d).** This whole directory
-> is one Sharpmake static library (`Build/Sharpmake_ZenithAssetHandling.cs`) —
-> 21 translation units + a definition-free PCH create TU. There is a genuine
-> header cycle with `Flux/`: 11 files here (`Zenith_AnimationAsset.cpp`,
-> `Zenith_AnimatorControllerAsset.h`, `Zenith_BoneMaskAsset.cpp`,
-> `Zenith_FontAsset.cpp`, `Zenith_GrassTypeTableAsset.h`,
-> `Zenith_MaterialAsset.cpp`, `Zenith_MeshAsset.{h,cpp}`,
-> `Zenith_MeshGeometryAsset.cpp`, `Zenith_TextureAsset.{h,cpp}`) `#include` a
-> `Flux/**` header directly — the asset classes own Flux types (or GPU
-> resource handles) BY VALUE, not by pointer, so these are not
-> forward-declarable away. `ZenithFlux` declares the single project-level
-> dependency edge for the pair — `Flux -> AssetHandling`, the heavier
-> direction (23 includes that way) — so this project deliberately does **not**
-> depend back on `ZenithFlux`: that would make the edge genuinely circular in
-> Sharpmake's graph, not just in `#include` terms. Compiling a static lib
-> never needs to resolve an external symbol (`lib.exe` does not link), so the
-> 11 reverse includes resolve fine off the plain `/Zenith` include path every
-> leaf already carries; any `Flux_::` symbol referenced out-of-line resolves
-> at the final game exe link, where `ZenithFlux` is always present
-> transitively. The real fix — splitting this directory into a handle/registry
-> half and a GPU-resource half, so the cycle has somewhere to end — is a
-> design change for its own future ticket, not attempted here. See
-> `Zenith/Flux/CLAUDE.md`'s matching note.
+> **Build ownership: TWO libraries share this directory (Phase 4i).** It used
+> to be one (`ZenithAssetHandling`, Phase 4d), with a genuine header cycle
+> against `Flux/` that was *declared* one-way rather than broken. Phase 4i
+> broke it by splitting the directory along a measured line:
+>
+> | library | Sharpmake file | owns | depends on |
+> |---|---|---|---|
+> | **`ZenithAssetRegistry`** | `Build/Sharpmake_ZenithAssetRegistry.cs` | 13 units (12 `.cpp` + header-only `Zenith_AssetTypeIds.h`) + `Internal/Zenith_AssetRegistryPCH.cpp` | `ZenithCore`, `ZenithMaths`, `ZenithDataStream`, `ZenithScripting`. **Never `ZenithFlux`.** |
+> | **`ZenithAssetHandling`** | `Build/Sharpmake_ZenithAssetHandling.cs` | 9 units + `Internal/Zenith_AssetHandlingPCH.cpp` | `ZenithCore`, `ZenithAssetRegistry`, **`ZenithFlux`**, `ZenithMaths`, `ZenithDataStream` |
+>
+> Declared graph: **`ZenithAssetRegistry` ← `ZenithFlux` ← `ZenithAssetHandling`**.
+> Acyclic. `ZenithFlux`'s dependency moved DOWN to the registry half; the GPU
+> half moved UP above Flux and now declares the `ZenithFlux` edge Phase 4d
+> could not. **Never add `ZenithFlux -> ZenithAssetHandling` back** — Sharpmake
+> will not tolerate the cycle, and nothing needs it (Flux's `#include`s of the
+> nine GPU headers resolve off the plain `/Zenith` include path every leaf
+> carries, and any out-of-line symbol resolves at the final game exe link,
+> where both libraries are always present).
+>
+> **The split line, measured (2026-09-20).** A unit is in the GPU half if its
+> `.h` **or** its `.cpp` reaches a `Flux/**` header — either creates a build
+> edge at library granularity. Four headers reach Flux, and they own Flux types
+> **by value**, so none is forward-declarable away:
+>
+> | header | includes | owns by value |
+> |---|---|---|
+> | `Zenith_TextureAsset.h` | `Flux/Flux.h` (the umbrella) | `Flux_SurfaceInfo`, `Flux_VRAMHandle`, `Flux_ShaderResourceView` |
+> | `Zenith_MeshAsset.h` | `Flux/Flux_Buffers.h` | `Flux_VertexBuffer`, `Flux_IndexBuffer`, `Flux_BufferLayout` |
+> | `Zenith_AnimatorControllerAsset.h` | `Flux/MeshAnimation/Flux_AnimatorControllerDef.h` | `Flux_AnimatorControllerDef` |
+> | `Zenith_GrassTypeTableAsset.h` | `Flux/Vegetation/Flux_GrassTypeTable.h` | `Flux_GrassTypeTable` |
+>
+> Five more `.cpp` reach Flux with a clean header
+> (`Zenith_AnimationAsset`, `Zenith_BoneMaskAsset`, `Zenith_FontAsset`,
+> `Zenith_MaterialAsset`, `Zenith_MeshGeometryAsset`), which is why the GPU
+> half is **nine** units and not four.
+>
+> ★ **`Zenith_TextureAsset.h` was the crux, and the two files the Phase 4d note
+> named were not.** It is the `AssetHandling` header `Flux` includes most often,
+> so `Flux -> Zenith_TextureAsset.h -> Flux/Flux.h` was a cycle straight through
+> the asset layer. Phase 4d's note discussed `Flux_AnimatorControllerDef.h` and
+> `Flux_GrassTypeTable.h` instead — that rider is still true (each pulls in two
+> or three more `Flux/**` headers, so relocating them alone drags the rest
+> across or leaves the edge in place) and still beside the point.
+>
+> **Measured and recorded: the lower half's header closure is CLOSED.** No
+> header `ZenithAssetRegistry` owns reaches Flux, directly or transitively
+> through its own headers. `Zenith_AssetRegistry.h`'s **forward declarations**
+> of `Zenith_TextureAsset` / `Zenith_MaterialAsset` / `Zenith_MeshAsset` /
+> `Zenith_SkeletonAsset` / `Zenith_ModelAsset` / `Zenith_Prefab` are what make
+> that possible and are load-bearing — turning any one of them into an
+> `#include` puts a Flux type back in the lower half's header closure and undoes
+> the whole split.
+>
+> ★ **What is NOT claimed.** Three registry-half TUs
+> (`Zenith_AssetRegistry.cpp`, `Zenith_AssetHandle.cpp`, `Zenith_SkinDeform.cpp`)
+> `#include` a GPU-half header and therefore *compile* Flux headers; and the
+> shared `Zenith.h` PCH reaches Flux for **every** TU in the engine anyway. So
+> "the registry half never compiles a Flux header" was never available to claim
+> and is not claimed. What is true is the deliverable: the declared module graph
+> has no cycle involving the registry half, and no header it owns names a Flux
+> type. Both halves consequently still need `SHADER_SOURCE_ROOT` defined
+> directly (a Flux header reaches the active backend's `Pipeline` header, which
+> references it unguarded) — the `C2065` that first forced that define was
+> reported against `Zenith_TextureAsset.cpp` **and** `Zenith_SkinDeform.cpp`,
+> one on each side of this split.
+>
+> **Membership, not relocation: NOTHING MOVED.** Not one file, not one
+> `#include` spelling — 251 files across `Zenith/`, `Games/`, `Tools/` and
+> `Tests/` `#include "AssetHandling/<something>.h"`. The two projects share the
+> `Zenith/AssetHandling` source root and partition it with constructor-time
+> `SourceFilesExcludeRegex` (a **membership** exclude — never
+> `conf.SourceFilesBuildExcludeRegex`, the per-configuration *build* exclude
+> whose call-site count Phase 4h.3 drove to zero and which
+> `Tools/check_project_membership.ps1` now fails on outright). The two exclude
+> lists are exact complements: every file here is owned by exactly one project,
+> each `.Tests.inl` follows its own `.cpp`, and each project carries its own
+> definition-free PCH create TU under `Internal/`.
+>
+> ★ **ADDING A UNIT TO THIS DIRECTORY MEANS ADDING IT TO EXACTLY ONE OF THOSE
+> TWO LISTS.** A new `.cpp` owned by neither is a fatal `UNOWNED` finding in
+> `check_project_membership.ps1`; owned by both, a fatal `DUPLICATE`. Decide by
+> the rule above: does its `.h` or its `.cpp` reach `Flux/**`? Note that the
+> patterns are prefix-sensitive and every one ends in `\.` deliberately —
+> `Zenith_Asset` is a prefix of `Zenith_AssetHandle`, `Zenith_AssetRegistry`,
+> `Zenith_AssetTypeIds` *and* `Zenith_AssetHandlingPCH`, and
+> `Zenith_MaterialAsset` / `Zenith_MaterialParamTable` land on **opposite**
+> sides.
+>
+> See `Zenith/Flux/CLAUDE.md`'s matching note and `Docs/BuildSystem.md`
+> §Phase 4i.
 
 ## Overview
 

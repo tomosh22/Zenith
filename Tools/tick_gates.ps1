@@ -495,7 +495,21 @@ try {
         # 3b. Every created .inl must be #included by SOMETHING tracked.
         # See Get-CreatedIncludeFiles: the build log names TUs, so a .Tests.inl
         # that nothing includes is invisible to check 3 and to the compiler.
-        $newIncludes = @(Get-CreatedIncludeFiles)
+        # PLAIN ASSIGNMENT, NEVER @(...). Get-CreatedIncludeFiles ends
+        # `return , $created.ToArray()` -- the leading comma is what carries an
+        # EMPTY array through the pipeline intact. Wrapping that call in @(...)
+        # RE-WRAPS it: the function emits one object (the array), @() collects
+        # the pipeline into an array of ONE element whose [0] is that array. So
+        # .Count was always 1, the loop always ran, and with no created .inl the
+        # single element was an empty array -- `Split-Path -Leaf @()` throws
+        # "Cannot bind argument to parameter 'Path' because it is an empty
+        # array" and the whole phase exits 1 AFTER every build has passed.
+        # That crashed `-Phase measure` on EVERY run that created no .inl --
+        # this check sits OUTSIDE the `if ($newFiles.Count -gt 0)` block that
+        # closes above, so whether any source file was created is irrelevant
+        # (measured on ZEN-101). Get-CreatedSourceFiles is consumed correctly
+        # at line ~436; match it.
+        $newIncludes = Get-CreatedIncludeFiles
         if ($newIncludes.Count -gt 0) {
             Write-Banner 'proving the created .inl files are included somewhere'
             $orphans = New-Object System.Collections.Generic.List[string]

@@ -39,7 +39,15 @@ using System;
 // ...PlatformAndroid -- the last call site where ConfigurePlatformExcludes
 // was load-bearing anywhere in the codebase; see those two files' own
 // header comments and Sharpmake_Common.cs for the method's removal), taking
-// it to thirty-two. Nothing else about the mechanism changed:
+// it to thirty-two. Phase 4i added ONE more -- ZenithAssetRegistry, the
+// Flux-free lower half of a split Zenith/AssetHandling (identifiers, lookup,
+// lifetime), which finally BREAKS the Flux <-> AssetHandling header cycle
+// Phase 4d could only declare one-way: Flux's edge moves down to the registry
+// half, and the GPU half (which keeps the ZenithAssetHandling name and its 9
+// units) moves ABOVE Flux and depends on it. See
+// Sharpmake_ZenithAssetRegistry.cs's own header comment for the measurement
+// and Sharpmake_ZenithAssetHandling.cs for the other side -- taking it to
+// thirty-three. Nothing else about the mechanism changed:
 //   * Sharpmake_Solutions.cs  ZenithEngineSolution.ConfigureAll  (conf.AddProject<...>)
 //   * Sharpmake_Games.cs      GameSolution.ConfigureAll          (conf.AddProject<...>)
 //   * Sharpmake_Zenith.cs     ZenithProject.ConfigureAll         (conf.AddPublicDependency<...>,
@@ -147,22 +155,35 @@ public static class ZenithEngineLibs
 		// entries above it in this list, plus the mandatory ZenithCore edge
 		// every entry above carries -- ZenithImGui is a SECOND exception,
 		// alongside ZenithJolt, see its own header comment for why it
-		// carries no dependency edge at all):
-		//   ZenithImGui         -> (none)
-		//   ZenithAssetHandling -> ZenithCore, ZenithMaths, ZenithDataStream,
-		//                          ZenithScripting
-		//   ZenithFlux          -> ZenithCore, ZenithMaths, ZenithDataStream,
-		//                          ZenithFileAccess, ZenithProfiling,
-		//                          ZenithDebugVariables, ZenithTaskSystem,
-		//                          ZenithECS, ZenithAssetHandling
-		// ZenithFlux depends on ZenithAssetHandling (the heavier direction of
-		// a genuine header cycle between the two -- see
-		// Sharpmake_ZenithFlux.cs's own header comment for why the cycle is
-		// declared one-way rather than broken), so ZenithAssetHandling's
-		// entry above must precede it -- it does.
+		// carries no dependency edge at all). ★ PHASE 4i MADE IT FOUR, by
+		// splitting Zenith/AssetHandling into two libraries:
+		//   ZenithImGui          -> (none)
+		//   ZenithAssetRegistry  -> ZenithCore, ZenithMaths, ZenithDataStream,
+		//                           ZenithScripting.  NO ZenithFlux edge, ever.
+		//   ZenithFlux           -> ZenithCore, ZenithMaths, ZenithDataStream,
+		//                           ZenithFileAccess, ZenithProfiling,
+		//                           ZenithDebugVariables, ZenithTaskSystem,
+		//                           ZenithECS, ZenithAssetRegistry
+		//   ZenithAssetHandling  -> ZenithCore, ZenithAssetRegistry, ZenithFlux,
+		//                           ZenithMaths, ZenithDataStream
+		//
+		// ★ THE ORDER OF THESE THREE IS THE WHOLE POINT OF PHASE 4i AND IS NOT
+		// COSMETIC. Phase 4d had ZenithAssetHandling BELOW ZenithFlux, because
+		// Flux depended on it -- the heavier direction of a genuine header
+		// cycle, declared one-way rather than broken. Phase 4i split the
+		// directory along the measured Flux-reachability line: the registry
+		// half (identifiers, lookup, lifetime -- no header it owns names a Flux
+		// type) sits BELOW Flux and is what Flux now depends on, while the GPU
+		// half (the 9 units that own Flux types by value) sits ABOVE Flux and
+		// depends on it. So ZenithAssetRegistry must precede ZenithFlux, and
+		// ZenithAssetHandling must FOLLOW it -- both hold below. The resulting
+		// graph is acyclic; do NOT restore a ZenithFlux -> ZenithAssetHandling
+		// edge, which would close the cycle Sharpmake will not tolerate. See
+		// Sharpmake_ZenithAssetRegistry.cs for the full measurement.
 		new Entry(typeof(ZenithImGuiLibProject)),
-		new Entry(typeof(ZenithAssetHandlingLibProject)),
+		new Entry(typeof(ZenithAssetRegistryLibProject)),
 		new Entry(typeof(ZenithFluxLibProject)),
+		new Entry(typeof(ZenithAssetHandlingLibProject)),
 
 		// Phase 4e's three, in dependency order (each depends only on
 		// ZenithCore + ZenithFlux, plus ZenithRenderBackendVulkan's two extra

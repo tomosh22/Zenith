@@ -21,7 +21,16 @@ const repoRoot = path.resolve(here, '..', '..', '..');
 // `Middleware/` and in the engine's own Vulkan backend. Do not "fix" these --
 // widening this allowlist is how a real hit would go unnoticed, so it stays
 // a short, explicit list of path prefixes rather than a pattern match.
-const ALLOWED_MSAA_PREFIXES = ['Middleware/', 'Zenith/Vulkan/'];
+// ★ RE-PATHED, NOT WIDENED (ZEN-101). The engine's Vulkan backend moved from
+// `Zenith/Vulkan/` to `Zenith/RenderBackends/Vulkan/` when the three backends
+// were grouped under one parent. That `git mv` silently broke this prefix and
+// left this guard RED from that commit onward: `MSAASamples` in
+// Zenith_Vulkan.cpp stopped being exempt. Nothing caught it, because no gate
+// list that covers `Zenith/**` runs this suite -- only the `Tooling` category
+// does, and it maps `Tools/**`, so an engine-wide directory move never ran the
+// test that its own allowlist lives in. The prefix below points at the SAME
+// directory it always did; the scope is unchanged.
+const ALLOWED_MSAA_PREFIXES = ['Middleware/', 'Zenith/RenderBackends/Vulkan/'];
 
 function isAllowedMsaaFalsePositive(relPath) {
   const normalised = relPath.replace(/\\/g, '/');
@@ -135,10 +144,15 @@ test('the MSAA allowlist itself stays narrow and does not swallow a real hit', (
   // repo's current content, so the branch that skips MSAA paths is covered
   // even on a tree where git is unavailable in CI sandboxing.
   assert.equal(isAllowedMsaaFalsePositive('Middleware/imgui-docking/backends/imgui_impl_vulkan.cpp'), true);
-  assert.equal(isAllowedMsaaFalsePositive('Zenith/Vulkan/Zenith_Vulkan.cpp'), true);
-  assert.equal(isAllowedMsaaFalsePositive('Zenith\\Vulkan\\Zenith_Vulkan.cpp'), true);
+  assert.equal(isAllowedMsaaFalsePositive('Zenith/RenderBackends/Vulkan/Zenith_Vulkan.cpp'), true);
+  assert.equal(isAllowedMsaaFalsePositive('Zenith\\RenderBackends\\Vulkan\\Zenith_Vulkan.cpp'), true);
   assert.equal(isAllowedMsaaFalsePositive('Tools/Vault/shared/jira/board.js'), false);
-  assert.equal(isAllowedMsaaFalsePositive('Zenith/VulkanExtra/not_really_vulkan.cpp'), false);
+  assert.equal(isAllowedMsaaFalsePositive('Zenith/RenderBackends/VulkanExtra/not_really_vulkan.cpp'), false);
+  // The PRE-MOVE path must no longer be exempt: if the directory ever came
+  // back under its old name this prefix would have to be re-pathed again, and
+  // a stale entry left behind is exactly the silent widening the header warns
+  // about.
+  assert.equal(isAllowedMsaaFalsePositive('Zenith/Vulkan/Zenith_Vulkan.cpp'), false);
 });
 
 test('the self-exemption matches this file and nothing else', () => {

@@ -33,25 +33,64 @@ using System.IO;
 // exactly what verification step 7 (the unit gate must report precisely 2706)
 // exists to catch if this reasoning is ever wrong for a future TU.
 //
-// THE Flux <-> AssetHandling CYCLE — DECLARED ONE-WAY: 44 files here #include an
-// AssetHandling/** header (23 of those are genuine build-relevant edges in the
-// count this refactor tracks; grep finds AssetHandling/Zenith_AssetRegistry.h,
-// Zenith_TextureAsset.h, Zenith_MaterialAsset.h, Zenith_MeshAsset.h, etc. pulled
-// in across Decals/DeferredShading/DynamicLights/Fog/Gizmos/HDR/HiZ/IBL/
-// InstancedMeshes/MeshAnimation/Particles/Present/Primitives/Quads/RenderGraph/
-// RenderViews/SDFs/SSAO/SSGI/SSR/Shadows/Skybox/TAA/Terrain/Text/Translucency/
-// UnifiedMesh/Vegetation) against 11 the OTHER way (AssetHandling #including
-// Flux/** — see Sharpmake_ZenithAssetHandling.cs's own header comment). This
-// project declares the single project-level dependency edge for that pair:
-// Flux -> AssetHandling (below), the heavier direction. Do NOT attempt to
-// break the cycle by moving files: Flux_AnimatorControllerDef.h and
-// Flux_GrassTypeTable.h (the two AssetHandling reaches back into) look like
-// leaf data but are not — they pull in Flux_AnimationStateMachineDef.h /
-// Flux_AnimationLayer.h and Flux_GrassTypes.h respectively, so moving the two
-// alone drags three more across, or leaves the edge in place either way. The
-// real fix (splitting AssetHandling into handle/registry vs GPU-resource
-// halves) is a design change for its own future ticket — see
-// Zenith/Flux/CLAUDE.md and Zenith/AssetHandling/CLAUDE.md.
+// THE Flux <-> AssetHandling CYCLE — BROKEN IN PHASE 4i, NOT MERELY DECLARED.
+// Measured on master 2026-09-20: 74 `#include "AssetHandling/..."` directives
+// across 51 distinct files HERE (Decals/DeferredShading/DynamicLights/Fog/
+// Gizmos/HDR/HiZ/IBL/InstancedMeshes/MeshAnimation/Particles/Present/Primitives/
+// Quads/RenderGraph/RenderViews/SDFs/SSAO/SSGI/SSR/Shadows/Skybox/TAA/Terrain/
+// Text/Translucency/UnifiedMesh/Vegetation), against 12 directives across 11
+// files the OTHER way — of which only FOUR are headers, and headers are the
+// only ones that make a *header* cycle. (Phase 4d's own comment said "23
+// against 11"; the 23 was a build-relevant subset, the 11 was never narrowed to
+// headers, and it counted FILES where this line counts DIRECTIVES —
+// Zenith_TextureAsset.cpp:7 and :8 both include Flux_GraphicsImpl.h, a
+// pre-existing duplicate. Both figures here include .Tests.inl on both sides,
+// so the two populations are finally comparable.)
+//
+// Phase 4d declared that pair one-way, Flux -> AssetHandling, because the two
+// files AssetHandling reached back into looked immovable: Flux_AnimatorControllerDef.h
+// and Flux_GrassTypeTable.h pull in Flux_AnimationStateMachineDef.h /
+// Flux_AnimationLayer.h and Flux_GrassTypes.h respectively, so relocating them
+// alone drags three more across or leaves the edge in place either way. That
+// rider is STILL TRUE — and still beside the point, because the two headers
+// that actually dominated the reverse direction were never those two:
+//   Zenith_TextureAsset.h -> Flux/Flux.h        (the heavy umbrella; the
+//                                                AssetHandling header Flux
+//                                                includes MOST often — so
+//                                                "Flux -> TextureAsset.h ->
+//                                                Flux/Flux.h" was a direct
+//                                                cycle through the asset layer)
+//   Zenith_MeshAsset.h    -> Flux/Flux_Buffers.h
+//
+// Phase 4i split Zenith/AssetHandling into two libraries along the measured
+// Flux-reachability line instead of moving files:
+//   ZenithAssetRegistry  — identifiers, lookup, lifetime. NO header it owns
+//                          names a Flux type, directly or transitively.
+//   ZenithAssetHandling  — the 9 units whose .h or .cpp reaches Flux.
+// THIS PROJECT'S EDGE THEREFORE MOVED, from ZenithAssetHandling to
+// ZenithAssetRegistry (below). Declared graph:
+//     ZenithAssetRegistry <- ZenithFlux <- ZenithAssetHandling.
+// Acyclic, with no module cycle left involving the registry half.
+//
+// The remaining edge is one-way and legitimate: this project's #includes of
+// GPU-half headers (Zenith_TextureAsset.h, Zenith_MaterialAsset.h,
+// Zenith_MeshAsset.h, Zenith_MeshGeometryAsset.h, Zenith_FontAsset.h,
+// Zenith_AnimationAsset.h, ...) resolve off the plain "/Zenith" include path
+// every leaf already carries, and any out-of-line GPU-half symbol resolves at
+// the final game exe link, where ZenithAssetHandling is always present (a
+// mandatory row in Sharpmake_EngineLibs.cs). Note "symbol", not
+// "Zenith_*Asset:: member": the one most worth naming is a FREE function --
+// Flux_Grass.cpp calls Zenith_GrassTypeTableAsset_ForceLink(), so ZenithFlux
+// reaches UP into the library that defines it. That is sound (the call IS the
+// undefined external that pulls the object, and link.exe resolves across every
+// archive on the exe line), but it is the sharp edge here: that TU
+// self-registers and hosts NO .Tests.inl, so if it were ever dead-stripped no
+// unit count would move and no gate would say a word. This is the SAME shape
+// as EntityComponent -> Flux and backend -> Flux, both already one-way here.
+// Do NOT add a ZenithFlux -> ZenithAssetHandling edge back "for completeness":
+// Sharpmake will not tolerate the cycle, and the exe link does not need it.
+// See Sharpmake_ZenithAssetRegistry.cs for the full measurement and
+// Zenith/AssetHandling/CLAUDE.md for the narrative.
 //
 // DEPENDENCY (direct #include edges beyond AssetHandling, same "declare what is
 // directly used" convention every Phase 4b/4c/4d leaf follows):
@@ -64,7 +103,8 @@ using System.IO;
 // (Vegetation/) #includes FileAccess/Zenith_FileAccess.h directly. So this lib depends on
 // ZenithCore (mandatory) + ZenithMaths + ZenithDataStream + ZenithFileAccess +
 // ZenithProfiling + ZenithDebugVariables + ZenithTaskSystem + ZenithECS +
-// ZenithAssetHandling. No GLFW/Vulkan-API edge: grep across every Flux .cpp
+// ZenithAssetRegistry (Phase 4i — was ZenithAssetHandling; see the CYCLE
+// paragraph above). No GLFW/Vulkan-API edge: grep across every Flux .cpp
 // finds zero direct `vkXxx(...)` calls and zero GLFW usage — Flux is
 // backend-agnostic (Flux_BackendTypes.h / the concept-conformance layer under
 // Backend/ is the seam), so AddGlfwLibs/AddVulkanBackendLibs are NOT called
@@ -177,10 +217,13 @@ public class ZenithFluxLibProject : ZenithBaseProject
 		conf.AddPublicDependency<ZenithTaskSystemLibProject>(target);
 		conf.AddPublicDependency<ZenithECSLibProject>(target);
 
-		// Flux -> AssetHandling: the heavier direction of the declared cycle —
-		// see the file header comment's CYCLE paragraph. AssetHandling does
-		// NOT depend back on this project.
-		conf.AddPublicDependency<ZenithAssetHandlingLibProject>(target);
+		// Flux -> AssetREGISTRY (Phase 4i): the LOWER half of the old
+		// AssetHandling, which no longer reaches Flux from any header it owns —
+		// so this edge is a plain downward dependency, not the heavier
+		// direction of a cycle. See the file header comment's CYCLE paragraph.
+		// ZenithAssetHandling (the GPU half) depends on THIS project, not the
+		// other way round; do not re-add an edge to it here.
+		conf.AddPublicDependency<ZenithAssetRegistryLibProject>(target);
 
 		// SHADER_SOURCE_ROOT / ENGINE_ASSETS_DIR — see the file header comment.
 		// Mirrors ZenithProject's (Sharpmake_Zenith.cs) identical win64/agde

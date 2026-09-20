@@ -1,17 +1,31 @@
 # Flux Rendering System
 
-> **Build ownership: `ZenithFlux` (Phase 4d).** This whole directory is one
-> Sharpmake static library (`Build/Sharpmake_ZenithFlux.cs`) — 84 translation
-> units + a definition-free PCH create TU. It declares
-> `Flux -> AssetHandling` as a project dependency (the heavier direction of a
-> genuine header cycle: 23 `Flux/**` files reach into `AssetHandling/**`
-> against 11 the other way). The reverse includes are NOT broken by moving
-> files — `Flux_AnimatorControllerDef.h` / `Flux_GrassTypeTable.h` look like
-> leaf data but pull in three more Flux headers each, so a partial move only
-> relocates the edge — they resolve at the final executable link instead,
-> which is fine for a static lib (compiling never needs to resolve an
-> external symbol). See `Zenith/AssetHandling/CLAUDE.md`'s own build-ownership
-> note for the AssetHandling side. `ZenithFlux` also owns `slang.lib`,
+> **Build ownership: `ZenithFlux` (Phase 4d; the AssetHandling edge changed in
+> Phase 4i).** This whole directory is one Sharpmake static library
+> (`Build/Sharpmake_ZenithFlux.cs`) — 84 translation units + a definition-free
+> PCH create TU.
+>
+> ★ **It depends on `ZenithAssetRegistry`, NOT on `ZenithAssetHandling`.** It
+> used to be the latter — the heavier direction of a genuine header cycle,
+> declared one-way rather than broken. Phase 4i split `Zenith/AssetHandling`
+> into two libraries along the measured Flux-reachability line: the registry
+> half (identifiers, lookup, lifetime — **no header it owns names a Flux
+> type**) sits BELOW Flux and is what Flux depends on, while the GPU half
+> (the 9 units owning Flux types by value, which keeps the
+> `ZenithAssetHandling` name) sits ABOVE Flux and depends on it. Declared
+> graph: `ZenithAssetRegistry` ← `ZenithFlux` ← `ZenithAssetHandling`, acyclic.
+> **Never add `ZenithFlux -> ZenithAssetHandling` back** — Sharpmake will not
+> tolerate the cycle, and nothing needs it: this directory's 74 `#include
+> "AssetHandling/..."` directives resolve off the plain `/Zenith` include path
+> every leaf carries, and any out-of-line `Zenith_*Asset::` symbol resolves at
+> the final executable link, which is fine for a static lib (compiling never
+> needs to resolve an external symbol). Phase 4d's claim that the reverse edge
+> could not be broken by moving files remains TRUE of the two files it named
+> (`Flux_AnimatorControllerDef.h` / `Flux_GrassTypeTable.h` each pull in two or
+> three more Flux headers, so a partial move only relocates the edge) — but
+> those were never the crux; `Zenith_TextureAsset.h -> Flux/Flux.h` was. See
+> `Zenith/AssetHandling/CLAUDE.md`'s own build-ownership note for the full
+> measurement and the split line. `ZenithFlux` also owns `slang.lib`,
 > conditionally on `win64 && RenderBackend.Vulkan` — the Null and D3D12
 > configs link no slang lib at all, matching the one Flux TU
 > (`Flux/Slang/Flux_SlangCompiler.cpp`) that calls the slang API, itself

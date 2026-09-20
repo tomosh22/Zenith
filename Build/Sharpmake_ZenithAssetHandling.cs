@@ -2,68 +2,124 @@ using Sharpmake;
 using System;
 using System.IO;
 
-// ZenithAssetHandling — leaf static library (Phase 4d — see Sharpmake_ZenithCore.cs
-// for the pattern this file replicates). Holds exactly Zenith/AssetHandling — 21
-// translation units (Zenith_Asset.cpp, Zenith_AssetHandle.cpp, Zenith_AssetRegistry.cpp,
-// Zenith_AnimationAsset.cpp, Zenith_AnimatorControllerAsset.cpp, Zenith_BehaviourGraphAsset.cpp,
-// Zenith_BoneMaskAsset.cpp, Zenith_FileWatcher.cpp, Zenith_FontAsset.cpp,
-// Zenith_GrassTypeTableAsset.cpp, Zenith_HumanProportions.cpp, Zenith_Image.cpp,
-// Zenith_MaterialAsset.cpp, Zenith_MaterialParamTable.cpp, Zenith_MeshAsset.cpp,
-// Zenith_MeshGeometryAsset.cpp, Zenith_ModelAsset.cpp, Zenith_PropertyTuning.cpp,
-// Zenith_SkeletonAsset.cpp, Zenith_SkinDeform.cpp, Zenith_TextureAsset.cpp) + the
-// definition-free PCH create TU (Internal/Zenith_AssetHandlingPCH.cpp). Previously
-// globbed straight into the monolithic aggregate ZenithProject. Single flat
-// directory — no subdirectories, no AdditionalSourceRootPaths needed.
+// ZenithAssetHandling — the UPPER (GPU-resource) half of the
+// Zenith/AssetHandling split (Phase 4i). The lower half is
+// Sharpmake_ZenithAssetRegistry.cs, which carries the FULL rationale for the
+// split, the measured split line and the membership mechanism; read that file
+// first. This comment covers only what is specific to this side.
 //
-// THE PCH: >= 4 compiled TUs justifies a binary PCH under this refactor's rule.
-// ZenithAssetHandling CREATEs its own Zenith.pch from
-// Internal/Zenith_AssetHandlingPCH.cpp (a one-line `#include "Zenith.h"`, nothing
-// else — mirrors Zenith/Scripting/Internal/Zenith_ScriptingPCH.cpp; it MUST stay
-// definition-free, see that file's own header comment for why). The 21 real TUs
-// /Yu against it.
+// ═════════════════════════════════════════════════════════════════════════
+// WHAT CHANGED (Phase 4i)
+// ═════════════════════════════════════════════════════════════════════════
+// Phase 4d gave this project all 21 TUs of Zenith/AssetHandling and declared
+// the genuine header cycle with Flux one-way (ZenithFlux -> ZenithAssetHandling,
+// the heavier direction) while this project deliberately did NOT depend back.
+// The cycle was DECLARED AROUND, not broken.
 //
-// THE Flux <-> AssetHandling CYCLE — DECLARED ONE-WAY, NOT BROKEN: 11 files here
-// (Zenith_AnimationAsset.cpp, Zenith_AnimatorControllerAsset.h, Zenith_BoneMaskAsset.cpp,
-// Zenith_FontAsset.cpp, Zenith_GrassTypeTableAsset.h, Zenith_MaterialAsset.cpp,
-// Zenith_MeshAsset.{h,cpp}, Zenith_MeshGeometryAsset.cpp, Zenith_TextureAsset.{h,cpp})
-// #include a Flux/** header directly — the asset classes own Flux types (or Flux
-// resource handles) BY VALUE, not by pointer, so these are not forward-declarable
-// away. ZenithFlux (Sharpmake_ZenithFlux.cs) declares the single project-level
-// dependency edge, Flux -> AssetHandling (23 include edges that direction against
-// these 11 the other way — the heavier direction wins the edge). This project
-// deliberately does NOT AddPublicDependency<ZenithFluxLibProject> — that would
-// make the edge genuinely circular in Sharpmake's dependency graph, not just in
-// #include terms. Compiling this static lib never needs Flux's .lib (lib.exe
-// does not link); the "/Zenith" include path every leaf already adds via
-// ConfigureCommonIncludePaths is enough for these 11 files' Flux/** #includes to
-// resolve, exactly the same include-path-only reasoning
-// Sharpmake_ZenithDebugVariables.cs already documents for its own Flux_GraphicsImpl.h
-// include. Any Flux_:: symbol referenced out-of-line resolves at the final game
-// exe link, where ZenithFlux is always present transitively (it is a mandatory
-// row in Sharpmake_EngineLibs.cs, depended on by the aggregate). See
-// Zenith/Flux/CLAUDE.md and Zenith/AssetHandling/CLAUDE.md for the documented
-// direction and why the reverse edges are accepted rather than designed away —
-// the real fix (splitting AssetHandling into handle/registry vs GPU-resource
-// halves) is a design change for its own future ticket.
+// Phase 4i broke it, by splitting the directory rather than by moving files:
 //
-// DEPENDENCY (direct #include edges, same "declare what is directly used"
-// convention every Phase 4b/4c leaf follows): Zenith_FontAsset.h / Zenith_HumanProportions.h /
-// Zenith_MaterialAsset.h / Zenith_MaterialParamTable.h / Zenith_MeshAsset.h /
-// Zenith_MeshGeometryAsset.h / Zenith_SkeletonAsset.h / Zenith_SkinDeform.h all
-// #include Maths/Zenith_Maths.h directly; Zenith_AnimatorControllerAsset.cpp /
-// Zenith_BoneMaskAsset.cpp / Zenith_FontAsset.cpp / Zenith_MaterialAsset.cpp /
-// Zenith_MaterialParamTable.cpp / Zenith_MeshAsset.cpp / Zenith_ModelAsset.cpp /
-// Zenith_PropertyTuning.cpp / Zenith_SkeletonAsset.cpp / Zenith_TextureAsset.cpp
-// all #include DataStream/Zenith_DataStream.h or Zenith_StreamEnvelope.h directly;
-// Zenith_BehaviourGraphAsset.h #includes Scripting/Zenith_BehaviourGraph.h
-// directly (the .bgraph asset wraps a Zenith_GraphDefinition). So this lib
-// depends on ZenithCore (mandatory) + ZenithMaths + ZenithDataStream +
-// ZenithScripting. No ZenithECS edge: nothing under Zenith/AssetHandling
-// #includes ZenithECS (verified — grep for "ECS" across the directory's headers
-// and sources finds none). Scripting does not depend back on AssetHandling
-// (its own CLAUDE.md: "it never names Flux, Physics, AssetHandling, or any
-// concrete component" — enforced by the architecture gate), so this edge is a
-// clean one-way addition, not a second cycle.
+//   ZenithAssetRegistry  (new, below Flux)  — identifiers, lookup, lifetime.
+//                                             No Flux type in any header it owns.
+//   ZenithAssetHandling  (this, above Flux) — the 9 units whose .h or .cpp
+//                                             reaches a Flux/** header.
+//
+// Declared graph: ZenithAssetRegistry <- ZenithFlux <- ZenithAssetHandling.
+// Acyclic. THE EDGE BELOW IS NOW DECLARED: this project AddPublicDependency's
+// ZenithFlux, which Phase 4d could not do because it would have closed the
+// cycle. It is the same shape as EntityComponent -> Flux and
+// backend -> Flux, both already declared one-way in this engine.
+//
+// Flux's own #includes of the nine headers HERE stay include-path-only (the
+// plain "/Zenith" path every leaf carries via ConfigureCommonIncludePaths); any
+// out-of-line symbol they call resolves at the final game exe link, where this
+// library is always present (a mandatory row in Sharpmake_EngineLibs.cs). Do
+// NOT "complete" the graph by adding ZenithFlux -> ZenithAssetHandling back:
+// Sharpmake will not tolerate the cycle, and the exe link does not need it.
+//
+// ═════════════════════════════════════════════════════════════════════════
+// MEMBERSHIP — 9 UNITS, SHARED SOURCE ROOT, NOTHING MOVED
+// ═════════════════════════════════════════════════════════════════════════
+// This project owns exactly the nine units whose .h OR .cpp reaches Flux:
+//
+//   HEADER reaches Flux (owns a Flux type BY VALUE — not forward-declarable):
+//     Zenith_TextureAsset          .h -> Flux/Flux.h                                      (Flux_SurfaceInfo, Flux_VRAMHandle, Flux_ShaderResourceView)
+//     Zenith_MeshAsset             .h -> Flux/Flux_Buffers.h                              (Flux_VertexBuffer, Flux_IndexBuffer, Flux_BufferLayout)
+//     Zenith_AnimatorControllerAsset .h -> Flux/MeshAnimation/Flux_AnimatorControllerDef.h  (Flux_AnimatorControllerDef)
+//     Zenith_GrassTypeTableAsset   .h -> Flux/Vegetation/Flux_GrassTypeTable.h            (Flux_GrassTypeTable)
+//       ^ ★ THE ONE TO WATCH. This TU self-registers at file scope, and its
+//         dead-strip anchor -- Zenith_GrassTypeTableAsset_ForceLink() -- is
+//         called from Flux/Vegetation/Flux_Grass.cpp, i.e. from ZenithFlux,
+//         which after Phase 4i sits BELOW the library defining it. That is
+//         sound (the call IS the undefined external that pulls the object, and
+//         link.exe resolves across every archive on the exe line), but this TU
+//         hosts NO .Tests.inl -- so if it were ever dead-stripped the unit
+//         count would not move and no gate would say a word. Zenith_Behaviour-
+//         GraphAsset.cpp is the only other file-scope self-registrar here, and
+//         its _ForceLink() caller (Zenith_GraphComponent) is above both halves.
+//
+//   .cpp ONLY reaches Flux (header is clean, but the TU creates a link edge):
+//     Zenith_AnimationAsset        .cpp -> Flux/MeshAnimation/Flux_AnimationClip.h
+//     Zenith_BoneMaskAsset         .cpp -> Flux/MeshAnimation/Flux_BonePose.h
+//     Zenith_FontAsset             .cpp -> Flux/Text/Flux_TextImpl.h
+//     Zenith_MaterialAsset         .cpp -> Flux/Flux_MaterialTable.h
+//     Zenith_MeshGeometryAsset     .cpp -> Flux/MeshGeometry/Flux_MeshGeometry.h
+//
+//   ( + Zenith_TextureAsset.cpp -> Flux/Flux_GraphicsImpl.h and
+//       Zenith_MeshAsset.cpp   -> Flux/MeshGeometry/Flux_MeshInstance.h, whose
+//       headers already put them here. )
+//
+// NOT A SINGLE FILE MOVED and not a single #include spelling changed — 251
+// files across Zenith/, Games/, Tools/ and Tests/ #include
+// "AssetHandling/<something>.h". The two projects SHARE the
+// Zenith/AssetHandling source root and partition it with constructor-time
+// SourceFilesExcludeRegex (a MEMBERSHIP exclude — never
+// conf.SourceFilesBuildExcludeRegex, the per-configuration BUILD exclude whose
+// call-site count Phase 4h.3 drove to zero and which
+// Tools/check_project_membership.ps1 now fails on outright).
+//
+// The two exclude lists are exact COMPLEMENTS: every file under
+// Zenith/AssetHandling is owned by exactly one project, each .Tests.inl follows
+// its own .cpp, and each project carries its own definition-free PCH create TU
+// under Internal/. Adding a unit to this directory means adding it to exactly
+// one of the two lists — otherwise check_project_membership.ps1's UNOWNED check
+// (fatal) will say so.
+//
+// ★ Zenith_TextureAsset and Zenith_MeshAsset are owned WHOLESALE, by design.
+// Separating their by-value Flux members from their CPU data would be a TYPE
+// split, not a library split; the Definition of Done forbids a cycle only with
+// the registry half, and both classes belong entirely on this side.
+//
+// ═════════════════════════════════════════════════════════════════════════
+// DEPENDENCY (direct #include edges, the "declare what is directly used"
+// convention every Phase 4b/4c/4d leaf follows)
+// ═════════════════════════════════════════════════════════════════════════
+//   ZenithCore         — MANDATORY for every Zenith library (Zenith_LogFileSinkWrite;
+//                        see Sharpmake_ZenithCore.cs). Also direct:
+//                        Zenith_FontAsset.cpp / Zenith_MeshAsset.cpp /
+//                        Zenith_MeshGeometryAsset.cpp / Zenith_TextureAsset.cpp
+//                        #include Core/Zenith_Engine.h.
+//   ZenithAssetRegistry— every one of the nine headers here #includes
+//                        AssetHandling/Zenith_Asset.h, and several also
+//                        Zenith_AssetHandle.h / Zenith_AssetRegistry.h /
+//                        Zenith_AssetTypeIds.h / Zenith_MaterialParamTable.h.
+//   ZenithFlux         — the nine Flux/** includes listed above. THE EDGE PHASE
+//                        4D COULD NOT DECLARE.
+//   ZenithMaths        — Zenith_FontAsset.h, Zenith_MaterialAsset.h,
+//                        Zenith_MeshAsset.h, Zenith_MeshGeometryAsset.h.
+//   ZenithDataStream   — Zenith_AnimatorControllerAsset.cpp, Zenith_BoneMaskAsset.cpp,
+//                        Zenith_FontAsset.cpp, Zenith_MaterialAsset.cpp,
+//                        Zenith_MeshAsset.cpp, Zenith_TextureAsset.cpp.
+// No ZenithScripting edge any more: the one file that needed it
+// (Zenith_BehaviourGraphAsset.h) is on the registry side now, and this project
+// still reaches ZenithScripting transitively through ZenithAssetRegistry's
+// public edge. No ZenithECS edge: nothing under Zenith/AssetHandling
+// #includes ZenithECS. Zenith_MaterialAsset.cpp #includes
+// FileAccess/Zenith_FileAccess.h and four TUs #include
+// Profiling/Zenith_Profiling.h; neither edge is declared, exactly as the
+// undivided project did not declare them before this split — include-path-only,
+// resolved at the exe link, and reachable transitively through ZenithFlux in
+// any case. Left unchanged deliberately: adding edges is a separate question
+// from breaking the cycle.
 //
 // The class is named *Lib* to avoid colliding with the abstract base
 // `ZenithBaseProject` in Sharpmake_Common.cs; the OUTPUT lib is named
@@ -71,10 +127,10 @@ using System.IO;
 [Sharpmake.Generate]
 public class ZenithAssetHandlingLibProject : ZenithBaseProject
 {
-	// Leaf static lib — renderer-agnostic (see the file header comment on the
-	// declared Flux -> AssetHandling edge); must not link or propagate
-	// glfw/vulkan/slang, so ConfigureAll below calls none of the
-	// AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs helpers.
+	// This half DOES depend on ZenithFlux, but ZenithFlux is itself
+	// renderer-agnostic — so, like ZenithFlux, this project must still not link
+	// or propagate glfw/vulkan/slang directly: ConfigureAll below calls none of
+	// the AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs helpers.
 	public ZenithAssetHandlingLibProject()
 	{
 		Name = "ZenithAssetHandling";
@@ -99,6 +155,34 @@ public class ZenithAssetHandlingLibProject : ZenithBaseProject
 		});
 
 		SourceRootPath = RootPath + "/Zenith/AssetHandling";
+
+		// MEMBERSHIP: own the 9 GPU units + the pre-existing
+		// Internal/Zenith_AssetHandlingPCH.cpp. Everything below belongs to
+		// ZenithAssetRegistry — this list and that project's are exact
+		// complements.
+		//
+		// ★ EVERY PATTERN ENDS IN `\.` ON PURPOSE. "Zenith_Asset" is a prefix of
+		// Zenith_AssetHandle, Zenith_AssetRegistry, Zenith_AssetTypeIds AND
+		// Zenith_AssetHandlingPCH; "Zenith_AssetRegistry" is a prefix of
+		// Zenith_AssetRegistryPCH. Requiring the dot immediately after the unit
+		// name keeps each pattern to its own unit's {.h, .cpp, .inl,
+		// .Tests.inl} set and nothing else.
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_Asset\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_AssetHandle\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_AssetRegistry\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_AssetTypeIds\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_BehaviourGraphAsset\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_FileWatcher\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_HumanProportions\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_Image\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_MaterialParamTable\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_ModelAsset\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_PropertyTuning\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_SkeletonAsset\.");
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Zenith_SkinDeform\.");
+
+		// The OTHER project's PCH create TU.
+		SourceFilesExcludeRegex.Add(@"AssetHandling\\Internal\\Zenith_AssetRegistryPCH\.cpp");
 	}
 
 	[Configure]
@@ -109,39 +193,50 @@ public class ZenithAssetHandlingLibProject : ZenithBaseProject
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
 		conf.ProjectPath = @"[project.SharpmakeCsPath]";
 
+		// DISTINCT intermediate path (unchanged from Phase 4d, and now
+		// load-bearing in a second way: ZenithAssetRegistry shares this source
+		// root, and two projects creating Zenith.pch in one obj dir is MSB8028).
 		conf.IntermediatePath = @"[conf.ProjectPath]\obj\ZenithAssetHandling\[target.Platform]\[conf.Name]";
 
-		// Per-lib PCH: ZenithAssetHandling CREATEs Zenith.pch from
-		// Internal/Zenith_AssetHandlingPCH.cpp.
+		// Per-lib PCH: 9 compiled TUs clears the ">= 4 TUs justifies a binary
+		// PCH" rule. Internal/Zenith_AssetHandlingPCH.cpp is a one-line
+		// `#include "Zenith.h"` and MUST stay definition-free -- see that file's
+		// own header comment for why.
 		conf.PrecompHeader = "Zenith.h";
 		conf.PrecompSource = "Zenith_AssetHandlingPCH.cpp";
 
 		ConfigureCommonSettings(conf, target);
 		ConfigureCommonIncludePaths(conf, target);
 		// No AddGlfwLibs/AddVulkanBackendLibs/AddSlangLibs/AddD3D12Libs call:
-		// this leaf lib must not link or propagate the renderer backend.
+		// see the constructor comment.
 
 		// The PCH (Zenith.h) transitively pulls imgui + Flux/Vulkan/vma/Jolt
-		// headers, and several TUs here (e.g. Zenith_BehaviourGraphAsset.cpp)
-		// #include imgui.h directly and Flux/** headers directly (see the file
-		// header comment) — include paths only, no libs linked.
+		// headers, and SEVEN of the nine TUs here #include Flux/** headers
+		// directly (see the file header comment). The other two --
+		// Zenith_AnimatorControllerAsset.cpp and Zenith_GrassTypeTableAsset.cpp
+		// -- reach Flux only through their OWN headers, which is why they are
+		// on this side of the split at all. Include paths only, no libs linked.
 		conf.IncludePaths.Add(RootPath + "/Middleware/vma");
 		conf.IncludePaths.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
 		conf.IncludePaths.Add(RootPath + "/Zenith/RenderBackends");
 		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
 
-		// SHADER_SOURCE_ROOT — found via a Null_ config build (C2065
-		// 'SHADER_SOURCE_ROOT': undeclared identifier, reported against
-		// Zenith_SkinDeform.cpp / Zenith_TextureAsset.cpp), exactly the defect
+		// SHADER_SOURCE_ROOT -- found via a Null_ config build (C2065
+		// 'SHADER_SOURCE_ROOT': undeclared identifier), exactly the defect
 		// class Sharpmake_ZenithDebugVariables.cs already documents:
-		// Zenith_TextureAsset.cpp #includes Flux/Flux_GraphicsImpl.h directly
-		// (see the file header comment), which reaches the active backend's
-		// Pipeline header (Zenith_Null_Pipeline.h / Zenith_D3D12_Pipeline.h),
-		// and both reference SHADER_SOURCE_ROOT directly, unguarded. This
-		// define previously existed only on the aggregate ZenithProject and
-		// each GameProject, neither of which this standalone leaf lib is.
-		// Mirrors ZenithProject's own identical win64/agde branch exactly
-		// (same value, same "" on agde).
+		// Zenith_TextureAsset.cpp #includes Flux/Flux_GraphicsImpl.h directly,
+		// which reaches the active backend's Pipeline header
+		// (Zenith_Null_Pipeline.h / Zenith_D3D12_Pipeline.h), and both
+		// reference SHADER_SOURCE_ROOT directly, unguarded. This define
+		// previously existed only on the aggregate ZenithProject and each
+		// GameProject, neither of which this standalone leaf lib is. Mirrors
+		// ZenithProject's own identical win64/agde branch exactly (same value,
+		// same "" on agde).
+		//
+		// ★ The SAME C2065 was also reported against Zenith_SkinDeform.cpp,
+		// which Phase 4i put on the REGISTRY side -- so
+		// Sharpmake_ZenithAssetRegistry.cs carries this identical block too.
+		// Both halves need it; neither inherits it from the other.
 		string zenithRoot = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..")).Replace('\\', '/');
 		if (target.Platform == Platform.win64)
 		{
@@ -155,14 +250,20 @@ public class ZenithAssetHandlingLibProject : ZenithBaseProject
 
 		conf.Output = Configuration.OutputType.Lib;
 
-		// MANDATORY: ZenithCore — see Sharpmake_ZenithCore.cs's header comment.
+		// MANDATORY: ZenithCore -- see Sharpmake_ZenithCore.cs's header comment.
 		conf.AddPublicDependency<ZenithCoreLibProject>(target);
 
-		// Direct edges — see the file header comment's DEPENDENCY paragraph.
-		// Deliberately NO ZenithFlux edge (see the CYCLE paragraph above).
+		// Direct edges -- see the file header comment's DEPENDENCY paragraph.
+		conf.AddPublicDependency<ZenithAssetRegistryLibProject>(target);
+
+		// THE EDGE PHASE 4D COULD NOT DECLARE. Safe now precisely because
+		// ZenithFlux depends on ZenithAssetRegistry (the lower half) rather
+		// than on this project -- see Sharpmake_ZenithFlux.cs. Never add
+		// ZenithFlux -> ZenithAssetHandling back.
+		conf.AddPublicDependency<ZenithFluxLibProject>(target);
+
 		conf.AddPublicDependency<ZenithMathsLibProject>(target);
 		conf.AddPublicDependency<ZenithDataStreamLibProject>(target);
-		conf.AddPublicDependency<ZenithScriptingLibProject>(target);
 
 		if (target.ToolsEnabled == ToolsEnabled.True && target.Platform == Platform.win64)
 		{
