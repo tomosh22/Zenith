@@ -6,8 +6,8 @@ title: "A refused zagent claim must change nothing: reproduce the mutate-before-
 category: "Engine"
 parent: "ZEN-28"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "HIGH"
 complexity: "MODERATE"
 risk: "HIGH"
@@ -16,12 +16,13 @@ position: 79
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:22.487Z"
+updatedAt: "2026-09-20T02:16:48.022Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "f083cb4a-cde6-4e2b-862b-a4d0bcc0b15a"
 ---
 ## Goal
 Suggestions row 2026-08-24 (CRITICAL): *"zagent claim MUTATES BEFORE IT VALIDATES. A targeted claim on a needs-human ticket (reproduced on ZM-64) writes status To Do -> In Progress and assignee none -> the agent, THEN returns exit 4 refusing it."* That was the SQL board; the Vault CLI's `claim` is a new implementation (`Tools/Vault/cli/write.mjs`), and eight ZEN tickets were found assigned to the agent while still To Do on 2026-09-19, which is the same shape.
