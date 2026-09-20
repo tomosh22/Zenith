@@ -5,7 +5,7 @@ title: Zenith library source files must be in their own dedicated directories
 category: Engine
 parent: "ZEN-24"
 sprint: null
-status: "In Progress"
+status: "Blocked"
 assignee: "agent@zenith.invalid"
 priority: MEDIUM
 complexity: MODERATE
@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T11:37:35.525Z"
+updatedAt: "2026-09-20T11:37:47.584Z"
 claimAttempt: "1ace13f0-259b-42d4-a11f-d7b1c3432390"
 ---
 ## Goal
