@@ -3,7 +3,7 @@ id: "91616675-077d-4f6c-b3ce-5fedc3cd6398"
 key: "ZEN-74"
 type: "TASK"
 title: "zagent claim archives an existing run directory to KEY.prev before writing fresh scratch"
-category: "Engine"
+category: "Tooling"
 parent: "ZEN-28"
 sprint: null
 status: "To Do"
@@ -16,7 +16,7 @@ position: 74
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:03.386Z"
+updatedAt: "2026-09-20T23:31:25.146Z"
 flagged: false
 severity: null
 reproducibility: null
