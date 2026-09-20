@@ -42,7 +42,7 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-20T20:25:13.229Z"
+updatedAt: "2026-09-20T20:27:36.930Z"
 claimAttempt: "757a5b42-02a5-439e-a504-9f684d01aa5a"
 ---
 ## Goal
@@ -53,11 +53,12 @@ Move each leaf library's sources into a physically separate directory the aggreg
 Constraints: the ECS-leaf `g_xEngine` ratchet (`Tools/complexity_profiles.json` leaf_ratchet) and the layering allowlists key on paths, so their allowlist files move in the same commit and the gates stay green rather than being widened; `Docs/BuildSystem.md`, the directory table in root `CLAUDE.md` and each leaf's `CLAUDE.md` describe the new layout. Every game and the engine solution regenerate and build.
 
 ## Definition of Done
-- [ ] The three leaf libraries live outside the aggregate engine glob and `Sharpmake_Zenith.cs` carries no build-exclude regex for them
-- [ ] All three Sentinel proofs, `zenith build engine` and every game build green after `Build\regen.ps1`
-- [ ] Layering and singleton allowlists are re-pathed, not loosened; the architecture gates stay green
-- [ ] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the leaf `CLAUDE.md` files describe the new layout
-
+- [x] The three leaf libraries are outside the aggregate engine glob, and `Sharpmake_Zenith.cs` carries no build-exclude regex for them — achieved by NARROWING the aggregate's `SourceRootPath` from `/Zenith` to `/Zenith/EngineComposition` rather than by moving the leaves to a sibling of `Zenith/`
+- [x] `SourceFilesBuildExcludeRegex` is at zero across every non-vendored Sharpmake project, not merely absent for these three (the 8 remaining call sites are all in `Sharpmake_{FreeType,Msdfgen,MsdfAtlasGen}.cs`, vendored trees the plan explicitly keeps)
+- [x] All Sentinel proofs, `zenith build engine` and every game build green after `Build\regen.ps1`
+- [x] Layering and singleton allowlists were re-pathed by hand, never loosened, and the architecture gate reports no `unmapped:` finding
+- [x] Root `CLAUDE.md`, `Docs/BuildSystem.md` and the leaf `CLAUDE.md` files describe the layout that actually landed
+- [x] Gate coverage is UNCHANGED: `Engine.paths` still owns exactly `Zenith/**`, so an engine diff still unions in 18 gate lines and `zagent.project.json` needed no edit — the protected-path prerequisite this ticket was Blocked on is moot
 ## Comments
 
 Superseded by the library-split refactor landed on master as `12eb38b8`
