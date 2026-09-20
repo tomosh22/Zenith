@@ -228,6 +228,15 @@ void Flux_RendererImpl::RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, cons
 	}
 }
 
+// Main-thread pre-gather step (see the declaration comment in Flux_RendererImpl.h):
+// forwards to Flux_ShadowsImpl::UpdateShadowMatrices, which self-gates on
+// Zenith_GraphicsOptions' m_bShadowsEnabled — so this call is unconditional and
+// Zenith_Core.cpp never needs Flux/Shadows/Flux_ShadowsImpl.h just to drive it.
+void Flux_RendererImpl::UpdateShadowCascadeMatrices()
+{
+	g_xEngine.Shadows().UpdateShadowMatrices();
+}
+
 bool Flux_RendererImpl::ConsumeGraphRebuildRequest()
 {
 	bool b = m_bGraphRebuildRequested;

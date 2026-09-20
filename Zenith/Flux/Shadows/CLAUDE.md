@@ -6,11 +6,38 @@ Sun (directional) shadows via a 4-cascade CSM. Depth-only D32_SFLOAT maps at
 (`Shaders/DeferredShading/Flux_DeferredShading.slang`) samples them.
 
 **The once-per-frame CPU matrix update is NOT a cascade `Prepare`.** No cascade
-pass registers one: `UpdateShadowMatrices` is called from `Zenith_Core.cpp` on the
-main thread, *before* the render-task window opens, alongside the scene-graph
-snapshot rebuild it is camera-derived like. That hoist is load-bearing — the
-unified mesh cull's `Prepare` runs earlier in topological order (the cascades read
-its cull output), so a cascade-owned `Prepare` would hand it last frame's frusta.
+pass registers one: `UpdateShadowMatrices` runs on the main thread, *before* the
+render-task window opens, alongside the scene-graph snapshot rebuild it is
+camera-derived like. That hoist is load-bearing — the unified mesh cull's
+`Prepare` runs earlier in topological order (the cascades read its cull output),
+so a cascade-owned `Prepare` would hand it last frame's frusta.
+
+**`Zenith_Core.cpp` reaches this through `Flux_RendererImpl::UpdateShadowCascadeMatrices`,
+never through `Flux/Shadows/Flux_ShadowsImpl.h` directly (ZEN-19).** The frame loop
+calls that one-line forward on the renderer facade it already depends on for the
+adjacent snapshot rebuild; it carries no `#include` of this subsystem's
+implementation header and no shadows-enabled check of its own.
+`UpdateShadowMatrices` self-gates on `Zenith_GraphicsOptions::Get().m_bShadowsEnabled`
+at its own top — the same on/off decision `ExecuteShadowCascade` below already
+makes for itself — so Flux, not the frame loop, owns whether the update runs at
+all. The gate is the FIRST statement, above `BeginProfileZone`, so "entered and
+returned" is byte-for-byte "never entered": no counter, dirty flag or profile zone
+moves on the disabled path.
+
+`Flux_Graphics.cpp`'s `UploadRenderViewConstants` also tests the same option, and
+it is **not** a precedent for the self-gate above — it deactivates the cascade view
+slots precisely BECAUSE nothing stages them while shadows are off. That is a
+necessity of the disabled path, not a statement about where on/off decisions
+belong.
+
+**ZEN-19 is NOT finished, and this section describes an interim state.** The
+ticket asks that the update be driven *from within the shadow system* rather than
+from `SubmitRenderWork`; what landed keeps the call in `SubmitRenderWork` under a
+new name, and only the `#include` and the enable-check moved. The unresolved
+question — whether `Flux_FeatureRegistry` should grow an optional main-thread
+pre-gather trampoline so `Shadows` DECLARES this step the way it already declares
+`Initialise`/`SetupRenderGraph`/`Shutdown`/`BuildPipelines` — is on the board for a
+human. Do not read this section as a settled design.
 
 ## Method (AAA baseline, jitter-free by construction)
 

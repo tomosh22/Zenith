@@ -355,6 +355,17 @@ Flux_ShaderResourceView& Flux_ShadowsImpl::GetCSMArraySRV()
 
 void Flux_ShadowsImpl::UpdateShadowMatrices()
 {
+	// Self-gated exactly like ExecuteShadowCascade above: Flux owns the on/off
+	// decision here rather than its caller, so Flux_RendererImpl::UpdateShadowCascadeMatrices
+	// (the main-thread pre-gather seam Zenith_Core.cpp calls) can call this
+	// unconditionally. Behaviour-preserving: the whole body — including the profile
+	// zone below — used to be skipped whenever the old call site's own
+	// m_bShadowsEnabled check failed, and it still is, just decided in here now.
+	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
+	{
+		return;
+	}
+
 	auto& xEngine = g_xEngine;
 	xEngine.Profiling().BeginProfileZone(ZENITH_PROFILE_ZONE("Flux Shadows Update Matrices"));
 	Flux_GraphicsImpl& xGraphics = xEngine.FluxGraphics();

@@ -532,9 +532,12 @@ void Flux_GraphicsImpl::UploadRenderViewConstants()
 	// uploaded by UploadFrameConstants, which also mirrors into the registry.
 
 	// Cascade views activate where their constants are staged (UpdateShadowMatrices)
-	// — but that never runs while shadows are OFF, so the toggle-off side is synced
-	// here: deactivate the cascade slots so the active-view mask reflects reality
-	// (their passes early-out; their sets are never bound while inactive).
+	// — but that never STAGES while shadows are OFF (ZEN-19 moved the enable check
+	// into UpdateShadowMatrices itself, so it is now entered and early-outs rather
+	// than not being called at all; either way nothing activates a cascade slot), so
+	// the toggle-off side is synced here: deactivate the cascade slots so the
+	// active-view mask reflects reality (their passes early-out; their sets are
+	// never bound while inactive).
 	if (!Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
 	{
 		for (u_int u = 0; u < kuFluxViewNumShadowSlots; u++)

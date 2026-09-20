@@ -231,6 +231,24 @@ public:
 	void RebuildSceneSnapshot(uint64_t uRenderMutationEpoch, const Zenith_Maths::Matrix4& xCameraViewProj, bool bCameraValid);
 	const Flux_RenderSceneSnapshot& GetSceneSnapshot() const { return *m_pxSceneSnapshot; }
 
+	// Main-thread pre-gather step: forwards to Flux_ShadowsImpl::UpdateShadowMatrices.
+	// Called from Zenith_Core.cpp right after RebuildSceneSnapshot and before
+	// SyncUnifiedBucketsFromSnapshot below — same call site the cascade update has
+	// always run from, because the unified mesh cull's Prepare (which reads the
+	// cascade frustums) runs earlier in topological order than a cascade-owned
+	// Prepare could (see Flux/Shadows/CLAUDE.md). This is the seam that keeps the
+	// complete Flux_ShadowsImpl type — and its whole implementation header — out of
+	// the frame loop: Zenith_Core.cpp already depends on Flux_RendererImpl for the
+	// sibling snapshot/unified-mesh calls, so routing the cascade update through it
+	// costs no new include there. Unconditional on purpose — the shadows-enabled
+	// gate now lives inside Flux_ShadowsImpl::UpdateShadowMatrices itself, a
+	// self-gate byte-identical to the one ExecuteShadowCascade already carries in
+	// the same .cpp. (Flux_Graphics.cpp's UploadRenderViewConstants also checks the
+	// toggle, but for its OWN reason — it has to deactivate cascade slots precisely
+	// because nothing stages them while shadows are off. That is a necessity, not a
+	// precedent for this seam; do not cite it as one.)
+	void UpdateShadowCascadeMatrices();
+
 	// ===== Unified GPU-driven mesh scene =====
 	// Built once per frame from the scene snapshot, on the main thread right after
 	// RebuildSceneSnapshot: the (mesh,cull,material,VAT) bucket topology + the GPU-scene

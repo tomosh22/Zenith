@@ -27,9 +27,7 @@
 #include "Flux/IBL/Flux_IBLImpl.h"
 #include "Flux/SSR/Flux_SSRImpl.h"
 #include "Flux/SSGI/Flux_SSGIImpl.h"
-#include "Flux/Shadows/Flux_ShadowsImpl.h"   // Stage 2: hoisted UpdateShadowMatrices (pre-gather)
 #include "Flux/Slang/Flux_SpirvUsage.h"       // hosted unit: the BINDLESS static-use scan
-#include "Core/Zenith_GraphicsOptions.h"      // m_bShadowsEnabled gate for the hoisted update
 #ifdef ZENITH_TOOLS
 #include "AssetHandling/Zenith_PropertyTuning.h"
 #include "Editor/Zenith_Editor.h"
@@ -280,11 +278,11 @@ static void SubmitRenderWork(bool bSubmitRenderWork)
 	// mesh cull's Prepare — which runs earlier in topological order once the cascade passes read
 	// its cull-output buffers (Stage 2) — sees up-to-date cascade frustums. Behaviour-preserving
 	// for the non-unified shadow path: nothing consumes the matrices before the graph executes.
-	// (UpdateShadowMatrices profiles itself internally.)
-	if (Zenith_GraphicsOptions::Get().m_bShadowsEnabled)
-	{
-		g_xEngine.Shadows().UpdateShadowMatrices();
-	}
+	// (UpdateShadowMatrices profiles itself internally.) Routed through Flux_RendererImpl's own
+	// UpdateShadowCascadeMatrices — unconditional here, because Flux_ShadowsImpl::UpdateShadowMatrices
+	// now self-gates on the shadows-enabled option — so the frame loop calls only a
+	// Flux_RendererImpl method it already depends on, never Flux/Shadows/Flux_ShadowsImpl.h directly.
+	g_xEngine.FluxRenderer().UpdateShadowCascadeMatrices();
 
 #ifdef ZENITH_TOOLS
 	// Phase 3: queue the scene-graph debug overlays (world-AABB wireframes + cull stats)
