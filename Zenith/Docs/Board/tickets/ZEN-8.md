@@ -5,8 +5,8 @@ title: "doc_lint: verify bare ticket-key citations, not just markdown links"
 category: Engine
 parent: "ZEN-28"
 sprint: null
-status: To Do
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: MEDIUM
 complexity: SIMPLE
 risk: LOW
@@ -42,7 +42,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:37:26.008Z"
+updatedAt: "2026-09-20T02:52:25.835Z"
+claimAttempt: "e58fa12f-2292-4c66-8a73-ff38457b463f"
 ---
 ## Goal
 
