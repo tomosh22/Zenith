@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Panels/Zenith_EditorPanel_Animation.h"
@@ -120,6 +121,24 @@ namespace
 		return xRepoRoot / "Build" / "artifacts" / "zenithmon" / "animeditor";
 	}
 
+	// ZEN-92: the tagged CAPTURE dir, derived from the untagged visual dir above.
+	// `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run tag;
+	// absent, "run" is used (same no-tag default RT_PhotoTour uses) so a bare run
+	// still lands somewhere predictable rather than overwriting the previous
+	// run's captures silently. Deliberately NOT folded into ShowcaseVisualDir()
+	// itself: AuthoredScratch (below) hangs off the UNTAGGED root, because a
+	// promote-target scratch dir is not a capture artifact and tagging it per-run
+	// would be meaningless churn.
+	std::filesystem::path CaptureDir()
+	{
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return ShowcaseVisualDir() / szTag;
+	}
+
 	void RequestShot(u_int uIndex)
 	{
 		if (uIndex >= uZM_SHOWCASE_SHOT_COUNT || g_astrShotPath[uIndex].empty())
@@ -165,12 +184,20 @@ static void Setup_ZMAnimEditorShowcase()
 	g_strScratchControllerRef = "game:Creatures/" + std::string(ZM_GetSpeciesName(eZM_SHOWCASE_SPECIES))
 		+ "/_AnimEditorShowcase_Scratch.zanimctrl";
 
+	// The captures move per --capture-tag; the untagged root (xVisualDir) is kept
+	// only for AuthoredScratch below, which is not a capture artifact.
 	const std::filesystem::path xVisualDir = ShowcaseVisualDir();
+	const std::filesystem::path xCaptureDir = CaptureDir();
 	std::error_code xDirError;
-	std::filesystem::create_directories(xVisualDir, xDirError);
-	g_astrShotPath[0] = (xVisualDir / "01_dopesheet_idle.tga").string();
-	g_astrShotPath[1] = (xVisualDir / "02_curveview_walk.tga").string();
-	g_astrShotPath[2] = (xVisualDir / "03_statemachine_graph.tga").string();
+	std::filesystem::create_directories(xCaptureDir, xDirError);
+	if (xDirError)
+	{
+		FailShowcase("could not create the anim editor capture output directory");
+		return;
+	}
+	g_astrShotPath[0] = (xCaptureDir / "01_dopesheet_idle.tga").string();
+	g_astrShotPath[1] = (xCaptureDir / "02_curveview_walk.tga").string();
+	g_astrShotPath[2] = (xCaptureDir / "03_statemachine_graph.tga").string();
 
 	Zenith_EditorPanel_Animation& xAnimPanel = Zenith_EditorPanel_Animation::Instance();
 	xAnimPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 640.0f);

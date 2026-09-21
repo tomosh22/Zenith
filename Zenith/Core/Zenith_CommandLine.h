@@ -67,6 +67,13 @@ namespace Zenith_CommandLine
         bool        m_bSkipBootCapture    = false;
         const char* m_szUnitTestTimings   = nullptr;
         bool        m_bExitAfterUnitTests = false;
+        // --capture-tag <tag>: the run tag a visual-capture harness writes its
+        // artifacts under (e.g. Build/artifacts/<game>/<feature>/<tag>/), so a
+        // BEFORE and an AFTER run can both stay on disk instead of one silently
+        // overwriting the other. Owned here (not per-harness) so every capture
+        // harness in the repo reads the same flag. Returns nullptr when absent;
+        // callers default to "run" themselves (see GetCaptureTag).
+        const char* m_szCaptureTag        = nullptr;
         // --window-size <W>x<H>: overrides the game's Project_SetGraphicsOptions
         // window dimensions before the window is created. 0/0 = no override.
         // Exists so a capture harness can photograph at a chosen resolution
@@ -181,6 +188,16 @@ namespace Zenith_CommandLine
     // initialised, so teardown runs the normal ordered shutdown. Same run-then-exit
     // shape as --bench-ecs.
     bool IsExitAfterUnitTestsRequested();
+
+    // `--capture-tag <tag>`: the run tag a visual-capture harness (RT_PhotoTour,
+    // Test_MaterialEditorLivePreview, ZM_AnimEditorShowcase, ...) writes its
+    // artifacts under, so two runs with different tags leave BOTH sets on disk
+    // rather than one overwriting the other. Returns nullptr when absent (the
+    // pointer is into argv, process-lifetime, mirroring GetScreenshotPath);
+    // every caller falls back to a literal "run" default itself, the same
+    // no-tag default RT_PhotoTour already uses, so a bare run still lands
+    // somewhere predictable instead of silently clobbering the previous one.
+    const char* GetCaptureTag();
 
     // `--indirect-count-mode=auto|native|padded|single`: the boot-time immutable
     // override for the semantic counted-indirect draw operation. Auto is the

@@ -4,6 +4,7 @@
 #if defined(ZENITH_TOOLS) && defined(ZENITH_INPUT_SIMULATOR)
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_CommandLine.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
@@ -13,6 +14,8 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 
 #include <filesystem>
+#include <cstring>
+#include <string>
 
 // ============================================================================
 // Test_MaterialEditorLivePreview -- the UE5-style material editor + live IBL
@@ -30,6 +33,59 @@
 namespace
 {
 	constexpr const char* szPREVIEW_ASSET_PATH = "game:Materials/EditorPreviewTest.zmtrl";
+
+	// Four capture slots, in Step order: default / red_metal / emissive / cube.
+	constexpr u_int uMATEDIT_SHOT_COUNT = 4u;
+	constexpr size_t ulMATEDIT_PATH_MAX = 512u;
+
+	// ★ FIXED BUFFERS, NOT std::string, AND THAT IS LOAD-BEARING HERE.
+	// A namespace-scope std::string array registers a destructor per element to
+	// run at process exit, and this game's late teardown is exactly where a
+	// windowed DevilsPlayground run already crashes intermittently: the test
+	// PASSES, every capture is written, and then it SIGSEGVs immediately after
+	// "[TaskSystem] Task system shutdown complete" (ZEN-91 filed that as a
+	// pre-existing shortfall).
+	//
+	// MEASURED on ZEN-92, same exe, same command line, 5 runs each:
+	//   std::string array here ......... 5 of 5 crashed
+	//   this file unchanged (control) ... 2 of 5 crashed
+	//   these fixed buffers ............ back to the pre-existing rate
+	//
+	// So the array did not CAUSE the crash -- it made an intermittent one
+	// deterministic. The underlying teardown bug is untouched and still open.
+	// Do not "modernise" these back to std::string until it is fixed.
+	char g_aszShotPath[uMATEDIT_SHOT_COUNT][ulMATEDIT_PATH_MAX] = {};
+
+	void SetShotPath(char (&aszDest)[ulMATEDIT_PATH_MAX], const std::filesystem::path& xPath)
+	{
+		const std::string strPath = xPath.string();
+		if (strPath.size() >= ulMATEDIT_PATH_MAX)
+		{
+			aszDest[0] = '\0';
+			return;
+		}
+		std::memcpy(aszDest, strPath.c_str(), strPath.size() + 1u);
+	}
+
+	// Absolute Build/artifacts/devilsplayground/materialpreview/<tag> dir, derived
+	// from GAME_ASSETS_DIR (<repo>/Games/DevilsPlayground/Assets/ -> up three ->
+	// <repo>), so it resolves regardless of the process working directory -- the
+	// same derivation RT_PhotoTour and ZM_AnimEditorShowcase use.
+	// `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run tag;
+	// absent, "run" is used so a bare run still lands somewhere predictable
+	// rather than silently overwriting a previous one at a fixed C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "devilsplayground" / "materialpreview" / szTag;
+	}
 
 	struct PreviewTestState
 	{
@@ -63,6 +119,19 @@ static void Setup_MaterialEditorLivePreview()
 
 	std::error_code xEC;
 	std::filesystem::remove(Zenith_AssetRegistry::ResolvePath(szPREVIEW_ASSET_PATH), xEC);
+
+	const std::filesystem::path xCaptureDir = CaptureDir();
+	std::error_code xDirError;
+	std::filesystem::create_directories(xCaptureDir, xDirError);
+	if (xDirError)
+	{
+		FailHard("could not create the material preview output directory");
+		return;
+	}
+	SetShotPath(g_aszShotPath[0], xCaptureDir / "mat_shot_default.tga");
+	SetShotPath(g_aszShotPath[1], xCaptureDir / "mat_shot_red_metal.tga");
+	SetShotPath(g_aszShotPath[2], xCaptureDir / "mat_shot_emissive.tga");
+	SetShotPath(g_aszShotPath[3], xCaptureDir / "mat_shot_cube.tga");
 }
 
 static bool Step_MaterialEditorLivePreview(int iFrame)
@@ -81,7 +150,7 @@ static bool Step_MaterialEditorLivePreview(int iFrame)
 	// Default grey-plastic sphere under IBL.
 	case 35:
 		Zenith_Log(LOG_CATEGORY_CORE, "[MatEditShot] preview_default");
-		Flux_Screenshot::RequestDump("C:/tmp/mat_shot_default.tga");
+		Flux_Screenshot::RequestDump(g_aszShotPath[0]);
 		break;
 
 	// Shiny red metal: red base colour, low roughness, full metallic. Same
@@ -99,7 +168,7 @@ static bool Step_MaterialEditorLivePreview(int iFrame)
 
 	case 75:
 		Zenith_Log(LOG_CATEGORY_CORE, "[MatEditShot] preview_red_metal");
-		Flux_Screenshot::RequestDump("C:/tmp/mat_shot_red_metal.tga");
+		Flux_Screenshot::RequestDump(g_aszShotPath[1]);
 		break;
 
 	// HDR emissive glow (feeds the bloom pipeline).
@@ -115,7 +184,7 @@ static bool Step_MaterialEditorLivePreview(int iFrame)
 
 	case 115:
 		Zenith_Log(LOG_CATEGORY_CORE, "[MatEditShot] preview_emissive");
-		Flux_Screenshot::RequestDump("C:/tmp/mat_shot_emissive.tga");
+		Flux_Screenshot::RequestDump(g_aszShotPath[2]);
 		break;
 
 	// Switch the preview mesh to the cube + rotate the light (UE L-drag verb).
@@ -131,7 +200,7 @@ static bool Step_MaterialEditorLivePreview(int iFrame)
 		g_xPrev.m_bPreviewWasActive = g_xEngine.MaterialPreview().IsActive();
 		g_xPrev.m_bSaved = Zenith_MaterialEditorPanel::Action_SaveMaterial(nullptr);
 		Zenith_Log(LOG_CATEGORY_CORE, "[MatEditShot] preview_cube");
-		Flux_Screenshot::RequestDump("C:/tmp/mat_shot_cube.tga");
+		Flux_Screenshot::RequestDump(g_aszShotPath[3]);
 		break;
 
 	case 180:

@@ -98,6 +98,7 @@ void Zenith_UnitTests::TestCommandLineParseDefaults()
 	ZENITH_ASSERT_FALSE(xFlags.m_bSkipBootCapture, "no flags must leave the boot capture on");
 	ZENITH_ASSERT_NULL(xFlags.m_szUnitTestTimings, "no flags must leave the unit-test timings path null");
 	ZENITH_ASSERT_FALSE(xFlags.m_bExitAfterUnitTests, "no flags must leave exit-after-unit-tests off");
+	ZENITH_ASSERT_NULL(xFlags.m_szCaptureTag, "no flags must leave the capture tag null");
 }
 
 ZENITH_TEST(CommandLine, ParseEveryBareFlag) { Zenith_UnitTests::TestCommandLineParseEveryBareFlag(); }
@@ -147,8 +148,11 @@ void Zenith_UnitTests::TestCommandLineParseEveryValueFlag()
 	char szSaveRootVal[] = "D:/artifacts/run";
 	char szRunId[]       = "--test-save-run-id";
 	char szRunIdVal[]    = "run-1234";
+	char szCaptureTag[]    = "--capture-tag";
+	char szCaptureTagVal[] = "before";
 	char* apszArgv[] = { szExe, szShot, szShotVal, szFrame, szFrameVal,
-		szAssets, szAssetsVal, szSaveRoot, szSaveRootVal, szRunId, szRunIdVal };
+		szAssets, szAssetsVal, szSaveRoot, szSaveRootVal, szRunId, szRunIdVal,
+		szCaptureTag, szCaptureTagVal };
 	const Zenith_CommandLine::Flags xFlags = ParseArgvFixture(apszArgv);
 
 	// Each captures the argv pointer itself (process-lifetime), not a copy.
@@ -157,6 +161,7 @@ void Zenith_UnitTests::TestCommandLineParseEveryValueFlag()
 	ZENITH_ASSERT_TRUE(xFlags.m_szAssetsRoot == szAssetsVal, "--assets-root must capture the following argv entry");
 	ZENITH_ASSERT_TRUE(xFlags.m_szTestSaveRoot == szSaveRootVal, "--test-save-root must capture the following argv entry");
 	ZENITH_ASSERT_TRUE(xFlags.m_szTestSaveRunId == szRunIdVal, "--test-save-run-id must capture the following argv entry");
+	ZENITH_ASSERT_TRUE(xFlags.m_szCaptureTag == szCaptureTagVal, "--capture-tag must capture the following argv entry");
 }
 
 ZENITH_TEST(CommandLine, ParseWindowSize) { Zenith_UnitTests::TestCommandLineParseWindowSize(); }

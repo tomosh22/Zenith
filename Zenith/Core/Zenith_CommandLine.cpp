@@ -21,6 +21,7 @@ namespace
     bool        s_bSkipBootCapture  = false;
     const char* s_szUnitTestTimings = nullptr;
     bool        s_bExitAfterUnitTests = false;
+    const char* s_szCaptureTag       = nullptr;
     u_int       s_uWindowWidth       = 0;
     u_int       s_uWindowHeight      = 0;
     Zenith_IndirectCountMode s_eIndirectCountMode = Zenith_IndirectCountMode::Auto;
@@ -70,6 +71,7 @@ namespace
     void ApplyAssetsRoot(Flags& x, const char* sz)      { x.m_szAssetsRoot = sz; }
     void ApplyTestSaveRoot(Flags& x, const char* sz)    { x.m_szTestSaveRoot = sz; }
     void ApplyTestSaveRunId(Flags& x, const char* sz)   { x.m_szTestSaveRunId = sz; }
+    void ApplyCaptureTag(Flags& x, const char* sz)      { x.m_szCaptureTag = sz; }
     void ApplyWindowSize(Flags& x, const char* sz)
     {
         u_int uWidth = 0u;
@@ -133,6 +135,7 @@ namespace
         { "--exit-after-unit-tests", FlagArity::Bare,     &ApplyExitAfterUnitTests },
         { "--window-size",           FlagArity::Value,    &ApplyWindowSize         },
         { "--indirect-count-mode",   FlagArity::Prefixed, &ApplyIndirectCountMode  },
+        { "--capture-tag",           FlagArity::Value,    &ApplyCaptureTag         },
     };
 
     // True when szArg selects xSpec. Prefixed specs match on their own length,
@@ -202,6 +205,7 @@ namespace Zenith_CommandLine
         s_uWindowWidth        = xFlags.m_uWindowWidth;
         s_uWindowHeight       = xFlags.m_uWindowHeight;
         s_eIndirectCountMode  = xFlags.m_eIndirectCountMode;
+        s_szCaptureTag        = xFlags.m_szCaptureTag;
 
         s_bParsed = true;
     }
@@ -275,6 +279,12 @@ namespace Zenith_CommandLine
     {
         if (!s_bParsed) return false;
         return s_bExitAfterUnitTests;
+    }
+
+    const char* GetCaptureTag()
+    {
+        if (!s_bParsed) return nullptr;
+        return s_szCaptureTag;
     }
 
     bool ParseWindowSizeArg(const char* szValue, u_int& uWidthOut, u_int& uHeightOut)
