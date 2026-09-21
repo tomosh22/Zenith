@@ -28,6 +28,7 @@ import { test } from 'vitest';
 
 import { dispatchRead } from '../cli/read.js';
 import { dispatchWrite } from '../cli/write.mjs';
+import { adoptStaleKnowledgeRows } from '../scripts/adopt-stale-knowledge-rows.mjs';
 import { loadVault } from '../server/main.js';
 import { git } from '../server/operations.mjs';
 
@@ -46,12 +47,27 @@ transitions:
 // Two "Agent · Decisions" databases. `db-decisions-stale` belongs to a
 // project in another organisation and is listed FIRST, so a writer that
 // takes the first title match writes somewhere no reader looks.
-function metadata({ seededRowId = null } = {}) {
+function metadata({ seededRowId = null, staleRow = null, staleExtraProperty = false } = {}) {
   const seeded = seededRowId
     ? `
     - id: ${seededRowId}
       database_id: db-decisions-live
       values: {decision-id: "FD-D-004", decision-text: "A seeded decision."}`
+    : '';
+  // A row already sitting in the stale database, keyed by the STALE side's
+  // property ids — the shape ZEN-90 left behind on the live board.
+  const stranded = staleRow
+    ? `
+    - id: ${staleRow.id}
+      database_id: db-decisions-stale
+      created_at: "2026-09-19T10:00:00.000Z"
+      values: {${staleRow.values}}`
+    : '';
+  // A property the stale database defines and the live one does not, so a
+  // migration that remapped by name has nowhere to put its value.
+  const extraProperty = staleExtraProperty
+    ? `
+    - {id: stale-extra, database_id: db-decisions-stale, name: Rationale, type: TEXT}`
     : '';
   return `---
 kind: metadata
@@ -70,13 +86,13 @@ tables:
     - {id: decision-text, database_id: db-decisions-live, name: Decision, type: TEXT}
     - {id: decision-date, database_id: db-decisions-live, name: Date, type: TEXT}
     - {id: stale-id, database_id: db-decisions-stale, name: ID, type: TEXT}
-    - {id: stale-text, database_id: db-decisions-stale, name: Decision, type: TEXT}
-  notion.database_rows:${seeded}
+    - {id: stale-text, database_id: db-decisions-stale, name: Decision, type: TEXT}${extraProperty}
+  notion.database_rows:${seeded}${stranded}
 ---
 `;
 }
 
-async function makeVault(t, { seededRowId = null, ticketBody = 'Body.' } = {}) {
+async function makeVault(t, { seededRowId = null, ticketBody = 'Body.', staleRow = null, staleExtraProperty = false } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'zenith-decide-ref-'));
   t.onTestFinished(() => fs.rm(root, { recursive: true, force: true }));
   await fs.mkdir(path.join(root, 'FD', 'tickets'), { recursive: true });
@@ -97,7 +113,7 @@ async function makeVault(t, { seededRowId = null, ticketBody = 'Body.' } = {}) {
   };
   await fs.writeFile(path.join(root, 'vault.config.json'), JSON.stringify(config, null, 2));
   await fs.writeFile(path.join(root, 'FD', 'workflow.md'), WORKFLOW);
-  await fs.writeFile(path.join(root, 'metadata.md'), metadata({ seededRowId }));
+  await fs.writeFile(path.join(root, 'metadata.md'), metadata({ seededRowId, staleRow, staleExtraProperty }));
   await fs.writeFile(
     path.join(root, 'FD', 'tickets', 'FD-1.md'),
     `---\nkey: FD-1\ntype: TASK\ntitle: One\nstatus: "To Do"\nassignee: null\ncategory: Engine\n---\n\n${ticketBody}\n`,
@@ -242,4 +258,82 @@ test('the stale-organisation database is left untouched', async t => {
   const stale = rows.filter(row => row.database_id === 'db-decisions-stale');
   assert.equal(live.length, 1, 'exactly one row, in the organisation\'s database');
   assert.equal(stale.length, 0, 'nothing was appended to the stale organisation\'s database');
+});
+
+// ZEN-90, the other half: fixing the WRITE path stops new rows being stranded
+// and does nothing for the ones already stranded. Four real ZEN decisions were
+// filed into the non-live database before the fix landed and no documented read
+// command can retrieve any of them — including ZEN-D-004, which the tick
+// protocol's scene-authoring reasoning cites.
+//
+// `scripts/adopt-stale-knowledge-rows.mjs` moves them, remapping every value by
+// property NAME. The remap is the whole risk: the two databases share their
+// property names and share not one property ID, so a migration that rewrote
+// `database_id` alone would produce rows that LIST correctly and read as
+// entirely empty. Assert the values, never the count.
+const STRANDED = 'stale-id: "FD-D-001", stale-text: "Filed before the write path was fixed."';
+const metadataBytes = root => fs.readFile(path.join(root, 'metadata.md'));
+
+async function storedRows(root) {
+  const index = await loadVault(root);
+  const record = [...index.metadataFiles.values()].find(item => item.relativePath === 'metadata.md');
+  return record.fields.tables['notion.database_rows'] ?? [];
+}
+
+test('a stranded row is adopted into the live database, values intact, and the move is idempotent', async t => {
+  const root = await makeVault(t, { staleRow: { id: 'stranded-1', values: STRANDED } });
+  assert.equal((await readRows(root)).length, 0, 'the stranded row is invisible to the reader to begin with');
+
+  const first = await adoptStaleKnowledgeRows(root, { apply: true });
+  assert.equal(first.applied, true);
+  assert.equal(first.moved, 1);
+  assert.equal(first.moves[0].reference, 'FD-D-001');
+
+  const rows = await readRows(root);
+  assert.equal(rows.length, 1, 'the adopted row is visible to the ordinary reader');
+  assert.equal(rows[0].id, 'stranded-1', 'the row keeps its identity, so a citation of it still resolves');
+  // Keyed by the LIVE database's property ids now: a `database_id`-only move
+  // would leave every one of these null while the row still listed.
+  assert.equal(rows[0].values.ID, 'FD-D-001');
+  assert.equal(rows[0].values.Decision, 'Filed before the write path was fixed.');
+  assert.equal(rows[0].values.Date, null, 'a property the source never carried is not invented');
+
+  const stored = await storedRows(root);
+  assert.equal(stored.filter(row => row.database_id === 'db-decisions-stale').length, 0, 'nothing is left behind in the stale database');
+  const moved = stored.find(row => row.id === 'stranded-1');
+  assert.equal(moved.database_id, 'db-decisions-live');
+  assert.equal(moved.created_at, '2026-09-19T10:00:00.000Z', 'non-`values` fields survive the move verbatim');
+
+  const second = await adoptStaleKnowledgeRows(root, { apply: true });
+  assert.equal(second.applied, false, 'a second run finds nothing to move');
+  assert.equal(second.moved, 0);
+  assert.equal((await readRows(root)).length, 1, 'and duplicates nothing');
+});
+
+test('the default is a dry run: it reports the move and leaves the vault byte-identical', async t => {
+  const root = await makeVault(t, { staleRow: { id: 'stranded-1', values: STRANDED } });
+  const before = await metadataBytes(root);
+
+  const plan = await adoptStaleKnowledgeRows(root);
+  assert.equal(plan.applied, false);
+  assert.equal(plan.moves.length, 1);
+  assert.deepEqual(plan.moves[0].properties, ['ID', 'Decision'], 'the plan names the destination properties the values land in');
+
+  assert.deepEqual(await metadataBytes(root), before, 'a plan writes nothing');
+  assert.equal((await readRows(root)).length, 0);
+});
+
+test('a property the live database lacks is refused by name, and the refusal writes nothing', async t => {
+  // The same plan runs in the preview and again inside `prepare` (ZEN-D-007),
+  // so a refusal leaves the work tree byte-identical whichever one catches it.
+  // Dropping the value instead would be silent data loss that every row-count
+  // assertion would pass.
+  const root = await makeVault(t, {
+    staleExtraProperty: true,
+    staleRow: { id: 'stranded-1', values: `${STRANDED}, stale-extra: "Why it was decided."` },
+  });
+  const before = await metadataBytes(root);
+
+  await assert.rejects(() => adoptStaleKnowledgeRows(root, { apply: true }), /Rationale/);
+  assert.deepEqual(await metadataBytes(root), before, 'the refusal left metadata.md untouched');
 });

@@ -1409,14 +1409,22 @@ function lowerFieldMap(values) {
 // ★★ THE WRITE PATH MUST RESOLVE THE DATABASE THE SAME WAY THE READ PATH DOES.
 //
 // `metadata.md` carries TWO databases titled "Agent · Decisions": one for
-// `acme-corp` (13 rows) left over from the migration fixture, and one for
-// `pink-goat`, the live organisation (7 rows). The reader (`databaseModel` in
+// `acme-corp` (4 rows) left over from the migration fixture, and one for
+// `pink-goat`, the live organisation -- the one every read command returns,
+// and the one that grows by a row with each `zagent decide`, which is why no
+// count is quoted for it here. (An earlier revision of this comment said "13
+// rows" and "7 rows". The 13 was a miscount: `"database_id":"gm1dzh..."`
+// occurs 13 times in the file, but that is 4 rows PLUS 9 property
+// definitions. The 7 was true on the day it was written and was stale within
+// a fortnight.) The reader (`databaseModel` in
 // queries.mjs) prefers the database whose project belongs to the CURRENT
 // organisation. The writers here used to take the first title match instead,
 // which is acme-corp -- so `zagent decide` reported exit 0, a rowId and a
 // commit, and `zagent rows decisions` could never see the row. That is the
 // whole of ZEN-90, and it is what made five of the seven readable rows
 // null-ID: the ones that were not null went into the other database.
+// Fixing this resolution stops NEW rows being stranded; the ones already in
+// acme-corp are moved by `scripts/adopt-stale-knowledge-rows.mjs`.
 //
 // Two independent resolutions of the same question is the defect. There is
 // now one, imported from the reader, so they cannot drift again.

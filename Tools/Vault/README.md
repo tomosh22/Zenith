@@ -108,6 +108,21 @@ Recovery accepts only a journaled before or after state. A third-party edit caus
 conflict and remains untouched. Do not delete the journal or force an overwrite to
 bypass a conflict. Preserve the files and inspect the recorded operation first.
 
+Adopt knowledge rows stranded in a same-titled but non-live database (ZEN-90),
+using the same dry-run-then-`--apply` convention:
+
+```powershell
+node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT
+node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT --database decisions --apply
+```
+
+Values are re-keyed from the source database's property ids to the destination's
+**by property name** — a `database_id`-only move would leave every cell keyed by an
+id the destination does not define, so the row would list correctly and read empty.
+The script refuses rather than drops whenever a name cannot be matched, and omitting
+`--database` plans over all five knowledge databases. Read the dry-run plan before
+applying.
+
 Agent claims persist an attempt ID. Subsequent agent changes must still own that
 attempt; human takeover prevents stale close-out. Comment-only abandonment preserves
 the human's assignee and status. Workflow transitions are checked for both CLI changes
