@@ -6,8 +6,8 @@ title: "An unregistered --automated-test name exits 0 and reports nothing, so a 
 category: "Engine"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "MEDIUM"
@@ -16,12 +16,13 @@ position: 93
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T22:09:32.558Z"
+updatedAt: "2026-09-21T15:57:11.597Z"
 flagged: false
 severity: "S2_MAJOR"
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "9f14771b-bdd2-4d21-a08b-734954b4db6f"
 ---
 ## Goal
 
