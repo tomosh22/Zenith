@@ -114,6 +114,7 @@ using the same dry-run-then-`--apply` convention:
 ```powershell
 node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT
 node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT --database decisions --apply
+node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT --max-moves 20
 ```
 
 Values are re-keyed from the source database's property ids to the destination's
@@ -122,6 +123,25 @@ id the destination does not define, so the row would list correctly and read emp
 The script refuses rather than drops whenever a name cannot be matched, and omitting
 `--database` plans over all five knowledge databases. Read the dry-run plan before
 applying.
+
+The plan also names the **organisation** each database belongs to, so a direction
+inversion — `databaseModel` resolving the wrong side as live, which is a property of
+the checkout's config rather than of this script (`ZEN-D-029` corollary 3) — is
+visible before anything moves. Two guards refuse outright rather than relying on
+someone reading that plan:
+
+- A move into a destination holding **none of its own rows** is refused past
+  `--max-moves` (default 5). That is ONE shape a resolver inversion takes, not the
+  only one: `databaseModel` is `preferred ?? populated ?? databases[0]`, and its
+  `populated` branch is defined as the first database holding rows — so an inversion
+  that lands on THAT branch has a non-empty destination by construction and this
+  guard cannot see it. Read the organisation summary; it is what covers that case.
+- Two same-titled databases in the **same organisation** are refused as unmergeable
+  rather than silently combined — whether the collision is between a source and the
+  destination or between two sources.
+
+`--max-moves` raises the first threshold; a dry run is the right place to try it,
+which is why the example above omits `--apply`.
 
 Agent claims persist an attempt ID. Subsequent agent changes must still own that
 attempt; human takeover prevents stale close-out. Comment-only abandonment preserves

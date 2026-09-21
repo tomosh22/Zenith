@@ -51,10 +51,33 @@
  * defect this ticket is about. The dry run is the default precisely so the
  * plan is read by a human before anything moves.
  *
+ * ★ ZEN-104 adds three guards on top of that dry-run default, none of which
+ * re-decide which database is live:
+ *   - The plan STATES which organisation each side belongs to (walking the
+ *     same project_id -> organization_id -> slug chain `databaseModel` reads,
+ *     purely for display), so a direction inversion is visible in the plan a
+ *     human is asked to read rather than only discoverable after the fact.
+ *   - A move into a destination that currently holds none of its own rows is
+ *     refused once it exceeds `--max-moves` (default below) — ONE shape a
+ *     resolver inversion can take: the side `databaseModel` picked as "live"
+ *     turns out to be the empty one. NOT EVERY SHAPE: `databaseModel` is
+ *     `preferred ?? populated ?? databases[0]`, and `populated` is DEFINED as
+ *     the first database that already holds rows — so when `preferred`
+ *     misses (the misconfigured-checkout case this ticket is about) and
+ *     `populated` decides instead, the destination it picks is non-empty by
+ *     construction and this guard cannot fire on that path.
+ *   - Two same-titled databases that resolve to the SAME organisation are
+ *     refused outright, naming both — a title cannot disambiguate them, so a
+ *     move would merge them silently instead of adopting a stray. Checked
+ *     PAIRWISE (destination-vs-source AND source-vs-source), because two
+ *     STRAY sources sharing an organisation with each other but not with the
+ *     destination would otherwise merge into it just as silently.
+ *
  * Usage:
  *   node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT
  *   node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT --apply
  *   node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT --database decisions --apply
+ *   node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT --max-moves 20 --apply
  *
  * Without `--apply` nothing is written: the plan is printed and the vault is
  * left byte-identical. With `--apply` the move lands as one atomic operation
@@ -82,6 +105,14 @@ export class AdoptionError extends Error {
 // A bare `undefined` cannot tell those apart, and the difference decides
 // whether one database or five get swept.
 export const EMPTY_NARROWING = Symbol('--database given no value');
+
+// ZEN-104 DoD 2. A move into a destination holding none of its own rows is
+// refused once the source is bigger than this. Picked deliberately between
+// the two measured shapes: ZEN-90's real migration moved 4 rows (a genuine
+// adoption of stragglers, meant to pass through untouched) and the ticket's
+// own worked example of a resolver inversion sweeps 37 (meant to be refused).
+// Anyone with a legitimately larger first-time migration passes --max-moves.
+export const DEFAULT_MAX_MOVES_INTO_EMPTY_DESTINATION = 5;
 
 const array = value => (Array.isArray(value) ? value : []);
 const object = value => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
@@ -122,6 +153,34 @@ function cellFor(property, label) {
   return option ? option.id : label;
 }
 
+// Mirrors the project_id -> organization_id -> slug chain `databaseModel`
+// (cli/queries.mjs:487-494) walks to pick the live database — but only to
+// DISPLAY which organisation a database belongs to. It never decides which
+// side is live; `databaseModel` stays the sole authority on that (ZEN-D-029
+// corollary 3). An unresolvable link is reported rather than guessed at, in
+// keeping with this whole script's "refuse rather than guess" rule.
+//
+// The returned slug is trimmed but NOT case-normalised: DoD 1's report shows
+// the organisation's own recorded spelling, so lower-casing it here would
+// misrepresent what is actually stored. `databaseModel` itself compares
+// slugs case-INsensitively (`.toLowerCase()` at cli/queries.mjs:493), so any
+// CALLER that tests two of these for equality (the DoD 3 guard below) must
+// lower-case at the comparison site to mirror that, or it fails OPEN on two
+// organisation records differing only in case. The `.trim()` here has no
+// equivalent in `databaseModel`, which does not trim; that divergence fails
+// SAFE rather than open (it can only make two slugs compare EQUAL that
+// `databaseModel` would keep apart, so the guard below refuses a little more
+// eagerly, never less), so it stays.
+function organisationOf(projectsById, organizationsById, database) {
+  const project = projectsById.get(String(database?.project_id ?? ''));
+  if (!project) return { slug: null, unresolved: `no project links to database "${database?.id ?? ''}"` };
+  const organization = organizationsById.get(String(project?.organization_id ?? ''));
+  if (!organization) return { slug: null, unresolved: `project "${project?.id ?? ''}" links to no organisation` };
+  const slug = String(organization?.slug ?? '').trim();
+  if (!slug) return { slug: null, unresolved: `organisation "${organization?.id ?? ''}" carries no slug` };
+  return { slug, unresolved: null };
+}
+
 /** Normalise `--database a,b` / `['a','b']` / omitted into a key list. */
 export function requestedKeys(requested) {
   // OMITTED means all five, deliberately. But a PRESENT-yet-empty narrowing --
@@ -150,13 +209,29 @@ export function requestedKeys(requested) {
   return keys;
 }
 
+/** Normalise `--max-moves N` / omitted into a threshold, refusing a typo rather
+ * than silently keeping the default — the default IS the safety guard, so a
+ * malformed override must not quietly re-enable the thing it looks like it
+ * raised. Same `EMPTY_NARROWING` sentinel and reasoning as `requestedKeys`. */
+export function resolveMaxMoves(requested) {
+  if (requested === undefined || requested === null) return DEFAULT_MAX_MOVES_INTO_EMPTY_DESTINATION;
+  if (requested === EMPTY_NARROWING || String(requested).trim() === '') {
+    throw new AdoptionError('--max-moves was given no value. Pass a non-negative integer, e.g. --max-moves 10.');
+  }
+  const parsed = Number(requested);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new AdoptionError(`--max-moves must be a non-negative integer; got "${requested}".`);
+  }
+  return parsed;
+}
+
 /**
  * Compute the whole migration against one index, and throw rather than guess.
  * Pure: it reads the index and returns the next `tables` object, touching no
  * file. Called once for the preview and again inside `prepare` (ZEN-D-007), so
  * every refusal below happens before a change set exists.
  */
-export function planFor(index, keys = [...DATABASE_KEYS]) {
+export function planFor(index, keys = [...DATABASE_KEYS], { maxMoves = DEFAULT_MAX_MOVES_INTO_EMPTY_DESTINATION } = {}) {
   const record = metadataRecordOf(index);
   if (!record) {
     throw new AdoptionError('This vault carries no metadata catalog, so there is no knowledge database to adopt rows into.');
@@ -165,6 +240,10 @@ export function planFor(index, keys = [...DATABASE_KEYS]) {
   const rows = array(tables['notion.database_rows']);
   const relocated = new Map();
   const moves = [];
+  const organisations = [];
+  const databasesById = new Map(rowsFor(index, 'notion.databases').map(database => [String(database?.id ?? ''), database]));
+  const projectsById = new Map(rowsFor(index, 'notion.projects').map(project => [String(project?.id ?? ''), project]));
+  const organizationsById = new Map(rowsFor(index, 'public.organizations').map(organization => [String(organization?.id ?? ''), organization]));
 
   for (const key of keys) {
     let model;
@@ -179,6 +258,75 @@ export function planFor(index, keys = [...DATABASE_KEYS]) {
       .filter(database => String(database?.title ?? '') === title && String(database?.id ?? '') !== String(target?.id ?? ''))
       .map(database => String(database.id)));
     if (!strayIds.size) continue;
+
+    const destinationOrg = organisationOf(projectsById, organizationsById, target);
+    const sourceOrgs = [...strayIds].map(id => ({
+      id,
+      ...organisationOf(projectsById, organizationsById, databasesById.get(id)),
+    }));
+
+    // DoD 3: two same-titled databases the reader could never tell apart by
+    // title alone would be silently MERGED by a move — refuse instead, naming
+    // both. Checked PAIRWISE across the destination AND every stray source
+    // (review round 3, finding 1): comparing each source only against the
+    // destination missed two SOURCES sharing an organisation with each other
+    // but not with the destination — both would still be combined into the
+    // destination, which is exactly the merge this guard exists to prevent.
+    // Compared lower-cased (finding 2), mirroring `databaseModel`'s own
+    // case-insensitive slug comparison (cli/queries.mjs:493) — see the
+    // comment on `organisationOf` above for why. Only fires when BOTH
+    // organisations in a pair actually resolved; an unresolved link is
+    // reported below (DoD 1) rather than guessed at.
+    const orgCandidates = [
+      { id: String(target.id), slug: destinationOrg.slug },
+      ...sourceOrgs.map(source => ({ id: source.id, slug: source.slug })),
+    ];
+    for (let i = 0; i < orgCandidates.length; i += 1) {
+      for (let j = i + 1; j < orgCandidates.length; j += 1) {
+        const a = orgCandidates[i];
+        const b = orgCandidates[j];
+        if (a.slug && b.slug && a.slug.toLowerCase() === b.slug.toLowerCase()) {
+          throw new AdoptionError(`${key}: "${title}" has two databases in the same organisation ("${a.slug}") — `
+            + `${a.id} and ${b.id}. A title cannot disambiguate them, so a move here would merge them silently. `
+            + 'Rename or remove the duplicate before migrating.');
+        }
+      }
+    }
+
+    // DoD 1: state which organisation each side belongs to, so a direction
+    // inversion (the wrong side resolved as "live") is visible in the plan a
+    // human is asked to read, rather than only discoverable after the rows
+    // have already moved the wrong way.
+    organisations.push({
+      database: key,
+      title,
+      to: {
+        id: String(target.id),
+        organisation: destinationOrg.slug,
+        ...(destinationOrg.unresolved ? { unresolved: destinationOrg.unresolved } : {}),
+      },
+      from: sourceOrgs.map(source => ({
+        id: source.id,
+        organisation: source.slug,
+        ...(source.unresolved ? { unresolved: source.unresolved } : {}),
+      })),
+    });
+
+    // DoD 2: refuse a move too large to justify against an empty destination.
+    // This is ONE shape a resolver inversion can take (see the header comment
+    // for the shape it does NOT cover, via `databaseModel`'s `populated`
+    // fallback): the side `databaseModel` picked as "live" turns out to hold
+    // none of its own rows, while the "stray" side carries everything real. A
+    // genuine adoption of a few stragglers (ZEN-90 moved 4) passes through; a
+    // sweep the size of a whole live database does not, unless the caller
+    // overrides with --max-moves.
+    const existingInDestination = rows.filter(row => String(row?.database_id ?? '') === String(target.id)).length;
+    const strayRowCount = rows.filter(row => strayIds.has(String(row?.database_id ?? ''))).length;
+    if (existingInDestination === 0 && strayRowCount > maxMoves) {
+      throw new AdoptionError(`${key}: refusing to move ${strayRowCount} row(s) into "${title}" (${target.id}), which currently `
+        + 'holds zero rows of its own — this looks like databaseModel resolved the wrong side rather than a genuine adoption of '
+        + `a few stragglers. Pass --max-moves ${strayRowCount} (or higher) to proceed anyway.`);
+    }
 
     const sourceProperties = new Map();
     for (const property of rowsFor(index, 'notion.database_properties')) {
@@ -283,10 +431,11 @@ export function planFor(index, keys = [...DATABASE_KEYS]) {
     }
   }
 
-  if (!moves.length) return { record, moves, tables: null };
+  if (!moves.length) return { record, moves, tables: null, organisations };
   return {
     record,
     moves,
+    organisations,
     tables: { ...tables, 'notion.database_rows': rows.map((row, at) => relocated.get(at) ?? row) },
   };
 }
@@ -300,23 +449,25 @@ export function planFor(index, keys = [...DATABASE_KEYS]) {
  */
 export async function adoptStaleKnowledgeRows(root, options = {}) {
   const keys = requestedKeys(options.databases);
+  const maxMoves = resolveMaxMoves(options.maxMoves);
   const apply = options.apply === true;
 
   // The preview runs under the same lock and recovery a mutation would, so a
   // plan is never computed against a half-applied journal.
   const preview = await withAuthoritativeIndex(root, index => {
-    const plan = planFor(index, keys);
-    return { moves: plan.moves, file: plan.record.relativePath, revision: expectedRevision(plan.record) };
+    const plan = planFor(index, keys, { maxMoves });
+    return { moves: plan.moves, organisations: plan.organisations, file: plan.record.relativePath, revision: expectedRevision(plan.record) };
   });
 
   if (!apply) {
-    return { applied: false, moved: 0, moves: preview.moves, file: preview.file, dryRun: true };
+    return { applied: false, moved: 0, moves: preview.moves, organisations: preview.organisations, file: preview.file, dryRun: true };
   }
   if (!preview.moves.length) {
     return {
       applied: false,
       moved: 0,
       moves: [],
+      organisations: preview.organisations,
       file: preview.file,
       note: 'nothing to adopt — every same-titled non-live knowledge database is already empty',
     };
@@ -329,11 +480,13 @@ export async function adoptStaleKnowledgeRows(root, options = {}) {
       // ZEN-D-007: re-planned here, from the authoritative index, BEFORE the
       // change set exists. Any refusal above throws out of `prepare` and the
       // vault stays byte-identical with no journal and no commit.
-      const plan = planFor(fresh, keys);
-      if (!plan.moves.length) return { changes: [], result: { applied: false, moved: 0, moves: [], file: plan.record.relativePath } };
+      const plan = planFor(fresh, keys, { maxMoves });
+      if (!plan.moves.length) {
+        return { changes: [], result: { applied: false, moved: 0, moves: [], organisations: plan.organisations, file: plan.record.relativePath } };
+      }
       return {
         changes: [{ path: plan.record.relativePath, bytes: patchRecord(plan.record, { tables: plan.tables }) }],
-        result: { applied: true, moved: plan.moves.length, moves: plan.moves, file: plan.record.relativePath },
+        result: { applied: true, moved: plan.moves.length, moves: plan.moves, organisations: plan.organisations, file: plan.record.relativePath },
       };
     },
   });
@@ -344,8 +497,10 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const at = args.indexOf('--vault');
   const atDatabase = args.indexOf('--database');
+  const atMaxMoves = args.indexOf('--max-moves');
   if (at < 0 || !args[at + 1]) {
-    console.error('Usage: node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT [--database decisions[,questions,...]] [--apply]');
+    console.error('Usage: node scripts/adopt-stale-knowledge-rows.mjs --vault ROOT '
+      + '[--database decisions[,questions,...]] [--max-moves N] [--apply]');
     process.exitCode = 1;
   } else {
     try {
@@ -353,6 +508,9 @@ if (path.resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
         databases: atDatabase < 0
           ? undefined
           : (args[atDatabase + 1] ?? EMPTY_NARROWING),
+        maxMoves: atMaxMoves < 0
+          ? undefined
+          : (args[atMaxMoves + 1] ?? EMPTY_NARROWING),
         apply: args.includes('--apply'),
       });
       console.log(JSON.stringify(result, null, 2));
