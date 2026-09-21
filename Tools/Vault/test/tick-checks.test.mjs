@@ -606,3 +606,39 @@ test('runClient: the guard-freshness override records the OVERRIDDEN exit code, 
   assert.equal(guard.payload.gateVerdictFresh, false);
   assert.equal(await lastExit(root), '1', "the recorded code must be the OVERRIDDEN one, not the board's original 0");
 });
+
+test('runClient: a thrown dispatcher error still records to last.exit, not a stale prior value', async t => {
+  const root = await makeVault(t);
+  const ok = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root });
+  assert.equal(ok.exitCode, 0, JSON.stringify(ok.payload));
+  assert.equal(await lastExit(root), '0');
+
+  // Mutation check: remove the `try { … } catch (error) { result = … }`
+  // wrapper around `dispatch(context)` in client.mjs's `runClient`, letting
+  // the throw propagate out of the function instead of becoming a result —
+  // this goes red because `finish()` never runs, so last.exit stays at the
+  // previous call's '0' (or the assertion below throws instead of failing
+  // cleanly, since `runClient` itself would reject).
+  const thrown = await runClient(['--vault', root, 'show', 'FD-1'], {
+    repoRoot: root,
+    dispatch: async () => { throw new Error('boom'); },
+  });
+  assert.equal(thrown.exitCode, 1, JSON.stringify(thrown.payload));
+  assert.match(String(thrown.payload.error), /boom/);
+  assert.equal(await lastExit(root), '1', 'a thrown dispatcher error must overwrite the previous success, not leave it stale');
+});
+
+test('runClient: a non-1 refusal code from the dispatcher is recorded verbatim, not coerced to 1', async t => {
+  const root = await makeVault(t);
+  // Mutation check: hardcode `persistLast`'s exit-code write to a literal
+  // `0` or `1` instead of `result.exitCode` (client.mjs) and this goes red —
+  // it would read a coerced value instead of the dispatcher's actual `5`,
+  // the "repo busy" code the tick protocol branches on separately from a
+  // plain refusal.
+  const refused = await runClient(['--vault', root, 'show', 'FD-1'], {
+    repoRoot: root,
+    dispatch: async () => ({ exitCode: 5, payload: { error: 'repo busy' } }),
+  });
+  assert.equal(refused.exitCode, 5, JSON.stringify(refused.payload));
+  assert.equal(await lastExit(root), '5');
+});

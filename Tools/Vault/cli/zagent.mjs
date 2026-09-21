@@ -129,6 +129,32 @@ async function writeScratch(root, relative, value) {
   }
 }
 
+/**
+ * Persist this invocation's exit code, mirroring `client.mjs`'s `finish()` /
+ * `persistLast` choke point (see its doc comment). `.zagent/last.exit` is
+ * written from exactly one place in this file so a caller reading it after a
+ * `node cli/zagent.mjs …` call never sees a code left over from a previous
+ * invocation. `scratchRoot` is null exactly when `--vault` was never
+ * supplied, in which case there is no `.zagent/` to write into at all — that
+ * one path (the missing-`--vault` refusal) legitimately cannot record and is
+ * the sole exception; every other return in `runCli` funnels through here.
+ *
+ * Best-effort: a filesystem that refuses this write also fails visibly
+ * wherever the substantive result was produced, so swallowing a write error
+ * here is strictly better than turning an otherwise-reported result into a
+ * thrown exception over its own bookkeeping.
+ */
+async function persistExit(scratchRoot, response) {
+  if (scratchRoot) {
+    try {
+      await writeScratch(scratchRoot, 'last.exit', `${response.exitCode}\n`);
+    } catch {
+      // best-effort; see doc comment above
+    }
+  }
+  return response;
+}
+
 /** Persist the durable claim handoff consumed by the next tick step. */
 async function persistMutationScratch(root, command, payload) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
@@ -147,6 +173,11 @@ async function persistMutationScratch(root, command, payload) {
 export async function runCli(rawArgs = process.argv.slice(2)) {
   const args = Array.isArray(rawArgs) ? rawArgs.slice() : [];
   const vaultRoot = valueFor(args, '--vault');
+  // Resolved once, before any command-specific branching (including the
+  // pre-dispatch refusals below), and reused by every return through
+  // `persistExit` — mirrors `client.mjs`'s `scratchRoot` (`runClient`,
+  // "Resolve it ONCE, before ANY command-specific branching runs").
+  const scratchRoot = vaultRoot ? path.resolve(vaultRoot) : null;
   const json = args.includes('--json');
   const commandArgs = withoutGlobalOptions(args);
   const command = String(commandArgs[0] ?? '').toLowerCase();
@@ -172,19 +203,24 @@ export async function runCli(rawArgs = process.argv.slice(2)) {
       commands: ['show', 'check', 'queue', 'owns', 'next', 'claim', 'comment', 'move', 'finish', 'links', 'blocked', 'transitions', 'history', 'gates', 'guard', 'epic', 'sprint', 'version', 'update', 'estimate', 'flag', 'resolve', 'create', 'link', 'unlink', 'parent', 'ask', 'decide', 'shortfall', 'changelog', 'suggest', 'rows', 'suggestions', 'doctor', 'docs ls', 'docs read', 'docs search', 'docs status', 'board status'],
     };
     printPayload(payload);
-    return { exitCode: 0, payload };
+    return persistExit(scratchRoot, { exitCode: 0, payload });
   }
   if (!vaultRoot) {
+    // No `--vault` means no repo root to derive `.zagent/` from — `scratchRoot`
+    // is null here by construction, so this is the one return in `runCli`
+    // that legitimately cannot record an exit code (see `persistExit`'s doc
+    // comment). Routed through `persistExit` anyway for structural
+    // uniformity; it is a no-op given a null root.
     const response = { exitCode: 1, payload: { error: 'Missing required --vault ROOT' } };
     printPayload(response.payload);
-    return response;
+    return persistExit(scratchRoot, response);
   }
 
   const unsupported = unsupportedReason(commandArgs);
   if (unsupported) {
     const response = { exitCode: 1, payload: { error: unsupported } };
     printPayload(response.payload);
-    return response;
+    return persistExit(scratchRoot, response);
   }
 
   if (inspected.error) {
@@ -193,7 +229,7 @@ export async function runCli(rawArgs = process.argv.slice(2)) {
       : inspected.error;
     const response = { exitCode: 1, payload: { error } };
     printPayload(response.payload);
-    return response;
+    return persistExit(scratchRoot, response);
   }
 
   try {
@@ -222,11 +258,11 @@ export async function runCli(rawArgs = process.argv.slice(2)) {
       await persistMutationScratch(authority, command, response.payload);
     }
     printPayload(response.payload);
-    return response;
+    return persistExit(scratchRoot, response);
   } catch (error) {
     const response = { exitCode: 1, payload: { error: error?.message ?? String(error) } };
     printPayload(response.payload);
-    return response;
+    return persistExit(scratchRoot, response);
   }
 }
 

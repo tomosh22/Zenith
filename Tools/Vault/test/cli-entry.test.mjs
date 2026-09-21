@@ -254,6 +254,87 @@ test('write commands persist durable claim scratch inside the vault', async t =>
   assert.equal(drained.response.payload.error, 'Nothing in "To Do".');
 });
 
+// ─── .zagent/last.exit: every runCli exit path records its own code ──────
+//
+// `runCli` has six returns. Five funnel through `persistExit`; the sixth
+// (missing `--vault`) has no root to derive `.zagent/` from and is the one
+// documented exception (see `persistExit`'s doc comment in cli/zagent.mjs).
+// Each test below drives one class of the five and re-runs a DIFFERENT class
+// on the SAME root afterward, so a stale value from the first call could not
+// pass as the second call's answer.
+
+async function zagentLastExit(root) {
+  return (await fs.readFile(path.join(root, '.zagent', 'last.exit'), 'utf8')).trim();
+}
+
+test('runCli: a successful read command records exit 0 to last.exit', async t => {
+  const root = await makeVault(t);
+  // Mutation check: comment out the `persistExit` call on the success return
+  // (cli/zagent.mjs, the `printPayload(response.payload); return
+  // persistExit(...)` pair just before the outer try's closing brace) and
+  // this goes red — `.zagent/last.exit` is never created at all.
+  const queue = await capture(() => runCli(['queue', '--vault', root]));
+  assert.equal(queue.response.exitCode, 0, queue.output);
+  assert.equal(await zagentLastExit(root), '0');
+});
+
+test('runCli: --help records exit 0 to last.exit', async t => {
+  const root = await makeVault(t);
+  const help = await capture(() => runCli(['claim', '--help', '--vault', root]));
+  assert.equal(help.response.exitCode, 0);
+  assert.equal(await zagentLastExit(root), '0');
+});
+
+test('runCli: an unsupported command records exit 1, overwriting a prior success', async t => {
+  const root = await makeVault(t);
+  const ok = await capture(() => runCli(['queue', '--vault', root]));
+  assert.equal(ok.response.exitCode, 0);
+  assert.equal(await zagentLastExit(root), '0');
+
+  // Mutation check: drop the `return persistExit(scratchRoot, response);` on
+  // the `unsupported` branch back to a bare `return response;` and this goes
+  // red — last.exit stays at the previous call's `0` instead of moving to `1`.
+  const refused = await capture(() => runCli(['auth', '--vault', root]));
+  assert.equal(refused.response.exitCode, 1);
+  assert.equal(await zagentLastExit(root), '1', 'the refusal must overwrite the previous success, not leave it stale');
+});
+
+test('runCli: an argument (typo) error records exit 1, overwriting a prior success', async t => {
+  const root = await makeVault(t);
+  const ok = await capture(() => runCli(['queue', '--vault', root]));
+  assert.equal(ok.response.exitCode, 0);
+  assert.equal(await zagentLastExit(root), '0');
+
+  // Mutation check: drop the `persistExit` routing on the `inspected.error`
+  // branch and this goes red for the identical reason as the case above.
+  const typo = await capture(() => runCli(['queue', '--projectt', 'FD', '--vault', root]));
+  assert.equal(typo.response.exitCode, 1);
+  assert.match(String(typo.response.payload.error), /Unknown flag/);
+  assert.equal(await zagentLastExit(root), '1');
+});
+
+test('runCli: a thrown dispatch error (unresolvable vault root) records exit 1', async t => {
+  const root = await makeVault(t);
+  const brokenRoot = path.join(root, 'does-not-exist');
+  // Mutation check: drop the `persistExit` routing in the outer `catch`
+  // block and this goes red — the thrown error is still reported correctly
+  // in `response.payload.error`, but `.zagent/last.exit` under `brokenRoot`
+  // is never written, so the read below fails with ENOENT instead of '1'.
+  const broken = await capture(() => runCli(['show', 'FD-1', '--vault', brokenRoot]));
+  assert.equal(broken.response.exitCode, 1);
+  assert.equal(await zagentLastExit(brokenRoot), '1');
+});
+
+test('runCli: a missing --vault refusal cannot record — there is no root to derive .zagent/ from', async t => {
+  // This is the one documented exception (see cli/zagent.mjs's `persistExit`
+  // doc comment): with no `--vault`, `scratchRoot` is null and `persistExit`
+  // is a deliberate no-op. Assert the refusal still reports correctly and
+  // that this does not crash — there is no root to check a file under.
+  const noVault = await capture(() => runCli(['queue']));
+  assert.equal(noVault.response.exitCode, 1);
+  assert.equal(noVault.response.payload.error, 'Missing required --vault ROOT');
+});
+
 test('history merges board commits and failures are reported as exit 1 payloads', async t => {
   const root = await makeVault(t);
   const claim = await capture(() => runCli(['claim', 'FD-1', '--vault', root]));
