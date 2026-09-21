@@ -6,8 +6,8 @@ title: "zagent claim archives an existing run directory to KEY.prev before writi
 category: "Tooling"
 parent: "ZEN-28"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 74
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T23:31:25.146Z"
+updatedAt: "2026-09-21T04:45:16.139Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "93d491da-c296-4eb4-a4fd-311b8c643a8b"
 ---
 ## Goal
 Suggestions row 2026-08-26 (cli): *"zagent claim should archive an existing .zagent/run/<KEY>/ to <KEY>.prev/ so a stale GREEN gate verdict cannot be sitting there when a tick starts."* `Tools/Vault/cli/tick-checks.mjs` §7 already treats a `tick_gates.json` whose `headSha` differs from HEAD as absent, which closes the worst case; the row asks for the run directory itself to be moved aside so no stale `body.md`, `changed.txt` or verdict can be read by mistake.
