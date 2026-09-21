@@ -6,8 +6,8 @@ title: "doc_lint: wrap the seven remaining Get-Content reads so a single-line do
 category: "Tooling"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 98
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T23:32:00.535Z"
+updatedAt: "2026-09-21T16:43:12.446Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "042de8f9-53c2-456e-bb55-5771fa5a6a17"
 ---
 ## Goal
 
