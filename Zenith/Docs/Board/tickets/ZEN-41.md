@@ -6,8 +6,8 @@ title: "FluxCompiler lint: reject a raw normal-map decode outside Common/Materia
 category: "Engine"
 parent: "ZEN-25"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 41
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:34:00.714Z"
+updatedAt: "2026-09-21T02:43:24.283Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "d56460a1-5ae9-4113-98ea-91b6a7b9e203"
 ---
 ## Goal
 `Docs/design/Photorealism.md` §4: *"Nothing pairs a texture's exported compression with the decode its shader assumes. §1.10 was exactly that gap"* (BC5 normal maps decoded as three channels cost every terrain shadow, with all five heuristic units green). The decode now has one site (`UnpackNormalMapTS` in `Common/Material.slang`) and the encode is declared per texture in `TextureUsage.ztexdecl`, so the two can only disagree if somebody open-codes a sample again. Nothing mechanically stops that.
