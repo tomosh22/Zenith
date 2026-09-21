@@ -124,10 +124,11 @@ public MaterialSurface EvaluateMaterialSurface(
 	float4 xAlbedo = SampleAlbedoWithCutout(xBaseColorTex, xUV, xVertexColor, m);
 
 	// --- Normal (strength-scaled, optionally detail-blended) ---
-	// The primary normal slot is BC5 (R+G only); reconstruct Z = sqrt(1 - x^2 - y^2).
-	// Correct for the RGBA8 default-normal too (its stored B is ignored/rebuilt).
-	float2 xNormalXY = xNormalTex.Sample(xUV).xy * 2.0 - 1.0;
-	float3 xNormalTS = float3(xNormalXY, sqrt(saturate(1.0 - dot(xNormalXY, xNormalXY))));
+	// The primary normal slot is BC5 (R+G only); UnpackNormalMapTS reconstructs
+	// Z = sqrt(1 - x^2 - y^2) and is also correct for the RGBA8 default-normal
+	// fallback (its stored B is ignored/rebuilt). De-duplication, not a fix: this
+	// was already `.xy`-only and never had the three-channel §1.10 bug.
+	float3 xNormalTS = UnpackNormalMapTS(xNormalTex.Sample(xUV));
 	xNormalTS.xy *= GetNormalStrength(m);
 
 	if ((uFlags & MATERIAL_FLAG_DETAIL_MAPS) != 0u)
@@ -136,8 +137,9 @@ public MaterialSurface EvaluateMaterialSurface(
 		float fDetailMask = xDetailMaskTex.Sample(xUV).r;
 
 		// UDN-blend the detail normal on top of the base normal. Only X/Y are used
-		// (Z stays the base normal's), so sample R/G directly — format-agnostic.
-		float2 xDetailXY = xDetailNormalTex.Sample(xDetailUV).xy * 2.0 - 1.0;
+		// (Z stays the base normal's) — routed through the shared decode like every
+		// other normal sample; the rebuilt Z here is dead and optimised out.
+		float2 xDetailXY = UnpackNormalMapTS(xDetailNormalTex.Sample(xDetailUV)).xy;
 		xDetailXY *= GetDetailNormalStrength(m) * fDetailMask;
 		xNormalTS = float3(xNormalTS.xy + xDetailXY, xNormalTS.z);
 

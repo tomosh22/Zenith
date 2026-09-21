@@ -17,11 +17,24 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-20):
-ZM boot `4559`; engine boot (Null Combat) `2706`; Null RenderTest `2809`; registry **73**.**
+**★ LIVE PIN (UPDATED 2026-09-21):
+ZM boot `4571`; engine boot (Null Combat) `2718`; Null RenderTest `2821`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **★ +12 EVERY GAME (2026-09-21, ZEN-41) — THE NORMAL-DECODE SHADER LINT.**
+> Zenithmon 4559 -> **4571**, Combat 2706 -> **2718**, RenderTest 2809 -> **2821**.
+> **ALL THREE OBSERVED**, each from its own `Null_` run, none computed — Combat
+> from the tick's own `-Phase measure` (`.zagent/run/ZEN-41/tick_gates.json`),
+> Zenithmon and RenderTest by hand via `run_unit_gate.ps1`, because the Engine
+> gate list runs the Combat row only. Every run reported **0 failed**. The twelve
+> new units are the `NormalDecodeLint` suite in
+> `Zenith/Flux/Slang/Flux_NormalDecodeLint.Tests.inl`, hosted by
+> `Flux_ShaderCatalog.cpp` — a pure text scanner with no device, graph or engine
+> singleton, so backend-neutral and every game's row moves by the same amount.
+> Registry unchanged at 73: these are UNITS, not `ZENITH_AUTOMATED_TEST_REGISTER`
+> entries.
 
 > **★ +3 EVERY GAME (2026-09-20, ZEN-40) — THE DEBUG-PRIMITIVE QUEUES ARE DRAINED
 > EVERY FRAME.** Zenithmon 4556 -> **4559**, Combat 2703 -> **2706**,

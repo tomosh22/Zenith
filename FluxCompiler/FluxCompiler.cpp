@@ -4,6 +4,7 @@
 #include "Flux/Slang/Flux_ShaderCatalog.h"
 #include "Flux/Slang/Flux_FrequencyTaxonomy.h"  // ValidateReflection — spine gate
 #include "Flux/Slang/Flux_SpineLint.h"          // D6 spine access-control lint (5th gate)
+#include "Flux/Slang/Flux_NormalDecodeLint.h"   // Photorealism.md §4 — normal-decode lint
 #include "DataStream/Zenith_DataStream.h"
 
 #include "Flux/Slang/Flux_CodeGenerator.h"
@@ -222,6 +223,53 @@ int main()
 			}
 			printf("Spine lint FAILED: %u violation(s). Feature shaders must not touch g_xGlobalSet/g_xViewSet/g_xBindlessSet directly.\n",
 				   axViolations.GetSize());
+			return 1;
+		}
+		printf("\n");
+	}
+
+	// =====================================================================
+	// Photorealism.md §4 normal-decode lint. Nothing paired a texture's exported
+	// compression (BC5, R+G only, declared per texture in TextureUsage.ztexdecl)
+	// with the decode a shader assumes — §1.10 was exactly that gap. The decode
+	// now has one site (UnpackNormalMapTS in Common/Material.slang); this walk
+	// fails the build if any other shader open-codes
+	// `Sample|SampleLevel|Load(...).<xy|xyz|rg|rgb> * 2 - 1` again.
+	// =====================================================================
+	{
+		Zenith_Vector<Flux_NormalDecodeLint::Violation> axViolations;
+		u_int uFilesScanned = 0;
+		std::error_code ec;
+		for (std::filesystem::recursive_directory_iterator it(SHADER_SOURCE_ROOT, ec), end; it != end; it.increment(ec))
+		{
+			if (ec) break;
+			if (!it->is_regular_file()) continue;
+			const std::filesystem::path& xPath = it->path();
+			if (xPath.extension() != ".slang") continue;
+
+			std::ifstream xFile(xPath, std::ios::binary);
+			if (!xFile) continue;
+			std::string strSrc((std::istreambuf_iterator<char>(xFile)), std::istreambuf_iterator<char>());
+			const std::string strPath = xPath.string();
+			Flux_NormalDecodeLint::ScanSource(strPath.c_str(), strSrc.c_str(),
+											   Flux_NormalDecodeLint::IsMaterialSlangFile(strPath.c_str()), axViolations);
+			uFilesScanned++;
+		}
+
+		printf("Normal-decode lint: scanned %u .slang files, %u violation(s)\n",
+			   uFilesScanned, axViolations.GetSize());
+
+		if (axViolations.GetSize() > 0)
+		{
+			for (u_int i = 0; i < axViolations.GetSize(); i++)
+			{
+				const Flux_NormalDecodeLint::Violation& xV = axViolations.Get(i);
+				printf("  ERROR [%s] %s(%u): open-coded normal decode '%s' — route it through "
+					   "Common/Material.slang's UnpackNormalMapTS instead\n",
+					   Flux_NormalDecodeLint::RuleName(xV.m_eRule), xV.m_strFile.c_str(), xV.m_uLine, xV.m_strDetail.c_str());
+			}
+			printf("Normal-decode lint FAILED: %u violation(s). Every normal-map decode must go through "
+				   "Common/Material.slang's UnpackNormalMapTS.\n", axViolations.GetSize());
 			return 1;
 		}
 		printf("\n");

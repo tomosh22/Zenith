@@ -143,6 +143,11 @@ namespace Flux_SpineLint
 		return strOut;
 	}
 
+	// ★ "Detail" no longer means "one consumer". Flux_NormalDecodeLint.h reuses
+	// StripCommentsAndStrings, IsIdentChar and the three helpers below rather than
+	// re-deriving a second comment/string stripper — two copies of that would be two
+	// copies of a subtle contract. Changing a signature here breaks that lint too;
+	// the compiler will say so, but the namespace name will not.
 	namespace Detail
 	{
 		// Length of the identifier starting at s[i] (0 if s[i] is not an ident start).

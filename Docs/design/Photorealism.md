@@ -444,11 +444,14 @@ terrain `normal.jpg` sets are `BC5_RG_UNORM`, the `diffuse` sets are
 * **The IBL cube is a single distant probe with no local occlusion**, so an interior
   receives full open-sky irradiance modulated only by a 0.5 m-radius SSAO.
 
-* **Nothing pairs a texture's exported compression with the decode its shader
-  assumes.** §1.10 was exactly that gap. It is narrowed rather than closed: the
-  decode now has one site (`UnpackNormalMapTS`) and the encode is declared per
-  texture, so the two can only disagree if somebody open-codes a sample again.
-  Nothing mechanically stops that — a FluxCompiler lint that rejects a raw
-  `Sample(...).xyz * 2.0 - 1.0` outside `Common/Material.slang` would, in the
-  same shape as the existing spine lint.
+<!-- CLOSED (was: "Nothing pairs a texture's exported compression with the decode its
+     shader assumes"). Removed from this list rather than struck through, because every
+     other bullet here is an OPEN gap and a "Known gaps" heading that contains a closed
+     item stops meaning anything. The decode has one site (`UnpackNormalMapTS`), the
+     encode is declared per texture, and `Flux_NormalDecodeLint` now fails the
+     FluxCompiler build on a raw `Sample|SampleLevel|Load(...).<xy|xyz|rg|rgb> * 2 - 1`
+     outside `Common/Material.slang`. The narrative lives in
+     `Zenith/Flux/Shaders/SHADER_STYLE.md` and in the lint header's own comment; §1.10
+     above still records the bug that bought the rule. -->
+
 

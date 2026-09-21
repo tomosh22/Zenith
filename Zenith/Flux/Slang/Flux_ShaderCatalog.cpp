@@ -298,6 +298,11 @@ bool Flux_ShaderCatalog::ValidateFeatureParity(const Flux_FeatureRegistry& xRegi
 // config (dead-strip idiom — the .inl's static test registrations stay live).
 #include "Flux/Slang/Flux_SpineLint.Tests.inl"
 
+// Photorealism.md §4 — normal-decode lint tests. Pure (Flux_NormalDecodeLint is a
+// header-only text scanner), hosted here for the same dead-strip reason as the
+// spine-lint tests above.
+#include "Flux/Slang/Flux_NormalDecodeLint.Tests.inl"
+
 // Flux Shader System Overhaul — Stage 3a reflection-sidecar v5 round-trip tests.
 // The serializer is backend-neutral (all configs read .spv.refl), so host here in
 // the always-linked catalog TU.

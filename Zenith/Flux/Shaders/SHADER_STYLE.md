@@ -324,10 +324,11 @@ is also correct for the RGBA8 default-normal fallback (its stored B is ignored).
 > part that has to agree with the exporter is shared. See
 > `Docs/design/Photorealism.md` §1.10.
 >
-> There is **no lint for this yet**: nothing stops the next shader open-coding a
-> normal sample. A FluxCompiler check rejecting a raw `Sample(...).xyz * 2.0 - 1.0`
-> outside `Common/Material.slang`, in the shape of the existing spine lint
-> (`Flux/Slang/Flux_SpineLint.h`), would close it.
+> **The lint now exists.** `Flux_NormalDecodeLint` (`Flux/Slang/Flux_NormalDecodeLint.h`),
+> in the same shape as the spine lint, fails the FluxCompiler build on a raw
+> `Sample|SampleLevel|Load(...).<xy|xyz|rg|rgb> * 2 - 1` outside `Common/Material.slang` —
+> wired into `FluxCompiler.cpp` right after the spine-lint walk, over every `.slang` under
+> `SHADER_SOURCE_ROOT`.
 
 ## Vertex-Stage Buffer Reads
 
