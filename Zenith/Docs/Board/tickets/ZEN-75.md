@@ -6,8 +6,8 @@ title: "zagent writes .zagent/last.exit on every exit path"
 category: "Tooling"
 parent: "ZEN-28"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 75
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T23:31:31.170Z"
+updatedAt: "2026-09-21T05:45:24.313Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "fc49639f-31ec-409b-b911-cf5b71b07487"
 ---
 ## Goal
 Suggestions row 2026-08-26 (cli): *"Write zagent's exit code to .zagent/last.exit on every exit path, so the protocol's most-broken rule becomes a file read like every other rule."* The client's usage line already names `.zagent/last.exit` as scratch, and the tick protocol branches on exit codes (3, 4, 5, 6, 7), so a path that exits without writing the file leaves the tick reading a stale code.
