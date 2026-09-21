@@ -855,6 +855,16 @@ time, per repo, by design. There is no longer a distinct "could not
 reach the board" code — there is no network hop left to fail that way,
 and a local read/write problem is just `1`.
 
+**`check` ranks these differently from `claim`/`next`, on purpose.** For
+`claim` and `next` — which mutate — `5` still wins outright whenever a
+ticket is in flight: refusing to steal it is the point. `check` is
+read-only and answers "would a claim take this?", so it ranks the
+DURABLE verdict over the transient lock: a contract failure, an EPIC or
+a `needs-human` ticket answers `4` even while the repo is busy, and `5`
+from `check` means nothing durable is wrong — the repo is simply busy
+right now. The lock clears by itself; a durable refusal does not, and
+reporting the one that clears hides the one that matters.
+
 **Setting a machine up** (once): put `Tools\zagent` on `PATH`. That is the
 whole setup — no token, no URL, nothing to mint, because the board is this
 checkout and there is exactly one backend. `Tools/zagent/README.md` has
