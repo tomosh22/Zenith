@@ -342,13 +342,26 @@ async function atomicWrite(file, bytes, { exclusive = false } = {}) {
   }
 }
 
+// Returns whether a prior run directory was actually archived, so the caller
+// can record `archivedPriorRun` on the claim/next payload — present and
+// `false` on a first claim, not merely absent, so a reader can tell this
+// client ran the check at all (see the call site in writeCompatibilityScratch).
+//
+// ★ ABSENT HAS A THIRD MEANING, so do not read it as "an older client". If the
+// rm succeeds and the rename then throws (EPERM with a handle open under the
+// old run directory is realistic on Windows), the older `.prev` is already
+// gone, the STALE run directory survives, no fresh scratch is written, and the
+// exit code stays 0 — with the flag absent. `scratchError` on the payload is
+// the only thing that distinguishes that from an old client, so check it
+// before concluding the scratch you are looking at is fresh.
 async function archivePreviousRun(root, key) {
-  if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(key ?? ''))) return;
+  if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(key ?? ''))) return false;
   const current = path.join(root, 'run', key);
-  try { await fs.stat(current); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  try { await fs.stat(current); } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
   const previous = path.join(root, 'run', `${key}.prev`);
   await fs.rm(previous, { recursive: true, force: true });
   await fs.rename(current, previous);
+  return true;
 }
 
 function scratchKey(value) {
@@ -446,7 +459,21 @@ async function writeCompatibilityScratch(root, command, result, options = {}) {
   const key = payload?.key ?? payload?.ticket?.key;
   const safeKey = scratchKey(key);
   if ((command === 'claim' || command === 'next') && result.exitCode === 0 && safeKey) {
-    await archivePreviousRun(root, safeKey);
+    // Mutate the SAME payload object `result.payload` points at — `finish()`
+    // (persistLast + outputResult) reads `result.payload` after this function
+    // returns, and this is the smallest change that reaches both `last.json`
+    // and `--json` stdout without threading a second value through runClient.
+    //
+    // The shape check is BEFORE the archive, not after it. It cannot currently
+    // fail — `safeKey` is non-null only when `payload.key` or
+    // `payload.ticket.key` is a matching string, which no primitive, null or
+    // array can satisfy — but guarding afterwards would mean that if it ever
+    // did fail, the rename had already happened and we would report nothing:
+    // "archived but unreported" is the one state the docs promise cannot
+    // occur, so make it unreachable rather than merely unlikely.
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      payload.archivedPriorRun = await archivePreviousRun(root, safeKey);
+    }
   }
   await applyScratchWrites(root, result.writes);
   if (command === 'gates' && result.exitCode === 0 && safeKey) {

@@ -72,7 +72,7 @@ Verify with `zagent doctor`.
 |---|---|---|
 | Gates, pinned baselines, conventions, categories | `zagent.project.json`, repo root, **committed** | A pinned unit count already lives in `Status.md`, `zm-tests.yml` and `run_unit_gate.ps1`. A fourth copy on a machine you cannot see could only be remembered. |
 | The `/tick` protocol | `.claude/commands/tick.md` | It is this repo's operating procedure. |
-| Run scratch | `.zagent/`, **gitignored** | The tick treats a dirty tree as fatal, so `git status --porcelain` must never see it. |
+| Run scratch | `.zagent/`, **gitignored** | The tick treats a dirty tree as fatal, so `git status --porcelain` must never see it. A `claim`/`next` **through `zagent` (i.e. `cli/client.mjs`)** that finds an existing `.zagent/run/<KEY>/` renames it to `<KEY>.prev/` (replacing an older `.prev`) BEFORE writing the fresh scratch, and reports `archivedPriorRun` on the result — so a stale `body.md`/`ticket.json`/gate verdict from a previous attempt is never sitting where the new one is read from. ★ The `npm run vault` entry point (`cli/zagent.mjs`) writes the same run scratch and does **not** archive, so a claim made through it can leave a stale prior run in place. |
 | The agent account, model routing, guardrail floors | the board | Policy, not topology. |
 
 `zagent.project.json` is **sent with every request** rather than
