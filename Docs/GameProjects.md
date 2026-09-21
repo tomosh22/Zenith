@@ -113,10 +113,12 @@ faster, and it's what CI does. It is no longer a workaround for red projects:
 FluxCompiler and the three font-dependency projects (`Sharpmake_FreeType.cs`,
 `Sharpmake_Msdfgen.cs`, `Sharpmake_MsdfAtlasGen.cs`) all build green in
 `Vulkan_vs2022_Debug_Win64_True`, in every solution they appear in (ZEN-85,
-measured 2026-09-21). The one genuinely red whole-solution build is
-`Games\TilePuzzle\tilepuzzle_win64.sln`, and the cause is TilePuzzle's own
-bespoke tooling (`TilePuzzleLevelGen`, `TilePuzzleRegistryViewer`), not an aux
-tool — see `Docs/BuildSystem.md` §9 for the measurement.
+measured 2026-09-21). The one genuinely red whole-solution build WAS
+`Games\TilePuzzle\tilepuzzle_win64.sln`, caused by TilePuzzle's own bespoke
+tooling (`TilePuzzleLevelGen`, `TilePuzzleRegistryViewer`), not an aux tool.
+ZEN-103 repaired both against the current engine API and that solution now
+builds whole with zero errors too — see `Docs/BuildSystem.md` §9 for both
+measurements, including the fact that the two tools BUILD but do not yet RUN.
 
 ## Git tracking
 

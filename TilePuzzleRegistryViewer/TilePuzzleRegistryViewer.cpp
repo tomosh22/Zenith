@@ -7,6 +7,7 @@
 // not part of any regular build gate, so this went unnoticed until now).
 #include "Core/Zenith_Engine.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
+#include "Core/Zenith_GraphicsOptions.h" // Project_SetGraphicsOptions stub signature
 #include "Profiling/Zenith_Profiling.h"
 #include "TilePuzzleLevelMetadata.h"
 #include "Components/TilePuzzle_ConditionalValidator.h"
@@ -30,10 +31,18 @@
 #include <cstring>
 
 // ============================================================================
-// Stubs for standalone tool (same pattern as TilePuzzleLevelGen)
+// Stubs for standalone tool (same pattern as TilePuzzleLevelGen / FluxCompiler).
+// RegistryViewer links the tools-enabled zenith.lib, which requires every
+// Zenith_Engine::InitialiseProject composition-root hook to be satisfied.
 // ============================================================================
 const char* Project_GetGameAssetsDirectory() { return ""; }
 const char* Project_GetName() { return "TilePuzzleRegistryViewer"; }
+void Project_SetGraphicsOptions(Zenith_GraphicsOptions&) {}
+void Project_RegisterGameComponents() {}
+void Project_Shutdown() {}
+void Project_InitializeResources() {}
+void Project_RegisterEditorAutomationSteps() {}
+void Project_LoadInitialScene() {} // referenced by the non-tools InitialiseProject branch
 
 // ============================================================================
 // DX11 globals
@@ -429,10 +438,14 @@ int main(int argc, char** argv)
 	printf("TilePuzzle Registry Viewer\n");
 	printf("Registry: %s\n", szRegistryDir);
 
-	// Minimal engine init (required for solver profiling in conditional validation)
+	// Minimal engine init (required for solver profiling in conditional validation).
+	// ZEN-103: RegisterThread MUST precede Profiling().Initialise() -- Initialise
+	// ends with m_uMainThreadID = xThreading.GetMainThreadID(), which is ~0u until
+	// RegisterThread(true) sets it, and Initialise self-guards on m_bInitialised so
+	// a later call cannot repair it. This file had the two the other way round.
 	Zenith_MemoryManagement::Initialise();
-	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
 	g_xEngine.Threading().RegisterThread(true);
+	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
 
 	// Create application window
 	ImGui_ImplWin32_EnableDpiAwareness();

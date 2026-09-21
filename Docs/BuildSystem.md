@@ -1228,7 +1228,7 @@ Notes:
 | MSBuild not found | Install VS2022 C++ workload or run from a Developer PowerShell; the CLI resolves via PATH then vswhere. |
 | Exe dies at launch, `STATUS_DLL_NOT_FOUND` (0xC0000135) | Slang dependency tree / assimp missing next to the exe → `zenith test`/`zenith package` self-heal via `Repair-ZenithRuntimeDlls`; for a bare `zenith run`, build once via a game that has them or run `zenith test <Name> --filter <anything>` to trigger the heal. |
 | Game hangs at shutdown (headless) | Known; harness/gates tally results from JSON and watchdog-kill. Don't wait on process exit for correctness. |
-| Whole-solution build red (TilePuzzle only) | `Games\TilePuzzle\tilepuzzle_win64.sln` is the one solution that fails whole: `TilePuzzleLevelGen` calls removed/changed engine APIs and `TilePuzzleRegistryViewer` fails to link (missing `Project_*` composition-root symbols). Neither is an aux tool — FluxCompiler and the font libs build green everywhere. `zenith build TilePuzzle` (`/t:TilePuzzle`) is unaffected. See "Whole-solution build status (ZEN-85, 2026-09-21)" below for the measurement. |
+| ~~Whole-solution build red (TilePuzzle only)~~ — FIXED (ZEN-103, 2026-09-21) | `Games\TilePuzzle\tilepuzzle_win64.sln` used to be the one solution that failed whole: `TilePuzzleLevelGen` called removed/changed engine APIs and `TilePuzzleRegistryViewer` failed to link (missing `Project_*` composition-root symbols). Both were repaired against the current engine API (see "Whole-solution build status (ZEN-85, 2026-09-21)" below, and its ZEN-103 update) — the solution now builds whole with zero errors, same as every other measured solution. **Both tools still crash at launch (`0xC0000005`) — building is not running;** see the section below. |
 | Regen refuses to run | You're in a linked git worktree — run from the main checkout (§3). |
 | Sentinel link error | A leaf lib grew an engine/platform reference. If it's a sanctioned L0 seam, add the shim to `Tests/Sentinel*/sentinel_platform.cpp`; otherwise fix the leak (that's the point of the proof). |
 
@@ -1247,6 +1247,53 @@ pre-existing-red in `ToolsEnabled=True`" — is **stale**. Measured on this tree
 | `Games/Combat/combat_win64.sln` | `Vulkan_vs2022_Debug_Win64_True` | 0 | 0 |
 | `Games/TilePuzzle/tilepuzzle_win64.sln` | `Vulkan_vs2022_Debug_Win64_True` | 1 | 27 |
 
+**Update (ZEN-103, 2026-09-21): TilePuzzle's whole-solution build is now
+green too.** `TilePuzzleLevelGen` and `TilePuzzleRegistryViewer` were both
+repaired against the current engine API (below) rather than retired —
+`Games/TilePuzzle/tilepuzzle_win64.sln` in `Vulkan_vs2022_Debug_Win64_True`
+now builds with the same "exit 0, zero errors" result as every other row in
+the table above, closing the one exception this section used to document.
+
+**★ BUILDING IS NOT RUNNING, and this fix delivers only the first.** Both tools
+now compile, link and produce an exe; both then **crash with an access
+violation (`0xC0000005`) on their first engine call**, measured on 2026-09-21
+immediately after this fix:
+
+| Tool | Invocation | Result |
+|---|---|---|
+| `tilepuzzlelevelgen.exe` | `--validate-registry --validate-max-states 2000` | exit `0xC0000005`, right after `Zenith_MemoryManagement::Initialise()` |
+| `tilepuzzleregistryviewer.exe` | (no args) | exit `0xC0000005`, same point |
+
+The cause is the same for both and is **not** API bit-rot: a standalone tool
+has no way to allocate the engine's runtime services. `Zenith_Engine`'s
+`m_pxThreading` / `m_pxTasks` / `m_pxProfiling` are private members `new`'d
+only in `InitialiseRuntimeServices()`, which is **private** — the sole public
+entry is `Initialise()`, the full boot (renderer, physics, ECS, editor) that a
+CLI tool cannot run. So `g_xEngine.Threading()` in a tool dereferences a null
+pointer, and because `Threading`/`Tasks`/`Profiling` are declared with
+`ZENITH_ENGINE_ACCESSOR_HOTPATH` — **no null assert**, deliberately, as a
+hot-path choice — it faults instead of reporting a clear message.
+
+Neither tool REGRESSED, and the two need separate arguments.
+`TilePuzzleRegistryViewer` was already broken this way BEFORE ZEN-103: its boot
+already used the modern `g_xEngine.Profiling()` / `g_xEngine.Threading()`
+spelling and already dereferenced the same null pointers — it simply could not
+be observed while the tool failed to link. (ZEN-103 did then touch those lines,
+to correct a second, independent defect: the file had `Profiling().Initialise()`
+BEFORE `RegisterThread(true)`, the reverse of the engine's order. `Initialise`
+ends with `m_uMainThreadID = xThreading.GetMainThreadID()`, which is `~0u` until
+`RegisterThread(true)` sets it, and it self-guards on `m_bInitialised` so a
+later call cannot repair it — so the viewer would have recorded no main thread
+at all. That one is latent today, masked by the crash, and would have surfaced
+silently the moment runtime services became obtainable.)
+`TilePuzzleLevelGen`'s crashing lines ARE lines ZEN-103 wrote, but it never
+produced an exe to run beforehand, and its pre-diff
+`g_xEngine.Profiling().Initialise()` would have null-dereferenced identically
+had it compiled. The exception this section documents is a WHOLE-SOLUTION BUILD
+exception, and that one is closed. Making these two tools actually run needs an
+engine decision about how a standalone tool obtains runtime services, tracked
+separately.
+
 **FluxCompiler and all three font-dependency projects build green.**
 `FluxCompiler`, `FreeType`, `msdfgen` and `msdf-atlas-gen` all compiled with
 zero errors in `Vulkan_vs2022_Debug_Win64_True`, in every solution they appear
@@ -1254,31 +1301,54 @@ in (msdfgen's C4100/C4458/C4505 are warnings only —
 `TreatWarningsAsErrors.Disable` is set on that project). The "aux tools are
 pre-existing-red" premise is false as of this measurement.
 
-**The one genuinely red whole-solution build is TilePuzzle, for an unrelated
-reason.** `Games/TilePuzzle/tilepuzzle_win64.sln` fails, and neither failing
-project is an aux tool — both are TilePuzzle's own bespoke tooling:
+**The one genuinely red whole-solution build was TilePuzzle, for an unrelated
+reason — fixed by ZEN-103 (2026-09-21).** `Games/TilePuzzle/tilepuzzle_win64.sln`
+failed, and neither failing project was an aux tool — both are TilePuzzle's own
+bespoke tooling:
 
-- **`TilePuzzleLevelGen`** — 21 compile errors: it calls engine APIs that no
-  longer exist (`Zenith_TaskSystem::Inititalise` [sic], an undeclared
+- **`TilePuzzleLevelGen`** — 21 compile errors: it called engine APIs that no
+  longer existed (`Zenith_TaskSystem::Inititalise` [sic], an undeclared
   `Zenith_TaskArray`, a changed `Zenith_Profiling::Initialise` signature, a
   no-longer-static `Zenith_Multithreading::RegisterThread`, an undeclared
-  `ZENITH_PROFILE_INDEX__SCENE_UPDATE`). This is bit-rot against engine API
-  drift, not a build-system defect.
-- **`TilePuzzleRegistryViewer`** — compiles, then fails to link: it links
+  `ZENITH_PROFILE_INDEX__SCENE_UPDATE`). This was bit-rot against engine API
+  drift, not a build-system defect. ZEN-103 repaired the boot sequence to
+  match `Zenith_Engine::InitialiseRuntimeServices`'s current order
+  (`g_xEngine.Threading().RegisterThread(true)` before
+  `g_xEngine.Profiling().Initialise(g_xEngine.Threading())` before
+  `g_xEngine.Tasks().Initialise()`) and migrated both `Zenith_TaskArray` call
+  sites to `Zenith_DataParallelTask` + `g_xEngine.Tasks().SubmitDataParallelTask(...)`.
+- **`TilePuzzleRegistryViewer`** — compiled, then failed to link: it links
   `zenith.lib`, which requires the composition-root symbols every game
   provides (`Project_SetGraphicsOptions`, `Project_RegisterGameComponents`,
-  `Project_Shutdown`), and the viewer supplies none — 6 link errors
-  (`LNK2019`/`LNK2001`/`LNK1120`). 21 + 6 is the 27 in the table above.
+  `Project_Shutdown`, `Project_InitializeResources`,
+  `Project_RegisterEditorAutomationSteps`), and the viewer supplied only 2 of
+  the 8. That surfaces as **6 link-error lines, but only 5 unresolved
+  symbols**: `Project_LoadInitialScene` sits behind the non-tools `#else` and
+  so is not referenced in a `_True` build, and `LNK1120` is the "N unresolved
+  externals" SUMMARY line, not a sixth symbol. 21 + 6 is the 27 in the table
+  above. ZEN-103 added the 5 missing stubs (mirroring `FluxCompiler.cpp`'s
+  existing no-op pattern), plus `Project_LoadInitialScene` in both tools so
+  they link in the `_False` sibling too. `TilePuzzleLevelGen` needed the same
+  8-stub block once its compile errors were cleared (it previously defined
+  only 2), confirming the link wall was latent behind the compile errors, not
+  absent.
 
-Fixing either is out of scope for ZEN-85 (filed separately) and does not touch
-the build system: `zenith build TilePuzzle` (`/t:TilePuzzle`) never builds
-these two projects and is unaffected either way.
+Neither project was retired: the registry they own is 668 committed
+`.tlvl`/`.png` files under `TilePuzzleLevelGen/LevelRegistry/`, and retiring
+the two tools would strand it with nothing able to regenerate or inspect it.
+(That is an argument from what the tools OWN, not from what they currently do
+— as the subsection above records, neither can presently run at all.)
+`zenith build TilePuzzle` (`/t:TilePuzzle`) never built these two projects and
+is unaffected either way; the fix only changes which whole-solution build
+passes.
 
 **A `_True` solution build legitimately skips some projects, by target
 declaration rather than by being broken.** From the `.sln` files: the engine
 solution maps 43 projects to an `ActiveCfg` for `..._True` but only 34 to a
-`Build.0` (9 skipped); Combat skips 2 of 36; TilePuzzle skips 2 of 38 (on top
-of its 2 red ones above). Every skip in both counts is one of:
+`Build.0` (9 skipped); Combat skips 2 of 36; TilePuzzle skips 2 of 38 (both of
+TilePuzzle's own bespoke tools — `TilePuzzleLevelGen` and
+`TilePuzzleRegistryViewer` — map a `Build.0` and are genuinely built; see the
+ZEN-103 update above). Every skip in both counts is one of:
 
 - `ZenithRenderBackendD3D12` / `ZenithRenderBackendNull` — each declares only
   its own `RenderBackend` fragment in `AddTargets`, so neither has a `Vulkan_*`
@@ -1317,9 +1387,10 @@ baked paths — overridable at runtime by `--assets-root`, §7).
 2. Prefer `/t:<target>` over a whole-solution build — it's faster and scopes
    exactly what changed, and it's what `zenith build`/`zenith build engine`
    always use. A whole-solution build is supported and green for the engine
-   solution and every game solution except `Games\TilePuzzle\tilepuzzle_win64.sln`
-   (see "Whole-solution build status (ZEN-85, 2026-09-21)" in §9), so it is not
-   a workaround to reach for — just not the recommended default.
+   solution and every game solution, including
+   `Games\TilePuzzle\tilepuzzle_win64.sln` since ZEN-103 (see "Whole-solution
+   build status (ZEN-85, 2026-09-21)" in §9), so it is not a workaround to
+   reach for — just not the recommended default.
 3. Never run Sharpmake/regen from a linked worktree.
 4. Nothing generated is committed; nothing hand-written is ignored (enforced
    by selftest).

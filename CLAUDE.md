@@ -274,10 +274,13 @@ what changed, and it's what `zenith build` does. A whole-solution build is not a
 workaround for red aux tools any more: FluxCompiler and the font libs build
 green in `ToolsEnabled=True`, and `Build\zenith_engine_win64.sln` and
 `Games\Combat\combat_win64.sln` both build whole with zero errors in
-`Vulkan_vs2022_Debug_Win64_True` (ZEN-85, measured 2026-09-21). The one known
-exception is `Games\TilePuzzle\tilepuzzle_win64.sln`, which fails whole because
-of two of TilePuzzle's own bespoke tools, not an aux tool — see
-`Docs/BuildSystem.md` §9 for the measurement and the two failing projects.
+`Vulkan_vs2022_Debug_Win64_True` (ZEN-85, measured 2026-09-21). Since ZEN-103
+(2026-09-21) `Games\TilePuzzle\tilepuzzle_win64.sln` builds whole too, so there
+is no remaining exception — its two bespoke tools (`TilePuzzleLevelGen`,
+`TilePuzzleRegistryViewer`) were repaired against the current engine API. They
+BUILD but do NOT yet RUN: both crash at launch (`0xC0000005`) because a
+standalone tool has no public way to allocate the engine's runtime services.
+See `Docs/BuildSystem.md` §9 for both measurements.
 
 > **Config-name prefix (RenderBackend fragment):** every win64 config is prefixed
 > with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer),

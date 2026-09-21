@@ -7,6 +7,7 @@
 #include "TilePuzzleLevelData_Image.h"
 #include "TilePuzzleLevelGen_Analytics.h"
 #include "Components/TilePuzzle_ConditionalValidator.h"
+#include "Core/Zenith_GraphicsOptions.h" // Project_SetGraphicsOptions stub signature
 
 #include <filesystem>
 #include <chrono>
@@ -22,6 +23,17 @@
 // Stub functions for standalone tool (same pattern as FluxCompiler)
 const char* Project_GetGameAssetsDirectory() { return ""; }
 const char* Project_GetName() { return "TilePuzzleLevelGen"; }
+
+// LevelGen links zenith.lib but never boots the engine, so the game-project
+// hooks Zenith_Engine::InitialiseProject references must be satisfied with
+// empty stubs (mirrors FluxCompiler.cpp's identical stub block). Without
+// these the tool fails to LINK.
+void Project_SetGraphicsOptions(Zenith_GraphicsOptions&) {}
+void Project_RegisterGameComponents() {}
+void Project_Shutdown() {}
+void Project_InitializeResources() {}
+void Project_RegisterEditorAutomationSteps() {}
+void Project_LoadInitialScene() {} // referenced by the non-tools InitialiseProject branch
 
 #ifdef ZENITH_TOOLS
 void Zenith_EditorAddLogMessage(const char*, int, Zenith_LogCategory) {}
@@ -1564,11 +1576,15 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	// Minimal engine init (same sequence as Zenith_Core::Zenith_Init, first 4 calls)
+	// Minimal engine init, in Zenith_Engine::InitialiseRuntimeServices's order.
+	// RegisterThread MUST precede Profiling().Initialise(): Initialise ends with
+	// m_uMainThreadID = xThreading.GetMainThreadID() (Zenith_Profiling.cpp:666),
+	// and that ID is ~0u until RegisterThread(true) sets it. Initialise is also
+	// guarded by `if (m_bInitialised) return;`, so a later call cannot repair it.
 	Zenith_MemoryManagement::Initialise();
-	g_xEngine.Profiling().Initialise();
-	Zenith_Multithreading::RegisterThread(true);
-	Zenith_TaskSystem::Inititalise();
+	g_xEngine.Threading().RegisterThread(true);
+	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
+	g_xEngine.Tasks().Initialise();
 
 	// Set up Ctrl+C handler
 	signal(SIGINT, SignalHandler);
@@ -1634,15 +1650,15 @@ int main(int argc, char* argv[])
 			printf("  Batch %u-%u/%u...\n", uBatchStart + 1, uBatchEnd, uNumFiles);
 			fflush(stdout);
 
-			Zenith_TaskArray xTaskArray(
-				ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+			Zenith_DataParallelTask xValidationTask(
+				ZENITH_PROFILE_ZONE("LevelGen Registry Validation"),
 				&ValidateRegistryTask,
 				&xBatchData,
 				static_cast<u_int>(uBatchCount),
 				true);
 
-			Zenith_TaskSystem::SubmitTaskArray(&xTaskArray);
-			xTaskArray.WaitUntilComplete();
+			g_xEngine.Tasks().SubmitDataParallelTask(&xValidationTask);
+			xValidationTask.WaitUntilComplete();
 		}
 
 		auto xEndTime = std::chrono::high_resolution_clock::now();
@@ -1774,15 +1790,15 @@ int main(int argc, char* argv[])
 			printf("  Batch %u-%u/%u...\n", uBatchStart + 1, uBatchEnd, uNumFiles);
 			fflush(stdout);
 
-			Zenith_TaskArray xTaskArray(
-				ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+			Zenith_DataParallelTask xValidationTask(
+				ZENITH_PROFILE_ZONE("LevelGen Conditional Validation"),
 				&ValidateConditionalsTask,
 				&xBatchData,
 				static_cast<u_int>(uBatchCount),
 				true);
 
-			Zenith_TaskSystem::SubmitTaskArray(&xTaskArray);
-			xTaskArray.WaitUntilComplete();
+			g_xEngine.Tasks().SubmitDataParallelTask(&xValidationTask);
+			xValidationTask.WaitUntilComplete();
 		}
 
 		auto xEndTime = std::chrono::high_resolution_clock::now();
@@ -2027,7 +2043,7 @@ int main(int argc, char* argv[])
 		xRegistry.uCacheHits, xRegistry.uCacheMisses, xRegistry.uTotalEntries);
 
 	// Shutdown
-	Zenith_TaskSystem::Shutdown();
+	g_xEngine.Tasks().Shutdown();
 
 	printf("Done.\n");
 	return 0;

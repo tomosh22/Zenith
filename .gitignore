@@ -200,6 +200,12 @@ Games/*/build/
 /Build/msdf-atlas-gen/
 # ZenithHub launcher build artifacts (its output/ is not under a Build/ dir).
 ZenithHub/output/
+# TilePuzzle's two bespoke tools live at the REPO ROOT, not under Games/, so
+# neither Games/*/build/ nor **/Build/output reaches their output/ dirs -- same
+# shape as ZenithHub above. Their obj/ half was already covered (see **/obj/);
+# the output/ half only became reachable when ZEN-103 made both projects build.
+TilePuzzleLevelGen/output/win64/
+TilePuzzleRegistryViewer/output/
 
 # --- Canonical untracked artifact root: test results, telemetry, logs, packages.
 # All runner scripts write under Build/artifacts/ (see AGENTS.md); never commit it.
