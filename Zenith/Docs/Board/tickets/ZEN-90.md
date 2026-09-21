@@ -6,8 +6,8 @@ title: "zagent decide writes decision rows that zagent rows decisions cannot rea
 category: "Engine"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "MODERATE"
 risk: "HIGH"
@@ -16,12 +16,13 @@ position: 90
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T22:08:56.008Z"
+updatedAt: "2026-09-21T12:34:10.792Z"
 flagged: false
 severity: "S2_MAJOR"
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "7591c7ad-2f7c-43be-afa1-64f3c9d5e464"
 ---
 ## Goal
 
