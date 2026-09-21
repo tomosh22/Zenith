@@ -31,10 +31,14 @@
 #include "Scripting/Zenith_BehaviourGraph.h"
 #include "Scripting/Zenith_GraphNodeRegistry.h"
 #include "EntityComponent/Zenith_GraphPinTotality.TestHarness.inl"
+#include "AssetHandling/Zenith_BehaviourGraphAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 #include <cmath>
 #include <cstdio>
 #include <utility>
+#include <filesystem>
+#include <system_error>
 
 using namespace RenderTest_Tennis;
 
@@ -1526,12 +1530,89 @@ ZENITH_TEST(RenderTestTennis, PinIndicesMatchTables)
 // verified in the windowed run.)
 //
 // The NPCs attach the REAL RenderTest_TennisBrain.bgraph by path (the DP
-// convention): the asset is (re)authored every tools boot via
-// AddStep_GraphBuild, so it exists on disk for any post-first-boot run.
+// convention: Zenith_GraphComponent::AddGraphByAssetPath has no
+// attach-from-definition overload, so the component always loads its graph
+// off disk through Zenith_AssetRegistry). `.bgraph` files are gitignored bake
+// products, and a unit-gate boot never drains Zenith_EditorAutomation's queue
+// (AddStep_GraphBuild only runs from there) — so this fixture used to depend
+// on a PRIOR tools boot having written the asset: green on a warm tree, red
+// on a fresh clone or straight after a clean, and the gate's `ran ==
+// baseline` pin can't tell which. The fixture now AUTHORS the asset itself,
+// every construction, from the same builder function the tools boot's
+// GRAPH_BUILD step calls (BuildGraph_RenderTestTennisBrain) through the same
+// build + save path (Zenith_GraphBuilder::Build() +
+// Zenith_AssetRegistry::Save() — see Zenith_EditorAutomation.cpp's GRAPH_BUILD
+// case), so it no longer depends on what an earlier run left on disk.
 // ============================================================================
 
 namespace
 {
+	// Builds RenderTest_TennisBrain.bgraph from the production builder and
+	// writes it to the path RenderTest_TennisAgentComponent::kszGraphAsset
+	// names, so TennisMatchFixture's AddGraphByAssetPath call reads an asset
+	// THIS run produced rather than one an earlier boot left behind — on every
+	// construction, not only when the file happens to be missing (a conditional
+	// skip would still be order-dependent, just quieter about it). Idempotent:
+	// the builder is deterministic, so a second call from a second fixture in
+	// the same run re-authors identical bytes.
+	void EnsureTennisBrainGraphAssetAuthored()
+	{
+		Zenith_BehaviourGraphAsset xAsset;
+		Zenith_GraphBuilder xBuilder(xAsset.GetDefinition());
+		xBuilder.SetGraphName(RenderTest_TennisAgentComponent::kszGraphAsset);
+		BuildGraph_RenderTestTennisBrain(xBuilder);
+		const bool bBuilt = xBuilder.Build();
+		ZENITH_ASSERT_TRUE(bBuilt, "TennisBrain graph definition built with no validation errors");
+
+		// ★ A FAILED BUILD REMOVES THE STALE ASSET AND WRITES NOTHING. That is
+		// Zenith_EditorAutomation.cpp's GRAPH_BUILD rule verbatim, and the
+		// reason it gives applies here word for word: a `.bgraph` is a
+		// gitignored bake product that PERSISTS in the output dir across boots,
+		// so "did not save" ALONE would leave the previous, valid asset in place
+		// and every downstream attach would stay green on a warm tree while a
+		// cold clone failed. "A warm tree must fail the same way a cold clone
+		// does" is the whole thesis of the fixture, so it cannot be broken by
+		// the fixture.
+		//
+		// ★ THE EARLY RETURN IS LOAD-BEARING, NOT DECORATION. ZENITH_ASSERT_TRUE
+		// is RECORD-AND-CONTINUE — Zenith_TestFramework.h:275 expands to a plain
+		// Zenith_TestRunner::Instance().AssertTrue(...) with no control flow — so
+		// without this the assert above would record the failure and then fall
+		// straight through and WRITE THE ERRORED DEFINITION over a good asset.
+		if (!bBuilt)
+		{
+			std::error_code xRemoveEC;
+			std::filesystem::remove(
+				std::filesystem::path(Zenith_AssetRegistry::ResolvePath(RenderTest_TennisAgentComponent::kszGraphAsset)),
+				xRemoveEC);
+			return;
+		}
+
+		std::error_code xEC;
+		std::filesystem::create_directories(
+			std::filesystem::path(Zenith_AssetRegistry::ResolvePath(RenderTest_TennisAgentComponent::kszGraphAsset)).parent_path(),
+			xEC);
+		const bool bSaved = Zenith_AssetRegistry::Save(&xAsset, RenderTest_TennisAgentComponent::kszGraphAsset);
+		ZENITH_ASSERT_TRUE(bSaved, "TennisBrain graph asset authored to disk by the fixture itself");
+
+		// ★ THE EVICTION IS WHAT MAKES THE WRITE OBSERVABLE. AddGraphByAssetPath
+		// reaches Zenith_AssetRegistry::GetView<Zenith_BehaviourGraphAsset>,
+		// which returns the CACHED asset for an already-loaded path — so from
+		// the SECOND fixture in a run onward the graph would come from the cache
+		// and the bytes just written would never be read. Same reasoning and the
+		// same call as Zenith_TerrainEditor.Tests.inl:1008 ("★ THE EVICTION IS
+		// THE ASSERTION"); the automation path buys the same thing with
+		// Zenith_GraphReload::NotifyAssetChanged, which is an editor facility
+		// with a queue a unit-gate boot never drains.
+		//
+		// Safe here, checked rather than assumed: Zenith_BehaviourGraph keeps no
+		// pointer to the definition (InitialiseFromDefinition builds owned
+		// runtime nodes from it), and Zenith_GraphComponent::InstantiateSlotGraph
+		// uses the asset view only inside that one call — so nothing live
+		// references what this drops, refcount or not.
+		Zenith_AssetRegistry::ForceUnload(RenderTest_TennisAgentComponent::kszGraphAsset);
+	}
+
 	struct TennisMatchFixture
 	{
 		Zenith_Scene xScene;
@@ -1542,6 +1623,7 @@ namespace
 
 		TennisMatchFixture()
 		{
+			EnsureTennisBrainGraphAssetAuthored();
 			xScene = g_xEngine.Scenes().LoadScene("TennisMatchTestScene", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
 			g_xEngine.Scenes().SetActiveScene(xScene);
 			pxSceneData = g_xEngine.Scenes().GetSceneData(xScene);
@@ -1594,7 +1676,7 @@ ZENITH_TEST(RenderTestTennis, IntegrationLoadWiring)
 		ZENITH_ASSERT_TRUE(xFix.Brain(i).GetOpponentID() == xFix.xNpcID[1 - i], "brain resolved the opponent");
 		// Brain seeded the GRAPH blackboard with the ball entity handle.
 		Zenith_BehaviourGraph* pxGraph = xFix.Brain(i).FindTennisGraph();
-		ZENITH_ASSERT_NOT_NULL(pxGraph, "TennisBrain graph attached (asset authored by a prior tools boot)");
+		ZENITH_ASSERT_NOT_NULL(pxGraph, "TennisBrain graph attached (asset authored by the fixture itself)");
 		if (pxGraph)
 		{
 			ZENITH_ASSERT_TRUE(
