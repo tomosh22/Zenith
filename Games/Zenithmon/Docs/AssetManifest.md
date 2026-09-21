@@ -99,7 +99,7 @@ open user decision.
 | Creature animation clips | 152 species x 6 = 912 .zanim | ZM_CreatureAnimGen (SHIPPED, baked into each species' bundle) | S4 |
 | Human models | ~35 .zmodel on ONE shared skeleton + ONE shared 9-clip set | ZM_HumanGen | S4 |
 | Building models | ~30 .zmodel | ZM_BuildingGen | S4 |
-| Props | ~25 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
+| Props | ~32 models (incl. ~6 battle-dome biome dressing sets) | ZM_PropGen | S4 |
 | Terrain sets | 1 per outdoor scene, ~25 sets | ZM_TerrainAuthoring (engine E1 + E2 shipped) | S3 (three measurement terrain families complete; only Dawnmere has a preview scene) -> S9/S10 (all) |
 | Scenes | ~40 .zscen (boot-authored via AddStep_*) | ZM_SceneAuthoring from ZM_WorldSpec | S0 (FrontEnd) onward |
 | Behaviour graphs | **1 shipped** `.bgraph` (`game:Graphs/ZM_TrainerChallenge.bgraph`); more are future glue graphs | ZM_GraphAuthoring (Zenith_GraphBuilder DSL) | S7 item 3 SC7 (ZM-D-155); was deferred from S6 |
@@ -262,7 +262,7 @@ per-model clips (contrast creatures, which bake 15 files EACH, section 1.2).
 > rig was a strict PREFIX of StickFigure's, so every skin index the generator
 > already wrote points at the correct StickFigure bone unchanged.
 > `HumanGen_RigMatchesStickFigure` opens the real `.zskel` and pins exactly that,
-> so a StickFigure reorder reds this game instead of silently re-skinning all 34
+> so a StickFigure reorder reds this game instead of silently re-skinning all 35
 > humans onto the wrong joints.
 
 **Shared set (ENGINE assets -- referenced, never baked by this game):**
@@ -344,7 +344,7 @@ bumps it and forces a cold family re-bake. Locked by the `ZM_Gen` HumanGen units
 
 ---
 
-## 3. Buildings (30) and props (25)
+## 3. Buildings (30) and props (32)
 
 `ZM_BuildingGen` and `ZM_PropGen` (S4 -- SHIPPED, SC1..SC5) are the two
 STATIC-model generators: each turns a roster row into a box composition lofted

@@ -1,7 +1,7 @@
 # =============================================================================
 # doc_lint.ps1 -- MVP-0.3.2 documentation cross-check linter.
 #
-# Runs 10 cross-document consistency checks. Checks 1-6 come from the round-5
+# Runs 11 cross-document consistency checks. Checks 1-6 come from the round-5
 # peer-review consensus (see Games/DevilsPlayground/Docs/MvpRoadmap.md MVP-0.3.2
 # entry); check 7 was added 2026-08-24 after a live /tick audit found the LIVE
 # PIN line -- the one line Status.md tells every cold session to read first --
@@ -32,6 +32,12 @@
 #      Source/Gen/ZM_*Gen.h, not a hand-maintained list) agrees with its own
 #      header -- the ZM-67 incident (see the check's own header comment
 #      below). Skips any game with no such headers.
+#  11. Zenithmon's SPECIES / HUMAN / BUILDING / PROP roster row counts agree
+#      with the `ZM_<FAMILY>_ID` enums that define them (Source/Data/*.h).
+#      C10 already reconciles the PROP roster's three phrasings and every
+#      generator version stamp; this widens the SAME reconciliation to the
+#      three families C10 never covered, plus the PROP phrasings C10 does
+#      not match (see the check's own header comment below).
 #
 # Usage:
 #   pwsh -NoProfile -File Tools/doc_lint.ps1
@@ -39,7 +45,10 @@
 #   powershell -NoProfile -File Tools/doc_lint.ps1
 #
 # Exit codes:
-#   0 -- all 7 checks pass.
+#   0 -- every check passes. (This line used to name a COUNT, and said 7 while the
+#        file had grown to 10; a self-describing number in three places is three
+#        places to forget. The count now lives in the header list and the banner,
+#        which are next to the thing they describe.)
 #   1 -- one or more violations detected (each violation is printed in
 #        a single grep-able line: "VIOLATION [check-id] path:line description").
 #
@@ -921,9 +930,176 @@ function Check-PropGenStamps {
 }
 
 # =============================================================================
+# Check 11: Zenithmon's SPECIES / HUMAN / BUILDING / PROP roster row counts
+#          agree with the `ZM_<FAMILY>_ID` enums that actually define them.
+#
+# ★★ WHY THIS EXISTS (Suggestions row 2026-08-25). C10 above reconciles the
+# PROP roster and every generator version stamp, but that check's own header
+# comment says it deliberately does not generalise the ROSTER half the way it
+# generalises the version-stamp half: "this is the ONE piece of roster
+# arithmetic this check knows about (props)". Measured drift confirmed that
+# gap live: AssetManifest.md quoted the prop roster as 25 in two phrasings
+# C10 does not match (a headline-table row and a section heading) while the
+# header (`ZM_PropData.h`) has 32, and quoted the human roster as 34 in FOUR
+# places (AssetManifest.md once, TestPlan.md three times) while the header
+# (`ZM_HumanData.h`) has 35 -- with every gate green throughout, because
+# nothing compared either claim to the enum.
+#
+# GROUND TRUTH: `Get-ZmRosterCount` below is `Get-ZmPropRosterCount`
+# generalised over a FAMILY name -- SPECIES, HUMAN, BUILDING or PROP -- so it
+# counts the enumerators inside `enum ZM_<FAMILY>_ID : u_int { ... }` up to
+# that family's own `ZM_<FAMILY>_COUNT` terminator, the same way the compiler
+# does. C10's own function is untouched, and this one is not called from C10
+# or vice versa: the two checks share no state, so either can be read, tested
+# and (if it ever regresses) fixed in isolation.
+#
+# ★ THE `\b` REQUIREMENT CARRIES OVER UNCHANGED. `ZM_PROP_COUNTER` is a real
+# roster row whose name is a PREFIX of the `ZM_PROP_COUNT` terminator -- see
+# C10's own comment -- and the risk is generic to every family, not special to
+# props, so the generalised function keeps the identical guard.
+#
+# ★ EACH HEADER DECLARES SEVERAL `_COUNT` SENTINELS, and the roster is not
+# always the first one textually: `ZM_SpeciesData.h` also has
+# `ZM_ARCHETYPE_COUNT` / `ZM_RARITY_COUNT`, `ZM_HumanData.h` also has
+# `ZM_HUMAN_BUILD_COUNT`, `ZM_BuildingData.h` also has
+# `ZM_BUILDING_STYLE_COUNT`. Anchoring on the literal `enum ZM_<FAMILY>_ID`
+# opener means those other enums (named `ZM_ARCHETYPE_ID`, `ZM_HUMAN_BUILD`,
+# `ZM_BUILDING_STYLE` -- none of them spelled `ZM_<FAMILY>_ID`) are never
+# even searched, so there is nothing to disambiguate at match time.
+#
+# WHAT THIS CHECK DELIBERATELY DOES NOT DO: it does not re-implement any of
+# C10's three PROP phrasings ("N prop roster rows", "all N rows self-index",
+# "N props x M =") or its version-stamp reconciliation -- those stay C10's,
+# unowned by anything here. This check's own PROP phrasings are the headline
+# table row, the "Buildings (N) and props (M)" section heading, and the
+# "Props (N models)" subheading -- text C10's patterns do not match, so a
+# stale prop claim lands in exactly one check's pattern list, never both.
+#
+# ★ IT ALSO DOES NOT SEE A CLAIM SPLIT ACROSS A MARKDOWN LINE WRAP, because
+# every check in this file (not just this one) reads one line at a time. ONE
+# of the drift sites measured for this ticket is exactly that shape and was
+# fixed BY HAND rather than by a pattern: AssetManifest.md's StickFigure-
+# reorder sentence wraps as "...re-skinning all 34\nhumans onto the wrong
+# joints.", with the number and the word that anchors its family on different
+# physical lines, so no single-line pattern reaches it. (TestPlan.md's
+# `BuildingGen_RosterTotality` (all\n30 rows self-index...` line wraps the
+# same way but was never stale -- it shows the shape recurs even where
+# nothing is wrong, which is why it is not worth reaching for.) A recurrence
+# at either site needs the same manual catch this ticket needed; joining
+# adjacent lines before matching would catch it but risks a DIFFERENT false
+# positive (two unrelated claims on consecutive lines colliding), so it is
+# left undone rather than traded for a new failure mode nobody has measured.
+#
+# GRACEFUL DEGRADATION: any game with none of the four roster headers under
+# its own `Source/Data/` (every game but Zenithmon today) passes outright,
+# same shape as C10.
+# =============================================================================
+function Get-ZmRosterCount {
+    param([string]$Path, [string]$Family)
+    if (-not (Test-Path $Path)) { return $null }
+    $content = Get-Content $Path -Raw
+    $m = [regex]::Match($content, "enum\s+ZM_${Family}_ID\s*:\s*u_int\s*\{(.*?)ZM_${Family}_COUNT\b", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $m.Success) { return $null }
+    $body = $m.Groups[1].Value
+    $body = [regex]::Replace($body, '//[^\r\n]*', '')
+    $body = [regex]::Replace($body, '/\*.*?\*/', '', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    return ([regex]::Matches($body, "\bZM_${Family}_[A-Z0-9_]+\b")).Count
+}
+
+function Check-RosterCounts {
+    # Ordered so a failure summary reads in a stable, predictable sequence.
+    $rosterHeaders = [ordered]@{
+        'SPECIES'  = 'Source/Data/ZM_SpeciesData.h'
+        'HUMAN'    = 'Source/Data/ZM_HumanData.h'
+        'BUILDING' = 'Source/Data/ZM_BuildingData.h'
+        'PROP'     = 'Source/Data/ZM_PropData.h'
+    }
+
+    $counts = @{}
+    foreach ($family in $rosterHeaders.Keys) {
+        $counts[$family] = Get-ZmRosterCount -Path (Join-Path $gameDir $rosterHeaders[$family]) -Family $family
+    }
+
+    if (($counts.Values | Where-Object { $null -ne $_ }).Count -eq 0) {
+        Report-Pass 'C11' "no ZM_{Species,Human,Building,Prop}Data.h roster headers under $Game -- check does not apply"
+        return
+    }
+
+    # Each entry names the FAMILY whose count it claims, a description for the
+    # violation message, and a regex whose FIRST capture group is the claimed
+    # count. `~?` precedes every numeric capture: these docs use "~N" for a
+    # claim meant to be exact as often as for a genuine approximation (E3 --
+    # "Terrain sets ... ~25 sets" has no roster to check at all and is never
+    # matched by any pattern here), so family-specific anchoring is what makes
+    # treating "~N" as claiming N safe, never a bare "number near a family
+    # word" match.
+    $patterns = @(
+        # --- species (Source/Data/ZM_SpeciesData.h) ---
+        # ★ NO TRAILING "=". AssetManifest.md's species arithmetic reads
+        # "152 species x 15 files = 2,280" -- a WORD ("files") sits between
+        # the second number and the "=", unlike the props/buildings "N <fam>
+        # x M = " lines, which have nothing between them. Requiring "=" here
+        # would never match the real text.
+        @{ Family = 'SPECIES';  Regex = '~?(\d+)\s+species\s+x\s+\d+';                        Desc = '"N species x M" arithmetic' }
+        @{ Family = 'SPECIES';  Regex = 'Creatures\s*\(~?(\d+)\s+species\)';                  Desc = '"Creatures (N species)" heading' }
+        @{ Family = 'SPECIES';  Regex = '~?(\d+)\s+species\s+builds';                         Desc = '"N species builds" prose' }
+
+        # --- human (Source/Data/ZM_HumanData.h) ---
+        @{ Family = 'HUMAN';    Regex = 'Human\s+models\s*\|\s*~?(\d+)\s*\.zmodel';           Desc = 'headline table "Human models | ~N .zmodel"' }
+        @{ Family = 'HUMAN';    Regex = 'Humans\s*\(~?(\d+)\s+models\)';                      Desc = '"Humans (~N models)" section heading' }
+        @{ Family = 'HUMAN';    Regex = 'all\s+~?(\d+)\s+humans\b';                           Desc = '"all N humans" prose' }
+        @{ Family = 'HUMAN';    Regex = '~?(\d+)\s+humanoid\s+NPC\s+roster\s+rows';           Desc = '"N humanoid NPC roster rows"' }
+        @{ Family = 'HUMAN';    Regex = '`RosterTotality`\s*\(all\s+~?(\d+)\s+rows\s+build';  Desc = '"`RosterTotality` (all N rows build" (HumanGen''s own check, unprefixed in prose)' }
+        @{ Family = 'HUMAN';    Regex = 'byte-identical\s+across\s+all\s+~?(\d+)\s+models';   Desc = '"byte-identical across all N models"' }
+
+        # --- building (Source/Data/ZM_BuildingData.h) ---
+        @{ Family = 'BUILDING'; Regex = 'Building\s+models\s*\|\s*~?(\d+)\s*\.zmodel';        Desc = 'headline table "Building models | ~N .zmodel"' }
+        @{ Family = 'BUILDING'; Regex = 'Buildings\s*\(~?(\d+)\)\s+and\s+props';              Desc = '"Buildings (N) and props (...)" heading' }
+        @{ Family = 'BUILDING'; Regex = 'Buildings\s*\(~?(\d+)\s+models\)';                   Desc = '"Buildings (N models)" subheading' }
+        @{ Family = 'BUILDING'; Regex = '~?(\d+)\s+buildings\s+x\s+\d+\s*=';                  Desc = '"N buildings x M =" arithmetic' }
+        @{ Family = 'BUILDING'; Regex = '~?(\d+)\s+building\s+roster\s+rows';                 Desc = '"N building roster rows"' }
+        @{ Family = 'BUILDING'; Regex = 'facade non-empty for all\s+~?(\d+)\s+rows';          Desc = '"facade non-empty for all N rows"' }
+
+        # --- prop (Source/Data/ZM_PropData.h) -- phrasings C10 does NOT match;
+        # see this check's own header comment for the three C10 already owns.
+        @{ Family = 'PROP';     Regex = 'Props\s*\|\s*~?(\d+)\s+models';                      Desc = 'headline table "Props | ~N models"' }
+        @{ Family = 'PROP';     Regex = 'and\s+props\s*\(~?(\d+)\)';                          Desc = '"and props (N)" heading' }
+        @{ Family = 'PROP';     Regex = 'Props\s*\(~?(\d+)\s+models\)';                       Desc = '"Props (N models)" subheading' }
+    )
+
+    $ok = $true
+    $docFiles = @('AssetManifest.md', 'TestPlan.md')
+
+    foreach ($docFile in $docFiles) {
+        $path = Join-Path $docsDir $docFile
+        if (-not (Test-Path $path)) { continue }
+        $lines = @(Get-Content $path)
+        for ($i = 0; $i -lt $lines.Length; $i++) {
+            $line = $lines[$i]
+            foreach ($p in $patterns) {
+                $expected = $counts[$p.Family]
+                if ($null -eq $expected) { continue }
+                if ($line -match $p.Regex) {
+                    $claimed = [int]$Matches[1]
+                    if ($claimed -ne $expected) {
+                        Report-Violation 'C11' "${docFile}:$($i+1): claims $claimed for the $($p.Family) roster ($($p.Desc)) but ZM_$($p.Family)_ID (Games/$Game/$($rosterHeaders[$p.Family])) has $expected"
+                        $ok = $false
+                    }
+                }
+            }
+        }
+    }
+
+    if ($ok) {
+        $summary = ($counts.Keys | Where-Object { $null -ne $counts[$_] } | Sort-Object | ForEach-Object { "$_=$($counts[$_])" }) -join ', '
+        Report-Pass 'C11' "roster counts agree with the headers ($summary)"
+    }
+}
+
+# =============================================================================
 # Run all checks.
 # =============================================================================
-Write-Host "doc_lint.ps1: running 10 checks against $docsDir" -ForegroundColor Cyan
+Write-Host "doc_lint.ps1: running 11 checks against $docsDir" -ForegroundColor Cyan
 Check-TestCount
 Check-MvpArchetypeNames
 Check-RoadmapUniqueIds
@@ -934,6 +1110,7 @@ Check-LivePin
 Check-ArtBriefTicks
 Check-KeyCitations
 Check-PropGenStamps
+Check-RosterCounts
 
 Write-Host ""
 if ($script:violations -eq 0) {

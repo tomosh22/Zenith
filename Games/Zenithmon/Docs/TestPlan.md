@@ -830,7 +830,7 @@ its 6 clips via `AddAnimationPath` in IDLE..FAINT order
 
 #### ZM_Gen -- human generator (SHIPPED)
 
-`ZM_HumanGen` (SC1..SC5) turns each of the ~34 humanoid NPC roster rows into a
+`ZM_HumanGen` (SC1..SC5) turns each of the ~35 humanoid NPC roster rows into a
 deterministic model, but INVERTS the creature layout: every human binds ONE
 fixed shared 16-bone skeleton and reuses ONE shared 9-clip animation set
 (Idle / Walk / Run / Talk / Wave / Point / Cheer / Hurt / Faint) -- per-model
@@ -842,7 +842,7 @@ clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 9). It ships
 `Tests/ZM_Tests_HumanBake.cpp`:
 
 - **SC1 -- roster + shared 16-bone skeleton + frozen seam**
-  (`Tests/ZM_Tests_HumanGen.cpp`, 6 units): `RosterTotality` (all 34 rows build +
+  (`Tests/ZM_Tests_HumanGen.cpp`, 6 units): `RosterTotality` (all 35 rows build +
   full `ZM_ValidateHuman`), `SharedSkeletonWellFormed` (16 bones, single root,
   parent < child, identity bind rotation), `RecipePurity` (pure f(id) + distinct
   per-human seeds), `AssetPathScheme` (golden shared + per-model refs;
@@ -865,7 +865,7 @@ clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 9). It ships
   `HumanGen_ClipTimingAndPlaybackPolicy`,
   `HumanGen_ClipDeterminismAndSensitivity`, and
   `HumanGen_ClipSetSharedAcrossRoster`. Clips are rotation-only, pure f(clip),
-  byte-identical across all 34 models; looping clips (Idle/Walk/Run/Talk) close
+  byte-identical across all 35 models; looping clips (Idle/Walk/Run/Talk) close
   their loop seams, one-shots (Wave/Point/Cheer/Hurt) return to identity, and
   Faint settles into and holds its final pose.
 
