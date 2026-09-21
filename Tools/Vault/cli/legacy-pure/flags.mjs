@@ -58,6 +58,16 @@ const COMMAND_FLAGS = {
   // backlog — a deliberate gesture, and one the closed vocabulary used
   // to REFUSE, which made the documented carry-over path unreachable
   // through the CLI while the function beneath it accepted it.
+  //
+  // A second instance of the identical shape: `update()` in write.mjs
+  // already reads `--category` (`const category = valueOf(argv,
+  // 'category')`, write.mjs:309, folded into `changedFields`), but it was
+  // missing from this list — so `zagent update ZEN-74 --category Tooling`
+  // was refused with "not a flag `update` reads" even though the function
+  // beneath the closed vocabulary accepts it and CATEGORY SELECTS THE GATE
+  // LIST. The only way to correct a mis-filed ticket's category was to
+  // delete and re-create it. See `flags.mjs`'s own header: this list is
+  // meant to mirror what each command actually reads, not narrow it further.
   sprint: ["project", "goal", "start", "end", "force"],
   version: ["project", "description"],
   update: [
@@ -71,6 +81,7 @@ const COMMAND_FLAGS = {
     "priority",
     "complexity",
     "risk",
+    "category",
     "severity",
     "repro",
     "environment",

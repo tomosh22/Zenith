@@ -182,11 +182,13 @@ lazy per-encounter generation): the bundle family is **152 x 15 = 2,280 files**.
 Measured budget ~2-4 min for the full creature family.
 
 **Determinism / version stamp.** Every output byte is a pure function of the
-species id (section 6.2); the generator version is `uZM_CREATUREGEN_VERSION`
-(currently **3** -- SC6 bumped it because each baked `.zmodel` now carries 6
-`AddAnimationPath` entries, so pre-anim bakes self-invalidate), golden-pinned --
-a change to the generation algorithm bumps it and forces a cold family re-bake.
-Locked by the `ZM_Gen` creature units ([TestPlan.md](TestPlan.md) 5.4).
+species id (section 6.2); the generator version is `uZM_CREATUREGEN_VERSION`,
+golden-pinned -- a change to the generation algorithm bumps it and forces a
+cold family re-bake. SC6 bumped it once already, because each baked `.zmodel`
+gained 6 `AddAnimationPath` entries and pre-anim bakes needed to
+self-invalidate; it has moved again since. **Read the current number off
+`Source/Gen/ZM_CreatureGen.h` rather than here -- this line has been stale
+before.** Locked by the `ZM_Gen` creature units ([TestPlan.md](TestPlan.md) 5.4).
 
 **Animation clips (SHIPPED).** The 6 per-species `.zanim`
 (Idle / Walk / Attack / Special / Hit / Faint) are baked by
@@ -803,10 +805,14 @@ This is the hardened RenderTest pattern. The three measured families lock the
 terrain-family format now (`ZMTR`, v1, count 771 for each 256-chunk town and
 count 1,155 for the 384-chunk route in a 12-byte atomic marker; section 4.3).
 The creature generator already stamps its generation version via
-`uZM_CREATUREGEN_VERSION` (currently 3; section 1.2), the human family likewise
-stamps `uZM_HUMANGEN_VERSION` (9 at the time of writing; section 2), and the building and prop
-families stamp `uZM_BUILDINGGEN_VERSION` (currently 1) and `uZM_PROPGEN_VERSION`
-(currently 2; section 3). The full per-family `ZM_BakeManifest` marker is now
+`uZM_CREATUREGEN_VERSION` (section 1.2) -- read the current number off
+`Source/Gen/ZM_CreatureGen.h` rather than here; it has moved before. The
+human family likewise stamps `uZM_HUMANGEN_VERSION` (9 at the time of
+writing; section 2), and the building and prop families stamp their own
+generation version via `uZM_BUILDINGGEN_VERSION` and `uZM_PROPGEN_VERSION`
+(section 3) -- read the current numbers off the two headers rather than
+here, per the same rule section 3 states for the prop version below. The
+full per-family `ZM_BakeManifest` marker is now
 **SHIPPED (ZM-D-085)**: a per-family 12-byte `ZMBM` stamp (ASCII magic + u32-LE
 generator version + u32-LE expected-file count) at `game:<Family>/.manifest`,
 written atomically after a successful `ZM_BakeAll*` and read fail-open by

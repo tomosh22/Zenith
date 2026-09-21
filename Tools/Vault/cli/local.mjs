@@ -71,11 +71,21 @@ export function dispatchLocal(index,args,files={},context={}) {
         if(missing.length) {
           const appeared=current.changed.filter(p=>!(recorded.changed??[]).includes(p));
           stale=[`The gate selection recorded for ${key} no longer describes this diff.`,appeared.length?`Changed since it was computed: ${appeared.join(', ')}`:null,'These gates were never run:',...missing.map(g=>`  ${g}`),`Re-run \`zagent gates ${key}\`, run every line it prints, then guard again.`].filter(Boolean).join('\n');
+        } else {
+          // Evaluated and clean: distinct from `null` below, which means the
+          // fold never ran at all (no ticket key was passed to `guard`) — a
+          // passing guard must be able to say "checked, not stale" rather
+          // than leaving the same falsy value for "never checked".
+          stale=false;
         }
       }
     }
     const protectedResult=checkProtectedPaths(index.config.policy.resolved,changed),mirror=mirrorPaths(index,changed);
-    return result({...protectedResult,key,gateSelectionStale:stale,docsMirrorNeeded:mirror.length>0,docsMirrorPaths:mirror},protectedResult.ok&&stale===null?0:1);
+    // `stale` is now three-valued: `null` (no key given — the fold never ran
+    // at all), `false` (it ran and the selection is current), or a message
+    // string (stale/unparsable/unrecorded). Both falsy non-string values
+    // pass; only a message refuses.
+    return result({...protectedResult,key,gateSelectionStale:stale,docsMirrorNeeded:mirror.length>0,docsMirrorPaths:mirror},protectedResult.ok&&!stale?0:1);
   }
   return null;
 }

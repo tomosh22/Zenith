@@ -649,7 +649,7 @@ icon); a tools build additionally bakes the full 15-file per-species bundle --
 the 9-file core plus the 6 `.zanim` clips added by `ZM_CreatureAnimGen`
 ([AssetManifest.md](AssetManifest.md) 1.2). **All 8 archetype builders are
 wired, so every one of the 152 species builds a valid creature and a complete
-bundle.** Determinism is golden-pinned (`uZM_CREATUREGEN_VERSION` = 3). All units are
+bundle.** Determinism is golden-pinned (`uZM_CREATUREGEN_VERSION` = 6). All units are
 pure/headless (the `.zmesh`/`.ztxtr` bake bridges are compiled out) unless marked:
 
 - **Generic 12-invariant harness** (`Tests/ZM_Tests_CreatureGen.cpp`, 18 units):
@@ -836,7 +836,7 @@ fixed shared 16-bone skeleton and reuses ONE shared 9-clip animation set
 (Idle / Walk / Run / Talk / Wave / Point / Cheer / Hurt / Faint) -- per-model
 variation is mesh-loft + texture ONLY, with NO per-model skeleton and NO
 per-model clips (contrast creatures, which bake their own skeleton + own 6
-clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 1). It ships
+clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 9). It ships
 **20** `ZM_Gen` units (boot gate 1866 -> 1886) -- 18 pure/all-config in
 `Tests/ZM_Tests_HumanGen.cpp`, plus 2 `ZENITH_TOOLS`-only bake smokes in the new
 `Tests/ZM_Tests_HumanBake.cpp`:
@@ -887,7 +887,7 @@ clips EACH). Determinism is golden-pinned (`uZM_HUMANGEN_VERSION` = 1). It ships
 STATIC model -- a box composition lofted via `ZM_StaticMesh` with NO skeleton and
 NO animation (contrast creatures/humans, which carry rigs + clips) -- and bakes a
 4-file static bundle per building. Per-model variation is shell geometry + facade
-texture only. Determinism is golden-pinned (`uZM_BUILDINGGEN_VERSION` = 1). It
+texture only. Determinism is golden-pinned (`uZM_BUILDINGGEN_VERSION` = 5). It
 ships **9** pure/all-config `ZM_Gen` units in `Tests/ZM_Tests_BuildingGen.cpp`
 (SC1..SC3), plus 1 `ZENITH_TOOLS`-only bake smoke (SC5) in
 `Tests/ZM_Tests_BuildingBake.cpp`:
@@ -927,15 +927,15 @@ ships **9** pure/all-config `ZM_Gen` units in `Tests/ZM_Tests_BuildingGen.cpp`
 
 #### ZM_Gen -- prop generator (SHIPPED)
 
-`ZM_PropGen` turns each of the 28 prop roster rows into a deterministic STATIC
+`ZM_PropGen` turns each of the 32 prop roster rows into a deterministic STATIC
 model -- like buildings, a box composition via `ZM_StaticMesh` with NO skeleton
 and NO animation, baked as a 4-file static bundle per prop. Determinism is
-golden-pinned (`uZM_PROPGEN_VERSION` = 2). It ships **9** pure/all-config
+golden-pinned (`uZM_PROPGEN_VERSION` = 5). It ships **9** pure/all-config
 `ZM_Gen` units in `Tests/ZM_Tests_PropGen.cpp` (SC4), plus 1 `ZENITH_TOOLS`-only
 bake smoke (SC5) in `Tests/ZM_Tests_PropBake.cpp`:
 
 - **Roster + purity + static contract** (`Tests/ZM_Tests_PropGen.cpp`, 5 units,
-  mirroring BuildingGen's SC1): `PropGen_RosterTotality` (all 28 rows self-index +
+  mirroring BuildingGen's SC1): `PropGen_RosterTotality` (all 32 rows self-index +
   build + `ZM_ValidateProp` pass + static contract + biome contract: DRESSING
   rows carry a real biome, all others NONE), `PropGen_RecipePurity` (pure f(id) +
   pairwise-distinct synthetic seeds + MESH != ALBEDO seed),

@@ -1,7 +1,7 @@
 # =============================================================================
 # doc_lint.ps1 -- MVP-0.3.2 documentation cross-check linter.
 #
-# Runs 7 cross-document consistency checks. Checks 1-6 come from the round-5
+# Runs 10 cross-document consistency checks. Checks 1-6 come from the round-5
 # peer-review consensus (see Games/DevilsPlayground/Docs/MvpRoadmap.md MVP-0.3.2
 # entry); check 7 was added 2026-08-24 after a live /tick audit found the LIVE
 # PIN line -- the one line Status.md tells every cold session to read first --
@@ -21,10 +21,17 @@
 #      file the gate actually reads) and with the registry the tests declare.
 #      EQUALITY, both directions -- understating is the direction drift always
 #      travels, so an overshoot-only check is blind to the common case.
+#   8. ArtBrief.md tick rows name a source file that actually exists (and
+#      only ticked rows name one).
 #   9. Bare bracketed ticket-key citations (`[ZM-50 / ZEN-2]`, not a markdown
 #      link) resolve to a real ticket file. Both directions matter: a key
 #      that never resolved (dangling), and a key that resolves NOW to an
 #      unrelated ticket because keys are allocated sequentially (wrong).
+#  10. Zenithmon's prop-roster row count agrees with Source/Data/ZM_PropData.h,
+#      and EVERY `uZM_*GEN_VERSION` stamp (discovered by globbing
+#      Source/Gen/ZM_*Gen.h, not a hand-maintained list) agrees with its own
+#      header -- the ZM-67 incident (see the check's own header comment
+#      below). Skips any game with no such headers.
 #
 # Usage:
 #   pwsh -NoProfile -File Tools/doc_lint.ps1
@@ -739,9 +746,184 @@ function Check-KeyCitations {
 }
 
 # =============================================================================
+# Check 10: Zenithmon's prop-roster arithmetic + EVERY generator's version
+#          stamp agree with the C++ headers that actually define them.
+#
+# ★★ WHY THIS EXISTS (ZM-67). AssetManifest.md was added to C1's $docFiles list
+# precisely because of this incident -- see the comment there -- but C1's own
+# regexes require the words "tests?"/"passing" and check a claim against the
+# ZENITH_AUTOMATED_TEST_REGISTER count. A roster-row count and a generator
+# version stamp are a different population entirely; C1 structurally cannot
+# see either. ZM-67 took the prop roster 25 -> 28 and uZM_PROPGEN_VERSION
+# 1 -> 2; the roster later grew again to 32 and the version to 5 (per-KIND UV
+# islands, PBR maps, etc. -- see ZM_PropGen.h's own version-history comment).
+#
+# ★★★ THIS CHECK ORIGINALLY COVERED PROPGEN ALONE, AND THAT WAS ITSELF A
+# HAND-MAINTAINED-LIST DEFECT OF THE EXACT SHAPE THIS REPO KEEPS FLAGGING
+# ELSEWHERE (see `rm_packed` in AssetHandling, the old pin duplicated across
+# four files). Widening it to PropGen only would have caught ONE stale stamp
+# and left the doc's OTHER generator stamps sitting in the identical failure
+# shape -- and they were: a first pass measuring every `uZM_*GEN_VERSION`
+# quoted anywhere in AssetManifest.md / TestPlan.md against its header found
+# uZM_CREATUREGEN_VERSION stale in TWO places (doc said 3, header said 6) and
+# uZM_BUILDINGGEN_VERSION / uZM_HUMANGEN_VERSION each stale in one more (doc
+# said 1, headers said 5 and 9) -- four live drifts beside the two PropGen
+# ones ZM-67 was filed for, every one of them found by hand because nothing
+# was asserting any of them. So rather than hardcode a second name next to
+# PROPGEN, this check DISCOVERS every generator by globbing
+# `Source/Gen/ZM_*Gen.h` and reading whatever `uZM_..._VERSION` constexpr each
+# one declares -- a sixth generator is covered the day its header lands, with
+# no edit here, which a hardcoded list can never promise.
+#
+# Modelled on C7 (Check-LivePin): read the claimed number out of the doc with
+# a targeted regex, read the GROUND TRUTH out of the file that actually defines
+# it, and report a violation on exact-equality mismatch in EITHER direction --
+# understating is the direction this kind of drift always travels (a roster
+# grows, a version bumps, the prose stays put), so an overshoot-only check
+# would be blind to the common case, same reasoning as C7.
+#
+# GROUND TRUTH:
+#   ZM_PROP_COUNT        -- Source/Data/ZM_PropData.h: the ZM_PROP_ID enum's
+#                            terminator. It is NOT a literal anywhere in the
+#                            file (ZM_PROP_NONE aliases it: "= ZM_PROP_COUNT",
+#                            never a second member), so the only way to know it
+#                            is to count the enumerators the same way the
+#                            compiler does -- exactly what Get-ZmPropRosterCount
+#                            below does over the enum body. This is the ONE
+#                            piece of roster arithmetic this check knows about
+#                            (props); it is not generalised the way the version
+#                            stamps below are, because ZM_PROP_ID is the only
+#                            roster enum this repo's docs quote arithmetic for.
+#   uZM_*GEN_VERSION      -- every `constexpr u_int uZM_..._VERSION` found by
+#                            globbing Source/Gen/ZM_*Gen.h, read directly, name
+#                            and all -- see Get-ZmGeneratorVersions.
+#
+# GRACEFUL DEGRADATION. Both the roster header and the Source/Gen/ZM_*Gen.h
+# tree are Zenithmon-specific (Games/Zenithmon/Source/...). Every other game
+# this linter runs against (DevilsPlayground, Foundry, Undervault, Hearth, and
+# anything else with no such files under its own Games/<Game>/Source/) has
+# nothing for this check to reconcile, so it PASSES rather than firing on an
+# absent header or an empty glob -- the same shape C2/C3 already use for a
+# DevilsPlayground-only doc that another game simply does not have.
+# =============================================================================
+function Get-ZmPropRosterCount {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $null }
+    $content = Get-Content $Path -Raw
+    # Isolate the ZM_PROP_ID enum body: from its opening brace up to the
+    # LITERAL ZM_PROP_COUNT token, which terminates the roster. Every real
+    # enumerator is named ZM_PROP_<something-else>; only the terminator and its
+    # ZM_PROP_NONE alias spell ZM_PROP_COUNT itself, so matching non-greedily
+    # up to that token captures exactly the roster rows and nothing past them.
+    # ★ THE \b IS LOAD-BEARING. Without it the non-greedy match stops at
+    # "ZM_PROP_COUNT" as soon as it sees the PREFIX of "ZM_PROP_COUNTER" (one of
+    # the real roster rows), truncating the body to 17 rows instead of 32 --
+    # caught by this check's own verification unit, not by inspection.
+    $m = [regex]::Match($content, 'enum\s+ZM_PROP_ID\s*:\s*u_int\s*\{(.*?)ZM_PROP_COUNT\b', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $m.Success) { return $null }
+    $body = $m.Groups[1].Value
+    # Strip comments before counting -- a commented-out row, or a row count
+    # mentioned in prose inside a comment, must not inflate the tally.
+    $body = [regex]::Replace($body, '//[^\r\n]*', '')
+    $body = [regex]::Replace($body, '/\*.*?\*/', '', [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    return ([regex]::Matches($body, '\bZM_PROP_[A-Z0-9_]+\b')).Count
+}
+
+# Discovers every generator header under Source/Gen (Source/Gen/ZM_*Gen.h --
+# the glob itself is the "no hand-maintained list" part) and reads whatever
+# `uZM_..._VERSION` constexpr each one declares. Returns a hashtable
+# { <constant name> -> [int] value }; a game with no such directory, or none
+# of whose Gen headers declare a version constant, returns an empty one.
+function Get-ZmGeneratorVersions {
+    param([string]$GenDir)
+    $versions = @{}
+    if (-not (Test-Path $GenDir)) { return $versions }
+    Get-ChildItem -Path $GenDir -Filter 'ZM_*Gen.h' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $content = Get-Content $_.FullName -Raw
+        foreach ($m in [regex]::Matches($content, 'constexpr\s+u_int\s+(uZM_[A-Z0-9_]+_VERSION)\s*=\s*(\d+)u?\s*;')) {
+            # Last one wins if a name somehow appeared twice; every header
+            # observed so far declares its version constant exactly once.
+            $versions[$m.Groups[1].Value] = [int]$m.Groups[2].Value
+        }
+    }
+    return $versions
+}
+
+function Check-PropGenStamps {
+    $propDataPath = Join-Path $gameDir 'Source/Data/ZM_PropData.h'
+    $genDir       = Join-Path $gameDir 'Source/Gen'
+
+    $rosterCount = Get-ZmPropRosterCount $propDataPath
+    $genVersions = Get-ZmGeneratorVersions $genDir
+
+    if ($null -eq $rosterCount -and $genVersions.Count -eq 0) {
+        Report-Pass 'C10' "no ZM_PropData.h / Source/Gen/ZM_*Gen.h headers under $Game -- check does not apply"
+        return
+    }
+
+    $ok = $true
+    $docFiles = @('AssetManifest.md', 'TestPlan.md')
+
+    foreach ($docFile in $docFiles) {
+        $path = Join-Path $docsDir $docFile
+        if (-not (Test-Path $path)) { continue }
+        $lines = @(Get-Content $path)
+        for ($i = 0; $i -lt $lines.Length; $i++) {
+            $line = $lines[$i]
+
+            if ($null -ne $rosterCount) {
+                # Three phrasings seen in these docs: "N prop roster rows",
+                # "all N rows self-index" (PropGen_RosterTotality's own
+                # description), and "N props x M = " (the family file-count
+                # arithmetic, section 6.2's "Family total" line).
+                foreach ($rx in @(
+                    '(\d+)\s+prop\s+roster\s+rows',
+                    'all\s+(\d+)\s+rows\s+self-index',
+                    '(\d+)\s+props\s+x\s+\d+\s*='
+                )) {
+                    if ($line -match $rx) {
+                        $claimed = [int]$Matches[1]
+                        if ($claimed -ne $rosterCount) {
+                            Report-Violation 'C10' "${docFile}:$($i+1): claims $claimed prop roster row(s) but ZM_PROP_ID (Source/Data/ZM_PropData.h) has $rosterCount"
+                            $ok = $false
+                        }
+                    }
+                }
+            }
+
+            # Every discovered generator constant, not just PropGen's. Two
+            # phrasings coexist in these docs -- `` `uZM_XGEN_VERSION` = N ``
+            # and the older "uZM_XGEN_VERSION (currently N" -- so both are
+            # checked for every name rather than assuming one style.
+            foreach ($name in $genVersions.Keys) {
+                $expected = $genVersions[$name]
+                $escaped = [regex]::Escape($name)
+                foreach ($rx in @(
+                    ('`?{0}`?\s*=\s*(\d+)' -f $escaped),
+                    ('{0}`?\s*\(currently\s+(\d+)' -f $escaped)
+                )) {
+                    if ($line -match $rx) {
+                        $claimed = [int]$Matches[1]
+                        if ($claimed -ne $expected) {
+                            Report-Violation 'C10' "${docFile}:$($i+1): claims $name = $claimed but its header has $expected"
+                            $ok = $false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if ($ok) {
+        $verSummary = ($genVersions.Keys | Sort-Object | ForEach-Object { "$_=$($genVersions[$_])" }) -join ', '
+        Report-Pass 'C10' "prop roster ($rosterCount) and generator version stamps ($verSummary) agree with the headers"
+    }
+}
+
+# =============================================================================
 # Run all checks.
 # =============================================================================
-Write-Host "doc_lint.ps1: running 9 checks against $docsDir" -ForegroundColor Cyan
+Write-Host "doc_lint.ps1: running 10 checks against $docsDir" -ForegroundColor Cyan
 Check-TestCount
 Check-MvpArchetypeNames
 Check-RoadmapUniqueIds
@@ -751,6 +933,7 @@ Check-MarkdownLinks
 Check-LivePin
 Check-ArtBriefTicks
 Check-KeyCitations
+Check-PropGenStamps
 
 Write-Host ""
 if ($script:violations -eq 0) {

@@ -46,6 +46,23 @@
 #
 # Exit: 0 all green - 2 regen failed - 3 a created file was never compiled
 #       4 a gate line failed - 5 could not read the gate list
+#       8 a phase ran ZERO gate lines -- see Write-Result's own guard below.
+#         The Tooling category's 12 gate lines match neither the build-line
+#         nor the unit-line regex `measure` classifies its work from, so both
+#         arrays came back empty, nothing was ever run, and the code fell
+#         through to `Write-Result 0 'all gates green'` having executed
+#         nothing. tick.md designates this JSON as the trustworthy channel --
+#         explicitly OVER the shell exit code -- so Write-Result refuses to
+#         let a $Code of 0 leave here with an empty steps array; it rewrites
+#         the exit code to 8 and says so in the verdict instead.
+#         NOT 6: this script's own ladder had 6 free, but `zagent`'s ladder
+#         (root CLAUDE.md; branched on throughout .claude/commands/tick.md) is
+#         0/1/3/4/5/6/7, and 6 there means CIRCUIT BREAKER OPEN -- a tick reads
+#         both ladders, often in the same step, and a shared number meaning
+#         "nothing ran" from one and "the loop is thrashing, stop" from the
+#         other is exactly the kind of disagreement "exit codes are the
+#         interface -- branch on them, not on the text" is supposed to
+#         prevent. 8 is free in BOTH ladders.
 #       10 MEASURED: the unit pin needs bumping (not a failure; see below)
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
@@ -121,6 +138,22 @@ $script:PlannedLines = New-Object System.Collections.Generic.List[string]
 # subset run gets mistaken for a full one. `skipped` keeps meaning "a failure
 # stopped the list"; this is the other reason a line did not run.
 $script:DeferredLines = New-Object System.Collections.Generic.List[string]
+
+# A RED gate line and a FLAKY one look identical from here -- exit code only
+# -- and the Tools/Vault Vitest suite has known intermittent failures on
+# Windows, so a Tooling ticket has a real chance of a red it did not cause.
+# That red still makes the tick a failure block and still counts toward
+# `maxConsecutiveBlocked`. This is the PRODUCER half only: every entry below
+# is evidence for whatever reads it (a separate consumer decides what a
+# `{firstExit: 4, rerunExit: 0}` pair means for the block count), and the
+# CONTRACT is the field name and the three keys per entry -- do not rename
+# either. The overall verdict never moves because of this array: the line
+# that went red is already recorded red in $script:Steps by the time a retry
+# is even attempted, and every call site still branches on that FIRST
+# result. See Invoke-GateLineFlakeAware below for why a `zenith.ps1 build`
+# line is excluded (a build failure is a different class, and re-running one
+# to rule out a flake costs minutes it is not worth spending).
+$script:Flakes = New-Object System.Collections.Generic.List[object]
 
 # The automated-test registry count, derived EXACTLY as doc_lint.ps1 check C7
 # derives it -- the paren is load-bearing. A bare `grep -c
@@ -232,6 +265,41 @@ function Invoke-GateLine {
     return $step
 }
 
+# The ONE place the build-line shape is matched. Used both to classify
+# $buildLines below and by the flake retry, which must never re-run a build --
+# two separate regexes here is how they drift apart.
+function Test-IsZenithBuildLine {
+    param([string]$Line)
+    return $Line -match 'zenith\.ps1["'']?\s+build\b'
+}
+
+# --- Flake-tolerant gate line -------------------------------------------------
+#
+# Wraps Invoke-GateLine: on a RED result for a line that is NOT a
+# `zenith.ps1 build` line, re-runs that ONE line once more on the same tree
+# and records both exit codes in $script:Flakes (see its header comment for
+# the contract). This is evidence only. The VERDICT this phase reports does
+# not change: the caller still branches on $step, the FIRST invocation's
+# result -- Invoke-GateLine already appended that as the line's one entry in
+# $script:Steps before this function's retry check even runs, and the retry's
+# own step is simply a second entry alongside it, never a replacement.
+function Invoke-GateLineFlakeAware {
+    param([string]$Line, [string]$Label)
+    $step = Invoke-GateLine -Line $Line -Label $Label
+    if ($step.ExitCode -ne 0 -and -not (Test-IsZenithBuildLine $Line)) {
+        Write-Banner "RED -- re-running once to rule out a flake ($Label)"
+        $rerun = Invoke-GateLine -Line $Line -Label "$Label (flake re-run)"
+        $script:Flakes.Add([PSCustomObject]@{ line = $Line; firstExit = $step.ExitCode; rerunExit = $rerun.ExitCode })
+        if ($rerun.ExitCode -eq 0) {
+            Write-Line "[flake] SECOND run was green -- recorded as a possible flake, verdict for this line stays RED (first run's exit $($step.ExitCode))" 'Yellow'
+        }
+        else {
+            Write-Line "[flake] second run was ALSO red (exit $($rerun.ExitCode)) -- looks deterministic, not a flake" 'Yellow'
+        }
+    }
+    return $step
+}
+
 # ** NEVER WRITE `@($list)` FOR A List[object] -- USE `.ToArray()`.
 #
 #   $L = New-Object System.Collections.Generic.List[object]; $L.Add('x')
@@ -255,6 +323,32 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
     $ran = @($script:Steps.ToArray() | ForEach-Object { $_.Line })
     $skipped = @($script:PlannedLines.ToArray() | Where-Object { $ran -notcontains $_ })
 
+    # ★★ A GREEN VERDICT WITH ZERO STEPS IS THE JSON LYING BY OMISSION.
+    # tick.md designates THIS file as the trustworthy channel -- explicitly
+    # OVER the shell exit code -- so a caller trusts `exitCode: 0` / a green
+    # verdict string without re-deriving it from `steps`. The Tooling
+    # category's gate lines match neither the build-line nor the unit-line
+    # regex `measure` classifies its work from (see Test-IsZenithBuildLine and
+    # the unitLines regex above), so both arrays came back empty, nothing was
+    # ever run, and the code still reached `Write-Result 0 'all gates green'`
+    # at the bottom of the script. Refuse it HERE, once, rather than trusting
+    # every call site -- present and future -- to check first. Scoped to
+    # $Code -eq 0 only: a non-zero code with zero steps (e.g. 5, "could not
+    # read the gate list") is already an honest red and needs no rewriting.
+    #
+    # 8, NOT 6: this file's own exit ladder (0/2/3/4/5/10) had 6 free, but
+    # `zagent`'s SEPARATE ladder -- root CLAUDE.md, branched on throughout
+    # .claude/commands/tick.md -- already spends 6 on CIRCUIT BREAKER OPEN. A
+    # tick reads both ladders, often in the same step, so reusing 6 here would
+    # make the same number mean "nothing ran" from this script and "the loop
+    # is thrashing, stop" from zagent -- exactly the ambiguity "exit codes are
+    # the interface -- branch on them, not on the text" exists to rule out. 8
+    # is free in both (zagent's is 0/1/3/4/5/6/7).
+    if ($Code -eq 0 -and $script:Steps.Count -eq 0) {
+        $Verdict = "measure ran no gate lines -- '$Verdict' would have been reported having executed nothing; refusing to call that green"
+        $Code = 8
+    }
+
     $payload = [ordered]@{
         key         = $Key
         phase       = $Phase
@@ -269,7 +363,19 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
             })
         skipped     = $skipped
         deferred    = @($script:DeferredLines.ToArray())
+        # Evidence only -- see $script:Flakes' own header comment for the
+        # contract and why the verdict above never depends on this array.
+        flakes      = @($script:Flakes.ToArray())
     }
+    # Extra can override anything above, INCLUDING state -- the internal-error
+    # catch block passes state = 'error' this way, because 'complete' on a
+    # thrown-exception path is exactly the lie this whole function exists to
+    # stop telling (a crashed run used to report state: complete, green steps,
+    # and skipped: [] all at once). Tools/Vault/cli/tick-checks.mjs's
+    # gateVerdictFresh already treats any state other than 'complete' as not
+    # fresh -- the same bucket a killed 'running' run falls into -- so 'error'
+    # does not need a new branch on that side; it trips the existing one
+    # correctly for the first time.
     if ($null -ne $Extra) { foreach ($k in $Extra.Keys) { $payload[$k] = $Extra[$k] } }
     Set-Content -LiteralPath $resultPath -Value ($payload | ConvertTo-Json -Depth 6) -Encoding utf8
     Write-Line ''
@@ -383,6 +489,116 @@ function Get-CreatedIncludeFiles {
     return , $created.ToArray()
 }
 
+# --- Proving a created TU was actually compiled -------------------------------
+#
+# Replaces the by-name build-log grep as the AUTHORITY (that grep is kept as a
+# secondary, informational signal at the call site). It only ever proved a
+# COLD build: MSBuild echoes a TU on the build that recompiles it, and an
+# INCREMENTAL build that finds a created file's .obj already up to date names
+# nothing, so the grep reported "not compiled" for a file that provably
+# reached the compiler and whose .obj sits on disk, already linked into the
+# .lib/.exe. `measure` is re-run routinely -- the protocol mandates it after
+# any post-measure edit -- so an incremental second run is the COMMON case,
+# not an edge one. The .obj's presence under the project's own
+# IntermediatePath is idempotent: checking it does not care whether the
+# compile happened moments ago or three builds back.
+
+function Resolve-GateConfigLeaf {
+    # The MSBuild /p:Configuration a `zenith.ps1 build` gate line resolves to,
+    # LOWERCASED -- Sharpmake lowercases the config name to form the
+    # output/intermediate directory leaf. Build/zenith_buildsystem.psm1's
+    # ConvertTo-ZenithOutputDir is the ONE other place that fact lives; this
+    # does not re-derive it, it names the same three configs zenith.ps1's own
+    # flags select (zenith_config.psd1: HeadlessConfigWin64 / DefaultConfigWin64)
+    # and lowercases the same way.
+    param([string]$Line)
+    if ($Line -match '--headless\b') { return 'null_vs2022_debug_win64_true' }
+    if ($Line -match '--config\s+(\S+)') { return $Matches[1].ToLowerInvariant() }
+    return 'vulkan_vs2022_debug_win64_true'
+}
+
+function Get-GateBuildGameName {
+    # The game a `zenith.ps1 build <X> ...` line targets, or $null for
+    # `build engine` (which builds the shared engine libs under Build/, not
+    # any game's own project).
+    param([string]$Line)
+    if ($Line -match '\bbuild\s+([A-Za-z0-9_]+)') {
+        $name = $Matches[1]
+        if ($name -ieq 'engine') { return $null }
+        return $name
+    }
+    return $null
+}
+
+function Find-CompiledObjectPath {
+    # Where a created source file's compiled .obj should be, given the configs
+    # THIS phase actually built (one {Game; Leaf} record per $buildLines entry
+    # that ran -- every one of them exited 0 by the time step 3 calls this, a
+    # failing build line exits the phase first). Returns the .obj path found,
+    # or $null.
+    #
+    # A file under Games/<Name>/... compiles into that game's OWN project, so
+    # the location is exact and verified against a real build tree (flat, one
+    # .obj per TU, no further nesting):
+    #   Games/<Name>/Build/obj/win64/<config>/<leaf>.obj
+    #
+    # A file under the shared engine tree (Zenith/**, or anything else this
+    # repo's Sharpmake split routes into one of the ~32 engine-lib static
+    # libraries living under Build/) does NOT get the same precision:
+    # answering "which lib owns this source path" exactly means replicating
+    # Build/Sharpmake_EngineLibs.cs's whole membership table here -- a second
+    # copy of a mapping Docs/BuildSystem.md Sec.4 and
+    # Tools/check_project_membership.ps1 already go to some trouble to keep as
+    # ONE owner. Every engine lib's IntermediatePath shares the same shape
+    # (Build/obj/<lowercase-lib-name>/win64/<config>/), so instead this
+    # searches every lib's obj tree for the leaf at a config this phase built.
+    # That is still strictly stronger than the build-log grep it replaces
+    # (idempotent, and it inspects the actual link input rather than transient
+    # stdout) but is not pinpoint the way the game-project case is. If this
+    # ever proves too broad -- a stale .obj under an unrelated lib with a
+    # colliding file name -- narrow it with the real membership table rather
+    # than loosening the check.
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][string]$SourcePath,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$BuiltConfigs
+    )
+    $leaf = [System.IO.Path]::GetFileNameWithoutExtension((Split-Path -Leaf $SourcePath))
+    $gameMatch = [regex]::Match(($SourcePath -replace '\\', '/'), '^Games/([^/]+)/')
+
+    if ($gameMatch.Success) {
+        $game = $gameMatch.Groups[1].Value
+        # Prefer the leaves THIS game's own build line(s) used. A ticket that
+        # also unions in the Engine category's `build engine` line (Game =
+        # $null) contributes nothing here -- that line never touches a game's
+        # obj tree.
+        $leaves = @($BuiltConfigs | Where-Object { $_.Game -and $_.Game -ieq $game } | ForEach-Object { $_.Leaf } | Select-Object -Unique)
+        if ($leaves.Count -eq 0) {
+            # No build line named this game -- should not happen for a
+            # coherent gate list, but fall back to every leaf that WAS built
+            # rather than reporting unconditionally uncompiled.
+            $leaves = @($BuiltConfigs | ForEach-Object { $_.Leaf } | Select-Object -Unique)
+        }
+        foreach ($cfgLeaf in $leaves) {
+            $candidate = Join-Path $RepoRoot "Games/$game/Build/obj/win64/$cfgLeaf/$leaf.obj"
+            if (Test-Path -LiteralPath $candidate) { return $candidate }
+        }
+        return $null
+    }
+
+    $leaves = @($BuiltConfigs | ForEach-Object { $_.Leaf } | Select-Object -Unique)
+    $engineObjRoot = Join-Path $RepoRoot 'Build/obj'
+    if (-not (Test-Path -LiteralPath $engineObjRoot)) { return $null }
+    foreach ($cfgLeaf in $leaves) {
+        $needle = "\win64\$cfgLeaf\"
+        $hit = Get-ChildItem -LiteralPath $engineObjRoot -Recurse -Filter "$leaf.obj" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like "*$needle*" } |
+            Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
 # =============================================================================
 if ($NoRun) { return }
 
@@ -409,7 +625,7 @@ $startPayload = [ordered]@{
     key = $Key; phase = $Phase; state = 'running'; exitCode = $null
     verdict = 'in progress -- this run has not produced a verdict yet'
     headSha = $script:HeadSha; startedUtc = $script:StartedUtc
-    steps = @(); skipped = @()
+    steps = @(); skipped = @(); flakes = @()
 }
 Set-Content -LiteralPath $resultPath -Value ($startPayload | ConvertTo-Json -Depth 6) -Encoding utf8
 
@@ -426,11 +642,38 @@ try {
 
     # Classified rather than positional. A category may order its gates however
     # it likes, and `measure` needs the build and unit lines specifically.
-    $buildLines = @($gateLines | Where-Object { $_ -match 'zenith\.ps1["'']?\s+build\b' })
+    $buildLines = @($gateLines | Where-Object { Test-IsZenithBuildLine $_ })
     $unitLines = @($gateLines | Where-Object { $_ -match 'run_unit_gate\.ps1' })
 
     # ---- MEASURE -------------------------------------------------------------
     if ($Phase -eq 'measure' -or $Phase -eq 'all') {
+
+        # `PlannedLines` (and its complement, `DeferredLines`) are populated
+        # HERE -- as soon as the gate list is classified and BEFORE regen, the
+        # build, or a single gate line has run -- so that `skipped` is correct
+        # from ANY exit path below, including a thrown exception. It used to
+        # be set at the bottom of this phase, after the build loop and both
+        # file-provenance checks: an internal error anywhere in between left
+        # `$script:PlannedLines` empty, so `Write-Result`'s `skipped` (derived
+        # as PlannedLines minus ran) reported `[]` while the unit gate and
+        # every verify line genuinely never ran -- a crash that looked, on the
+        # one field a reader is told to check, like nothing had been asked of
+        # this run at all.
+        $script:PlannedLines.Clear()
+        foreach ($l in $buildLines) { $script:PlannedLines.Add($l) }
+        foreach ($l in $unitLines) { $script:PlannedLines.Add($l) }
+        # Everything else is verify's. Recorded as DEFERRED rather than left to
+        # inference: `skipped` will be empty on a clean measure, and a reader told
+        # to "read skipped before concluding anything about what was verified"
+        # would otherwise read a green subset as a green whole.
+        $script:DeferredLines.Clear()
+        foreach ($l in $gateLines) {
+            if ($script:PlannedLines -notcontains $l) { $script:DeferredLines.Add($l) }
+        }
+        if ($script:DeferredLines.Count -gt 0) {
+            Write-Line "[tick_gates] measure runs $($script:PlannedLines.Count) of $($gateLines.Count) gate line(s); $($script:DeferredLines.Count) DEFERRED to -Phase verify:" 'DarkGray'
+            foreach ($l in $script:DeferredLines) { Write-Line "[tick_gates]   deferred: $l" 'DarkGray' }
+        }
 
         # 1. Regen, when and only when a source file was created.
         $created = Get-CreatedSourceFiles
@@ -465,13 +708,30 @@ try {
                 exit 4
             }
         }
+        # Every build line that reaches here exited 0. Record which config
+        # each one built -- and which game, when it names one -- so step 3 can
+        # ask "does an .obj for this file exist under a config THIS phase
+        # actually built" instead of grepping transient stdout.
+        $builtConfigs = New-Object System.Collections.Generic.List[object]
+        foreach ($line in $buildLines) {
+            $builtConfigs.Add([PSCustomObject]@{ Game = (Get-GateBuildGameName $line); Leaf = (Resolve-GateConfigLeaf $line) })
+        }
 
-        # 3. Every created .cpp must appear BY NAME in the build log.
-        # ** THE SAME QUESTION, ASKED OF THIS SCRIPT: what does the check do
-        # when its INPUT is absent? A created file with no build line in the
-        # gate list cannot be proven compiled by anything, and skipping in
-        # silence would be the exact failure the check exists to catch --
-        # dressed as a pass. Refuse instead.
+        # 3. Every created .cpp must have a compiled .obj under its project's
+        # IntermediatePath, at a config this phase actually built.
+        # ** THE BUILD-LOG GREP THIS AUTHORITY REPLACED IS NOT IDEMPOTENT.
+        # MSBuild only echoes a TU on the build that actually RECOMPILES it --
+        # on an INCREMENTAL build where a created file's .obj is already up to
+        # date (routine: the protocol mandates re-running a phase after any
+        # post-measure edit), nothing names it in stdout, and the old check
+        # reported NOT IN BUILD LOG / exit 3 for a file whose .obj is on disk
+        # and whose .lib already contains it -- a false failure. The .obj's
+        # PRESENCE is what a linked build actually depends on, and checking
+        # for it is idempotent by construction: it is there whether this
+        # build compiled it moments ago or three builds back. The build-log
+        # grep is kept below as a SECONDARY, informational signal only; see
+        # Find-CompiledObjectPath's own comment for what "a config this phase
+        # built" means for a game-project file versus a shared-engine-tree one.
         if ($newFiles.Count -gt 0 -and $buildLines.Count -eq 0) {
             Write-Banner 'created files, and NO build gate to prove them with'
             foreach ($c in $newFiles) { Write-Line "  unverifiable: $($c.Path)" 'Red' }
@@ -483,11 +743,20 @@ try {
             $uncompiled = New-Object System.Collections.Generic.List[string]
             foreach ($c in $newFiles) {
                 $leaf = Split-Path -Leaf $c.Path
-                if ($buildLog -like "*$leaf*") { Write-Line "  compiled: $leaf" 'Green' }
-                else { Write-Line "  NOT IN BUILD LOG: $leaf" 'Red'; $uncompiled.Add($c.Path) }
+                $objHit = Find-CompiledObjectPath -RepoRoot $RepoRoot -SourcePath $c.Path -BuiltConfigs $builtConfigs.ToArray()
+                $inLog = $buildLog -like "*$leaf*"
+                if ($null -ne $objHit) {
+                    $note = if (-not $inLog) { ' (build log did not name it -- an incremental build names only what it recompiled; the .obj is the authority)' } else { '' }
+                    Write-Line "  compiled: $leaf -> $objHit$note" 'Green'
+                }
+                else {
+                    $note = if ($inLog) { ' (build log DID name it, but no matching .obj was found -- treating as uncompiled; the .obj is the authority)' } else { '' }
+                    Write-Line "  NOT COMPILED: $leaf -- no .obj under any built config's IntermediatePath$note" 'Red'
+                    $uncompiled.Add($c.Path)
+                }
             }
             if ($uncompiled.Count -gt 0) {
-                Write-Result 3 "$($uncompiled.Count) created file(s) never reached the compiler -- the build is green and the deliverable is not in it" @{ uncompiled = $uncompiled.ToArray() }
+                Write-Result 3 "$($uncompiled.Count) created file(s) have no compiled .obj under any built config's IntermediatePath -- the build is green and the deliverable is not proven in it" @{ uncompiled = $uncompiled.ToArray() }
                 exit 3
             }
         }
@@ -533,21 +802,8 @@ try {
         # 4. The unit gate, ALONE, to observe the count.
         # measure deliberately runs only the build and the unit gate, so those
         # are what it PLANNED; the rest are verify's and are not "skipped" here.
-        $script:PlannedLines.Clear()
-        foreach ($l in $buildLines) { $script:PlannedLines.Add($l) }
-        foreach ($l in $unitLines) { $script:PlannedLines.Add($l) }
-        # Everything else is verify's. Recorded as DEFERRED rather than left to
-        # inference: `skipped` will be empty on a clean measure, and a reader told
-        # to "read skipped before concluding anything about what was verified"
-        # would otherwise read a green subset as a green whole.
-        $script:DeferredLines.Clear()
-        foreach ($l in $gateLines) {
-            if ($script:PlannedLines -notcontains $l) { $script:DeferredLines.Add($l) }
-        }
-        if ($script:DeferredLines.Count -gt 0) {
-            Write-Line "[tick_gates] measure runs $($script:PlannedLines.Count) of $($gateLines.Count) gate line(s); $($script:DeferredLines.Count) DEFERRED to -Phase verify:" 'DarkGray'
-            foreach ($l in $script:DeferredLines) { Write-Line "[tick_gates]   deferred: $l" 'DarkGray' }
-        }
+        # (`PlannedLines`/`DeferredLines` were populated at the TOP of this
+        # phase, before regen -- see the comment there for why.)
         Write-Banner "unit gate alone ($($unitLines.Count) line(s)) -- measuring"
         $measurements = New-Object System.Collections.Generic.List[object]
         $pinNeedsBump = $false
@@ -638,7 +894,11 @@ try {
 
         Write-Banner "verify -- every gate, in order ($($gateLines.Count) line(s))"
         foreach ($line in $gateLines) {
-            $step = Invoke-GateLine -Line $line -Label 'verify'
+            # Flake-aware: a RED non-build line is re-run once and the outcome
+            # recorded in $script:Flakes, but $step is still the FIRST run's
+            # result and the branch below is unchanged by a rerun -- see
+            # Invoke-GateLineFlakeAware's own comment.
+            $step = Invoke-GateLineFlakeAware -Line $line -Label 'verify'
             if ($step.ExitCode -ne 0) {
                 # ★ A FAILED GATE VOIDS EVERY GATE BEHIND IT. Stopping here is
                 # correct and cheap, but the lines that never ran are the ones a
@@ -671,7 +931,16 @@ catch {
     Write-Line "  at $($err.InvocationInfo.ScriptName):$($err.InvocationInfo.ScriptLineNumber)" 'Red'
     Write-Line "  $($err.InvocationInfo.Line.Trim())" 'Red'
     Write-Line ($err.ScriptStackTrace) 'Red'
-    Write-Result 1 "internal error: $($err.Exception.Message)" $null
+    # state = 'error', not the default 'complete' -- a thrown exception used to
+    # report state: complete, green-looking steps, and skipped: [] all at
+    # once, which is the exact lie Write-Result's own guard (see its header
+    # comment) exists to stop telling from the other end. Checked against the
+    # one real consumer of this field, Tools/Vault/cli/tick-checks.mjs's
+    # gateVerdictFresh: it already treats any state other than 'complete' as
+    # not fresh (the same bucket 'running' falls into), so this does not need
+    # a new branch there -- it correctly trips the EXISTING one for the first
+    # time instead of sliding past it.
+    Write-Result 1 "internal error: $($err.Exception.Message)" @{ state = 'error' }
     exit 1
 }
 finally {

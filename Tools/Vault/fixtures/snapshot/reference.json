@@ -96123,7 +96123,7 @@
         "ok": true,
         "violations": [],
         "key": "FD-18",
-        "gateSelectionStale": null,
+        "gateSelectionStale": false,
         "docsMirrorNeeded": false,
         "docsMirrorPaths": []
       }

@@ -1147,8 +1147,9 @@ Agent{
 
 **A dead subagent is infrastructure, not a verdict.** `Agent` returns
 null if the worker dies on a terminal API error or is skipped mid-run.
-That is the worker-side twin of `zagent` exit 7, and it gets the same
-answer: **do not treat it as a red.** A red means the gates ran and
+That is the worker-side twin of a `zagent` infrastructure failure — a
+transport or environment problem, not a gate disagreement — and it gets
+the same answer: **do not treat it as a red.** A red means the gates ran and
 disagreed with the work. A null means no work happened at all, and
 fix-forwarding it just re-runs the same failure `fixForwardAttempts`
 times before parking an innocent ticket as Blocked — then does it to the
@@ -1717,38 +1718,14 @@ order-dependence.
 **Docs mirror.** Only after a Green commit lands — never on a Blocked or
 abandoned ticket, whose edits may be half-done or uncommitted.
 
-With the Vault backend, the repository Markdown is already authoritative.
-Skip this remote-mirror section and proceed to step 8. Do not call `docs sync`;
-the mutable Vault guard returns `docsMirrorNeeded: false`.
-
-**`guard` already decided this: read `docsMirrorNeeded` off its payload.**
-False → skip, silently; a ticket that never touched a doc has nothing to
-mirror. True → **`zagent docs sync --json`**, appended to
-`.zagent/run/<KEY>/docs-sync.log`; `docsMirrorPaths` names what triggered it.
-
-**★★ IT NEVER HUNG, AND FIVE TICKS BELIEVED IT DID.** This step used to wrap
-`docs sync` in a timeout and record a timeout as an expected outcome — both
-wrong, and the mirror was never actually behind. Fixed in upstream `05408ef`;
-five consecutive timeouts became exit 0 in 9 seconds. `Docs/TickProtocolHistory.md`
-has the per-page WebSocket mechanism that caused it.
-
-So run it unbounded and read its report. A non-zero exit is now a real
-failure worth recording rather than the expected case — and if you find
-yourself reaching for a timeout again, check whether the page count has grown
-rather than re-adding the wrapper.
-
-Do NOT re-derive `docsMirrorNeeded` by matching `changed.txt` in the shell —
-`guard` already answers it (above), and a hand implementation is wrong in a
-way nothing notices. `Docs/TickProtocolHistory.md` has that mechanism too.
-
-Never block the tick on this. `docs sync` reaches a Notion project over a
-WebSocket the tick has no other reason to depend on, and a mirror that is
-one commit behind is a stale Notion page — recoverable at the next sync
-that touches the same file. A commit that already landed on `master`
-staying uncommitted-to-Notion is not a failure mode this step exists to
-prevent. So: log the outcome into the work log's **Deviations /
-follow-ups** (created/updated page counts, or the error text on a
-non-zero exit), and continue to step 8 regardless.
+With the Vault backend, the repository Markdown is already authoritative
+and there is no remote mirror. `guard`'s `docsMirrorNeeded` is always
+`false` under this backend (`mirrorPaths` in `Tools/Vault/cli/local.mjs`
+returns `[]` whenever `writes.enabled` is true). Skip this section and
+proceed to step 8; do not call `docs sync` — it is `removed-transport`
+(`Tools/Vault/spec/command-matrix.md`) and refuses unconditionally.
+`Docs/TickProtocolHistory.md` keeps the retired per-page WebSocket
+mirror mechanics this section used to describe, for history only.
 
 ## 8. Write back
 

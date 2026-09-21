@@ -205,7 +205,7 @@ test('gates and guard read caller files before dispatch', async t => {
   await fs.writeFile(gatesPath, `${JSON.stringify(gates.response.payload, null, 2)}\n`);
   const guard = await capture(() => runCli(['guard', 'FD-11', '--file', changedPath, '--gates', gatesPath, '--vault', fixtureRoot]));
   assert.equal(guard.response.exitCode, 0, guard.output);
-  assert.equal(guard.response.payload.gateSelectionStale, null);
+  assert.equal(guard.response.payload.gateSelectionStale, false);
 
   await fs.writeFile(gatesPath, JSON.stringify({ gates: [] }));
   const staleGuard = await capture(() => runCli(['guard', 'FD-11', '--file', changedPath, '--gates', gatesPath, '--vault', fixtureRoot]));

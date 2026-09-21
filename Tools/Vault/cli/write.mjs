@@ -9,7 +9,9 @@
  * database, while preserving the same operation protocol for a future UI.
  */
 
+import { execFile as execFileCallback } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import { promisify } from 'node:util';
 
 import { patchFields, replaceBody } from '../server/text-edit.mjs';
 import {
@@ -17,6 +19,7 @@ import {
   canonicalOf,
   clone,
   policyOf,
+  projectField,
   projectKeyOf,
   semanticFlags,
   showPayload,
@@ -31,7 +34,9 @@ import {
 import { databaseModel, rowsFor } from './queries.mjs';
 import { issueLinkError, issueParentError } from '../shared/jira/constants.js';
 import { isKnownHierarchyType } from '../shared/hierarchy.mjs';
-import { upsertWorklog } from './legacy-pure/ticket.mjs';
+import { citationsIn, parseTicket, scanIdentifiers, upsertWorklog } from './legacy-pure/ticket.mjs';
+
+const execFileAsync = promisify(execFileCallback);
 import {
   blockedScopeAllowed,
   commitCompleteness,
@@ -840,6 +845,68 @@ function parseKeyList(value) {
   return [...new Set(String(value ?? '').split(',').map(item => item.trim()).filter(Boolean))];
 }
 
+// ★ A DoD whose blast radius exceeds its declared file list used to be
+// accepted at create time. `legacy-pure/contract.mjs`'s reachability scan
+// only answers "does the DoD NAME a protected path" — never "do the
+// identifiers this DoD proposes to change also live outside the files the
+// ticket names" — and the `excursions` check in `checkFinishContent` above
+// catches that only post-hoc, at finish, after a claim, a lock slot and a
+// worker dispatch are already spent. MEASURED: ZM-23 — one `rg` for
+// `ZM_TRAINER_ROUTE1_RAMBLER` would have surfaced
+// `Tests/ZM_Tests_TrainerSightFsm.cpp` before the claim.
+//
+// WARN only, never refuse: this is a cheap advisory grep, not a substitute
+// for the excursions check, and a false positive here must never block
+// filing a legitimate ticket.
+//
+// Caps, chosen to keep `create` snappy against a large monorepo and a
+// possibly 900KB+ ticket body:
+//   - identifiers: first 8 distinct CONSTANT_CASE/Prefixed_PascalCase
+//     identifiers found in the Definition of Done text (order of first
+//     appearance) — `scanIdentifiers` shares its regex with
+//     `matchGoverningRulings` (legacy-pure/ticket.mjs) so all three name
+//     "an identifier" the same way.
+//   - one `git grep -l --fixed-strings` invocation carrying every capped
+//     identifier as its own `-e` pattern (OR'd), not one process per
+//     identifier — `git grep` reads the committed tree, not the working
+//     directory, so it is fast and needs no repo walk of our own.
+//   - a 5s timeout on that single process.
+//   - the reported "outside the file list" hits are capped at 20 lines so
+//     the warning stays readable.
+// Any failure along the way (no repo, `git` missing, the 5s timeout, `git
+// grep` exiting 1 for "no matches") is silence, not a warning — "keep it
+// quiet when it finds nothing: a noisy warning is one people learn to
+// skip" is the explicit design brief, and an inability to scan is not
+// evidence of a problem.
+const DOD_SCAN_IDENTIFIER_CAP = 8;
+const DOD_SCAN_TIMEOUT_MS = 5000;
+const DOD_SCAN_FILE_CAP = 20;
+
+async function dodBlastRadiusWarning(index, body) {
+  try {
+    const repoRoot = repoRootOf(index);
+    if (!repoRoot) return null;
+    const parsed = parseTicket(body);
+    const dodText = array(parsed.definitionOfDone).map(item => item?.text ?? '').join('\n');
+    const identifiers = scanIdentifiers(dodText).slice(0, DOD_SCAN_IDENTIFIER_CAP);
+    if (identifiers.length === 0) return null;
+    const declared = new Set(citationsIn(body).paths.map(value => String(value).replaceAll('\\', '/')));
+    const grepArgs = ['-C', repoRoot, 'grep', '-l', '-I', '--fixed-strings'];
+    for (const identifier of identifiers) grepArgs.push('-e', identifier);
+    const { stdout } = await execFileAsync('git', grepArgs, { timeout: DOD_SCAN_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
+    const hits = stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(value => value.replaceAll('\\', '/'));
+    const outside = hits.filter(value => !declared.has(value));
+    if (outside.length === 0) return null;
+    const shown = outside.slice(0, DOD_SCAN_FILE_CAP);
+    const more = outside.length > shown.length ? ` (+${outside.length - shown.length} more)` : '';
+    return `The Definition of Done mentions ${identifiers.join(', ')}; the repo already has ${outside.length} file(s) `
+      + `using them outside this ticket's cited file list: ${shown.join(', ')}${more}. Advisory only — if the real `
+      + 'blast radius reaches further than the DoD/file list says, widen the ticket before claiming it.';
+  } catch {
+    return null;
+  }
+}
+
 async function create(index, argv, files) {
   const project = String(valueOf(argv, 'project') ?? policyOf(index).clientFile.project ?? index.boardRoots?.[0]?.project ?? '').toUpperCase();
   const title = valueOf(argv, 'title');
@@ -868,7 +935,8 @@ async function create(index, argv, files) {
   const due = dateValue(argv, 'due') ?? null;
   const environment = scalarValue(argv, 'environment') ?? null;
   const flagged = hasFlag(argv, 'flag') ? !hasFlag(argv, 'clear') : false;
-  return runOperation(index, 'create', argv, {}, async fresh => {
+  const blastRadiusWarning = await dodBlastRadiusWarning(index, body);
+  const response = await runOperation(index, 'create', argv, {}, async fresh => {
     const number = nextIssueNumber(fresh, project);
     const key = `${project}-${number}`;
     const root = boardRootFor(fresh, project);
@@ -898,6 +966,10 @@ async function create(index, argv, files) {
     }
     return { changes, result: { key, id: fields.id, created: true, status: fields.status, assignee: fields.assignee } };
   });
+  if (response.exitCode === 0 && blastRadiusWarning) {
+    response.payload = { ...(response.payload && typeof response.payload === 'object' ? response.payload : {}), dodBlastRadiusWarning: blastRadiusWarning };
+  }
+  return response;
 }
 
 function linkOperands(argv) {
@@ -1432,6 +1504,29 @@ function appendKnowledgeRow(index, command, input, ticketKey, argv = []) {
   return { record: metadata, updates: { tables }, result: { database: KNOWLEDGE_FILES[command], rowId: row.id, values } };
 }
 
+// ★ `zagent decide` used to be silent when the ticket's category
+// declares no `decisionLog` at all: exit 0, "wrote a row" — indistinguishable
+// from a decision a worker's rulings scan (see client.mjs's rulings.md,
+// and `reviewDecision`'s third OR term above) could ever actually find,
+// because the row exists only on the board. Warn, never refuse — the row is
+// still worth recording, it just cannot be cited the way I3 now expects.
+function decisionLogMissingWarning(index, argv, ticketKey) {
+  const ticket = ticketKey ? findTicket(index, ticketKey) : undefined;
+  const project = projectOf(index, ticket, ticketKey)
+    ?? String(valueOf(argv, 'project') ?? policyOf(index).clientFile.project ?? index.boardRoots?.[0]?.project ?? '').toUpperCase();
+  if (!project) return null;
+  const category = ticket ? (canonicalOf(ticket).category ?? null) : (valueOf(argv, 'category') ?? null);
+  let decisionLog;
+  try {
+    decisionLog = projectField(index, project, category, 'decisionLog', null);
+  } catch {
+    return null; // an unmapped project is a routing question, not this warning's to raise
+  }
+  if (decisionLog) return null;
+  return `${project}${category ? `'s "${category}" category` : ''} declares no decisionLog in zagent.project.json — `
+    + 'this row exists only on the board; a worker resolving rulings from disk (client.mjs rulings.md) will never see it.';
+}
+
 async function knowledge(index, argv, files, command) {
   const input = parseKnowledgeInput(command, argv, files);
   const ticketKey = valueOf(argv, 'ticket');
@@ -1439,11 +1534,19 @@ async function knowledge(index, argv, files, command) {
   const direct = knowledgeRecord(index, project, command);
   const metadata = direct ?? metadataRecord(index);
   const expected = metadata ? { [metadata.relativePath]: expectedRevision(metadata) } : {};
-  return runOperation(index, command, argv, expected, async fresh => {
+  const result = await runOperation(index, command, argv, expected, async fresh => {
     const row = appendKnowledgeRow(fresh, command, input, ticketKey, argv);
     if (row.newFile) return { changes: [{ path: row.path, bytes: row.bytes }], result: row.result };
     return { changes: [{ path: row.record.relativePath, bytes: patchRecord(row.record, row.updates) }], result: row.result };
   });
+  if (command === 'decide' && result.exitCode === 0) {
+    const warning = decisionLogMissingWarning(index, argv, ticketKey);
+    if (warning) {
+      process.stderr.write(`zagent: decide — ${warning}\n`);
+      result.payload = { ...(result.payload && typeof result.payload === 'object' ? result.payload : {}), warning };
+    }
+  }
+  return result;
 }
 
 function findKnowledgeRow(index, databaseKey, rowRef) {

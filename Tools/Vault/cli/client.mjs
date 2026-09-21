@@ -17,12 +17,72 @@ import { randomUUID } from 'node:crypto';
 
 import { inspectArguments } from './arguments.mjs';
 import { dispatchWrite } from './write.mjs';
+import { matchGoverningRulings, RULINGS_FILE_MIN_SCORE } from './legacy-pure/ticket.mjs';
 import { forbiddenAbandonFlags, gateVerdictFresh, guardNeedsFreshnessOverride } from './tick-checks.mjs';
 import { workingTreeChanges } from './working-tree.mjs';
 
 export const PROTOCOL_VERSION = 1;
-export const FILE_FLAGS = Object.freeze(['file', 'comment', 'worklog', 'body', 'goal', 'dod']);
 export const SCRATCH_ROOT = '.zagent';
+
+// ★ A flag's meaning depends on the COMMAND it appears on, not just its
+// name — `--goal` is a FILE PATH for `update` (replace the Goal section
+// from a file) and free PROSE for `sprint create`/`sprint gate` (the
+// sprint's own goal text; write.mjs's `sprint()` reads it straight off
+// argv, never through `files`). This used to be one global flag-name list
+// (`FILE_FLAGS`) checked against every command, plus a second list
+// (`WRITE_COMMANDS`) deciding whether a missing path falls back to literal
+// text — two mechanisms answering the one question "is this flag a file
+// HERE". A command missing from the second list inherited the first list's
+// strictness with no fallback at all, which is exactly what `sprint` did:
+// `zagent sprint create <NAME> --goal "some prose"` tried to open the prose
+// as a filename and crashed with `Cannot read --goal …: ENOENT` — a
+// regression of a trap this repo already found and fixed once, in the
+// retired PowerShell client (see MEMORY's `--goal` reference note).
+//
+// One table now answers both questions per command: which flags are
+// file-valued at all, and whether a missing path is a hard error
+// ('strict' — gates/guard/docs, where a typo must never silently weaken a
+// verdict or write the wrong page) or falls back to inline text ('lenient'
+// — every other write command, where a missing path commonly means the
+// caller passed a short comment or worklog directly). A command absent
+// from this table has no file-valued flags at all — `sprint`, `version`,
+// `link`, etc. — so `--goal` on `sprint` is never even looked at here, and
+// `write.mjs`'s own command reads whatever argv gave it.
+const PATH_VALUED_FLAGS_BY_COMMAND = Object.freeze({
+  comment: Object.freeze({ flags: Object.freeze(['file', 'comment']), mode: 'lenient' }),
+  finish: Object.freeze({ flags: Object.freeze(['comment', 'worklog']), mode: 'lenient' }),
+  create: Object.freeze({ flags: Object.freeze(['file', 'body']), mode: 'lenient' }),
+  update: Object.freeze({ flags: Object.freeze(['body', 'goal', 'dod']), mode: 'lenient' }),
+  ask: Object.freeze({ flags: Object.freeze(['file']), mode: 'lenient' }),
+  decide: Object.freeze({ flags: Object.freeze(['file']), mode: 'lenient' }),
+  shortfall: Object.freeze({ flags: Object.freeze(['file']), mode: 'lenient' }),
+  changelog: Object.freeze({ flags: Object.freeze(['file']), mode: 'lenient' }),
+  suggest: Object.freeze({ flags: Object.freeze(['file']), mode: 'lenient' }),
+  gates: Object.freeze({ flags: Object.freeze(['file']), mode: 'strict' }),
+  guard: Object.freeze({ flags: Object.freeze(['file']), mode: 'strict' }),
+  docs: Object.freeze({ flags: Object.freeze(['file']), mode: 'strict' }),
+});
+const NO_PATH_VALUED_FLAGS = Object.freeze({ flags: Object.freeze([]), mode: 'lenient' });
+
+/**
+ * The file-valued flags for one command, and whether a missing path is a
+ * hard error ('strict') or falls back to literal inline text ('lenient').
+ * Exported so a caller (or a test) can ask the same question `client.mjs`
+ * itself asks, without duplicating the table.
+ */
+export function pathValuedFlagsFor(command) {
+  return PATH_VALUED_FLAGS_BY_COMMAND[String(command ?? '').toLowerCase()] ?? NO_PATH_VALUED_FLAGS;
+}
+
+// Retained for callers that used to enumerate "every flag name ANY command
+// might read from a file" (the old, command-blind list). Nothing in this
+// module derives behaviour from it any more — `pathValuedFlagsFor` does —
+// but it stays as a deduplicated union so an external reader that still
+// imports it keeps a truthful (if less precise) answer rather than an
+// import error.
+export const FILE_FLAGS = Object.freeze([
+  ...new Set(Object.values(PATH_VALUED_FLAGS_BY_COMMAND).flatMap(entry => entry.flags)),
+]);
 
 function optionValue(args, name) {
   for (let index = 0; index < args.length; index += 1) {
@@ -118,12 +178,6 @@ async function readRecordedGateSelection(scratchRoot, commandArgs, files) {
   }
 }
 
-const WRITE_COMMANDS = new Set([
-  'next', 'claim', 'comment', 'move', 'finish', 'create', 'link', 'unlink',
-  'parent', 'update', 'estimate', 'flag', 'resolve', 'ask', 'decide',
-  'shortfall', 'changelog', 'suggest',
-]);
-
 // Agent mutations which carry the claim CAS token.  `comment` is deliberately
 // absent: it is the comment-only abandonment path after a human takeover.
 const ATTEMPT_COMMANDS = new Set(['finish', 'move', 'update', 'estimate', 'flag', 'resolve']);
@@ -210,16 +264,19 @@ export async function readInputFiles(commandArgs, options = {}) {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const files = {};
   const command = String(args[0] ?? '').toLowerCase();
-  for (const name of FILE_FLAGS) {
+  const { flags: pathFlags, mode } = pathValuedFlagsFor(command);
+  for (const name of pathFlags) {
     const value = flagValue(args, name);
     if (value === undefined) continue;
     try {
       files[name] = await readInput(value, cwd, name);
     } catch (error) {
       // The PowerShell client treats a missing path-valued mutation input as
-      // inline text (small comments and work logs are common).  Gates and
-      // guard remain strict because a typo there must never weaken a verdict.
-      if (WRITE_COMMANDS.has(command) && /ENOENT|file does not exist/i.test(error.message)) files[name] = value;
+      // inline text (small comments and work logs are common).  Gates,
+      // guard and docs remain strict because a typo there must never weaken
+      // a verdict or silently write the wrong page — see
+      // `PATH_VALUED_FLAGS_BY_COMMAND` above for which commands are which.
+      if (mode === 'lenient' && /ENOENT|file does not exist/i.test(error.message)) files[name] = value;
       else throw error;
     }
   }
@@ -310,6 +367,80 @@ async function applyScratchWrites(root, writes) {
   }
 }
 
+// ★ I3 now requires "every recorded RULING that governs the ticket's subject
+// matter" pasted into the worker prompt (tick.md:66-70) — but finding those
+// was entirely manual, and a loop worker has no shell and no network, so a
+// ruling it is never handed does not exist for it. ZM-23 shipped a trainer
+// row contradicting ZM-D-196 Ruling 3 (not ZM-D-203, a different entry — see
+// `legacy-pure/ticket.mjs`'s copy of this note for the verification) and
+// pinned the violation with a new test asserting it was correct; nothing
+// mechanical could have caught it.
+//
+// Pure rendering, separate from the `fs.readFile` below, so it can be
+// exercised directly against a fabricated payload/decision-log string
+// without a real claim or a real repo on disk.
+export function renderRulingsMarkdown(key, payload, decisionLogText) {
+  const decisionLog = typeof payload?.decisionLog === 'string' && payload.decisionLog.trim() ? payload.decisionLog.trim() : null;
+  const decisionIdPrefix = typeof payload?.decisionIdPrefix === 'string' && payload.decisionIdPrefix.trim() ? payload.decisionIdPrefix.trim() : null;
+  if (!decisionLog || !decisionIdPrefix) {
+    return `# Rulings for ${key}\n\n`
+      + 'This ticket\'s category declares no decision log (`decisionLog`/`decisionIdPrefix` unset in '
+      + 'zagent.project.json) — nothing was scanned. Written empty on purpose: a missing file and an '
+      + '"I checked and found nothing" file must not read the same to a worker that cannot tell them apart.\n';
+  }
+  if (decisionLogText === null || decisionLogText === undefined) {
+    return `# Rulings for ${key}\n\n`
+      + `Declared decision log \`${decisionLog}\` (prefix \`${decisionIdPrefix}\`) could not be read — nothing was scanned.\n`;
+  }
+  const goal = typeof payload?.goal === 'string' ? payload.goal : '';
+  const definitionOfDone = Array.isArray(payload?.definitionOfDone)
+    ? payload.definitionOfDone.map(item => (typeof item?.text === 'string' ? item.text : String(item ?? ''))).join('\n')
+    : '';
+  const subject = `${goal}\n${definitionOfDone}`;
+  const matches = matchGoverningRulings(decisionLogText, decisionIdPrefix, subject, { minScore: RULINGS_FILE_MIN_SCORE, limit: 25 });
+  const lines = [`# Rulings for ${key}`, '', `Decision log: \`${decisionLog}\` (prefix \`${decisionIdPrefix}\`).`, ''];
+  if (matches.length === 0) {
+    lines.push(
+      'No entry matched the Goal/Definition-of-Done terms scanned for. This is a candidate scan against '
+      + 'this ticket\'s Goal and Definition of Done, not proof nothing applies — grep the log yourself before '
+      + 'assuming it is clean.',
+    );
+  } else {
+    lines.push(
+      `${matches.length} candidate ruling(s), strongest match first. This is RECALL-tuned (a spurious `
+      + 'candidate costs a few seconds; a missed one ships a violation) — verify each before pasting it into '
+      + 'the worker prompt (I3):',
+      '',
+    );
+    for (const match of matches) {
+      lines.push(
+        `## ${match.id}`,
+        '',
+        `Matched ${match.identifierHits} identifier hit(s), ${match.nounHits} noun hit(s).`,
+        '',
+        `> ${match.snippet.replace(/\n/g, '\n> ')}`,
+        '',
+      );
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+async function writeRulingsFile(scratchRoot, repoRoot, key, payload) {
+  const decisionLog = typeof payload?.decisionLog === 'string' ? payload.decisionLog.trim() : '';
+  const decisionIdPrefix = typeof payload?.decisionIdPrefix === 'string' ? payload.decisionIdPrefix.trim() : '';
+  let decisionLogText = null;
+  if (decisionLog && decisionIdPrefix) {
+    try {
+      decisionLogText = await fs.readFile(path.resolve(repoRoot, decisionLog), 'utf8');
+    } catch {
+      decisionLogText = null;
+    }
+  }
+  const markdown = renderRulingsMarkdown(key, payload, decisionLogText);
+  await atomicWrite(path.join(scratchRoot, 'run', key, 'rulings.md'), Buffer.from(markdown));
+}
+
 async function writeCompatibilityScratch(root, command, result, options = {}) {
   const payload = result.payload;
   const key = payload?.key ?? payload?.ticket?.key;
@@ -350,6 +481,10 @@ async function writeCompatibilityScratch(root, command, result, options = {}) {
   }
   if (body !== undefined) await atomicWrite(path.join(run, 'body.md'), Buffer.from(body));
   if (typeof payload?.drift === 'string') await atomicWrite(path.join(run, 'drift.txt'), Buffer.from(payload.drift));
+  // `root` is always `<repoRoot>/.zagent` (SCRATCH_ROOT above) — derive the
+  // repo root from it rather than threading a second path through every
+  // caller of writeCompatibilityScratch.
+  await writeRulingsFile(root, path.dirname(root), safeKey, payload);
 }
 
 async function persistLast(root, result, json) {
@@ -454,6 +589,22 @@ async function dynamicDispatcher(context) {
             error: true,
             gateVerdictFresh: false,
             gateVerdictReason: verdict.reason,
+          },
+        };
+      }
+      // A genuine fresh PASS used to leave the payload silent about the fold
+      // ever having run: the branch above only ever ADDS `gateVerdictFresh`
+      // on the override path, so a caller reading a successful guard's
+      // payload had no positive evidence the freshness check happened at
+      // all — only the absence of a refusal, indistinguishable from a guard
+      // that never consulted `tick_gates.json` in the first place. Make the
+      // success path self-describing too.
+      if (read.exitCode === 0) {
+        return {
+          ...read,
+          payload: {
+            ...(read.payload && typeof read.payload === 'object' && !Array.isArray(read.payload) ? read.payload : {}),
+            gateVerdictFresh: true,
           },
         };
       }

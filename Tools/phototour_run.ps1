@@ -6,6 +6,12 @@
   pwsh -NoProfile -File Tools\phototour_run.ps1 -Game RenderTest -Tag baseline
   pwsh -NoProfile -File Tools\phototour_run.ps1 -Game Zenithmon  -Tag baseline -Compare baseline
 
+  PREREQUISITE (not in Tools/requirements-ci.txt -- this script never runs in CI;
+  see the PREFLIGHT block below): a `python` on PATH with Pillow installed
+  (`python -m pip install pillow`). Tools\phototour_crop.py does `from PIL import
+  Image, ImageDraw` with no guard, and this harness verifies both before the
+  capture run rather than after.
+
   -Config   defaults to Vulkan_vs2022_Release_Win64_True (any Vulkan_*_True works;
             the tour needs the editor viewport query, so a tools build).
   -Compare  another tag under the same game's phototour dir: writes side-by-side
@@ -69,6 +75,26 @@ $repo = Split-Path -Parent $PSScriptRoot
 $exeDir = Join-Path $repo "Games\$Game\Build\output\win64\$($Config.ToLower())"
 $exe = Join-Path $exeDir "$($Game.ToLower()).exe"
 if (-not (Test-Path $exe)) { throw "no exe at $exe -- build $Game --config $Config first" }
+
+# PREFLIGHT: verify the CROP step's dependencies before the CAPTURE run, not
+# after. The tour itself never imports PIL -- only Tools\phototour_crop.py does,
+# unguarded, at its line 15 -- so a missing module used to surface only once the
+# whole run had already paid for itself. Measured on ZEN-19: the tour ran to
+# completion, captured all 11 shots, printed "DONE: 11 shots in ...s", and THEN
+# exited 1 with `ModuleNotFoundError: No module named 'PIL'` -- several minutes
+# of GPU work, no crops, no compare sheet, and a failure that lands AFTER the
+# success banner so it reads as a teardown fault. A missing interpreter can only
+# be checked (never guaranteed to survive a run up to -TimeoutSec long), which is
+# why that check stays post-tour, below -- but a missing MODULE is knowable
+# up front, and checking it here costs nothing.
+$preflightPython = Get-Command python -ErrorAction SilentlyContinue
+if (-not $preflightPython) {
+    throw "no 'python' on PATH -- Tools\phototour_crop.py needs it, and phototour_crop.py needs Pillow too. Install Python 3, then: python -m pip install pillow"
+}
+& python -c "import PIL" *> $null
+if ($LASTEXITCODE -ne 0) {
+    throw "python has no 'PIL' (Pillow) module -- Tools\phototour_crop.py needs it to crop captures and build the contact sheet. Install it with: python -m pip install pillow"
+}
 
 Import-Module (Join-Path $repo 'Build\zenith_buildsystem.psm1') -Force
 Repair-ZenithRuntimeDlls -ExeDir $exeDir | Out-Null
@@ -146,7 +172,9 @@ if ($heldRefs) {
     $heldRefs | ForEach-Object { Write-Host "    $($_.Line.Trim())" }
 }
 
-# Checked AFTER the tour so a missing interpreter never costs a capture run, but
+# The late safety net. The PREFLIGHT above already confirmed python+Pillow before
+# the capture run, but a run can be TimeoutSec long, so re-check here for an
+# interpreter that vanished (PATH changed, env torn down) in the meantime --
 # reported as its own failure instead of a terminating error out of `& python`.
 $python = Get-Command python -ErrorAction SilentlyContinue
 if (-not $python) {

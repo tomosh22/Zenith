@@ -84,6 +84,26 @@ function optional(verdict, name, fallback = null) {
 //   4 a gate line failed - 5 no gate list - 10 MEASURED, not a failure.
 const GATE_EXIT_RED = new Set([2, 3, 4]);
 const GATE_EXIT_MEASURED = 10;
+// A measure phase that reports 'complete' having run ZERO gate lines (all
+// deferred, none executed) exits 8 — documented, but the one code in the
+// ladder that carries no evidence at all: nothing was verified, green or
+// red. Chosen as 8, not 6, because 6 is already `zagent`'s own circuit-
+// breaker-open code and a tick reads both ladders.
+const GATE_EXIT_NO_GATE_LINES = 8;
+// The full documented ladder `Tools/tick_gates.ps1`'s own header promises to
+// leave in `exitCode`: 0, the three RED codes above, 5 ("could not read the
+// gate list"), 8 (above), and 10. "Documented" is not the same as "fresh
+// evidence" — 2/3/4 and 5 are documented FAILURES and still fresh, current
+// answers about the tree (a gate genuinely failed); 8 is documented but
+// VACUOUS (nothing ran, so there is nothing to be fresh or stale about); an
+// exit code that is not in this set at all is neither — it is what an
+// internal crash outside the ladder's own contract looks like on the wire.
+// Measured on ZEN-101: a phase crashed in a post-build assertion and the
+// top-level process left exitCode 1 — not a value this ladder describes —
+// while every per-step result read exitCode 0 and `state` was left
+// 'complete', so nothing about the SHAPE of the file said anything had gone
+// wrong.
+const GATE_EXIT_DOCUMENTED = new Set([0, 2, 3, 4, 5, GATE_EXIT_NO_GATE_LINES, GATE_EXIT_MEASURED]);
 
 // ─── 1. Definition-of-Done ─────────────────────────────────────────────
 
@@ -351,6 +371,19 @@ export function durableFindingsAnswer(worklog) {
  * carved out as not a failure; green, absent, or still-running all permit
  * the label. An unparsable file fails the OTHER way — "cannot tell" must
  * never read as permission any more than as refusal.
+ *
+ * A RED verdict is not automatically a refusal any more: `Tools/Vault`'s own
+ * Vitest suite has at least two intermittent failures on Windows, so a red
+ * exit can be a flake rather than something the ticket caused. The overall
+ * verdict deliberately stays RED even when every failing line recovered on
+ * an immediate re-run of the identical command on the identical tree
+ * (measured on ZEN-99) — `tick_gates.json`'s `flakes` array (produced by
+ * `Tools/tick_gates.ps1`, `[{line, firstExit, rerunExit}, ...]`) is the
+ * evidence that happened. `blocked-scope` is allowed on a RED verdict only
+ * when every entry in `flakes` recovered (`rerunExit === 0`) — never when
+ * `flakes` is absent (an older verdict — "no flake evidence", the prior
+ * behaviour), empty (nothing was ever shown to be a flake, so the red stands
+ * unexplained), or any entry is still red after its own re-run.
  */
 export async function blockedScopeAllowed({ repoRoot, key }) {
   const record = await readTickGatesVerdict(repoRoot, key);
@@ -376,9 +409,30 @@ export async function blockedScopeAllowed({ repoRoot, key }) {
     };
   }
   if (exitCode !== null && exitCode !== undefined && GATE_EXIT_RED.has(Number(exitCode))) {
+    const flakesRaw = optional(verdict, 'flakes', undefined);
+    if (!Array.isArray(flakesRaw)) {
+      return {
+        key, allowed: false, state, exitCode,
+        reason: `the last gate run exited ${exitCode} and tick_gates.json carries no 'flakes' array (an older verdict — no flake evidence) — a gate actually failed, so this is a FAILURE block, not a scope block`,
+      };
+    }
+    if (flakesRaw.length === 0) {
+      return {
+        key, allowed: false, state, exitCode,
+        reason: `the last gate run exited ${exitCode} and 'flakes' is empty — no line is recorded as having recovered on a re-run, so this is a FAILURE block, not a scope block`,
+      };
+    }
+    const survived = flakesRaw.filter(entry => Number(entry?.rerunExit) !== 0);
+    if (survived.length > 0) {
+      const lines = survived.map(entry => String(entry?.line ?? '(unnamed line)')).join(', ');
+      return {
+        key, allowed: false, state, exitCode,
+        reason: `the last gate run exited ${exitCode} and still red after its own re-run: ${lines} — a gate actually failed, so this is a FAILURE block, not a scope block`,
+      };
+    }
     return {
-      key, allowed: false, state, exitCode,
-      reason: `the last gate run exited ${exitCode} — a gate actually failed, so this is a FAILURE block, not a scope block`,
+      key, allowed: true, state, exitCode,
+      reason: `the last gate run exited ${exitCode}, but every line in 'flakes' recovered on an immediate re-run of the same tree (rerunExit 0) — a flake, not a failure this ticket caused`,
     };
   }
   const reason = exitCode === 0
@@ -462,6 +516,43 @@ export async function gateVerdictFresh({ repoRoot, key }) {
     return {
       key, fresh: false, state, exitCode, headSha, skipped,
       reason: `state is '${state}', not 'complete' — a killed run leaves the file mid-write, and that is not a verdict to trust`,
+    };
+  }
+  // `state === 'complete'` only says the file was written all the way
+  // through; it says nothing about whether the exit code it carries is one
+  // `Tools/tick_gates.ps1`'s own ladder actually describes, or — even if it
+  // is documented — whether that code carries any evidence at all. Three-way,
+  // not two:
+  //   documented-and-evidential (0/2/3/4/5/10): a real, current answer about
+  //     this tree, red or green — fresh (subject to the headSha check below).
+  //   documented-but-vacuous (8): the phase reported 'complete' having run NO
+  //     gate lines — nothing was verified, so there is nothing to be fresh
+  //     about. Measured on ZEN-99: 12 gate lines deferred, verdict still
+  //     green. Re-running the phase is the fix, not distrusting the file.
+  //   undocumented (anything else): what an internal crash outside the
+  //     ladder's own contract looks like on the wire (ZEN-101: top-level
+  //     exitCode 1 — not a documented code — with `state` left 'complete' and
+  //     every per-step result green). Distrust the file itself.
+  //
+  // The exitCode checks below are complementary to, not redundant with, the
+  // producer-side fix that has `tick_gates.ps1` write `state: 'error'` for
+  // that same ZEN-101 crash going forward: that write is caught by the
+  // `state !== 'complete'` branch above and never reaches either check here.
+  // These are what still catch an undocumented exit code on an OLDER
+  // recorded verdict (from before that producer-side fix existed) or any
+  // other path that manages to leave `state: 'complete'` with an exit code
+  // outside the ladder — every branch covers a disjoint verdict shape, none
+  // of them the same one twice.
+  if (exitCode !== null && exitCode !== undefined && Number(exitCode) === GATE_EXIT_NO_GATE_LINES) {
+    return {
+      key, fresh: false, state, exitCode, headSha, skipped,
+      reason: `exitCode ${GATE_EXIT_NO_GATE_LINES} — the phase reported 'complete' having run no gate lines at all ("no gate lines") — documented, but it is evidence of nothing: re-run the phase, this is not a corrupt or untrustworthy file`,
+    };
+  }
+  if (exitCode !== null && exitCode !== undefined && !GATE_EXIT_DOCUMENTED.has(Number(exitCode))) {
+    return {
+      key, fresh: false, state, exitCode, headSha, skipped,
+      reason: `exitCode ${exitCode} is not one of the codes Tools/tick_gates.ps1's own ladder documents (0, 2, 3, 4, 5, 8, 10) — state was left 'complete' but this is not a verdict the ladder describes; treat as absent`,
     };
   }
   let currentHead = null;

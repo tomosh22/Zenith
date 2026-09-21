@@ -30,8 +30,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'tick_gates.ps1') -Key 'TEST-0' -RepoRoot $repoRoot -NoRun
 
 $script:failures = 0
+$script:count = 0
 function Assert-That {
     param([string]$Name, [scriptblock]$Body)
+    $script:count++
     $ok = $false
     try { $ok = [bool](& $Body) } catch { Write-Host "       threw: $($_.Exception.Message)" -ForegroundColor Yellow }
     if ($ok) { Write-Host "  ok   $Name" -ForegroundColor Green }
@@ -271,7 +273,286 @@ Assert-That 'the sweep is scoped to game names ONLY -- it must not match a build
     ($wouldKill -notcontains 'cl') -and ($wouldKill -notcontains 'git')
 }
 
+Write-Host "`n=== Resolve-GateConfigLeaf / Get-GateBuildGameName ===" -ForegroundColor Cyan
+# The config leaf and game name Find-CompiledObjectPath needs to locate an
+# .obj under IntermediatePath, derived the same way zenith.ps1's own flags
+# pick a config (zenith_config.psd1: HeadlessConfigWin64 / DefaultConfigWin64)
+# and Sharpmake lowercases it (Build/zenith_buildsystem.psm1's
+# ConvertTo-ZenithOutputDir is the one other place that fact lives).
+
+Assert-That '--headless resolves to the Null headless config, lowercased' {
+    (Resolve-GateConfigLeaf 'pwsh -NoProfile -File Tools\zenith.ps1 build Zenithmon --headless') -eq 'null_vs2022_debug_win64_true'
+}
+
+Assert-That '--config <X> is used verbatim, only lowercased' {
+    (Resolve-GateConfigLeaf 'pwsh -NoProfile -File Tools\zenith.ps1 build Combat --config D3D12_vs2022_Debug_Win64_False') -eq 'd3d12_vs2022_debug_win64_false'
+}
+
+Assert-That 'neither flag falls back to DefaultConfigWin64, lowercased' {
+    (Resolve-GateConfigLeaf 'pwsh -NoProfile -File Tools\zenith.ps1 build Combat') -eq 'vulkan_vs2022_debug_win64_true'
+}
+
+Assert-That 'Get-GateBuildGameName reads the game out of a build line' {
+    (Get-GateBuildGameName 'pwsh -NoProfile -File Tools\zenith.ps1 build Zenithmon --headless') -eq 'Zenithmon'
+}
+
+Assert-That 'Get-GateBuildGameName returns $null for `build engine` -- it builds no game project' {
+    $null -eq (Get-GateBuildGameName 'pwsh -NoProfile -File Tools\zenith.ps1 build engine')
+}
+
+Write-Host "`n=== Test-IsZenithBuildLine ===" -ForegroundColor Cyan
+# The ONE regex both the measure/verify classifier and the flake retry read --
+# see the function's own comment on why a second copy would drift.
+
+Assert-That 'matches a real build gate line' {
+    Test-IsZenithBuildLine 'pwsh -NoProfile -File Tools\zenith.ps1 build Zenithmon --headless'
+}
+
+Assert-That 'does NOT match a unit-gate line' {
+    -not (Test-IsZenithBuildLine 'pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 -Exe Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe -Game Zenithmon -TimeoutSec 600')
+}
+
+Assert-That 'does NOT match Tooling''s npm test line -- this is the line the flake retry exists for' {
+    -not (Test-IsZenithBuildLine 'pwsh -NoProfile -Command "Set-Location Tools/Vault; npm test"')
+}
+
+Write-Host "`n=== Find-CompiledObjectPath ===" -ForegroundColor Cyan
+# The .obj-presence authority that replaced the by-name build-log grep.
+# Exercised against synthetic obj trees rather than a real build -- the
+# SHAPE under test is `Games/<Name>/Build/obj/win64/<config>/<leaf>.obj` for a
+# game file and a broad `Build/obj/*/win64/<config>/<leaf>.obj` search for a
+# shared-engine-tree one, both confirmed against the real checkout's actual
+# build/obj layout while writing this check.
+
+function New-ObjFixtureRoot {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_obj_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    return $dir
+}
+
+Assert-That 'finds a game-project .obj at Games/<Name>/Build/obj/win64/<config>/<leaf>.obj' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        $objDir = Join-Path $fixture 'Games/Zenithmon/Build/obj/win64/null_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $objDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $objDir 'ZM_Brand_New.obj') -Value 'fake' -Encoding utf8
+        $built = @([PSCustomObject]@{ Game = 'Zenithmon'; Leaf = 'null_vs2022_debug_win64_true' })
+        $hit = Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'Games/Zenithmon/Source/ZM_Brand_New.cpp' -BuiltConfigs $built
+        ($null -ne $hit) -and ($hit -like '*ZM_Brand_New.obj')
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'reports $null for a game-project file with no matching .obj -- the false-positive guard' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        $built = @([PSCustomObject]@{ Game = 'Zenithmon'; Leaf = 'null_vs2022_debug_win64_true' })
+        $null -eq (Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'Games/Zenithmon/Source/ZM_Never_Compiled.cpp' -BuiltConfigs $built)
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a game file falls back to every built leaf when no build line named ITS game' {
+    # Should not happen for a coherent gate list, but a Tooling-style diff that
+    # somehow carries a Games/ file alongside an `engine`-only build line must
+    # not report unconditionally uncompiled just because the map has no entry
+    # for that exact game.
+    $fixture = New-ObjFixtureRoot
+    try {
+        $objDir = Join-Path $fixture 'Games/Combat/Build/obj/win64/vulkan_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $objDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $objDir 'Combat_New.obj') -Value 'fake' -Encoding utf8
+        $built = @([PSCustomObject]@{ Game = $null; Leaf = 'vulkan_vs2022_debug_win64_true' })
+        $hit = Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'Games/Combat/Source/Combat_New.cpp' -BuiltConfigs $built
+        $null -ne $hit
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'finds a shared-engine-tree .obj by searching every lib under Build/obj' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        $objDir = Join-Path $fixture 'Build/obj/zenithflux/win64/null_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $objDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $objDir 'Flux_BrandNew.obj') -Value 'fake' -Encoding utf8
+        $built = @([PSCustomObject]@{ Game = $null; Leaf = 'null_vs2022_debug_win64_true' })
+        $hit = Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'Zenith/Flux/Flux_BrandNew.cpp' -BuiltConfigs $built
+        ($null -ne $hit) -and ($hit -like '*Flux_BrandNew.obj')
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a shared-engine-tree miss (wrong config leaf present) reports $null, not a false positive' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        $objDir = Join-Path $fixture 'Build/obj/zenithflux/win64/vulkan_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $objDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $objDir 'Flux_BrandNew.obj') -Value 'fake' -Encoding utf8
+        # This phase only built the Null config -- the Vulkan .obj above must
+        # not be treated as evidence for it.
+        $built = @([PSCustomObject]@{ Game = $null; Leaf = 'null_vs2022_debug_win64_true' })
+        $null -eq (Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'Zenith/Flux/Flux_BrandNew.cpp' -BuiltConfigs $built)
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Write-Host "`n=== Write-Result refuses a green verdict with zero steps ===" -ForegroundColor Cyan
+# Probes Write-Result directly against the REAL $resultPath this file's own
+# dot-source already computed for -Key 'TEST-0' (.zagent/ is gitignored
+# scratch, and TEST-0 is not a live ticket key). $script:Steps /
+# $script:PlannedLines / $script:DeferredLines / $script:Flakes are reset
+# before and after every probe so none of this leaks into another test.
+
+function Invoke-WriteResultProbe {
+    param([scriptblock]$Setup, [int]$Code, [string]$Verdict, $Extra)
+    $script:Steps.Clear(); $script:PlannedLines.Clear(); $script:DeferredLines.Clear(); $script:Flakes.Clear()
+    if ($Setup) { & $Setup }
+    New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+    Write-Result $Code $Verdict $Extra
+    $json = Get-Content -LiteralPath $resultPath -Raw -Encoding utf8 | ConvertFrom-Json
+    $script:Steps.Clear(); $script:PlannedLines.Clear(); $script:DeferredLines.Clear(); $script:Flakes.Clear()
+    return $json
+}
+
+Assert-That 'a $Code of 0 with ZERO steps is rewritten to exit 8, not reported green' {
+    # This is the Tooling-category bug itself: both $buildLines and $unitLines
+    # classify empty, nothing runs, and the code used to fall through to
+    # `Write-Result 0 'all gates green'` regardless.
+    $json = Invoke-WriteResultProbe -Code 0 -Verdict 'all gates green' -Extra $null
+    ($json.exitCode -eq 8) -and ($json.verdict -match 'no gate lines') -and ($json.state -eq 'complete')
+}
+
+Assert-That 'the zero-steps exit code is PINNED at 8, not 6 -- 6 is zagent''s circuit-breaker-open' {
+    # zagent's own exit ladder (root CLAUDE.md; branched on throughout
+    # .claude/commands/tick.md) is 0/1/3/4/5/6/7, and 6 there already means
+    # CIRCUIT BREAKER OPEN. A tick reads both ladders in the same step, so
+    # this script reusing 6 for "ran no gate lines" would make one number mean
+    # two unrelated things depending which command printed it -- exactly what
+    # "exit codes are the interface" is supposed to prevent. This assertion
+    # exists so a future renumber back to 6 (it IS free within this file's own
+    # ladder, which is how it got picked the first time) has to be deliberate.
+    $json = Invoke-WriteResultProbe -Code 0 -Verdict 'all gates green' -Extra $null
+    ($json.exitCode -eq 8) -and ($json.exitCode -ne 6)
+}
+
+Assert-That 'a $Code of 0 with at least one real step is left alone -- a genuine green stays green' {
+    $json = Invoke-WriteResultProbe -Setup {
+        $script:Steps.Add([PSCustomObject]@{ Line = 'pwsh -NoProfile -File Tools\zenith.ps1 build Combat --headless'; Label = 'build'; ExitCode = 0; Seconds = 1.2 })
+    } -Code 0 -Verdict 'all gates green' -Extra $null
+    ($json.exitCode -eq 0) -and ($json.verdict -eq 'all gates green')
+}
+
+Assert-That 'a NON-zero code with zero steps is untouched -- the guard is scoped to $Code -eq 0 only' {
+    # exit 5 ("could not read the gate list") is already an honest red with
+    # nothing having run; rewriting it would just be noise.
+    $json = Invoke-WriteResultProbe -Code 5 -Verdict 'could not read the gate list; nothing ran' -Extra $null
+    ($json.exitCode -eq 5) -and ($json.verdict -eq 'could not read the gate list; nothing ran')
+}
+
+Write-Host "`n=== state reflects a crashed run, not a fabricated 'complete' ===" -ForegroundColor Cyan
+
+Assert-That 'state defaults to complete when Extra says nothing about it' {
+    $json = Invoke-WriteResultProbe -Setup {
+        $script:Steps.Add([PSCustomObject]@{ Line = 'x'; Label = 'build'; ExitCode = 0; Seconds = 0.1 })
+    } -Code 0 -Verdict 'all gates green' -Extra $null
+    $json.state -eq 'complete'
+}
+
+Assert-That 'Extra.state overrides the default -- the internal-error catch block uses exactly this to report state: error' {
+    $json = Invoke-WriteResultProbe -Code 1 -Verdict 'internal error: boom' -Extra @{ state = 'error' }
+    $json.state -eq 'error'
+}
+
+Assert-That 'the catch block itself passes state = ''error'' to Write-Result, not the default' {
+    # A live throw is not exercised here (this script never runs the real
+    # try/catch -- see the -NoRun header comment); this pins the SOURCE wiring
+    # instead, which is what a future edit could silently drop.
+    $srcPath = Join-Path $PSScriptRoot 'tick_gates.ps1'
+    $src = Get-Content -LiteralPath $srcPath -Raw
+    $catchIdx = $src.IndexOf('catch {')
+    ($catchIdx -ge 0) -and ($src.Substring($catchIdx) -match "Write-Result 1 ""internal error[\s\S]{0,200}state\s*=\s*'error'")
+}
+
+Write-Host "`n=== PlannedLines is populated before any gate line runs in measure ===" -ForegroundColor Cyan
+
+Assert-That 'measure sets PlannedLines/DeferredLines BEFORE the build loop, not after it' {
+    # This script deliberately never runs a real build (see the -NoRun header
+    # comment), so an actual mid-build exception is not reproducible here.
+    # What IS checkable without running anything is the ORDERING the fix
+    # depends on: `$script:PlannedLines.Clear()` must appear, in the source,
+    # before the build loop's Invoke-GateLine call -- if a future edit moves
+    # the population back down (where it used to live, after the build and
+    # both file-provenance checks), this catches it without needing a live
+    # build to prove `skipped` went wrong.
+    $srcPath = Join-Path $PSScriptRoot 'tick_gates.ps1'
+    $src = Get-Content -LiteralPath $srcPath -Raw
+    $measureNeedle = 'if ($Phase -eq ''measure'' -or $Phase -eq ''all'')'
+    $plannedNeedle = '$script:PlannedLines.Clear()'
+    $buildLoopNeedle = 'Invoke-GateLine -Line $line -Label ''build'''
+    $measureStart = $src.IndexOf($measureNeedle)
+    $plannedIdx = $src.IndexOf($plannedNeedle, [Math]::Max($measureStart, 0))
+    $buildLoopIdx = $src.IndexOf($buildLoopNeedle, [Math]::Max($measureStart, 0))
+    ($measureStart -ge 0) -and ($plannedIdx -ge 0) -and ($buildLoopIdx -ge 0) -and ($plannedIdx -lt $buildLoopIdx)
+}
+
+Write-Host "`n=== Invoke-GateLineFlakeAware (producer half) ===" -ForegroundColor Cyan
+# Runs REAL, trivial child processes (a bare `exit 0` / `exit 1` wrapper) --
+# not an actual repo gate -- so this exercises the retry mechanism itself
+# without the "never run a gate from a test" hazard the exe-sweep note above
+# describes (a real gate can hold locks and run for minutes; these do
+# neither). $runDir must exist because Invoke-GateLine writes its wrapper
+# there, and -NoRun skipped creating it; cleaned up afterward either way.
+
+New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+
+Assert-That 'a line that goes red and then green on rerun is recorded as a flake, but the step stays red' {
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    try {
+        $counterFile = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_flake_" + [guid]::NewGuid().ToString('N') + '.marker')
+        $line = "if (Test-Path -LiteralPath '$counterFile') { exit 0 } else { Set-Content -LiteralPath '$counterFile' -Value '1'; exit 1 }"
+        $step = Invoke-GateLineFlakeAware -Line $line -Label 'test-flake'
+        # The VERDICT never moves: $step is still the FIRST run (red), even
+        # though $script:Flakes shows the rerun went green.
+        ($step.ExitCode -eq 1) -and
+        ($script:Flakes.Count -eq 1) -and
+        ($script:Flakes[0].firstExit -eq 1) -and
+        ($script:Flakes[0].rerunExit -eq 0) -and
+        ($script:Steps.Count -eq 2)   # first attempt + the one rerun, both recorded
+    } finally {
+        Remove-Item -LiteralPath $counterFile -Force -ErrorAction SilentlyContinue
+        $script:Steps.Clear(); $script:Flakes.Clear()
+    }
+}
+
+Assert-That 'a line that is red BOTH times is still just one flake entry, no infinite retry' {
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    $step = Invoke-GateLineFlakeAware -Line 'exit 1' -Label 'test-deterministic-red'
+    $ok = ($step.ExitCode -eq 1) -and ($script:Flakes.Count -eq 1) -and
+        ($script:Flakes[0].firstExit -eq 1) -and ($script:Flakes[0].rerunExit -eq 1) -and
+        ($script:Steps.Count -eq 2)
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    $ok
+}
+
+Assert-That 'a line that is green first time is never retried -- no flake entry, one step only' {
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    $step = Invoke-GateLineFlakeAware -Line 'exit 0' -Label 'test-green'
+    $ok = ($step.ExitCode -eq 0) -and ($script:Flakes.Count -eq 0) -and ($script:Steps.Count -eq 1)
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    $ok
+}
+
+Assert-That 'a `zenith.ps1 build` line is NEVER retried, even red -- a build failure is not this flake class' {
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    # The literal text just needs to MATCH Test-IsZenithBuildLine's regex; it
+    # does not need to be a real build invocation (and must not be one, or
+    # this test would take minutes and touch the real build tree).
+    $line = "# pretend: Tools\zenith.ps1 build FakeGame --headless`nexit 1"
+    $step = Invoke-GateLineFlakeAware -Line $line -Label 'test-build-red'
+    $ok = ($step.ExitCode -eq 1) -and ($script:Flakes.Count -eq 0) -and ($script:Steps.Count -eq 1)
+    $script:Steps.Clear(); $script:Flakes.Clear()
+    $ok
+}
+
+Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
+
 Write-Host ''
+Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) {
     Write-Host 'PASS' -ForegroundColor Green
     exit 0

@@ -569,17 +569,11 @@ If `zagent` is not on PATH, `Tools/zagent/README.md` has the one-time
 setup; you can always call `pwsh -NoProfile -File Tools\zagent\zagent.ps1`
 directly.
 
-**Every request names a protocol version, and the board answers with
-its own.** A client speaking a version the board does not understand is
-refused BEFORE dispatch — a clear, non-mutating refusal naming both
-versions, since a claim parsed under a stale grammar could claim a
-different ticket than the caller typed. An older board is detected the
-same way: it answers without `protocolVersion`, the client says so and
-proceeds. `zagent contract --json` prints the board's command contract
-as data — the golden copy of which lives HERE, in
-`Tools/zagent/contract.json`, asserted against by both sides' tests so
-the path-valued flags and docs-tree commands cannot drift without
-failing a run on each side.
+**There is no protocol handshake left to describe.** The single local
+backend has nothing to negotiate a version with, and `zagent contract`
+— which used to print a remote board's command contract as data — was
+removed along with it; `Tools/Vault/spec/command-matrix.md` is the
+offline specification of record now.
 
 The client has its own tests — a plain assert script, matching
 `Tools/Test_T0Harness_*`, because the only PowerShell this repo requires
@@ -608,27 +602,23 @@ Commands you would actually use from here:
 | Command | What it does |
 |---|---|
 | `queue` | what is claimable in To Do — the loop's queue (the repo declares its own project) |
-| `auth mint --name <machine>` | **on the board machine only** — a revocable token for one client |
 | `show ZEN-6` | one ticket: routing, category, gates, contract errors |
 | `create --project ZEN --title "…" --file body.md --category Zenithmon --complexity … --risk …` | file a ticket |
-| `doctor` | pre-flight, merged from BOTH sides: the board answers for DB/account/lanes/categories, this machine for branch, cleanliness and gate executables |
+| `doctor` | pre-flight — scanner/config diagnostics, board roots and ticket count, all local now: exit 0, `ok: true`, empty `diagnostics` |
 | `owns ZEN-6` | is the loop still holding it |
 | `gates ZEN-6` | the gate list this DIFF needs — the ticket's own plus every category whose `paths` it touched |
 | `guard ZEN-6` | protected paths, **and** that the recorded gate selection still describes the diff |
-| `docs ls [<path>]` | the Notion page tree, one full path per line |
-| `docs read <path>` | a page body as Markdown, on stdout |
-| `docs write <path> --file f.md` | write ONE page — **refuses a mirrored page** |
+| `docs ls [<path>]` | local Markdown files under the vault root, one repo-relative path per line |
+| `docs read <path>` | that exact file's body as Markdown, on stdout |
 | `docs search "<text>"` | titles + bodies, with a snippet |
 | `rows decisions\|questions\|shortfalls\|changelog\|suggestions` | read the knowledge databases |
 | `suggestions [--all]` / `rows <db> resolve <ID> <STATUS> --reason "…"` | triage one row. `--reason` is REQUIRED, like `blocks` and for the same cause — nothing can recompute whether the friction is gone. Only questions, shortfalls and suggestions have a `Status`; decisions and changelog are append-only |
-| `docs status --project ZEN` | what a living-doc sync would change; writes nothing |
-| `docs sync --project ZEN` | mirror `Games/*/Docs` into the Notion page tree |
+| `docs status` | local Markdown document count plus scanner diagnostics |
 | `link <KEY> blocks\|relates\|duplicates\|causes <KEY> --reason "…"` | one directed link; `blocks` is the one the claim query reads, and the only LINK that REQUIRES `--reason` (a row resolve requires one too) |
 | `blocked --project ZM` | everything waiting, and on what |
 | `links <KEY>` / `epic <KEY>` / `parent <KEY> <PARENT>` | the dependency graph and the hierarchy |
 | `sprint list\|create\|start\|complete\|add\|remove\|gate` | one ACTIVE sprint per project (a DB constraint). `gate` designates the sprint's milestone-acceptance ticket — an ordinary member of the sprint, never an EPIC. Completing a milestone sprint is REFUSED while that gate is unmet, and `--force` does not reach the check; `--force` with unfinished work and NO designated gate is also a refusal, so the old silent carry-over is honest now or not at all |
 | `version list\|create\|release\|set` | milestones — what a BUILD contains |
-| `contract` | the wire contract as data: the protocol version, which flags are path-valued, which commands ship the docs tree |
 | `check ZEN-6` | would a claim take it? **exit 4 if not** — writes nothing, claims nothing |
 | `update <KEY> --points --severity --repro --environment --due` | field writes, with a history trail |
 | `update <KEY> --body\|--goal\|--dod <file>` | edit the spec, keeping any appended work log. `--goal`/`--dod` REPLACE that section in the existing body and refuse ("Body has no `## Goal` section") when the ticket has no such section yet — e.g. a pre-check-era ticket filed with no structure at all (ZEN-10). Use `--body` with the full replacement text (both sections) to give a structureless ticket its first `## Goal`/`## Definition of Done` |
@@ -638,59 +628,25 @@ Commands you would actually use from here:
 | `report epic\|velocity --project ZM` | per-epic progress; velocity over COMPLETED sprints only |
 | `board status --project ZM` | does `Roadmap.md` still describe the board? **exit 1 on drift** |
 
-**Reading a doc from a Zenith session no longer needs a browser.** A
-`<path>` is slash-separated page TITLES resolved under
-`Agent/Documentation`, so `zagent docs read Zenithmon/Status` is the
-whole command — no page ids, no `--project`, no `--org`. `docs ls`
-prints exactly what `docs read` accepts, and a mistyped name comes back
-with the siblings listed rather than a bare failure. `--recursive`
-concatenates a document the sync split into parts
-(`zagent docs read Zenithmon/DecisionLog --recursive --out DecisionLog.md`).
+**Reading a doc from a Zenith session no longer needs a browser.** `docs
+ls` prints every local Markdown file's own repo-relative path (e.g.
+`Games/Zenithmon/Docs/AgentBriefing.md`); `docs read <path>` and `docs
+search "<text>"` take that exact path back. There is no remote mirror,
+no page ids, and none of the old Notion-only flags — local docs reads
+refuse every flag except `--json`.
 
-In **Git Bash**, spell the project root `//Agent/Scratch/…`, not
-`/Agent/Scratch/…` — MSYS rewrites a single leading slash into
-`C:/Program Files/Git/…` before the CLI is started. PowerShell and cmd
-take either.
-
-**`Games/*/Docs` stays authoritative, and that is now MECHANICAL.** A
-`docs write` aimed at a mirrored page is REFUSED, naming the source file
-to edit:
-
-```
-mirrored from Games/Zenithmon/Docs/Status.md — edit that file and run
-`zagent docs sync`. --force writes anyway, and the next sync will then
-report this page as a conflict and skip it.
-```
-
-That is not politeness. A hand write moves the page's fingerprint away
-from what the last sync recorded, so every later sync reports it as a
-human edit and skips it — the page stops tracking its file silently and
-forever. Targeted writes are for pages the mirror does not own.
+**`Games/*/Docs` is the only copy, and always was authoritative — there
+is nothing left to mirror it into.** `docs write` and `docs sync` are
+`removed-transport` (`Tools/Vault/spec/command-matrix.md`): both refuse
+unconditionally, `"<command> is unavailable in the read-only local
+vault; remote sync and writes are not implemented."` Edit the Markdown
+file directly — `Tools/doc_lint.ps1` still lints it off disk, `zagent
+decide` still appends to `Games/Zenithmon/Docs/DecisionLog.md`, and
+`Status.md` is still the authority for the pinned ZM baseline.
 
 None of this reaches a **loop worker**, which still has no shell and no
 network and still reads `Docs/AgentBriefing.md` off disk with the Read
 tool. This is for your session and for the tick.
-
-**The living docs are MIRRORED into Notion, one way.** `zagent docs
-sync` renders `Games/Zenithmon/Docs` and `Games/DevilsPlayground/Docs`
-into a page tree — one section per game, a page per file, and an index
-page with a child per part for anything past the per-page budget
-(`DecisionLog.md` is 932 KB). **These files stay authoritative.** Nothing
-writes back: `Tools/doc_lint.ps1` still lints them off disk,
-`zagent decide` still appends to `Games/Zenithmon/Docs/DecisionLog.md`,
-`Status.md` is still the authority for the pinned ZM baseline, and a
-loop worker — which has no shell and no network — still reads its
-binding briefing with the Read tool. Edit the Markdown; re-run the sync.
-
-A Notion page a human has edited is reported as a conflict and SKIPPED,
-never replaced, so a comment added in the browser survives the next
-sync (`--force` if you actually want to discard it).
-
-Every page write is verified by re-reading the persisted CRDT
-snapshot, and a re-write is two-phase — append, confirm the append
-persisted, then drop the superseded blocks — so a write that fails to
-land leaves the page on its previous revision rather than blank, and
-says so with `verified: false`.
 
 **Filing a ticket from Zenith work.** The description IS the spec, and
 the loop refuses anything it cannot route. Three sections:
@@ -893,15 +849,11 @@ To run a ticket immediately rather than waiting for the queue, use
 
 **Exit codes are the interface** — branch on them, not on the text:
 `0` ok · `3` nothing to claim · `4` contract invalid · `5` ownership
-lost / repo busy · `6` circuit breaker open · `1` error · **`7` could not
-REACH the board**. Note that `5` is what you get when this repo already
-has a ticket in flight: one at a time, per repo, by design.
-
-`7` is the client's own and is distinct from `1` deliberately: "the board
-said no" and "I never reached the board" want opposite responses from an
-unattended loop, and collapsing them is how a network blip gets written
-into a ticket as a contract failure. On a `7`, change no status and
-comment nothing.
+lost / repo busy · `6` circuit breaker open · `1` error. Note that `5` is
+what you get when this repo already has a ticket in flight: one at a
+time, per repo, by design. There is no longer a distinct "could not
+reach the board" code — there is no network hop left to fail that way,
+and a local read/write problem is just `1`.
 
 **Setting a machine up** (once): put `Tools\zagent` on `PATH`. That is the
 whole setup — no token, no URL, nothing to mint, because the board is this

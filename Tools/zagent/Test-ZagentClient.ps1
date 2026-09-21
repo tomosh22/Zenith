@@ -220,6 +220,49 @@ o\such\drivenywhere'
     } catch { $false }
 }
 
+# ─── ROUTING FIXES (zagent.project.json + cli/legacy-pure/routing.mjs) ──────
+#
+# The mechanism itself is proven in Tools/Vault/test/category-routing.test.mjs
+# against the real selector; these three are cheap config-shape sanity checks
+# that belong beside the other zagent.project.json assertions above.
+Write-Host "`n=== category-routing config sanity ===" -ForegroundColor Cyan
+
+Assert-That 'Tooling declares suppressLanguageConventions: true' {
+    $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $projectRepo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $flag = $file.categories.Tooling.PSObject.Properties['suppressLanguageConventions']
+    $null -ne $flag -and $flag.Value -eq $true
+}
+
+Assert-That 'the root conventions/languageConventions split covers both halves of the pre-split string' {
+    # "Root CLAUDE.md is binding." and "Never run Sharpmake in a worktree."
+    # are universal and must stay in `conventions`, never move to
+    # `languageConventions` -- that is the whole point of the split.
+    $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $projectRepo 'zagent.project.json') -Raw | ConvertFrom-Json
+    ($file.conventions -match 'Root CLAUDE\.md is binding') -and
+        ($file.conventions -match 'Never run Sharpmake in a worktree') -and
+        ($file.conventions -notmatch 'std::') -and
+        ($file.languageConventions -match 'std::') -and
+        ($file.languageConventions -notmatch 'Sharpmake in a worktree')
+}
+
+Assert-That 'Engine declares a decisionLog + decisionIdPrefix, and the log file exists' {
+    $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $projectRepo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $engine = $file.categories.Engine
+    ($engine.decisionIdPrefix -eq 'ZEN-D-') -and
+        ($engine.decisionLog) -and
+        (Test-Path (Join-Path $projectRepo $engine.decisionLog))
+}
+
+Assert-That 'Engine paths include Build/** as well as Zenith/**' {
+    $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $projectRepo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $paths = @($file.categories.Engine.paths)
+    ($paths -contains 'Zenith/**') -and ($paths -contains 'Build/**')
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

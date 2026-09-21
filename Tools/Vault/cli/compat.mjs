@@ -144,6 +144,56 @@ function projectFileOf(index) {
   return value;
 }
 
+// ★★ THE THIRD reviewDecision OR TERM NEEDS `decisionLogText` TO EVER FIRE.
+// `legacy-pure/ticket.mjs`'s reviewDecision() takes an optional
+// decisionLogText/decisionIdPrefix pair and, when given them, matches the
+// ticket's Goal/DoD against the category's decision log via
+// matchGoverningRulings — the mechanism that would have caught ZM-23
+// shipping a trainer row against ZM-D-203 Ruling 3 at any risk, not only
+// the one where MEDIUM happened to sit in reviewOn. `reviewOf` below is the
+// only production call site; until it resolves and passes these two values
+// the term always evaluates to no candidates, same as before it existed.
+//
+// `Games/Zenithmon/Docs/DecisionLog.md` is 932 KB, and `reviewOf` runs once
+// per ticket shown/evaluated — including from list/queue paths that walk
+// every ticket — so a naive `readFileSync` per call would reread that file
+// on every row. Cache by resolved absolute path, keyed on an mtime+size
+// stamp exactly like `projectFileOf` above does for `zagent.project.json`:
+// a cheap `statSync` gates a full re-read to only when the file actually
+// changed on disk, which for a decision log inside one command's lifetime
+// is never.
+const decisionLogCache = new Map();
+
+function decisionLogTextOf(index, decisionLog) {
+  const relPath = typeof decisionLog === 'string' ? decisionLog.trim() : '';
+  if (!relPath) return undefined;
+  const root = index?.root ?? index?.vaultRoot;
+  if (!root || typeof root !== 'string') return undefined;
+  const file = path.resolve(root, relPath);
+  let stamp;
+  try {
+    const stat = statSync(file);
+    stamp = `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    // Declared but missing on disk (or an unreadable fixture root) — must
+    // not crash reviewOf; reviewDecision treats an absent text the same as
+    // an uncategorized ticket, i.e. the third term contributes nothing.
+    decisionLogCache.delete(file);
+    return undefined;
+  }
+  const cached = decisionLogCache.get(file);
+  if (cached && cached.stamp === stamp) return cached.text;
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    decisionLogCache.delete(file);
+    return undefined;
+  }
+  decisionLogCache.set(file, { stamp, text });
+  return text;
+}
+
 /**
  * Read a source-preserving metadata table without making metadata.md part of
  * the ticket model.  The index exposes the table map directly in current
@@ -637,13 +687,25 @@ export function guardrailsOf(index, ticket) {
 
 export function reviewOf(index, ticket, projectKey, category) {
   const rules = gatesOf(index, ticket, projectKey, category);
-  const { project, policy } = projectPolicy(index, projectKey, category);
+  const resolved = projectPolicy(index, projectKey, category);
+  const { project, policy } = resolved;
   const reviewOn = array(rules.reviewOn ?? project.reviewOn ?? policy.clientFile.reviewOn);
+  const parsed = legacyParseTicket(bodyOf(ticket));
+  // Same fallback chain showPayload uses for the payload's own
+  // decisionLog/decisionIdPrefix fields below: gatesOf's success path
+  // already threads these through legacyResolveRules, and the
+  // category/project fallback covers its catch-branch (hand-authored
+  // fixtures with no resolved routing).
+  const decisionLog = rules.decisionLog ?? resolved.category.decisionLog ?? project.decisionLog;
+  const decisionIdPrefix = rules.decisionIdPrefix ?? resolved.category.decisionIdPrefix ?? project.decisionIdPrefix;
   try {
     return clone(legacyReviewDecision({
       reviewOn,
       risk: canonicalOf(ticket).risk,
-      definitionOfDone: legacyParseTicket(bodyOf(ticket)).definitionOfDone,
+      definitionOfDone: parsed.definitionOfDone,
+      goal: parsed.goal,
+      decisionLogText: decisionLogTextOf(index, decisionLog),
+      decisionIdPrefix,
     }));
   } catch {
     const risk = canonicalOf(ticket).risk;

@@ -13,6 +13,15 @@ function resolveRouting(config, complexity, risk) {
   const escalated = MODEL_LADDER[Math.min(index + steps, MODEL_LADDER.length - 1)];
   return { model: escalated, effort: config.routing.effortByComplexity[complexity] };
 }
+// `project.conventions` is UNIVERSAL -- true of every category regardless of
+// language ("Root CLAUDE.md is binding", "Never run Sharpmake in a
+// worktree") -- and is ALWAYS emitted. `project.languageConventions` is the
+// C++-specific half (std:: / Zenith.h / tabs / Zenith_Assert). A category
+// with `suppressLanguageConventions: true` (e.g. Tooling, which is Node/
+// PowerShell, not C++) drops ONLY the language clause; the universal one and
+// its own `conventions` still compose in. Every other category leaves the
+// flag unset (default false) and gets universal + language + its own,
+// unchanged from before the split.
 function resolveRules(input) {
   const project = projectConfig(input.config, input.projectKey);
   const category = resolveCategory(project, input.projectKey, input.category);
@@ -26,7 +35,11 @@ function resolveRules(input) {
     branchPrefix: category?.branchPrefix ?? project.branchPrefix,
     gates,
     gatesSource,
-    conventions: concatConventions(project.conventions, category?.conventions),
+    conventions: concatConventions(
+      project.conventions,
+      category?.suppressLanguageConventions ? null : project.languageConventions,
+      category?.conventions
+    ),
     cleanup: category?.cleanup ?? project.cleanup,
     reviewOn: category?.reviewOn ?? project.reviewOn,
     workerTools: category?.workerTools ?? project.workerTools,
@@ -55,8 +68,8 @@ function effectiveGates(input) {
   }
   return { gates, base: input.baseGates, unioned };
 }
-function concatConventions(projectText, categoryText) {
-  return [projectText, categoryText].filter((s) => s && s.trim().length > 0).join("\n\n");
+function concatConventions(...parts) {
+  return parts.filter((s) => s && s.trim().length > 0).join("\n\n");
 }
 function categoryContractError(config, projectKey, category) {
   const project = projectConfig(config, projectKey);
