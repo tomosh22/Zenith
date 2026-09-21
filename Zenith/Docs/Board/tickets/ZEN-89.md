@@ -6,8 +6,8 @@ title: "build_prompt.ps1 does not emit the blast-radius survey clause the tick p
 category: "Engine"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "MEDIUM"
@@ -16,12 +16,13 @@ position: 89
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T22:08:43.581Z"
+updatedAt: "2026-09-21T12:27:13.809Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "ffd8e256-0dea-47f2-b3f9-8738be519937"
 ---
 ## Goal
 
