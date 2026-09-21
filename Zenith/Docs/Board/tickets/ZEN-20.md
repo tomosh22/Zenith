@@ -5,8 +5,8 @@ title: Remove bSubmitRenderWork from SubmitRenderWork
 category: Engine
 parent: "ZEN-25"
 sprint: null
-status: To Do
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: MEDIUM
 complexity: SIMPLE
 risk: "MEDIUM"
@@ -42,7 +42,8 @@ source:
   resolved_at: null
   story_points: null
   reproducibility: null
-updatedAt: "2026-09-19T17:38:32.115Z"
+updatedAt: "2026-09-21T00:35:34.527Z"
+claimAttempt: "489b8a89-21e7-4ba0-926b-72ba3f8bc782"
 ---
 ## Goal
 `Zenith_Core.cpp`: `UpdateEditorAndTuning(bool& bSubmitRenderWork, bool& bShouldUpdateGameLogic)` sets `bSubmitRenderWork = g_xEngine.Editor().Update()` under `ZENITH_TOOLS` and `SubmitRenderWork(bool bSubmitRenderWork)` returns early when it is false, after `UploadFrameConstants`. The flag is only ever false when the editor's update reports it does not want a render this frame (the deferred scene operations path). The question the ticket asks: can this boolean be removed and render work always submitted?
