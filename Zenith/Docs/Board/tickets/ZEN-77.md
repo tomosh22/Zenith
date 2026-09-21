@@ -3,7 +3,7 @@ id: "898f20e5-7a58-482c-a6c5-07d2d9aab4fd"
 key: "ZEN-77"
 type: "TASK"
 title: "Warn at file time when a Definition of Done's identifiers have hits outside the declared file list"
-category: "Engine"
+category: "Tooling"
 parent: "ZEN-28"
 sprint: null
 status: "In Progress"
@@ -16,7 +16,7 @@ position: 77
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-21T07:25:23.564Z"
+updatedAt: "2026-09-21T07:27:49.195Z"
 flagged: false
 severity: null
 reproducibility: null
