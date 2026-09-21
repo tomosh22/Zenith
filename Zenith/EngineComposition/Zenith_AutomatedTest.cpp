@@ -33,6 +33,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <cctype>
 #include <chrono>
 
 // ============================================================================
@@ -517,6 +518,121 @@ static const Zenith_AutomatedTestNode* FindNodeByName(const char* szName)
 	return nullptr;
 }
 
+// Cheap "close enough to suggest" test for an unmatched --automated-test
+// name: true when either string contains the other, compared
+// case-insensitively. Deliberately not edit distance -- this is exactly
+// enough to catch the miss that motivated this function (a name missing the
+// registrar's "Test_" prefix, e.g. "MaterialEditorLivePreview" vs the real
+// "Test_MaterialEditorLivePreview"), and the registry is never a hot path.
+// Pure and registry-free so it is unit-tested directly.
+static bool IsCloseNameMatch(const char* szRequested, const char* szCandidate)
+{
+	if (szRequested == nullptr || szCandidate == nullptr) return false;
+
+	auto ContainsCaseInsensitive = [](const char* szHaystack, const char* szNeedle) -> bool
+	{
+		const size_t uHay    = std::strlen(szHaystack);
+		const size_t uNeedle = std::strlen(szNeedle);
+		if (uNeedle == 0 || uNeedle > uHay) return false;
+		for (size_t i = 0; i + uNeedle <= uHay; ++i)
+		{
+			size_t j = 0;
+			for (; j < uNeedle; ++j)
+			{
+				if (std::tolower(static_cast<unsigned char>(szHaystack[i + j]))
+					!= std::tolower(static_cast<unsigned char>(szNeedle[j])))
+				{
+					break;
+				}
+			}
+			if (j == uNeedle) return true;
+		}
+		return false;
+	};
+
+	return ContainsCaseInsensitive(szRequested, szCandidate)
+		|| ContainsCaseInsensitive(szCandidate, szRequested);
+}
+
+// Cap on how many near-match names get printed for an unmatched
+// --automated-test request. Small and fixed for the same reason every other
+// buffer in this file is: the harness sits in the engine module and must not
+// grow the message unboundedly against a large registry.
+constexpr int kMaxSuggestions = 5;
+
+// Walks the live registry collecting up to iMaxOut names IsCloseNameMatch
+// judges close to szRequestedName, in registry-walk order. Registry-coupled
+// by necessity (the whole point is "what IS actually registered"), unlike
+// IsCloseNameMatch itself.
+static int CollectCloseNameSuggestions(const char* szRequestedName, const char** apszOut, int iMaxOut)
+{
+	int iCount = 0;
+	for (const Zenith_AutomatedTestNode* p = s_pxTestListHead; p != nullptr && iCount < iMaxOut; p = p->m_pxNext)
+	{
+		if (p->m_pxTest == nullptr || p->m_pxTest->m_szName == nullptr) continue;
+		if (IsCloseNameMatch(szRequestedName, p->m_pxTest->m_szName))
+		{
+			apszOut[iCount++] = p->m_pxTest->m_szName;
+		}
+	}
+	return iCount;
+}
+
+// Fixed capacity for the printed diagnostic: the requested name plus up to
+// kMaxSuggestions candidate names comfortably fits.
+constexpr int kUnmatchedMessageBufferSize = 1024;
+
+// The full outcome of resolving a single --automated-test name: whether it
+// was found, and -- only when it was not -- the exit code and the exact
+// diagnostic text to print before exiting. Split out of
+// BuildHarnessExecutionList so the miss path is reachable from a unit: the
+// caller's ExitHarness() is [[noreturn]] and can never be invoked from a
+// test, but this struct is a plain returnable value that pins the decision
+// ExitHarness would otherwise hide. Deleting or neutering the "not found"
+// branch below is exactly the fail-open this exists to close.
+struct SingleTestResolution
+{
+	bool m_bFound    = false;
+	int  m_iExitCode = 0;                                    // meaningful only when !m_bFound
+	char m_acMessage[kUnmatchedMessageBufferSize] = {};       // meaningful only when !m_bFound
+};
+
+static SingleTestResolution BuildSingleTestResolution(const char* szRequestedName, const Zenith_AutomatedTestNode* pxResolved)
+{
+	SingleTestResolution xResult;
+	xResult.m_bFound = (pxResolved != nullptr);
+	if (xResult.m_bFound) return xResult;
+
+	xResult.m_iExitCode = 2;
+
+	int iOffset = std::snprintf(xResult.m_acMessage, kUnmatchedMessageBufferSize,
+		"ERROR: --automated-test '%s' not found in registry. "
+		"Run with --list-automated-tests for the full list.\n",
+		szRequestedName != nullptr ? szRequestedName : "(null)");
+	if (iOffset < 0) iOffset = 0;
+
+	// Suggestions are printed only when the registry actually has a close
+	// name -- nothing extra for a genuinely bogus name, so the message never
+	// gets worse than it was before this existed.
+	const char* apszSuggestions[kMaxSuggestions] = {};
+	const int iSuggestionCount = CollectCloseNameSuggestions(szRequestedName, apszSuggestions, kMaxSuggestions);
+	if (iSuggestionCount > 0 && iOffset < kUnmatchedMessageBufferSize)
+	{
+		int iWritten = std::snprintf(xResult.m_acMessage + iOffset, kUnmatchedMessageBufferSize - iOffset,
+			"       Did you mean: ");
+		if (iWritten > 0) iOffset += iWritten;
+
+		for (int i = 0; i < iSuggestionCount && iOffset < kUnmatchedMessageBufferSize; ++i)
+		{
+			iWritten = std::snprintf(xResult.m_acMessage + iOffset, kUnmatchedMessageBufferSize - iOffset,
+				"%s%s", apszSuggestions[i], (i + 1 < iSuggestionCount) ? ", " : "?\n");
+			if (iWritten > 0) iOffset += iWritten;
+		}
+	}
+
+	return xResult;
+}
+
 // Collects every registered node into the ordered execution list, in
 // registry-walk order — the same set and order --all-automated-tests has
 // always run (RegisterNode prepends, so within a TU this is reverse
@@ -720,12 +836,11 @@ static void BuildHarnessExecutionList(const HarnessArgScan& xScan, const BatchOr
 	}
 
 	const Zenith_AutomatedTestNode* pxNode = FindNodeByName(s_xRunner.m_szRequestedName);
-	if (pxNode == nullptr)
+	const SingleTestResolution xResolution = BuildSingleTestResolution(s_xRunner.m_szRequestedName, pxNode);
+	if (!xResolution.m_bFound)
 	{
-		std::printf("ERROR: --automated-test '%s' not found in registry. "
-			"Run with --list-automated-tests for the full list.\n",
-			s_xRunner.m_szRequestedName);
-		ExitHarness(2);
+		std::printf("%s", xResolution.m_acMessage);
+		ExitHarness(xResolution.m_iExitCode);
 	}
 	s_apxOrderedNodes[0] = pxNode;
 	s_iOrderedCount      = 1;

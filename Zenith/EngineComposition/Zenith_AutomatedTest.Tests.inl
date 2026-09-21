@@ -262,4 +262,126 @@ ZENITH_TEST(AutomatedTestOrder, FindNodeByNameMissesCleanly)
 	ZENITH_ASSERT_NULL(FindNodeByName(nullptr), "null name must not resolve");
 }
 
+// ============================================================================
+// IsCloseNameMatch (ZEN-93) -- pure, registry-free.
+// ============================================================================
+
+ZENITH_TEST(AutomatedTestSelection, IsCloseNameMatchCatchesTestPrefixMiss)
+{
+	// The exact miss ZEN-93 measured: a caller drops the registrar's "Test_"
+	// prefix (MaterialEditorLivePreview vs the real Test_MaterialEditorLivePreview).
+	ZENITH_ASSERT_TRUE(IsCloseNameMatch("MaterialEditorLivePreview", "Test_MaterialEditorLivePreview"),
+		"a candidate containing the requested name must match");
+	ZENITH_ASSERT_TRUE(IsCloseNameMatch("Test_MaterialEditorLivePreview", "MaterialEditorLivePreview"),
+		"the match must be symmetric");
+}
+
+ZENITH_TEST(AutomatedTestSelection, IsCloseNameMatchIsCaseInsensitive)
+{
+	ZENITH_ASSERT_TRUE(IsCloseNameMatch("materialeditorlivepreview", "Test_MaterialEditorLivePreview"),
+		"case must not affect the match");
+}
+
+ZENITH_TEST(AutomatedTestSelection, IsCloseNameMatchRejectsUnrelatedOrNullNames)
+{
+	ZENITH_ASSERT_FALSE(IsCloseNameMatch("Foo", "Bar"), "unrelated names must not match");
+	ZENITH_ASSERT_FALSE(IsCloseNameMatch(nullptr, "Bar"), "a null requested name must not match");
+	ZENITH_ASSERT_FALSE(IsCloseNameMatch("Foo", nullptr), "a null candidate must not match");
+	ZENITH_ASSERT_FALSE(IsCloseNameMatch(nullptr, nullptr), "two null names must not match");
+}
+
+// ============================================================================
+// CollectCloseNameSuggestions / BuildSingleTestResolution (ZEN-93)
+//
+// Both read the LIVE registry by design (the whole point is "what IS
+// actually registered"), so these tests splice one fixture node onto the
+// front of s_pxTestListHead and restore the saved head UNCONDITIONALLY
+// before asserting -- a failed assertion must never leave the registry
+// spliced for whichever test runs next.
+// ============================================================================
+
+ZENITH_TEST(AutomatedTestSelection, CollectCloseNameSuggestionsFindsRegisteredMatches)
+{
+	// ★ THE FIXTURE NAME MUST NOT BE A REAL REGISTERED TEST, and this one is
+	// deliberately a nonsense token no game registers. An earlier revision used
+	// "Test_MaterialEditorLivePreview" -- the real name from ZEN-93's measured
+	// failure -- which reads better but makes the exact-count assertion below
+	// depend on WHICH GAME's registry the unit happens to boot in: that test IS
+	// registered in DevilsPlayground, so the walk there finds the fixture AND
+	// the real node and the count is 2, not 1. It passes in Combat and
+	// Zenithmon only because neither registers it. The measured prefix-miss
+	// case is pinned by IsCloseNameMatchCatchesTestPrefixMiss above, which is
+	// pure and cannot collide with any registry at all.
+	Zenith_AutomatedTest xFixtureTest;
+	xFixtureTest.m_szName = "Test_Zen93SuggestionFixture";
+	Zenith_AutomatedTestNode xFixtureNode;
+	xFixtureNode.m_pxTest = &xFixtureTest;
+
+	Zenith_AutomatedTestNode* const pxSavedHead = s_pxTestListHead;
+	xFixtureNode.m_pxNext = pxSavedHead;
+	s_pxTestListHead = &xFixtureNode;
+
+	const char* apszOut[kMaxSuggestions] = {};
+	const int iCount = CollectCloseNameSuggestions("Zen93SuggestionFixture", apszOut, kMaxSuggestions);
+
+	s_pxTestListHead = pxSavedHead;
+
+	ZENITH_ASSERT_EQ(iCount, 1, "the spliced fixture node must be the only match in any game's registry");
+	ZENITH_ASSERT_STREQ(apszOut[0], "Test_Zen93SuggestionFixture", "suggested name");
+}
+
+ZENITH_TEST(AutomatedTestSelection, BuildSingleTestResolutionFoundIsExitZero)
+{
+	Zenith_AutomatedTest xFixtureTest;
+	xFixtureTest.m_szName = "Test_Whatever";
+	Zenith_AutomatedTestNode xFixtureNode;
+	xFixtureNode.m_pxTest = &xFixtureTest;
+
+	const SingleTestResolution xResolution = BuildSingleTestResolution("Test_Whatever", &xFixtureNode);
+	ZENITH_ASSERT_TRUE(xResolution.m_bFound, "a resolved node must report found");
+	ZENITH_ASSERT_EQ(xResolution.m_iExitCode, 0, "a found result must not carry the miss exit code");
+}
+
+ZENITH_TEST(AutomatedTestSelection, BuildSingleTestResolutionUnmatchedIsExitTwoWithMessage)
+{
+	// This is the fail-open ZEN-93 exists to close: deleting the exit-code
+	// assignment, or dropping the message construction, in
+	// BuildSingleTestResolution must turn this test red.
+	const SingleTestResolution xResolution = BuildSingleTestResolution("Zenith_NoSuchAutomatedTest_ZZZ", nullptr);
+	ZENITH_ASSERT_FALSE(xResolution.m_bFound, "an unresolved node must report not-found");
+	ZENITH_ASSERT_EQ(xResolution.m_iExitCode, 2, "an unmatched name must carry exit code 2");
+	ZENITH_ASSERT_TRUE(std::strstr(xResolution.m_acMessage, "Zenith_NoSuchAutomatedTest_ZZZ") != nullptr,
+		"the message must quote the name it was given");
+	ZENITH_ASSERT_TRUE(std::strstr(xResolution.m_acMessage, "not found in registry") != nullptr,
+		"the message must say the name was not found");
+	// No registered test plausibly contains, or is contained by, this bogus
+	// name, so no suggestion line should appear -- a genuinely bogus name
+	// must not read worse than it did before suggestions existed.
+	ZENITH_ASSERT_TRUE(std::strstr(xResolution.m_acMessage, "Did you mean") == nullptr,
+		"a genuinely bogus name must not print a suggestion line");
+}
+
+ZENITH_TEST(AutomatedTestSelection, BuildSingleTestResolutionSuggestsCloseRegisteredName)
+{
+	Zenith_AutomatedTest xFixtureTest;
+	xFixtureTest.m_szName = "Test_MaterialEditorLivePreview";
+	Zenith_AutomatedTestNode xFixtureNode;
+	xFixtureNode.m_pxTest = &xFixtureTest;
+
+	Zenith_AutomatedTestNode* const pxSavedHead = s_pxTestListHead;
+	xFixtureNode.m_pxNext = pxSavedHead;
+	s_pxTestListHead = &xFixtureNode;
+
+	const SingleTestResolution xResolution = BuildSingleTestResolution("MaterialEditorLivePreview", nullptr);
+
+	s_pxTestListHead = pxSavedHead;
+
+	ZENITH_ASSERT_FALSE(xResolution.m_bFound, "a near match is a suggestion, not a resolve");
+	ZENITH_ASSERT_EQ(xResolution.m_iExitCode, 2, "a near match still exits 2 -- it is a suggestion, not a resolve");
+	ZENITH_ASSERT_TRUE(std::strstr(xResolution.m_acMessage, "Did you mean") != nullptr,
+		"a close registered name must be suggested");
+	ZENITH_ASSERT_TRUE(std::strstr(xResolution.m_acMessage, "Test_MaterialEditorLivePreview") != nullptr,
+		"the suggestion must name the close registered test");
+}
+
 #endif // ZENITH_TESTING

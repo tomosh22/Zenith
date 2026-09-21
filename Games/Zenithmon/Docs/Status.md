@@ -18,10 +18,24 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-09-21):
-ZM boot `4571`; engine boot (Null Combat) `2718`; Null RenderTest `2821`; registry **73**.**
+ZM boot `4578`; engine boot (Null Combat) `2725`; Null RenderTest `2828`; registry **73**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **★ +7 EVERY GAME (2026-09-21, ZEN-93) — PINNING THE UNMATCHED-TEST-NAME REFUSAL.**
+> Zenithmon 4571 -> **4578**, Combat 2718 -> **2725**, RenderTest 2821 -> **2828**.
+> **ALL THREE OBSERVED**, each from its own `Null_` run — Combat from the gate's
+> own measure phase, Zenithmon and RenderTest from hand `--exit-after-unit-tests`
+> runs, because the Engine gate list carries a unit-gate line for Combat only.
+> The registry is unchanged at 73: these are `ZENITH_TEST` units, not
+> `ZENITH_AUTOMATED_TEST_REGISTER` entries.
+>
+> ★ The worker that wrote them reported "+8". The diff adds **7**
+> `ZENITH_TEST` lines, and all three observed runs moved by exactly 7 — it had
+> grouped three matcher tests under one bullet and miscounted its own work. This
+> is the whole reason the pin is taken from a measurement and a worker is told
+> never to quote one.
 
 > **★ +12 EVERY GAME (2026-09-21, ZEN-41) — THE NORMAL-DECODE SHADER LINT.**
 > Zenithmon 4559 -> **4571**, Combat 2706 -> **2718**, RenderTest 2809 -> **2821**.
@@ -66,6 +80,15 @@ ZM boot `4571`; engine boot (Null Combat) `2718`; Null RenderTest `2821`; regist
 > which is every ticket that moves all three rows at once — never runs the one
 > check written to notice. This tick ran it only because the diff happens to
 > touch `Games/Zenithmon/Docs/`.
+>
+> ★ **THAT LAST SENTENCE IS NO LONGER TRUE, AND IT WAS FIXED BECAUSE OF THIS
+> NOTE (ZEN-D-006).** The Engine gate list now carries `doc_lint.ps1 -Game
+> Zenithmon` and `-Game DevilsPlayground` of its own, so C7 reconciles this LIVE
+> PIN against `Tools/unit_baselines.json` on every engine ticket, whether or not
+> the diff reaches `Games/Zenithmon/**`. ZEN-93 confirmed it: an engine-only diff
+> under `Zenith/EngineComposition/**` resolved both `doc_lint` lines. The
+> paragraph above is kept for the reasoning, which still holds — a check that
+> only the affected category runs cannot see a cross-cutting pin.
 >
 > What changed: `Flux_PrimitivesImpl::ExecuteGBuffer` drained and `Clear()`d its
 > six debug instance queues only inside `if (bDebugPrimitivesEnabled)`, and its
