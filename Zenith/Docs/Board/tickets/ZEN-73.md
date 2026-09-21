@@ -6,8 +6,8 @@ title: "doc_lint check C9: reconcile AssetManifest roster counts and generator v
 category: "Engine"
 parent: "ZEN-28"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 73
 labels: ["docs"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:35:59.581Z"
+updatedAt: "2026-09-21T03:43:15.484Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "fc3cba1a-53ed-42e3-b70b-6ccf03a0c655"
 ---
 ## Goal
 Suggestions row 2026-08-25 (gates): *"doc_lint needs a check that reconciles AssetManifest.md's roster arithmetic and generator version stamps against the headers. C1 cannot be widened to cover them."* `Games/Zenithmon/Docs/AssetManifest.md` states per-family counts (152 species x 15 files, 34 humans, 30 buildings, 25 props) and the `uZM_*GEN_VERSION` stamps; every generator bump (ZM-D-219/221 bumped buildings 1 to 3, props 2 to 3, humans 3 to 6, creatures 3 to 4) has to be mirrored by hand and nothing reds when it is not.
