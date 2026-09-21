@@ -6,8 +6,8 @@ title: "Any --automated-test boot re-authors committed scenes on either backend,
 category: "Engine"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "MODERATE"
 risk: "MEDIUM"
@@ -16,12 +16,13 @@ position: 91
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T22:09:12.691Z"
+updatedAt: "2026-09-21T13:37:11.078Z"
 flagged: false
 severity: "S2_MAJOR"
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "b9cb0e8b-6689-443c-9d3d-a363e1cb1f3f"
 ---
 ## Goal
 
