@@ -155,6 +155,18 @@ $script:DeferredLines = New-Object System.Collections.Generic.List[string]
 # to rule out a flake costs minutes it is not worth spending).
 $script:Flakes = New-Object System.Collections.Generic.List[object]
 
+# The per-game registry count Get-AutomatedRegistryCount derives, below --
+# the field Write-Result emits into tick_gates.json as `registry`. An ordered
+# MAP, not a bare scalar, because a phase can measure more than one game's
+# unit gate (see the `deferred` field's own reasoning for why this is a map
+# keyed the same way). Populated only inside measure's registry-count loop
+# near the bottom of this file; left at its initial empty map on every other
+# exit path -- a `verify`-only run, and every one of measure's OWN early
+# exits (regen failure, build failure, the uncompiled-file checks, a real
+# unit failure) -- so the JSON key is present UNCONDITIONALLY rather than
+# vanishing on a run that never reached the loop.
+$script:RegistryCounts = [ordered]@{}
+
 # The automated-test registry count, derived EXACTLY as doc_lint.ps1 check C7
 # derives it -- the paren is load-bearing. A bare `grep -c
 # ZENITH_AUTOMATED_TEST_REGISTER` also counts the paren-less mentions in comments
@@ -164,8 +176,14 @@ $script:Flakes = New-Object System.Collections.Generic.List[object]
 # count comes from `zenith test`, which `measure` does not run. So a phase whose
 # whole job is "observe the numbers before you narrate them" was handing over one
 # of the two. This closes that.
-function Get-AutomatedRegistryCount([string]$Game) {
-    $testsDir = Join-Path $repoRoot "Games/$Game/Tests"
+function Get-AutomatedRegistryCount {
+    # -RepoRoot is a parameter, not the script-scoped variable -- same
+    # reasoning as Get-CreatedSourceFiles's own comment above: a helper only
+    # testable against the live checkout is a helper nobody tests. Defaults
+    # to $script:RepoRoot so the one in-script call site
+    # (`Get-AutomatedRegistryCount $g`) is unaffected.
+    param([string]$Game, [string]$RepoRoot = $script:RepoRoot)
+    $testsDir = Join-Path $RepoRoot "Games/$Game/Tests"
     if (-not (Test-Path -LiteralPath $testsDir)) { return $null }
     $n = 0
     Get-ChildItem -LiteralPath $testsDir -Filter '*.cpp' -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
@@ -366,6 +384,13 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
         # Evidence only -- see $script:Flakes' own header comment for the
         # contract and why the verdict above never depends on this array.
         flakes      = @($script:Flakes.ToArray())
+        # Per-game automated-test registry count (Get-AutomatedRegistryCount),
+        # keyed by game name. ★ Emitted UNCONDITIONALLY, even as an empty map
+        # -- same reasoning as `archivedPriorRun: false` beating an absent
+        # field: a reader cannot tell "no games measured" from "an older
+        # script that never wrote this" if the key simply vanishes on a run
+        # that never reached the registry-count loop.
+        registry    = $script:RegistryCounts
     }
     # Extra can override anything above, INCLUDING state -- the internal-error
     # catch block passes state = 'error' this way, because 'complete' on a
@@ -845,6 +870,7 @@ try {
         # narrate" has to hand over both.
         foreach ($g in $measuredGames) {
             $reg = Get-AutomatedRegistryCount $g
+            $script:RegistryCounts[$g] = $reg
             if ($null -ne $reg) {
                 Write-Line "[tick_gates] REGISTRY: $g has $reg ZENITH_AUTOMATED_TEST_REGISTER call site(s). Derived with doc_lint C7's own paren-anchored regex -- a bare grep also counts paren-less mentions in comments and over-reports." 'Yellow'
             }

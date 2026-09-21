@@ -316,6 +316,44 @@ Assert-That 'does NOT match Tooling''s npm test line -- this is the line the fla
     -not (Test-IsZenithBuildLine 'pwsh -NoProfile -Command "Set-Location Tools/Vault; npm test"')
 }
 
+Write-Host "`n=== the planned/deferred split (composed from the two classifying predicates) ===" -ForegroundColor Cyan
+# `$script:DeferredLines` itself is populated ONLY inside measure's phase body,
+# which sits behind `if ($NoRun) { return }` at the bottom of tick_gates.ps1
+# -- reaching it means actually running a phase (a real `zagent gates` call,
+# a real regen/build), which this harness deliberately never does (see the
+# -NoRun header comment). That is out of reach here without a real gate run.
+#
+# What IS reachable without running anything is the classification measure's
+# own code applies to decide planned vs. deferred: a gate line is PLANNED iff
+# it is a build line (Test-IsZenithBuildLine, already exercised above) or a
+# unit line (the literal regex 'run_unit_gate\.ps1'); everything else is what
+# would be deferred. This does NOT prove $script:DeferredLines is correctly
+# populated at runtime -- only that the two predicates it is built from
+# correctly separate a synthetic gate list. Recorded as a shortfall in this
+# ticket's report rather than silently skipped.
+
+Assert-That 'the literal unit-line regex the composition below assumes is still in the source' {
+    # Pins the literal string the next assertion re-derives, so a change to
+    # the real regex in tick_gates.ps1 (around the `$unitLines =` line) makes
+    # THIS fail rather than letting the composition drift from the source
+    # silently.
+    $srcPath = Join-Path $PSScriptRoot 'tick_gates.ps1'
+    $src = Get-Content -LiteralPath $srcPath -Raw
+    $src -match [regex]::Escape("'run_unit_gate\.ps1'")
+}
+
+Assert-That 'a build line and a unit line both classify as PLANNED; a third (Tooling''s npm test) line is neither -- the shape measure defers' {
+    $gateLines = @(
+        'pwsh -NoProfile -File Tools\zenith.ps1 build Zenithmon --headless',
+        'pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 -Exe x -Game Zenithmon',
+        'pwsh -NoProfile -Command "Set-Location Tools/Vault; npm test"'
+    )
+    $unitRegex = 'run_unit_gate\.ps1'
+    $planned = @($gateLines | Where-Object { (Test-IsZenithBuildLine $_) -or ($_ -match $unitRegex) })
+    $wouldDefer = @($gateLines | Where-Object { -not ((Test-IsZenithBuildLine $_) -or ($_ -match $unitRegex)) })
+    ($planned.Count -eq 2) -and ($wouldDefer.Count -eq 1) -and ($wouldDefer[0] -like '*npm test*')
+}
+
 Write-Host "`n=== Find-CompiledObjectPath ===" -ForegroundColor Cyan
 # The .obj-presence authority that replaced the by-name build-log grep.
 # Exercised against synthetic obj trees rather than a real build -- the
@@ -391,6 +429,75 @@ Assert-That 'a shared-engine-tree miss (wrong config leaf present) reports $null
     } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+Write-Host "`n=== Get-AutomatedRegistryCount ===" -ForegroundColor Cyan
+# The paren-anchored regex is load-bearing -- doc_lint.ps1 check C7's own
+# reasoning, mirrored here rather than re-derived: a bare
+# `ZENITH_AUTOMATED_TEST_REGISTER` (no trailing paren) also matches a
+# paren-less MENTION in a comment. Three real ones live in
+# Games/Zenithmon/Tests/ZM_AutoTests_TrainerSight.cpp today -- this fixture
+# reproduces that shape rather than depending on it staying there.
+# -RepoRoot is a parameter (added alongside the `registry` field this ticket
+# adds), the same reasoning Get-CreatedSourceFiles's own header comment gives:
+# a helper only testable against the live checkout is a helper nobody tests.
+
+function New-RegistryFixtureRoot {
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_registry_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    return $dir
+}
+
+Assert-That 'counts a real call site but NOT a paren-less mention in a comment' {
+    # Fails the moment the regex loses its trailing `\(` (e.g. reverting to a
+    # bare `ZENITH_AUTOMATED_TEST_REGISTER` grep) -- that would count BOTH
+    # lines below instead of only the one that is an actual call site.
+    $fixture = New-RegistryFixtureRoot
+    try {
+        $dir = Join-Path $fixture 'Games/Probe/Tests'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'Probe.cpp') -Value @(
+            '// ZENITH_AUTOMATED_TEST_REGISTER: this comment only MENTIONS the macro',
+            'ZENITH_AUTOMATED_TEST_REGISTER(g_xProbeTest);'
+        ) -Encoding utf8
+        (Get-AutomatedRegistryCount -Game 'Probe' -RepoRoot $fixture) -eq 1
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'sums call sites across every .cpp under the game''s Tests directory' {
+    $fixture = New-RegistryFixtureRoot
+    try {
+        $dir = Join-Path $fixture 'Games/Probe/Tests'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'A.cpp') -Value 'ZENITH_AUTOMATED_TEST_REGISTER(g_xA);' -Encoding utf8
+        Set-Content -LiteralPath (Join-Path $dir 'B.cpp') -Value @(
+            'ZENITH_AUTOMATED_TEST_REGISTER(g_xB1);',
+            'ZENITH_AUTOMATED_TEST_REGISTER(g_xB2);'
+        ) -Encoding utf8
+        (Get-AutomatedRegistryCount -Game 'Probe' -RepoRoot $fixture) -eq 3
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'returns $null -- NOT 0 -- for a game with no Tests directory at all' {
+    # $null means "never measured this game" (no Tests dir to read); 0 means
+    # "measured, registered nothing". Collapsing the two would make an
+    # unmeasured game indistinguishable from one whose registry is empty.
+    $fixture = New-RegistryFixtureRoot
+    try {
+        $result = Get-AutomatedRegistryCount -Game 'NoSuchGame' -RepoRoot $fixture
+        $null -eq $result
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'returns 0, not $null, when the Tests directory exists but registers nothing' {
+    $fixture = New-RegistryFixtureRoot
+    try {
+        $dir = Join-Path $fixture 'Games/Probe/Tests'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'Empty.cpp') -Value '// no registrations here' -Encoding utf8
+        $result = Get-AutomatedRegistryCount -Game 'Probe' -RepoRoot $fixture
+        ($null -ne $result) -and ($result -eq 0)
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 Write-Host "`n=== Write-Result refuses a green verdict with zero steps ===" -ForegroundColor Cyan
 # Probes Write-Result directly against the REAL $resultPath this file's own
 # dot-source already computed for -Key 'TEST-0' (.zagent/ is gitignored
@@ -400,12 +507,12 @@ Write-Host "`n=== Write-Result refuses a green verdict with zero steps ===" -For
 
 function Invoke-WriteResultProbe {
     param([scriptblock]$Setup, [int]$Code, [string]$Verdict, $Extra)
-    $script:Steps.Clear(); $script:PlannedLines.Clear(); $script:DeferredLines.Clear(); $script:Flakes.Clear()
+    $script:Steps.Clear(); $script:PlannedLines.Clear(); $script:DeferredLines.Clear(); $script:Flakes.Clear(); $script:RegistryCounts.Clear()
     if ($Setup) { & $Setup }
     New-Item -ItemType Directory -Path $runDir -Force | Out-Null
     Write-Result $Code $Verdict $Extra
     $json = Get-Content -LiteralPath $resultPath -Raw -Encoding utf8 | ConvertFrom-Json
-    $script:Steps.Clear(); $script:PlannedLines.Clear(); $script:DeferredLines.Clear(); $script:Flakes.Clear()
+    $script:Steps.Clear(); $script:PlannedLines.Clear(); $script:DeferredLines.Clear(); $script:Flakes.Clear(); $script:RegistryCounts.Clear()
     return $json
 }
 
@@ -442,6 +549,39 @@ Assert-That 'a NON-zero code with zero steps is untouched -- the guard is scoped
     # nothing having run; rewriting it would just be noise.
     $json = Invoke-WriteResultProbe -Code 5 -Verdict 'could not read the gate list; nothing ran' -Extra $null
     ($json.exitCode -eq 5) -and ($json.verdict -eq 'could not read the gate list; nothing ran')
+}
+
+Write-Host "`n=== Write-Result emits the registry map (added by this ticket) ===" -ForegroundColor Cyan
+# `registry` is ADDITIVE to the payload -- every existing field above is
+# untouched. Probed the same way as `deferred`/`flakes`: through
+# $script:RegistryCounts, which the registry-count loop near the bottom of
+# tick_gates.ps1 populates and Write-Result now serialises verbatim.
+
+Assert-That 'registry is present and an EMPTY map when no game was measured -- not an absent key' {
+    # Fails if the field is ever made conditional (e.g. `if
+    # ($script:RegistryCounts.Count -gt 0) { registry = ... }`), which would
+    # make the key vanish instead of reporting an empty map -- indistinguishable
+    # from an older script that never wrote it at all.
+    $json = Invoke-WriteResultProbe -Setup {
+        $script:Steps.Add([PSCustomObject]@{ Line = 'x'; Label = 'build'; ExitCode = 0; Seconds = 0.1 })
+    } -Code 0 -Verdict 'all gates green' -Extra $null
+    ($null -ne $json.registry) -and (@($json.registry.PSObject.Properties).Count -eq 0)
+}
+
+Assert-That 'registry carries a populated per-game count through to the JSON' {
+    $json = Invoke-WriteResultProbe -Setup {
+        $script:Steps.Add([PSCustomObject]@{ Line = 'x'; Label = 'build'; ExitCode = 0; Seconds = 0.1 })
+        $script:RegistryCounts['Zenithmon'] = 73
+    } -Code 0 -Verdict 'all gates green' -Extra $null
+    $json.registry.Zenithmon -eq 73
+}
+
+Assert-That 'registry carries a $null entry through -- a measured game whose Tests directory does not exist' {
+    $json = Invoke-WriteResultProbe -Setup {
+        $script:Steps.Add([PSCustomObject]@{ Line = 'x'; Label = 'build'; ExitCode = 0; Seconds = 0.1 })
+        $script:RegistryCounts['NoTestsGame'] = $null
+    } -Code 0 -Verdict 'all gates green' -Extra $null
+    (@($json.registry.PSObject.Properties.Name) -contains 'NoTestsGame') -and ($null -eq $json.registry.NoTestsGame)
 }
 
 Write-Host "`n=== state reflects a crashed run, not a fabricated 'complete' ===" -ForegroundColor Cyan
