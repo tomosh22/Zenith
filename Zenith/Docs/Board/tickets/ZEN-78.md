@@ -6,8 +6,8 @@ title: "tick_gates measure phase reports deferred gate lines and the automated-t
 category: "Tooling"
 parent: "ZEN-28"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 78
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T23:31:42.812Z"
+updatedAt: "2026-09-21T08:47:26.115Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "ebc023cf-be65-4eec-9d9e-f5b4bd39d825"
 ---
 ## Goal
 Suggestions row 2026-08-25 (gates): *"`tick_gates.ps1 -Phase measure` should report the gate lines it deferred, and should print the registry count as well as the unit pin."* A measure phase that defers a gate line silently leaves the verify phase to discover it, and the automated-test registry count (the LIVE PIN block's second number) is read by hand from the harness log today.
