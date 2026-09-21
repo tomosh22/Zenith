@@ -6,8 +6,8 @@ title: "Two of three capture harnesses cannot hold a BEFORE and an AFTER set at 
 category: "Engine"
 parent: null
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 92
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T22:09:18.010Z"
+updatedAt: "2026-09-21T14:59:11.343Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: null
+claimAttempt: "c240ca69-b6ab-4170-9869-5fa6ccbb4596"
 ---
 ## Goal
 
