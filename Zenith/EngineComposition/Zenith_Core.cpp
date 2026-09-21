@@ -145,25 +145,30 @@ static bool AcquireSwapchainOrSkip()
 
 // Tools-only: editor update (where deferred scene loads happen — MUST run before
 // any game logic / render, with no render tasks active), the live property +
-// behaviour-graph hot-reload safe sync point, and the render-submit / game-logic
-// gates derived from editor mode. In non-tools builds the gates keep the
-// caller-set defaults (submit = on, game logic = on).
-static void UpdateEditorAndTuning(bool& bSubmitRenderWork, bool& bShouldUpdateGameLogic)
+// behaviour-graph hot-reload safe sync point, and the game-logic gate derived
+// from editor mode. In non-tools builds the gate keeps the caller-set default
+// (game logic = on).
+//
+// ZEN-20: this used to also thread a render-submit gate out of
+// Zenith_Editor::Update()'s bool return (false on exactly the frame
+// ProcessDeferredSceneOperations ran one of its three deferred scene LOADS —
+// there is no deferred reset op; New/Save Scene run straight from the menu
+// callback). Zenith_Editor::Update() is void now — this was its sole caller — and
+// SubmitRenderWork runs unconditionally every frame; see the comment on its
+// call site in Zenith_MainLoop for why that is safe.
+static void UpdateEditorAndTuning(bool& bShouldUpdateGameLogic)
 {
 #ifdef ZENITH_TOOLS
-	bool bEditorWantsRender;
 	{
 		// Editor update (deferred scene loads, editor state, gizmo/selection logic).
 		Zenith_Profiling::ScopeZone xEditorUpdateProfile(ZENITH_PROFILE_ZONE("Editor Update"));
-		bEditorWantsRender = g_xEngine.Editor().Update();
+		g_xEngine.Editor().Update();
 	}
-	bSubmitRenderWork = bEditorWantsRender;
 	bShouldUpdateGameLogic = (g_xEngine.Editor().GetEditorMode() == EditorMode::Playing);
 
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_PropertyTuning::Update, ZENITH_PROFILE_ZONE("Property Tuning"));
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_GraphReload::Update, ZENITH_PROFILE_ZONE("Graph Reload"));
 #else
-	(void)bSubmitRenderWork;
 	(void)bShouldUpdateGameLogic;
 #endif
 }
@@ -233,16 +238,68 @@ static void UpdateGameLogic(bool bShouldUpdateGameLogic)
 #endif
 }
 
-// Upload frame constants (windowed), then — only when submitting render work
-// (skipped during scene transitions, to avoid recording
-// against incomplete scene state) — the UI frame, the ImGui frame, and the
-// render-graph execute bracketed by the SetRenderTasksActive window (so scene
-// reads on render-worker threads know the window is open).
-static void SubmitRenderWork(bool bSubmitRenderWork)
+// Upload frame constants (windowed), then the UI frame, the ImGui frame, and
+// the render-graph execute bracketed by the SetRenderTasksActive window (so
+// scene reads on render-worker threads know the window is open).
+//
+// ZEN-20: this runs EVERY frame now — there is no early return here any more.
+// It used to be skipped on the one frame ProcessDeferredSceneOperations ran a
+// deferred scene load (a bool threaded from UpdateEditorAndTuning through
+// Zenith_MainLoop into here and again into EndFrameSubmitAndPresent), on the
+// reasoning that recording against a scene mid-transition would render an
+// incomplete world. That reasoning does not hold: every one of the three
+// false-returning branches of ProcessDeferredSceneOperations is SYNCHRONOUS and
+// has wholly finished by the time this function is reached, leaving nothing
+// async outstanding for a same-frame render to race. The three do NOT share one
+// mechanism, and the difference matters to anyone re-auditing this:
+//   * the registered-scene-index load and the load-from-file case
+//     (Zenith_Editor.cpp) go through Zenith_SceneSystem::LoadSceneByIndex /
+//     LoadScene, which are synchronous INCLUDING lifecycle dispatch
+//     (ZenithECS/CLAUDE.md);
+//   * HandlePendingSceneLoad — the Play->Stop backup restore and Open Scene,
+//     i.e. the most frequent of the three — does NOT. It reaches
+//     Zenith_EditorSceneAccess::LoadFromFile -> Zenith_SceneData::LoadFromFile
+//     directly (Zenith_Editor_SceneOps.cpp; its LoadScene call is
+//     SCENE_LOAD_ADDITIVE_WITHOUT_LOADING, which does no file I/O), and that
+//     path deliberately dispatches NO Awake/OnEnable — see the comment in
+//     Zenith_SceneData_Serialization.cpp. It is still wholly synchronous
+//     (Reset -> ReadFromFile -> LoadFromDataStream -> TransitionTo(LOADED)),
+//     which is what this argument actually needs; it is simply not "LoadScene
+//     is synchronous" that supplies it.
+// The scene MUTATION itself runs inside Zenith_Editor::Update(), earlier in the
+// frame and strictly before render tasks go active (SetRenderTasksActive(true)
+// below), so the "no render tasks may be active during a scene mutation"
+// invariant that Update() protects was never threatened by rendering the SAME
+// frame — only by rendering while the mutation was still in progress, which
+// cannot happen here regardless of this flag.
+//
+// ZEN-D-005 applies, and the honest reading is that the old early return WAS an
+// instance of its class: the drain was gated on a skip condition while at least
+// one producer sat outside the gate. `Zenith_AI::DebugDraw()` submits on the
+// Flux_Primitives debug channel from inside UpdateGameLogic — BEFORE this
+// function — and gameplay components submit on its gameplay channel from the
+// same place, while both channels are retired only by
+// Flux_PrimitivesImpl::ConsumeFrameBoundary inside the GBuffer pass, i.e. only
+// if ExecuteRenderGraph runs. The two co-occur: the game-logic gate is
+// recomputed from editor mode after Update(), and a scene load does not change
+// the mode, so a content-browser Open Scene while Playing queued primitives and
+// then skipped their drain. It was BOUNDED at one frame — the gate closed for a
+// frame, not for the length of a debug-variable toggle as in ZEN-40 — so it was
+// never the unbounded overflow that ruling was written about. The producers
+// that DO sit inside this function (RebuildSceneSnapshot,
+// Zenith_PhysicsDebugDraw::QueueAll, Zenith_SceneGraphDebug::QueueOverlays,
+// g_xEngine.UI().Update()) were skipped alongside the drain and could not
+// accumulate either way. Always-submit removes the whole class rather than
+// resting on which side of a gate each producer happens to fall.
+//
+// Dropping the parameter also makes
+// `Flux_RendererImpl::HasRecordedFrameWork()` — already the thing every
+// backend's EndFrame actually submits on — the ONLY thing it is gated on
+// there (see e.g. Zenith_Vulkan::EndFrame), since ANDing it with a flag that
+// is now always true was already a no-op (see EndFrameSubmitAndPresent).
+static void SubmitRenderWork()
 {
 	g_xEngine.FluxGraphics().UploadFrameConstants();
-
-	if (!bSubmitRenderWork) return;
 
 	// Physics debug primitives only while stopped, so play mode doesn't flood them.
 	#ifdef ZENITH_TOOLS
@@ -320,7 +377,7 @@ static bool ShouldLatchFirstPresent(const bool bPresentWillSubmitSnapshot, const
 	return bPresentWillSubmitSnapshot && !bAlreadyLatched;
 }
 
-static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
+static void EndFrameSubmitAndPresent()
 {
 	Zenith_Engine& xEngine = g_xEngine;
 
@@ -347,8 +404,13 @@ static void EndFrameSubmitAndPresent(bool bSubmitRenderWork)
 	const bool bPresentWillSubmit = xEngine.FluxSwapchain().ShouldWaitOnImageAvailableSemaphore();
 
 	{
+		// ZEN-20: EndFrame no longer takes a submit-gate bool. It already computed
+		// its own "did anything get recorded" answer from
+		// Flux_RendererImpl::HasRecordedFrameWork() and ANDed it with the caller's
+		// flag; since SubmitRenderWork now runs every frame that flag was always
+		// true, so HasRecordedFrameWork() alone is behaviour-preserving.
 		Zenith_Profiling::ScopeZone xEndFrameProfile(ZENITH_PROFILE_ZONE("Flux PlatformAPI End Frame"));
-		xEngine.FluxBackend().EndFrame(bSubmitRenderWork);
+		xEngine.FluxBackend().EndFrame();
 	}
 
 	// Once-latched at the CALL SITE, not inside the profiler: RecordBootMilestone is
@@ -386,9 +448,8 @@ void Zenith_Core::Zenith_MainLoop()
 
 	DrainInputAndPointers();
 
-	bool bSubmitRenderWork      = true;
 	bool bShouldUpdateGameLogic = true;
-	UpdateEditorAndTuning(bSubmitRenderWork, bShouldUpdateGameLogic);
+	UpdateEditorAndTuning(bShouldUpdateGameLogic);
 	PumpAutomatedTest(bShouldUpdateGameLogic);
 
 	// Frame contract step 7: everything this frame's automated-test Steps
@@ -419,8 +480,10 @@ void Zenith_Core::Zenith_MainLoop()
 
 	// Frame contract step 10: the UI input phase. Runs BEFORE game logic (so a
 	// widget consumes a press the same frame gameplay would otherwise see it) and
-	// independently of the render/UI VISUAL pass below, which a scene transition
-	// can skip — a skipped render frame must never change input state. It owns
+	// independently of the render/UI VISUAL pass below (ZEN-20: that pass runs
+	// unconditionally now — see SubmitRenderWork — so this independence is no
+	// longer load-bearing against a skip, only against ORDER: input must close
+	// before the visual pass regardless of whether the visual pass runs). It owns
 	// steps 10b (close the reserved UI actions) and 10e (close everything else)
 	// around its own capture walk, which is why the action layer is handed in.
 	ZENITH_PROFILING_FUNCTION_WRAPPER(g_xEngine.UI().UpdateInput,
@@ -428,8 +491,8 @@ void Zenith_Core::Zenith_MainLoop()
 		g_xEngine.Frame().GetDt());
 
 	UpdateGameLogic(bShouldUpdateGameLogic);
-	SubmitRenderWork(bSubmitRenderWork);
-	EndFrameSubmitAndPresent(bSubmitRenderWork);
+	SubmitRenderWork();
+	EndFrameSubmitAndPresent();
 
 	// End of frame: deferred-deletion countdown, then advance the engine frame
 	// index. The advance happens AFTER Swapchain::EndFrame so the present uses the

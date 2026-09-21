@@ -518,7 +518,7 @@ void Zenith_Editor::Shutdown()
 	g_xEngine.Selection().Shutdown();
 }
 
-bool Zenith_Editor::Update()
+void Zenith_Editor::Update()
 {
 	// CRITICAL: Handle pending scene operations FIRST, before any rendering
 	// This must happen here (not during RenderMainMenuBar) to avoid concurrent access
@@ -526,9 +526,16 @@ bool Zenith_Editor::Update()
 	//
 	// Scene loads destroy and rebuild scene data structures; if render tasks
 	// were active while that happens, they would read destroyed pools.
+	//
+	// ZEN-20: the old `bool` return (false here) used to gate whether
+	// Zenith_Core.cpp's SubmitRenderWork ran this frame. It no longer does —
+	// see Zenith_Editor.h's comment on this method — so a deferred scene op
+	// simply finishes here and the rest of Update() (camera init, gizmo/picking,
+	// etc.) is skipped for this frame exactly as before; only the caller-visible
+	// render-submit consequence is gone.
 	if (!ProcessDeferredSceneOperations())
 	{
-		return false;
+		return;
 	}
 
 	// Process deferred ImGui texture deletions
@@ -575,7 +582,7 @@ bool Zenith_Editor::Update()
 	if (g_xEngine.EditorAutomation().IsRunning())
 	{
 		g_xEngine.EditorAutomation().ExecuteNextStep();
-		return true;
+		return;
 	}
 
 	// Lazily initialise the editor camera from the game camera. Can't happen in
@@ -602,7 +609,7 @@ bool Zenith_Editor::Update()
 
 	if (m_xEditorState.m_eEditorMode == EditorMode::Playing)
 	{
-		return true;
+		return;
 	}
 
 	SyncGizmoSettings();
@@ -611,7 +618,7 @@ bool Zenith_Editor::Update()
 	if (IsCameraNavigating())
 	{
 		g_xEngine.Gizmos().ClearHover();
-		return true;
+		return;
 	}
 
 	// Terrain editor gets first claim on viewport input: while a terrain
@@ -635,7 +642,7 @@ bool Zenith_Editor::Update()
 		m_pxTerrainEditor->UpdatePerFrame(xTerrainCtx);
 		if (m_pxTerrainEditor->ConsumedViewportInput())
 		{
-			return true;
+			return;
 		}
 	}
 
@@ -647,8 +654,6 @@ bool Zenith_Editor::Update()
 	{
 		HandleObjectPicking();
 	}
-
-	return true;
 }
 
 bool Zenith_Editor::ProcessDeferredSceneOperations()

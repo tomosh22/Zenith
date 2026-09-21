@@ -37,11 +37,17 @@
 // backend records the worker command buffers in parallel; the D3D12 null backend
 // runs the callbacks into a no-op command buffer (so callback side effects still
 // occur). EndFrame then only submits.
+//
+// ZEN-20: EndFrame takes no argument any more. It used to take a submit-gate
+// bool (ANDed with Flux_RendererImpl::HasRecordedFrameWork() backend-side) that
+// mirrored Zenith_Core.cpp's own bSubmitRenderWork; that caller-side flag is
+// gone (SubmitRenderWork runs every frame now), so the parameter was always
+// true and HasRecordedFrameWork() alone is the whole answer. All three
+// backends (Vulkan/Null/D3D12) dropped the parameter in the same change.
 
 template <typename T>
 concept FluxBackendDevice = requires(
 	T t,
-	bool b,
 	uint32_t u,
 	const Flux_WorkDistribution& xWork,
 	const Flux_ShaderResourceView& xView,
@@ -55,7 +61,7 @@ concept FluxBackendDevice = requires(
 	{ t.WaitForGPUIdle()                                             } -> std::same_as<void>;
 	{ t.PerFrameBegin(u)                                             } -> std::same_as<void>;
 	{ t.RecordFrame(xWork)                                           } -> std::same_as<void>;
-	{ t.EndFrame(b)                                                  } -> std::same_as<void>;
+	{ t.EndFrame()                                                   } -> std::same_as<void>;
 	{ t.WriteBindlessTextureSlot(u, xView, xSampler)                 } -> std::same_as<void>;
 	// Persistent descriptor sets (Phase 5.1 GLOBAL/VIEW + 5.4 VIEW image SRVs). In
 	// the concept so D3D12 signature drift fails the build, not the first frame.

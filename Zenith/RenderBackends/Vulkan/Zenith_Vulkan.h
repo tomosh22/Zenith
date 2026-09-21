@@ -279,7 +279,12 @@ public:
 	// Same write-before-bind window + same fan-out to every view slot's set.
 	void WritePersistentViewBuffer(u_int uBinding, const Flux_ShaderResourceView_Buffer& xSRV);
 
-	void EndFrame(bool bSubmitRenderWork);
+	// ZEN-20: no longer takes a submit-gate bool. It already ANDed the caller's
+	// flag with Flux_RendererImpl::HasRecordedFrameWork(); the caller
+	// (Zenith_Core.cpp's SubmitRenderWork) now runs unconditionally every
+	// frame, so HasRecordedFrameWork() alone is behaviour-preserving. See
+	// Zenith_Vulkan.cpp's definition.
+	void EndFrame();
 
 	// Wait for GPU to finish all work (blocks until idle)
 	// WARNING: This is expensive — only use for critical synchronization

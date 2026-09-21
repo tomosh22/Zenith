@@ -303,8 +303,8 @@ path, valid on the main thread on a frame that will reach `SyncUnifiedBucketsFro
 material-preview controller uses it because its `Update()` already runs inside that sync.
 `RegisterExternalSceneItemSource(fn, ctx)` is the PULL path, polled by the sync itself
 (`PollExternalSceneItemSources`, right beside the preview `Update()`, before any extractor).
-Anything whose draw is driven from OUTSIDE the frame loop — a panel draw on a frame the editor
-declines to render, a unit test — must register rather than push: a pushed item sits in the list
+Anything whose draw is driven from OUTSIDE the frame loop — a unit test, a panel draw made
+outside the frame the sync runs in — must register rather than push: a pushed item sits in the list
 holding a raw `Flux_MeshInstance*` until the next real frame, which is a use-after-free if the
 owner died in between and a frame of latency if it did not. Unregister with the same context
 pointer before the context dies. `GatherExternalSceneItemsForTesting` polls every source and

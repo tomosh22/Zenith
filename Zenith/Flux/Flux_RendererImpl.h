@@ -163,7 +163,10 @@ public:
 	// frame memory submit). Distributes the queued passes across worker threads
 	// (PrepareFrame), drives the backend to record them directly into its worker
 	// command buffers (FluxBackend().RecordFrame), then clears the queue. Sets
-	// HasRecordedFrameWork() for the subsequent EndFrame submit.
+	// HasRecordedFrameWork() for the subsequent EndFrame submit — ZEN-20: now
+	// the ONLY thing EndFrame gates its submit on (it used to AND this with a
+	// caller-supplied bSubmitRenderWork; see Zenith_Core.cpp's SubmitRenderWork
+	// for why that flag is gone).
 	void RecordFrame();
 	bool HasRecordedFrameWork() const { return m_bHasRenderWork; }
 
@@ -274,7 +277,10 @@ public:
 	//     INSIDE the sync.
 	//   - PULL: RegisterExternalSceneItemSource, polled by the sync itself.
 	//     Anything submitted from outside the frame loop — a unit test, a panel
-	//     draw on a frame the editor declines to render — would otherwise SIT in
+	//     draw made outside the frame the sync runs in (ZEN-20: the editor no
+	//     longer DECLINES to render, so a skipped frame is no longer one of the
+	//     ways this happens; a submission simply made outside the loop still
+	//     is) — would otherwise SIT in
 	//     the list holding raw Flux_MeshInstance*s until the next real frame:
 	//     a use-after-free if the owner died in between, and a frame of latency
 	//     if it did not. A source is polled or it is not; nothing is pending.

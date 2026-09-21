@@ -117,7 +117,21 @@ public:
 	void Initialise(Flux_PlatformAPI& xFluxBackend, Flux_GraphicsImpl& xFluxGraphics, FrameContext& xFrame,
 		Zenith_DebugVariables& xDebugVariables, Zenith_Profiling& xProfiling, Zenith_TerrainEditor& xTerrainEditor);
 	void Shutdown();
-	bool Update();
+	// ZEN-20: void, not bool. It used to report whether the editor wanted a
+	// render this frame (false on the one frame ProcessDeferredSceneOperations
+	// ran one of its three deferred scene LOADS), and Zenith_Core.cpp's sole
+	// caller threaded that into a render-submit gate. That gate is gone —
+	// SubmitRenderWork runs every frame now, because every false-returning
+	// branch of ProcessDeferredSceneOperations is wholly SYNCHRONOUS and has
+	// finished by the time this function returns, so there was never an
+	// incomplete scene for a same-frame render to see. Note the three do not
+	// share a mechanism: two go through Zenith_SceneSystem::LoadScene /
+	// LoadSceneByIndex (synchronous including Awake/OnEnable), while
+	// HandlePendingSceneLoad goes straight to Zenith_SceneData::LoadFromFile,
+	// which dispatches no lifecycle at all and is synchronous by its own
+	// Reset -> ReadFromFile -> TransitionTo(LOADED) sequence. See the comment on
+	// SubmitRenderWork in Zenith_Core.cpp for the full chain.
+	void Update();
 	void Render();
 
 	// Redirects ImGui layout persistence to %LOCALAPPDATA%/Zenith/<GameName>/

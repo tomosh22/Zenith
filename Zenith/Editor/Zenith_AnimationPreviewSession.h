@@ -61,8 +61,11 @@ struct Zenith_EditorPrefs;
 // GPU-scene sync polls it once per frame for one Flux_ExternalSceneItem per
 // submesh: the session's model matrix, that submesh's Flux_MeshInstance, the
 // aligned material, THE SESSION'S OWN Flux_SkeletonInstance, and the view mask of
-// slot 6 alone. PULL rather than PUSH because a panel draws on frames the editor
-// may never sync: a pushed item would sit in the renderer's list holding a raw
+// slot 6 alone. PULL rather than PUSH because a panel's draw is not driven from
+// inside the frame the sync runs in (ZEN-20 made the sync unconditional, so a
+// skipped render frame is no longer one of the ways they can diverge — a panel
+// submitting outside the loop still is):
+// a pushed item would sit in the renderer's list holding a raw
 // mesh pointer until the next real frame, which is a use-after-free if the rig
 // re-resolved in between.
 //

@@ -66,12 +66,13 @@
 // B refreshes it on EVERY Step frame rather than once.
 //
 // FRAME NUMBERS ARE NOT THE CONTRACT, SETTLE COUNTS ARE. A Step runs BEFORE
-// that frame's SubmitRenderWork (Zenith_Core.cpp:394 vs :243), and
-// SubmitRenderWork is SKIPPED entirely on frames the editor declines to render
-// (Zenith_Core.cpp:162/:247) — so "the graph N frames after the edge" is not a
-// fixed quantity. Each phase therefore runs kuPHASE_FRAMES and samples on the
-// first frame at or after kuSETTLE_FRAMES on which the graph is not dirty;
-// nothing keys off an exact frame index.
+// that frame's SubmitRenderWork, which now runs on every frame that reaches it
+// (ZEN-20 removed the editor's skip — SubmitRenderWork used to return early on
+// the one frame the editor declined to render, e.g. a deferred scene load).
+// Even so, "the graph N frames after the edge" is not treated as a fixed
+// quantity here: each phase runs kuPHASE_FRAMES and samples on the first frame
+// at or after kuSETTLE_FRAMES on which the graph is not dirty; nothing keys
+// off an exact frame index.
 // =====================================================================
 
 namespace

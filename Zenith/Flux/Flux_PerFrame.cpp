@@ -23,9 +23,16 @@ void Flux_RendererImpl::BeginFrame()
 {
 	// Default to "no render work this frame". RecordFrame (driven from
 	// Flux_RenderGraph::Execute) sets this true when it records a non-empty
-	// queue; if Execute does not run this frame (scene transition /
-	// !bSubmitRenderWork) the flag stays false so the backend's EndFrame skips
-	// the render submit instead of resubmitting last frame's command buffers.
+	// queue; if the queue happens to be empty (e.g. every pass disabled) the
+	// flag stays false so the backend's EndFrame skips the render submit
+	// instead of resubmitting last frame's command buffers.
+	//
+	// ZEN-20: there is no longer a scene-transition skip of Execute itself —
+	// Zenith_Core.cpp's SubmitRenderWork (and the ExecuteRenderGraph() call
+	// inside it) runs every frame that reaches it. This flag is therefore no
+	// longer ANDed with a separate submit-gate bool backend-side; it is the
+	// whole answer to "did this frame record anything" (see each backend's
+	// EndFrame).
 	m_bHasRenderWork = false;
 
 	// Issue the backend's per-frame begin work (fence wait, descriptor-pool

@@ -587,7 +587,7 @@ void Zenith_Vulkan::RecordFrame(const Flux_WorkDistribution& xWorkDistribution)
 	xRecordingTask.WaitUntilComplete();
 }
 
-void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
+void Zenith_Vulkan::EndFrame()
 {
 	// SUBMIT ONLY. This frame's render command buffers (if any) were already
 	// recorded by RecordFrame (driven from Flux_RenderGraph::Execute, before the
@@ -607,13 +607,18 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		m_pxMemoryUpdateCmdBuf = nullptr;
 	}
 
-	// Whether render command buffers were recorded this frame. RecordFrame set
-	// HasRecordedFrameWork() during Execute; combined with bSubmitRenderWork so a
-	// non-rendering frame (scene transition) skips the render submit
-	// and the memory submit doesn't signal a semaphore nobody waits on. The
-	// pending queue was already drained by RecordFrame, so there's nothing to
-	// clear here.
-	const bool bHasRenderWork = bSubmitRenderWork && m_pxFluxRenderer->HasRecordedFrameWork();
+	// Whether render command buffers were recorded this frame. RecordFrame sets
+	// HasRecordedFrameWork() during Execute — true iff ExecuteRenderGraph queued
+	// a non-empty pass list. ZEN-20: that is the ONLY gate now. It used to be
+	// ANDed with a caller-supplied bSubmitRenderWork that was false on the one
+	// frame Zenith_Core.cpp's SubmitRenderWork skipped a scene-transition frame
+	// entirely — but SubmitRenderWork runs unconditionally every frame now, so
+	// that flag was always true here and the AND was already a no-op. A false
+	// value still means a genuinely empty queue (e.g. every pass disabled), so
+	// the memory submit still doesn't signal a semaphore nobody waits on and the
+	// render submit below is still skipped; the pending queue was already
+	// drained by RecordFrame either way.
+	const bool bHasRenderWork = m_pxFluxRenderer->HasRecordedFrameWork();
 
 #ifdef ZENITH_FLUX_PROFILING
 	// Remember how many GPU timers this slot recorded so the deferred readback

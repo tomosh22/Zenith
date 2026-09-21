@@ -96,7 +96,9 @@ public:
 	// Phase 5.4: no-op on the null backend (no real VIEW-set image/buffer descriptors).
 	void WritePersistentViewImage(u_int /*uBinding*/, const Flux_ShaderResourceView& /*xSRV*/, const Zenith_Null_Sampler& /*xSampler*/) { }
 	void WritePersistentViewBuffer(u_int /*uBinding*/, const Flux_ShaderResourceView_Buffer& /*xSRV*/) { }
-	void EndFrame(bool /*bSubmitRenderWork*/) { }
+	// ZEN-20: no longer takes a submit-gate bool — see Zenith_Vulkan.h's
+	// EndFrame comment; this backend never had a semaphore to skip anyway.
+	void EndFrame() { }
 
 	// Wait for GPU idle — no-op (nothing is in flight in the null backend).
 	void WaitForGPUIdle() { }

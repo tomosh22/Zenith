@@ -58,7 +58,7 @@ sites are `Zenith_Core::Zenith_MainLoop`, `Zenith_UISystem::UpdateInput` and
 | 2 | Acquire swapchain | `AcquireSwapchainOrSkip` | On a skip the frame **RETURNS**. The FIFO and the retained pad snapshot persist, so nothing is lost across skipped frames — and no game logic ever misses input it was about to be shown. |
 | 3 | **The DRAIN** | `Input().BeginFrame()` | Per-frame edges reset, then the FIFO is consumed **IN ARRIVAL ORDER** into the held tables, the press/release edges, the wheel, the staged touch stream and the **ordered transition log**. |
 | 4 | Pointer platform pass | `Pointers().ApplyPlatform()` | Consumes the staged touch stream + the B3 mouse projection. |
-| 5 | Editor / tuning | `UpdateEditorAndTuning` | Tools-only; derives the render-submit and game-logic gates. |
+| 5 | Editor / tuning | `UpdateEditorAndTuning` | Tools-only; derives the game-logic gate (ZEN-20 removed the render-submit gate this used to also derive — render work is submitted unconditionally now). |
 | 6 | Automated-test pump | `PumpAutomatedTest` | Runs this frame's test `Step`, which may inject input. |
 | 7 | Injection | `Input().ApplySimulatorInjection()` + `Pointers().ApplyInjection()` | Everything a Step injected becomes ordered transitions, so simulated and real input reach the action layer through **exactly one path**. Input PULLS from the simulator (the harness never reaches the engine singleton). |
 | 8 | **`Actions().UpdateProfile()`** | action layer | Activity detection over this frame's transitions → auto profile switch / forced override. On ANY mask change the MASK-CHANGE SYNTHESIS runs here, BEFORE any replay. Also **opens the action frame**: per-action edges cleared, source shadow snapshotted. |
@@ -69,15 +69,18 @@ sites are `Zenith_Core::Zenith_MainLoop`, `Zenith_UISystem::UpdateInput` and
 | 10d | Virtual-producer walk | `Canvas::UpdateVirtualControls` | B9 on-screen stick/buttons claim and publish. AFTER 10c so a real widget wins a contested pointer; BEFORE 10e so the transitions replay in the frame they happened. Deliberately **visibility-BLIND**. |
 | 10e | **`Actions().FinalizeGameplay()`** | action layer | Closes everything else, with claim suppression applied. |
 | 11 | Game logic | `UpdateGameLogic` | All action state is closed; claims and suppression are final. |
-| 12 | Render submit | `SubmitRenderWork` | May be skipped by the editor; input state is already final, so a skipped render frame can never change it. |
+| 12 | Render submit | `SubmitRenderWork` | Runs every frame (ZEN-20 removed the editor's skip); input state is already final by this point regardless, so this step can never change it. |
 | 13 | End frame / present | `EndFrameSubmitAndPresent` | |
 
 Two properties this ordering buys, both load-bearing:
 
 * **The drain sits AFTER the acquire gate.** A frame the swapchain skips must
   not consume input no game logic will ever see.
-* **The UI input phase is independent of the UI VISUAL pass.** A scene
-  transition can skip rendering; it must still answer an arrow key.
+* **The UI input phase is independent of the UI VISUAL pass, by ORDER rather
+  than by a skip.** Input closes before the visual pass runs regardless of
+  what that pass does — it must answer an arrow key even on a frame the
+  visual pass would (pre-ZEN-20) have skipped, and it must not depend on that
+  pass having run at all now that it never skips.
 
 ## Device layer (`Zenith_Input`)
 
