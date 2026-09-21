@@ -1228,9 +1228,78 @@ Notes:
 | MSBuild not found | Install VS2022 C++ workload or run from a Developer PowerShell; the CLI resolves via PATH then vswhere. |
 | Exe dies at launch, `STATUS_DLL_NOT_FOUND` (0xC0000135) | Slang dependency tree / assimp missing next to the exe → `zenith test`/`zenith package` self-heal via `Repair-ZenithRuntimeDlls`; for a bare `zenith run`, build once via a game that has them or run `zenith test <Name> --filter <anything>` to trigger the heal. |
 | Game hangs at shutdown (headless) | Known; harness/gates tally results from JSON and watchdog-kill. Don't wait on process exit for correctness. |
-| Whole-solution build red | Aux tools (FluxCompiler `_True` variants / TilePuzzle tools) are pre-existing-red in `ToolsEnabled=True` — ALWAYS build `/t:<target>`; `zenith build` does. |
+| Whole-solution build red (TilePuzzle only) | `Games\TilePuzzle\tilepuzzle_win64.sln` is the one solution that fails whole: `TilePuzzleLevelGen` calls removed/changed engine APIs and `TilePuzzleRegistryViewer` fails to link (missing `Project_*` composition-root symbols). Neither is an aux tool — FluxCompiler and the font libs build green everywhere. `zenith build TilePuzzle` (`/t:TilePuzzle`) is unaffected. See "Whole-solution build status (ZEN-85, 2026-09-21)" below for the measurement. |
 | Regen refuses to run | You're in a linked git worktree — run from the main checkout (§3). |
 | Sentinel link error | A leaf lib grew an engine/platform reference. If it's a sanctioned L0 seam, add the shim to `Tests/Sentinel*/sentinel_platform.cpp`; otherwise fix the leak (that's the point of the proof). |
+
+### Whole-solution build status (ZEN-85, 2026-09-21)
+
+The historical rule — "never build the whole solution, the aux tools are
+pre-existing-red in `ToolsEnabled=True`" — is **stale**. Measured on this tree
+2026-09-21 (`MSBuild.exe <sln> /p:Configuration=<cfg> /p:Platform=x64
+-maxCpuCount`, `MSBUILDDISABLENODEREUSE=1`; "errors" = lines matching
+`: error <CODE>`):
+
+| Solution | Configuration | Exit | Compile/link errors |
+|---|---|---|---|
+| `Build/zenith_engine_win64.sln` | `Vulkan_vs2022_Debug_Win64_True` | 0 | 0 |
+| `Build/zenith_engine_win64.sln` | `Vulkan_vs2022_Debug_Win64_False` | 0 | 0 |
+| `Games/Combat/combat_win64.sln` | `Vulkan_vs2022_Debug_Win64_True` | 0 | 0 |
+| `Games/TilePuzzle/tilepuzzle_win64.sln` | `Vulkan_vs2022_Debug_Win64_True` | 1 | 27 |
+
+**FluxCompiler and all three font-dependency projects build green.**
+`FluxCompiler`, `FreeType`, `msdfgen` and `msdf-atlas-gen` all compiled with
+zero errors in `Vulkan_vs2022_Debug_Win64_True`, in every solution they appear
+in (msdfgen's C4100/C4458/C4505 are warnings only —
+`TreatWarningsAsErrors.Disable` is set on that project). The "aux tools are
+pre-existing-red" premise is false as of this measurement.
+
+**The one genuinely red whole-solution build is TilePuzzle, for an unrelated
+reason.** `Games/TilePuzzle/tilepuzzle_win64.sln` fails, and neither failing
+project is an aux tool — both are TilePuzzle's own bespoke tooling:
+
+- **`TilePuzzleLevelGen`** — 21 compile errors: it calls engine APIs that no
+  longer exist (`Zenith_TaskSystem::Inititalise` [sic], an undeclared
+  `Zenith_TaskArray`, a changed `Zenith_Profiling::Initialise` signature, a
+  no-longer-static `Zenith_Multithreading::RegisterThread`, an undeclared
+  `ZENITH_PROFILE_INDEX__SCENE_UPDATE`). This is bit-rot against engine API
+  drift, not a build-system defect.
+- **`TilePuzzleRegistryViewer`** — compiles, then fails to link: it links
+  `zenith.lib`, which requires the composition-root symbols every game
+  provides (`Project_SetGraphicsOptions`, `Project_RegisterGameComponents`,
+  `Project_Shutdown`), and the viewer supplies none — 6 link errors
+  (`LNK2019`/`LNK2001`/`LNK1120`). 21 + 6 is the 27 in the table above.
+
+Fixing either is out of scope for ZEN-85 (filed separately) and does not touch
+the build system: `zenith build TilePuzzle` (`/t:TilePuzzle`) never builds
+these two projects and is unaffected either way.
+
+**A `_True` solution build legitimately skips some projects, by target
+declaration rather than by being broken.** From the `.sln` files: the engine
+solution maps 43 projects to an `ActiveCfg` for `..._True` but only 34 to a
+`Build.0` (9 skipped); Combat skips 2 of 36; TilePuzzle skips 2 of 38 (on top
+of its 2 red ones above). Every skip in both counts is one of:
+
+- `ZenithRenderBackendD3D12` / `ZenithRenderBackendNull` — each declares only
+  its own `RenderBackend` fragment in `AddTargets`, so neither has a `Vulkan_*`
+  configuration at all (the backend project-membership invariant, §4). Covered
+  by the `D3D12_*` / `Null_*` configs instead.
+- `SentinelAI`/`SentinelCore`/`SentinelECS`/`SentinelFlux`/`SentinelPhysics`/
+  `SentinelScripting`/`SentinelUI` (engine solution only) — each declares
+  `ToolsEnabled.False` only (the leaf-purity proof only makes sense outside
+  tools), so none has a `_True` configuration. All seven build green in the
+  `_False` sibling (`Vulkan_vs2022_Debug_Win64_False`, exit 0, second row of
+  the table above).
+
+None of these nine is broken; each is absent from one configuration by target
+declaration and built by another. **Which other thing builds it differs, and
+`zenith build engine` is not the answer for all nine:** it runs `/t:Zenith`
+plus `/t:Sentinel*`, so it covers the seven Sentinels (stepping them through
+the `_False` sibling of whatever config it was given) but builds neither
+backend library. The two backend libraries are covered by the **Engine gate
+list** instead — `zenith build Combat --headless` builds the `Null_`
+configuration, and `zenith build Combat --config
+D3D12_vs2022_Debug_Win64_False` the `D3D12_` one.
 
 ## 10. Key defines (set by Sharpmake)
 
@@ -1245,7 +1314,12 @@ baked paths — overridable at runtime by `--assets-root`, §7).
 1. **One entry point per operation; no legacy/compat code whatsoever.** No
    forwarder scripts, no alias remaps, no "deprecated" surfaces — migrate every
    caller and delete the old name in the same commit.
-2. Never build a whole solution; always `/t:<target>`.
+2. Prefer `/t:<target>` over a whole-solution build — it's faster and scopes
+   exactly what changed, and it's what `zenith build`/`zenith build engine`
+   always use. A whole-solution build is supported and green for the engine
+   solution and every game solution except `Games\TilePuzzle\tilepuzzle_win64.sln`
+   (see "Whole-solution build status (ZEN-85, 2026-09-21)" in §9), so it is not
+   a workaround to reach for — just not the recommended default.
 3. Never run Sharpmake/regen from a linked worktree.
 4. Nothing generated is committed; nothing hand-written is ignored (enforced
    by selftest).

@@ -101,16 +101,22 @@ names are unchanged); only the `.sln` moved to the game root.
 Config names (`Vulkan_vs2022_Debug_Win64_True` …) and output dirs
 (`Games/<Name>/Build/output/<platform>/<config>/`) are **unchanged** from before.
 
-## Building — always `/t:<Game>`, never the whole sln
+## Building — `/t:<Game>` is the fast path; a whole-solution build works too
 
 ```
 msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 msbuild Build\zenith_engine_win64.sln   /t:Zenith  /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
-A whole-solution build pulls in the aux tools (FluxCompiler / TilePuzzle tools) that
-are **pre-existing-red in `ToolsEnabled=True`** — out of scope here. `zenith build`
-and `zenith build engine` always use `/t:`.
+`zenith build` and `zenith build engine` always use `/t:<target>` — it's
+faster, and it's what CI does. It is no longer a workaround for red projects:
+FluxCompiler and the three font-dependency projects (`Sharpmake_FreeType.cs`,
+`Sharpmake_Msdfgen.cs`, `Sharpmake_MsdfAtlasGen.cs`) all build green in
+`Vulkan_vs2022_Debug_Win64_True`, in every solution they appear in (ZEN-85,
+measured 2026-09-21). The one genuinely red whole-solution build is
+`Games\TilePuzzle\tilepuzzle_win64.sln`, and the cause is TilePuzzle's own
+bespoke tooling (`TilePuzzleLevelGen`, `TilePuzzleRegistryViewer`), not an aux
+tool — see `Docs/BuildSystem.md` §9 for the measurement.
 
 ## Git tracking
 

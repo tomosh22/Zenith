@@ -420,10 +420,14 @@ function Invoke-ZenithBuild {
     foreach ($p in $stale) { Write-Host "  killed stale $($p.Name) (pid $($p.Id))" -ForegroundColor Yellow }
 
     if ($target -ieq 'engine') {
-        # Engine build: Zenith + Sentinels, NEVER the whole sln (aux tools are
-        # pre-existing-red in ToolsEnabled=True). Sentinels exist only in
-        # ToolsEnabled=False configs (leaf-purity proof), so they build with the
-        # config's _False sibling.
+        # Engine build: Zenith + Sentinels, via /t: because NO single
+        # whole-solution build can cover this. The Sentinels exist only in
+        # ToolsEnabled=False configs (leaf-purity proof), so they build with
+        # the config's _False sibling -- this command necessarily spans two
+        # configurations, which one sln build cannot. (A whole
+        # zenith_engine_win64.sln build IS supported and green in
+        # ToolsEnabled=True as of ZEN-85 -- see Docs/BuildSystem.md section 9.
+        # /t: here is a scoping requirement, not a workaround for red projects.)
         $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
         $sentinelConfig = $config -replace '_True$', '_False'
         $steps = @(

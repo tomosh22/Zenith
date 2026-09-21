@@ -269,8 +269,15 @@ zenith hub                 REM launch the Unity-Hub-style GUI launcher
 msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 Games\Combat\Build\output\win64\vulkan_vs2022_debug_win64_true\combat.exe
 ```
-Always build with `/t:<Game>`, never the whole solution: the aux tools (FluxCompiler /
-font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
+Prefer `/t:<Game>` over a whole-solution build — it's faster and scopes exactly
+what changed, and it's what `zenith build` does. A whole-solution build is not a
+workaround for red aux tools any more: FluxCompiler and the font libs build
+green in `ToolsEnabled=True`, and `Build\zenith_engine_win64.sln` and
+`Games\Combat\combat_win64.sln` both build whole with zero errors in
+`Vulkan_vs2022_Debug_Win64_True` (ZEN-85, measured 2026-09-21). The one known
+exception is `Games\TilePuzzle\tilepuzzle_win64.sln`, which fails whole because
+of two of TilePuzzle's own bespoke tools, not an aux tool — see
+`Docs/BuildSystem.md` §9 for the measurement and the two failing projects.
 
 > **Config-name prefix (RenderBackend fragment):** every win64 config is prefixed
 > with the render backend — `Vulkan_vs2022_Debug_Win64_True` (the real renderer),
@@ -286,7 +293,10 @@ font libs) present in the sln are pre-existing-red in `ToolsEnabled=True`.
 
 **Engine-only work:** `msbuild Build\zenith_engine_win64.sln /t:Zenith` (or
 `/t:FluxCompiler` / `/t:Sentinel*` / `/t:ZenithHub`); `zenith build engine` does this.
-Never build the whole engine sln (pre-existing-red aux tools).
+`zenith build engine` uses `/t:` for speed and because it needs to span both
+`ToolsEnabled` configs in one call (Sentinels exist only in `_False`); a whole
+`zenith_engine_win64.sln` build is supported and green in
+`Vulkan_vs2022_Debug_Win64_True` — see `Docs/BuildSystem.md` §9.
 
 ### Build Troubleshooting
 
