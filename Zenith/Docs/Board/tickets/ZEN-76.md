@@ -6,8 +6,8 @@ title: "zagent check: the contract verdict (exit 4) wins over repo-busy (exit 5)
 category: "Tooling"
 parent: "ZEN-28"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,13 @@ position: 76
 labels: []
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-20T23:31:36.987Z"
+updatedAt: "2026-09-21T06:48:21.299Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "e12226de-9c88-4c19-95c5-fe59bc19ada3"
 ---
 ## Goal
 Suggestions row 2026-08-25 (cli): *"For `zagent check` specifically, let the DURABLE contract verdict (exit 4) win over the TRANSIENT I5 repo-busy verdict (exit 5). Keep 5 winning for claim/next, where the lock is the whole point."* Today a `check` run while another ticket is in flight answers 5 for every ticket, so a malformed ticket cannot be found until the repo is idle.
