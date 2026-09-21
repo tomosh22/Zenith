@@ -1,12 +1,15 @@
 #include "UnitTests/Zenith_UnitTests.h"
 
-// Tests use `friend class Zenith_UnitTests` injection (see Flux_ShaderBinder.h,
-// Flux_PerFrame.h) to inspect private state. The coupling is intentional and
-// pragmatic: the tested private state (name-cache slot positions, per-frame
-// callback arrays) is exactly the implementation detail the tests want to
-// pin. A future refactor may replace the friend declarations with a
+// Tests use `friend class Zenith_UnitTests` injection (see FrameContext.h,
+// Flux_RenderGraph.h, and others) to inspect private state. The coupling is
+// intentional and pragmatic: the tested private state (per-frame callback
+// arrays, graph internals) is exactly the implementation detail the tests
+// want to pin. A future refactor may replace the friend declarations with a
 // test-only `*_Internal.h` header if the coupling starts to leak, but until
 // the interface grows the friend declarations are the cheapest option.
+// (Flux_ShaderBinder.h used to carry one too, for its by-name resolver —
+// removed along with the by-name Bind* overloads once every engine call site
+// migrated onto typed Flux_BindingHandle binds.)
 #include <chrono>
 #include <thread>   // Phase 1 transform-cache worker-contract test spawns a non-main thread
 #include <type_traits>
@@ -20421,11 +20424,14 @@ void Zenith_UnitTests::TestRenderGraphPassOrderDescription(){
 // ============================================================================
 // The 64-entry pointer-identity name cache (m_axNameCache / m_uNextCacheSlot /
 // NameCacheEntry / NAME_CACHE_SIZE) was removed with the binding-model overhaul,
-// so the cache-specific tests that lived here are gone. ResolveNamedBinding now
-// does a direct reflection lookup and returns { Flux_BindingHandle m_xHandle;
-// FluxResourceKind m_eKind; }. The on-disk reflection format and codegen are
-// exercised by the Slang/Codegen tests below, which need the full
-// Flux_ShaderReflection / Flux_ReflectedBinding definitions.
+// so the cache-specific tests that lived here are gone. The by-name Bind*
+// overloads and their ResolveNamedBinding resolver were removed outright once
+// every remaining engine call site (UnifiedMesh / Grass / TAA) migrated onto
+// the typed Flux_BindingHandle overloads — nothing here exercised the resolver
+// (it had no unit of its own; only the by-name overloads called it), so there
+// is no coverage to move onto the handle path. The on-disk reflection format
+// and codegen are exercised by the Slang/Codegen tests below, which need the
+// full Flux_ShaderReflection / Flux_ReflectedBinding definitions.
 
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_BindingValidation.h"

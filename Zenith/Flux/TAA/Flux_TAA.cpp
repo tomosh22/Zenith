@@ -9,6 +9,7 @@
 #include "Flux/Flux_RenderTargets.h"         // Flux_RootSigBuilder / Flux_ComputePipelineBuilder
 #include "Flux/Flux_RenderResources.h"       // Flux_RenderAttachmentBuilder (persistent history target)
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/TAA.h"
 #include "Flux/Flux_BackendTypes.h"          // FluxSwapchain().GetWidth/GetHeight
 #include "DebugVariables/Zenith_DebugVariables.h"
 
@@ -174,6 +175,7 @@ static void ExecuteTAAResolve(Flux_CommandBuffer* pxCmd, void* /*pUserData*/)
 	pxCmd->BindComputePipeline(&xTAA.m_xResolvePipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmd);
+	namespace TR = Flux_Generated_TAA::TAA_Resolve;
 	// CLAMP sampler on the render-res sources: the upscale gather (and the 3x3 neighbourhood /
 	// closest-depth dilation) step OUTSIDE [0,1] at screen edges; the default (null) sampler is
 	// REPEAT, which would wrap the opposite edge's colour/depth/velocity into a ~1-render-pixel
@@ -196,13 +198,13 @@ static void ExecuteTAAResolve(Flux_CommandBuffer* pxCmd, void* /*pUserData*/)
 	//     bit-identical to what linear was already returning.
 	// The history is bound TWICE, deliberately: same image, two samplers, because a
 	// combined image sampler bakes the filter in. It costs one descriptor and no memory.
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHDRTex",          &xGraphics.GetHDRSceneTarget(kuFluxViewSlotMain).SRV(), &xGraphics.m_xClampSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xVelocityTex",     &xGraphics.GetVelocityAttachment(kuFluxViewSlotMain).SRV(), &xGraphics.m_xPointSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xDepthTex",         xGraphics.GetDepthStencilSRV(kuFluxViewSlotMain), &xGraphics.m_xPointSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHistoryTex",      &xTAA.m_xHistory.SRV(), &xGraphics.m_xClampSampler);
-	xBinder.BindSRV          (xTAA.m_xResolveShader, "g_xHistoryDepthTex", &xTAA.m_xHistory.SRV(), &xGraphics.m_xPointSampler);
-	xBinder.BindUAV_Texture  (xTAA.m_xResolveShader, "g_xOutputTex",    &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).UAV(0));
-	xBinder.BindDrawConstants(xTAA.m_xResolveShader, "g_xTAAConstants", &xConsts, sizeof(xConsts));
+	xBinder.BindSRV          (TR::hg_xHDRTex,          &xGraphics.GetHDRSceneTarget(kuFluxViewSlotMain).SRV(), &xGraphics.m_xClampSampler);
+	xBinder.BindSRV          (TR::hg_xVelocityTex,     &xGraphics.GetVelocityAttachment(kuFluxViewSlotMain).SRV(), &xGraphics.m_xPointSampler);
+	xBinder.BindSRV          (TR::hg_xDepthTex,         xGraphics.GetDepthStencilSRV(kuFluxViewSlotMain), &xGraphics.m_xPointSampler);
+	xBinder.BindSRV          (TR::hg_xHistoryTex,      &xTAA.m_xHistory.SRV(), &xGraphics.m_xClampSampler);
+	xBinder.BindSRV          (TR::hg_xHistoryDepthTex, &xTAA.m_xHistory.SRV(), &xGraphics.m_xPointSampler);
+	xBinder.BindUAV_Texture  (TR::hg_xOutputTex,    &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).UAV(0));
+	xBinder.BindDrawConstants(TR::hg_xTAAConstants, &xConsts, sizeof(xConsts));
 
 	pxCmd->Dispatch((uW + kuTAA_GROUP - 1u) / kuTAA_GROUP, (uH + kuTAA_GROUP - 1u) / kuTAA_GROUP, 1u);
 }
@@ -224,9 +226,10 @@ static void ExecuteTAACopyToHistory(Flux_CommandBuffer* pxCmd, void* /*pUserData
 	pxCmd->BindComputePipeline(&xTAA.m_xCopyPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmd);
-	xBinder.BindSRV          (xTAA.m_xCopyShader, "g_xSourceTex",     &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).SRV());
-	xBinder.BindUAV_Texture  (xTAA.m_xCopyShader, "g_xHistoryTex",    &xTAA.m_xHistory.UAV(0));
-	xBinder.BindDrawConstants(xTAA.m_xCopyShader, "g_xCopyConstants", &xConsts, sizeof(xConsts));
+	namespace TC = Flux_Generated_TAA::TAA_CopyToHistory;
+	xBinder.BindSRV          (TC::hg_xSourceTex,     &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).SRV());
+	xBinder.BindUAV_Texture  (TC::hg_xHistoryTex,    &xTAA.m_xHistory.UAV(0));
+	xBinder.BindDrawConstants(TC::hg_xCopyConstants, &xConsts, sizeof(xConsts));
 
 	pxCmd->Dispatch((uW + kuTAA_GROUP - 1u) / kuTAA_GROUP, (uH + kuTAA_GROUP - 1u) / kuTAA_GROUP, 1u);
 }
@@ -250,12 +253,13 @@ static void ExecuteTAASharpen(Flux_CommandBuffer* pxCmd, void* /*pUserData*/)
 	pxCmd->BindComputePipeline(&xTAA.m_xSharpenPipeline);
 
 	Flux_ShaderBinder xBinder(*pxCmd);
+	namespace TS = Flux_Generated_TAA::TAA_Sharpen;
 	// CLAMP sampler: the RCAS 5-tap cross steps outside [0,1] at every screen-edge pixel with no
 	// in-bounds guard, so the default (null) REPEAT sampler would wrap the opposite edge's colour
 	// into the neighbour average AND the min/max clamp envelope. Clamp-to-edge matches the resolve.
-	xBinder.BindSRV          (xTAA.m_xSharpenShader, "g_xSourceTex",        &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).SRV(), &xGraphics.m_xClampSampler);
-	xBinder.BindUAV_Texture  (xTAA.m_xSharpenShader, "g_xOutputTex",        &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xSharpenedOutputHandle).UAV(0));
-	xBinder.BindDrawConstants(xTAA.m_xSharpenShader, "g_xSharpenConstants", &xConsts, sizeof(xConsts));
+	xBinder.BindSRV          (TS::hg_xSourceTex,        &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xResolvedOutputHandle).SRV(), &xGraphics.m_xClampSampler);
+	xBinder.BindUAV_Texture  (TS::hg_xOutputTex,        &xTAA.m_pxGraph->GetTransientAttachment(xTAA.m_xSharpenedOutputHandle).UAV(0));
+	xBinder.BindDrawConstants(TS::hg_xSharpenConstants, &xConsts, sizeof(xConsts));
 
 	pxCmd->Dispatch((uW + kuTAA_GROUP - 1u) / kuTAA_GROUP, (uH + kuTAA_GROUP - 1u) / kuTAA_GROUP, 1u);
 }

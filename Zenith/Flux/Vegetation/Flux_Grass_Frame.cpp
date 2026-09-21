@@ -8,6 +8,7 @@
 #include "Flux/Flux_GraphicsImpl.h"
 #include "Flux/RenderViews/Flux_RenderViews.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shaders/Generated/Vegetation.h"
 #include "Profiling/Zenith_Profiling.h"
 
 #include <bit>
@@ -644,8 +645,9 @@ void Flux_GrassImpl::RecordReset(Flux_CommandBuffer& xCmdBuf)
 
 	xCmdBuf.BindComputePipeline(&m_xResetPipeline);
 	Flux_ShaderBinder xBinder(xCmdBuf);
-	xBinder.BindUAV_Buffer(m_xResetShader, "IndirectArgs", &m_xIndirectArgsBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xResetShader, "BladeCounter", &m_xBladeCounterBuffer.GetUAV());
+	namespace GR = Flux_Generated_Vegetation::Grass_Reset;
+	xBinder.BindUAV_Buffer(GR::hIndirectArgs, &m_xIndirectArgsBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(GR::hBladeCounter, &m_xBladeCounterBuffer.GetUAV());
 	// One thread per indirect slot, a single group.
 	xCmdBuf.Dispatch(1u, 1u, 1u);
 }
@@ -662,15 +664,16 @@ void Flux_GrassImpl::RecordPlacement(Flux_CommandBuffer& xCmdBuf)
 	xCmdBuf.BindComputePipeline(&m_xPlacementPipeline);
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
+	namespace GP = Flux_Generated_Vegetation::Grass_Placement;
 
-	xBinder.BindCBV(m_xPlacementShader, "GrassPlacementConstants", &m_xPlacementConstantsBuffer.GetCBV());
-	xBinder.BindSRV_Buffer(m_xPlacementShader, "TypeParams", m_xTypeParamsBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(m_xPlacementShader, "Tiles", m_xTileBuffer.GetSRV());
-	xBinder.BindSRV(m_xPlacementShader, "g_xHeightMap", &m_xHeightTexture.m_xSRV, &xGraphics.m_xClampSampler);
-	xBinder.BindSRV(m_xPlacementShader, "g_xCoverageMap", &m_xCoverageTexture.m_xSRV, &xGraphics.m_xClampSampler);
+	xBinder.BindCBV(GP::hGrassPlacementConstants, &m_xPlacementConstantsBuffer.GetCBV());
+	xBinder.BindSRV_Buffer(GP::hTypeParams, m_xTypeParamsBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(GP::hTiles, m_xTileBuffer.GetSRV());
+	xBinder.BindSRV(GP::hg_xHeightMap, &m_xHeightTexture.m_xSRV, &xGraphics.m_xClampSampler);
+	xBinder.BindSRV(GP::hg_xCoverageMap, &m_xCoverageTexture.m_xSRV, &xGraphics.m_xClampSampler);
 	// POINT, never linear. The texel value IS a type index: a lerp between type 0 and
 	// type 4 selects type 2, a type the author never placed there.
-	xBinder.BindSRV(m_xPlacementShader, "g_xTypeMap", &m_xTypeTexture.m_xSRV, &xGraphics.m_xPointSampler);
+	xBinder.BindSRV(GP::hg_xTypeMap, &m_xTypeTexture.m_xSRV, &xGraphics.m_xPointSampler);
 	// The REAL trail map — the SOURCE half of the ping-pong, which is the one last
 	// frame's displacement pass filled and the one this frame's placement constants
 	// carry the anchor of. Otherwise the neutral 1x1: with displacement off the push
@@ -683,11 +686,11 @@ void Flux_GrassImpl::RecordPlacement(Flux_CommandBuffer& xCmdBuf)
 		: &m_xDisplacementTexture.m_xSRV;
 	// CLAMP, never repeat: a blade standing outside the 64 m footprint must read the
 	// border value, not the field wrapped in from the opposite edge.
-	xBinder.BindSRV(m_xPlacementShader, "g_xDisplacementMap", pxDisplacementSRV, &xGraphics.m_xClampSampler);
-	xBinder.BindUAV_Buffer(m_xPlacementShader, "BladePool", &m_xBladePoolBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xPlacementShader, "BladeCounter", &m_xBladeCounterBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xPlacementShader, "VisibleIndices", &m_xVisibleIndexBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(m_xPlacementShader, "IndirectArgs", &m_xIndirectArgsBuffer.GetUAV());
+	xBinder.BindSRV(GP::hg_xDisplacementMap, pxDisplacementSRV, &xGraphics.m_xClampSampler);
+	xBinder.BindUAV_Buffer(GP::hBladePool, &m_xBladePoolBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(GP::hBladeCounter, &m_xBladeCounterBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(GP::hVisibleIndices, &m_xVisibleIndexBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(GP::hIndirectArgs, &m_xIndirectArgsBuffer.GetUAV());
 
 	// TILE-MAJOR: one thread per lattice cell across every scheduled tile, matching
 	// the CS's tid / kGRASS_TILE_CELL_COUNT decode.
@@ -713,14 +716,15 @@ void Flux_GrassImpl::RecordDisplacement(Flux_CommandBuffer& xCmdBuf)
 
 	xCmdBuf.BindComputePipeline(&m_xDisplacementPipeline);
 	Flux_ShaderBinder xBinder(xCmdBuf);
-	xBinder.BindCBV(m_xDisplacementShader, "GrassDisplacementConstants", &m_xDisplacementConstantsBuffer.GetCBV());
-	xBinder.BindSRV_Buffer(m_xDisplacementShader, "Movers", m_xMoverBuffer.GetSRV());
+	namespace GD = Flux_Generated_Vegetation::Grass_Displacement;
+	xBinder.BindCBV(GD::hGrassDisplacementConstants, &m_xDisplacementConstantsBuffer.GetCBV());
+	xBinder.BindSRV_Buffer(GD::hMovers, m_xMoverBuffer.GetSRV());
 	// Both halves as storage images. The source is LOADED at an integer texel offset
 	// rather than sampled, which is what lets the graph declare a single access for
 	// both roles — and is exact, because the anchor snap makes the offset integral.
-	xBinder.BindUAV_Texture(m_xDisplacementShader, "g_xPrevDisplacementTex",
+	xBinder.BindUAV_Texture(GD::hg_xPrevDisplacementTex,
 		&m_axDisplacementMaps[1u - m_uDisplacementWriteIndex].UAV(0u));
-	xBinder.BindUAV_Texture(m_xDisplacementShader, "g_xNextDisplacementTex",
+	xBinder.BindUAV_Texture(GD::hg_xNextDisplacementTex,
 		&m_axDisplacementMaps[m_uDisplacementWriteIndex].UAV(0u));
 
 	const u_int uGroups = (Flux_GrassConfig::uDISPLACEMENT_RESOLUTION + uFLUX_GRASS_DISPLACEMENT_GROUP_SIZE - 1u)
@@ -737,7 +741,7 @@ void Flux_GrassImpl::RecordIndirectFixup(Flux_CommandBuffer& xCmdBuf)
 
 	xCmdBuf.BindComputePipeline(&m_xFixupPipeline);
 	Flux_ShaderBinder xBinder(xCmdBuf);
-	xBinder.BindUAV_Buffer(m_xFixupShader, "IndirectArgs", &m_xIndirectArgsBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(Flux_Generated_Vegetation::Grass_IndirectFixup::hIndirectArgs, &m_xIndirectArgsBuffer.GetUAV());
 	xCmdBuf.Dispatch(1u, 1u, 1u);
 }
 
@@ -756,7 +760,6 @@ void Flux_GrassImpl::RecordGBuffer(Flux_CommandBuffer& xCmdBuf)
 	// attachment count, so the pipeline and the framebuffer cannot disagree.
 	const Flux_GrassPipelineVariant eVariant = Flux_GrassSelectPipelineVariant(m_bVelocityLatched, false);
 	const bool bVelocity = Flux_GrassPipelineVariantIsVelocity(eVariant);
-	Flux_Shader& xShader = bVelocity ? m_xGBufferVelocityShader : m_xGBufferShader;
 
 	xCmdBuf.SetPipeline(bVelocity ? &m_xGBufferVelocityPipeline : &m_xGBufferPipeline);
 	// No vertex buffer at all — SV_VertexID delivers the fetched index value, which
@@ -771,14 +774,31 @@ void Flux_GrassImpl::RecordGBuffer(Flux_CommandBuffer& xCmdBuf)
 	// set 2 earlier in the same worker command buffer. Relying on that makes correctness
 	// depend on which OTHER features are enabled; bind it here.
 	xCmdBuf.UseBindlessTextures(2);
-	xBinder.BindCBV(xShader, "GrassDrawConstants", &m_xDrawConstantsBuffer.GetCBV());
+
+	// ★ Two explicit arms, not one shared handle set: the velocity variant inserts
+	// GrassPrevWindConstants at binding 1 and shifts BladePool/VisibleIndices/TypeParams
+	// up by one slot relative to the base program (see Flux_Generated_Vegetation —
+	// Grass_ToGBuffer vs Grass_ToGBufferVelocity). xShader is chosen at RECORD time by
+	// the velocity latch, so the handles have to be chosen the same way; picking one
+	// namespace unconditionally would compile clean and mis-bind the descriptor on
+	// whichever of the two programs it was wrong for.
 	if (bVelocity)
 	{
-		xBinder.BindCBV(xShader, "GrassPrevWindConstants", &m_xPrevWindConstantsBuffer.GetCBV());
+		namespace GV = Flux_Generated_Vegetation::Grass_ToGBufferVelocity;
+		xBinder.BindCBV(GV::hGrassDrawConstants, &m_xDrawConstantsBuffer.GetCBV());
+		xBinder.BindCBV(GV::hGrassPrevWindConstants, &m_xPrevWindConstantsBuffer.GetCBV());
+		xBinder.BindSRV_Buffer(GV::hBladePool, m_xBladePoolBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(GV::hVisibleIndices, m_xVisibleIndexBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(GV::hTypeParams, m_xTypeParamsBuffer.GetSRV());
 	}
-	xBinder.BindSRV_Buffer(xShader, "BladePool", m_xBladePoolBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(xShader, "VisibleIndices", m_xVisibleIndexBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(xShader, "TypeParams", m_xTypeParamsBuffer.GetSRV());
+	else
+	{
+		namespace GB = Flux_Generated_Vegetation::Grass_ToGBuffer;
+		xBinder.BindCBV(GB::hGrassDrawConstants, &m_xDrawConstantsBuffer.GetCBV());
+		xBinder.BindSRV_Buffer(GB::hBladePool, m_xBladePoolBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(GB::hVisibleIndices, m_xVisibleIndexBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(GB::hTypeParams, m_xTypeParamsBuffer.GetSRV());
+	}
 
 	// Slot 0 = HI mesh, slot 1 = LO mesh. firstInstance (seeded by the reset CS)
 	// carries each partition's base, so the vertex stage recovers its slice from
@@ -832,10 +852,11 @@ void Flux_GrassImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int uCasca
 	// The SAME draw constants as the lit pass. The projection differs and comes from
 	// the cascade pass's own VIEW set; everything else must match or a swaying blade
 	// casts a shadow it is not standing in.
-	xBinder.BindCBV(m_xShadowShader, "GrassDrawConstants", &m_xDrawConstantsBuffer.GetCBV());
-	xBinder.BindSRV_Buffer(m_xShadowShader, "BladePool", m_xBladePoolBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(m_xShadowShader, "VisibleIndices", m_xVisibleIndexBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(m_xShadowShader, "TypeParams", m_xTypeParamsBuffer.GetSRV());
+	namespace GS = Flux_Generated_Vegetation::Grass_ToShadowmap;
+	xBinder.BindCBV(GS::hGrassDrawConstants, &m_xDrawConstantsBuffer.GetCBV());
+	xBinder.BindSRV_Buffer(GS::hBladePool, m_xBladePoolBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(GS::hVisibleIndices, m_xVisibleIndexBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(GS::hTypeParams, m_xTypeParamsBuffer.GetSRV());
 
 	xCmdBuf.DrawIndexedIndirect(&m_xIndirectArgsBuffer, 1u,
 		uSlot * uFLUX_GRASS_INDIRECT_STRIDE, uFLUX_GRASS_INDIRECT_STRIDE);

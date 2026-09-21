@@ -45,10 +45,10 @@ static_assert(Flux_Generated_UnifiedMesh::UnifiedMesh_ToShadowmap::kVertexLayout
 
 // =====================================================================
 // Flux_UnifiedMesh — unified GPU-driven opaque static-mesh feature (Stage 1).
-// See Flux_UnifiedMeshImpl.h for the architecture overview. Binding is BY NAME
-// (the Flux_ShaderBinder name overloads) so the feature builds without the
-// generated typed-handle header — the runtime compiles the .slang; the generated
-// header is an offline/CI artifact (FluxCompiler) for the typed-handle convention.
+// See Flux_UnifiedMeshImpl.h for the architecture overview. Binding is through
+// the generated typed Flux_BindingHandle table (Flux/Shaders/Generated/UnifiedMesh.h),
+// resolved once from Slang reflection at codegen time rather than looked up by
+// name per bind.
 // =====================================================================
 
 namespace
@@ -145,17 +145,20 @@ namespace
 
 	// Bind the per-bucket VAT texture (POINT sampler) into the DRAW set's g_xAnimationTex; falls
 	// back to the white dummy when the bucket has no VAT so the descriptor is always valid.
-	void BindBucketVAT(Flux_ShaderBinder& xBinder, Flux_Shader& xShader, const Flux_AnimationTexture* pxVAT)
+	// Takes the resolved handle rather than a shader: hg_xAnimationTex sits at the same {4,2}
+	// slot in every program that declares it (ToGBuffer / ToGBufferVelocity / ToShadowmap), but
+	// the caller still supplies its own program's handle rather than this helper guessing one.
+	void BindBucketVAT(Flux_ShaderBinder& xBinder, const Flux_BindingHandle& xAnimationTexHandle, const Flux_AnimationTexture* pxVAT)
 	{
 		Flux_GraphicsImpl& xGraphics = g_xEngine.FluxGraphics();
 		if (pxVAT != nullptr)
 		{
-			xBinder.BindSRV(xShader, "g_xAnimationTex",
+			xBinder.BindSRV(xAnimationTexHandle,
 				&pxVAT->GetPositionTexture()->m_xSRV, &xGraphics.m_xPointSampler);
 		}
 		else
 		{
-			xBinder.BindSRV(xShader, "g_xAnimationTex",
+			xBinder.BindSRV(xAnimationTexHandle,
 				&xGraphics.m_xWhiteTexture.GetDirect()->m_xSRV, &xGraphics.m_xPointSampler);
 		}
 	}
@@ -921,15 +924,16 @@ static void ExecuteUnifiedSkinning(Flux_CommandBuffer* pxCmdList, void*)
 
 	pxCmdList->BindComputePipeline(&xSelf.m_xSkinningPipeline);
 	Flux_ShaderBinder xBinder(*pxCmdList);
+	namespace US = Flux_Generated_UnifiedMesh::UnifiedMesh_Skinning;
 
 	UnifiedSkinConstants xConsts = {};
 	xConsts.m_uNumJobs      = xSelf.m_uSkinJobCount;
 	xConsts.m_uPaletteCount = xSelf.m_uBonePaletteCount;
-	xBinder.BindDrawConstants(xSelf.m_xSkinningShader, "SkinConstants", &xConsts, sizeof(xConsts));
-	xBinder.BindSRV_Buffer(xSelf.m_xSkinningShader, "bindPose",     xSelf.m_xBindPosePoolBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(xSelf.m_xSkinningShader, "bonePalette",  xSelf.m_xBonePaletteBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(xSelf.m_xSkinningShader, "skinJobs",     xSelf.m_xSkinJobsBuffer.GetSRV());
-	xBinder.BindUAV_Buffer(xSelf.m_xSkinningShader, "skinnedArena", &xSelf.m_xSkinnedArenaBuffer.GetUAV());
+	xBinder.BindDrawConstants(US::hSkinConstants, &xConsts, sizeof(xConsts));
+	xBinder.BindSRV_Buffer(US::hbindPose,     xSelf.m_xBindPosePoolBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(US::hbonePalette,  xSelf.m_xBonePaletteBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(US::hskinJobs,     xSelf.m_xSkinJobsBuffer.GetSRV());
+	xBinder.BindUAV_Buffer(US::hskinnedArena, &xSelf.m_xSkinnedArenaBuffer.GetUAV());
 
 	// 2D dispatch: X = vertices (max over jobs, 64/group), Y = one row per skin-job. Each
 	// thread guards vx < job.vertCount and jobIdx < numJobs (the shader's own guards).
@@ -944,15 +948,16 @@ static void ExecuteUnifiedSkinning(Flux_CommandBuffer* pxCmdList, void*)
 	if (g_xEngine.FluxGraphics().IsVelocityMRTActive() && xSelf.m_uPrevBonePaletteCount > 0u)
 	{
 		pxCmdList->BindComputePipeline(&xSelf.m_xSkinningPrevPipeline);
+		namespace USP = Flux_Generated_UnifiedMesh::UnifiedMesh_SkinningPrev;
 
 		UnifiedSkinConstants xPrevConsts = {};
 		xPrevConsts.m_uNumJobs      = xSelf.m_uSkinJobCount;
 		xPrevConsts.m_uPaletteCount = xSelf.m_uPrevBonePaletteCount;
-		xBinder.BindDrawConstants(xSelf.m_xSkinningPrevShader, "SkinConstants", &xPrevConsts, sizeof(xPrevConsts));
-		xBinder.BindSRV_Buffer(xSelf.m_xSkinningPrevShader, "bindPose",         xSelf.m_xBindPosePoolBuffer.GetSRV());
-		xBinder.BindSRV_Buffer(xSelf.m_xSkinningPrevShader, "prevBonePalette",  xSelf.m_xPrevBonePaletteBuffer.GetSRV());
-		xBinder.BindSRV_Buffer(xSelf.m_xSkinningPrevShader, "skinJobs",         xSelf.m_xSkinJobsBuffer.GetSRV());
-		xBinder.BindUAV_Buffer(xSelf.m_xSkinningPrevShader, "prevSkinnedArena", &xSelf.m_xPrevSkinnedArenaBuffer.GetUAV());
+		xBinder.BindDrawConstants(USP::hSkinConstants, &xPrevConsts, sizeof(xPrevConsts));
+		xBinder.BindSRV_Buffer(USP::hbindPose,         xSelf.m_xBindPosePoolBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(USP::hprevBonePalette,  xSelf.m_xPrevBonePaletteBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(USP::hskinJobs,         xSelf.m_xSkinJobsBuffer.GetSRV());
+		xBinder.BindUAV_Buffer(USP::hprevSkinnedArena, &xSelf.m_xPrevSkinnedArenaBuffer.GetUAV());
 		pxCmdList->Dispatch(uGroupsX, xSelf.m_uSkinJobCount, 1u);
 	}
 }
@@ -967,13 +972,14 @@ static void ExecuteUnifiedReset(Flux_CommandBuffer* pxCmdList, void*)
 
 	pxCmdList->BindComputePipeline(&xSelf.m_xResetPipeline);
 	Flux_ShaderBinder xBinder(*pxCmdList);
+	namespace UR = Flux_Generated_UnifiedMesh::UnifiedMesh_Reset;
 
 	UnifiedResetConstants xConsts = {};
 	xConsts.m_uNumBuckets = xSelf.m_uBucketSlotCount;
 	xConsts.m_uNumViews   = xSelf.m_uNumViews;
-	xBinder.BindDrawConstants(xSelf.m_xResetShader, "ResetConstants", &xConsts, sizeof(xConsts));
-	xBinder.BindUAV_Buffer(xSelf.m_xResetShader, "bucketIndexCount", &xSelf.m_xBucketIndexCountBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(xSelf.m_xResetShader, "indirect",         &xSelf.m_xIndirectBuffer.GetUAV());
+	xBinder.BindDrawConstants(UR::hResetConstants, &xConsts, sizeof(xConsts));
+	xBinder.BindUAV_Buffer(UR::hbucketIndexCount, &xSelf.m_xBucketIndexCountBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(UR::hindirect,         &xSelf.m_xIndirectBuffer.GetUAV());
 
 	// One thread per (view, bucket) — reset every active view's indirect commands.
 	const u_int uResetThreads = xSelf.m_uBucketSlotCount * xSelf.m_uNumViews;
@@ -990,13 +996,14 @@ static void ExecuteUnifiedCulling(Flux_CommandBuffer* pxCmdList, void*)
 
 	pxCmdList->BindComputePipeline(&xSelf.m_xCullingPipeline);
 	Flux_ShaderBinder xBinder(*pxCmdList);
+	namespace UC = Flux_Generated_UnifiedMesh::UnifiedMesh_Culling;
 
-	xBinder.BindCBV(xSelf.m_xCullingShader,        "CullingConstants", &xSelf.m_xCullingConstantsBuffer.GetCBV());
-	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "Objects",          &xSelf.m_xObjectsBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "DrawItems",        &xSelf.m_xDrawItemsBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "bucketOffset",     &xSelf.m_xBucketOffsetBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "visibleIndex",     &xSelf.m_xVisibleIndexBuffer.GetUAV());
-	xBinder.BindUAV_Buffer(xSelf.m_xCullingShader, "indirect",         &xSelf.m_xIndirectBuffer.GetUAV());
+	xBinder.BindCBV(UC::hCullingConstants,        &xSelf.m_xCullingConstantsBuffer.GetCBV());
+	xBinder.BindUAV_Buffer(UC::hObjects,          &xSelf.m_xObjectsBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(UC::hDrawItems,        &xSelf.m_xDrawItemsBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(UC::hbucketOffset,     &xSelf.m_xBucketOffsetBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(UC::hvisibleIndex,     &xSelf.m_xVisibleIndexBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(UC::hindirect,         &xSelf.m_xIndirectBuffer.GetUAV());
 
 	// One thread per (view, draw-item) — cull every active view's frustum in one dispatch.
 	const u_int uCullThreads = xSelf.m_uTotalDrawItems * xSelf.m_uNumViews;
@@ -1062,19 +1069,23 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 			: (bVelocity ? &xSelf.m_xGBufferPipelineVelocity          : &xSelf.m_xGBufferPipeline));
 		pxCmdList->UseBindlessTextures(2);
 
+		namespace UG  = Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBuffer;
+		namespace UGV = Flux_Generated_UnifiedMesh::UnifiedMesh_ToGBufferVelocity;
+
 		// PASS block (set 3) — scene records bound once per pass (BindDrawConstants on
-		// the DRAW set 4 below never disturbs these).
-		xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "Objects",   xSelf.m_xObjectsBuffer.GetSRV());
-		xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "DrawItems", xSelf.m_xDrawItemsBuffer.GetSRV());
-		// TAA (Stage 4.3): the velocity pipeline's PASS set adds PrevTransforms (binding 2). Bind it
-		// via the velocity shader's reflection (the base shader has no such binding); Objects/DrawItems
-		// stay at bindings 0/1 in BOTH layouts, so the base-shader binds above resolve to the same slots.
+		// the DRAW set 4 below never disturbs these). Objects/DrawItems sit at the SAME
+		// {3,0}/{3,1} slots in both the base and velocity programs, so the base handles
+		// resolve correctly either way.
+		xBinder.BindSRV_Buffer(UG::hObjects,   xSelf.m_xObjectsBuffer.GetSRV());
+		xBinder.BindSRV_Buffer(UG::hDrawItems, xSelf.m_xDrawItemsBuffer.GetSRV());
+		// TAA (Stage 4.3): the velocity pipeline's PASS set adds PrevTransforms (binding 2) —
+		// present ONLY in the velocity program's layout, so it must come from UGV, never UG.
 		if (bVelocity)
 		{
-			xBinder.BindSRV_Buffer(xSelf.m_xGBufferVelocityShader, "PrevTransforms", xSelf.m_xPrevTransformsBuffer.GetSRV());
+			xBinder.BindSRV_Buffer(UGV::hPrevTransforms, xSelf.m_xPrevTransformsBuffer.GetSRV());
 			// Stage 4.3b: the prev skinned-position arena (positions-only). Bound once per pass with a
 			// valid buffer for EVERY draw; only skinned draws index it (g_uIsSkinned in the draw consts).
-			xBinder.BindSRV_Buffer(xSelf.m_xGBufferVelocityShader, "PrevSkinnedPosArena", xSelf.m_xPrevSkinnedArenaBuffer.GetSRV());
+			xBinder.BindSRV_Buffer(UGV::hPrevSkinnedPosArena, xSelf.m_xPrevSkinnedArenaBuffer.GetSRV());
 		}
 
 		for (u_int u = 0; u < xSelf.m_axBucketDraws.GetSize(); ++u)
@@ -1115,9 +1126,9 @@ static void ExecuteUnifiedGBuffer(Flux_CommandBuffer* pxCmdList, void*)
 				xConsts.m_uPad0 = bUsePrevPose ? xDraw.m_uVertexOffset : 0u;   // g_uSkinnedPrevVertBase
 				xConsts.m_uPad1 = bUsePrevPose ? 1u : 0u;                       // g_uIsSkinned
 			}
-			xBinder.BindDrawConstants(xSelf.m_xGBufferShader, "DrawConstants", &xConsts, sizeof(xConsts));
-			xBinder.BindSRV_Buffer(xSelf.m_xGBufferShader, "VisibleIndexBuffer", xSelf.m_xVisibleIndexBuffer.GetSRV());
-			BindBucketVAT(xBinder, xSelf.m_xGBufferShader, xDraw.m_pxVATTexture);
+			xBinder.BindDrawConstants(UG::hDrawConstants, &xConsts, sizeof(xConsts));
+			xBinder.BindSRV_Buffer(UG::hVisibleIndexBuffer, xSelf.m_xVisibleIndexBuffer.GetSRV());
+			BindBucketVAT(xBinder, UG::hg_xAnimationTex, xDraw.m_pxVATTexture);
 
 			// Index math via the shared Flux_Unified* helpers (this pass's view slot) — the same
 			// source of truth RenderToShadowMap uses, so per-view indirect addressing can never drift.
@@ -1160,10 +1171,11 @@ void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int 
 	xCmdBuf.SetPipeline(&m_xShadowPipeline);
 	Flux_ShaderBinder xBinder(xCmdBuf);
 	xCmdBuf.UseBindlessTextures(2);   // base-colour table for the masked-cutout FS
+	namespace US = Flux_Generated_UnifiedMesh::UnifiedMesh_ToShadowmap;
 
 	// PASS block (set 3) — scene records bound once for this cascade.
-	xBinder.BindSRV_Buffer(m_xShadowShader, "Objects",   m_xObjectsBuffer.GetSRV());
-	xBinder.BindSRV_Buffer(m_xShadowShader, "DrawItems", m_xDrawItemsBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(US::hObjects,   m_xObjectsBuffer.GetSRV());
+	xBinder.BindSRV_Buffer(US::hDrawItems, m_xDrawItemsBuffer.GetSRV());
 
 	for (u_int u = 0; u < m_axBucketDraws.GetSize(); ++u)
 	{
@@ -1189,9 +1201,9 @@ void Flux_UnifiedMeshImpl::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf, u_int 
 		xConsts.m_uMaterialIndex = xDraw.m_uMaterialIndex;
 		xConsts.m_uBucketOffset  = Flux_UnifiedVisibleWriteIndex(uView, m_uTotalDrawItems, xDraw.m_uVisibleOffset, 0u);
 		xConsts.m_xVATParams     = xDraw.m_xVATParams;
-		xBinder.BindDrawConstants(m_xShadowShader, "DrawConstants", &xConsts, sizeof(xConsts));
-		xBinder.BindSRV_Buffer(m_xShadowShader, "VisibleIndexBuffer", m_xVisibleIndexBuffer.GetSRV());
-		BindBucketVAT(xBinder, m_xShadowShader, xDraw.m_pxVATTexture);
+		xBinder.BindDrawConstants(US::hDrawConstants, &xConsts, sizeof(xConsts));
+		xBinder.BindSRV_Buffer(US::hVisibleIndexBuffer, m_xVisibleIndexBuffer.GetSRV());
+		BindBucketVAT(xBinder, US::hg_xAnimationTex, xDraw.m_pxVATTexture);
 
 		const u_int uIndirectByteOffset =
 			Flux_UnifiedIndirectCommandWord(uView, xDraw.m_uSlot, m_uBucketSlotCount) * (u_int)sizeof(u_int);
