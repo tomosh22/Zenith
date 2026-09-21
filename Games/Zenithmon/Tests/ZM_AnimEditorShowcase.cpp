@@ -22,6 +22,12 @@
 // D21), then the state-machine panel authoring a small Idle/Walk/Attack graph
 // from the same creature's clips.
 //
+// ZEN-91: the promote target is redirected to a gitignored scratch directory
+// (SetAuthoredRootOverride, cleared in Teardown_ZMAnimEditorShowcase) rather
+// than the game's real Assets/Authored/ tree, so an unattended run of this
+// test creates no tracked files and needs no cleanup logic that would risk a
+// human's genuine authored override.
+//
 // Every panel call goes through the SAME public entry points the editor's own
 // buttons and units use (PromoteAndOpenAuthoredOverride, ShowFlag,
 // RequestWindowPlacement) or through Zenith_EditorAutomation for the steps
@@ -169,6 +175,23 @@ static void Setup_ZMAnimEditorShowcase()
 	Zenith_EditorPanel_Animation& xAnimPanel = Zenith_EditorPanel_Animation::Instance();
 	xAnimPanel.RequestWindowPlacement(40.0f, 40.0f, 900.0f, 640.0f);
 	Zenith_EditorPanel_AnimStateMachine::Instance().RequestWindowPlacement(20.0f, 15.0f, 1180.0f, 720.0f);
+
+	// ZEN-91: PromoteAndOpenAuthoredOverride's default target is the game's
+	// tracked Assets/Authored/ tree -- fine for a human using the editor, but
+	// this test runs unattended and must not leave anything for `git status`
+	// to report afterwards (the tree is not gitignored: .gitignore explicitly
+	// re-includes **/Assets/Authored/**, so a real human override there is
+	// never mistaken for build output). SetAuthoredRootOverride is the escape hatch the
+	// engine's OWN unit tests use for the identical reason (see
+	// Zenith_EditorAutomation_Animation.Tests.inl) -- it redirects
+	// PromoteToAuthoredOverride's write to an explicit directory instead of
+	// deriving one from the source asset's prefix, so the promoted clips land
+	// under gitignored Build/artifacts/ and never touch the real Authored/
+	// tree at all. Reset in Teardown_ZMAnimEditorShowcase below.
+	const std::filesystem::path xAuthoredScratchDir = xVisualDir / "AuthoredScratch";
+	std::error_code xAuthoredDirError;
+	std::filesystem::create_directories(xAuthoredScratchDir, xAuthoredDirError);
+	xAnimPanel.Document().SetAuthoredRootOverride(xAuthoredScratchDir.string());
 
 	// The Idle clip is GENERATED (baked every tools boot), so opening it for
 	// editing directly is refused (D21) -- promote it to an authored override
@@ -337,6 +360,17 @@ static bool Verify_ZMAnimEditorShowcase()
 	return bPassed;
 }
 
+// ZEN-91: undo the ONE piece of process-level state Setup installs that no
+// scene or entity owns -- the authored-root override on the (persistent,
+// editor-owned) Zenith_AnimationDocument singleton -- so a later test or a
+// second run in the same process cannot inherit this run's scratch redirect.
+// Runs whether or not the promote path was reached (Setup may have returned
+// early via RequestSkip); clearing an already-empty override is a no-op.
+static void Teardown_ZMAnimEditorShowcase()
+{
+	Zenith_EditorPanel_Animation::Instance().Document().SetAuthoredRootOverride("");
+}
+
 static const Zenith_AutomatedTest g_xZMAnimEditorShowcaseTest = {
 	"ZM_AnimEditorShowcase",
 	&Setup_ZMAnimEditorShowcase,
@@ -344,6 +378,8 @@ static const Zenith_AutomatedTest g_xZMAnimEditorShowcaseTest = {
 	&Verify_ZMAnimEditorShowcase,
 	/* maxFrames */ 600,
 	true /* m_bRequiresGraphics */,
+	false /* m_bManualOnly */,
+	&Teardown_ZMAnimEditorShowcase,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMAnimEditorShowcaseTest);
 

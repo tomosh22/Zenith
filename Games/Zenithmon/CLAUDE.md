@@ -107,12 +107,80 @@ re-author, not routine work):
   (`sceneAuthoring=AUTHOR_DAWNMERE`); a `DEFERRED` boot silently authors nothing
   and still looks successful.
 
-Scene bytes are boot-shape-independent (dense authoring-order file indices), so a
-boot must NOT leave a scene modified in `git status`. If one ever does, that is a
-regression of that property -- investigate it rather than just re-committing.
+Scene bytes are boot-shape-independent (dense authoring-order file indices) --
+**measured**, not just asserted: ZEN-91 (2026-09-21) booted DevilsPlayground's
+`ProcLevel.zscen` on both `Null_*_True` and `Vulkan_*_True` and got byte-identical
+authored output, and two consecutive boots of a drifting scene agreed with each
+other bit-for-bit in every case checked. So a boot must NOT leave a scene
+modified in `git status` -- but a modification found there is not automatically
+the nondeterminism this invariant is about. **There are THREE failure shapes and
+they want opposite remedies. Two boots of one config agreeing tells you almost
+nothing on its own -- shapes 2 and 3 both produce that.** Tell them apart before
+touching anything:
 
-That invariant has been lost **twice**, both times on `Npc_RivalVesper`'s rotation
-and both times with every existing guard green. Read both before touching it:
+* **Shape 1 -- two boots of the SAME config disagree with each other.** That is
+  run-to-run nondeterminism: something in the authoring path reads state that is
+  not the authored value. ZM-D-179 below is this shape (the serializer emitted
+  the live Jolt body's pose). Investigate rather than re-committing.
+* **Shape 2 -- every config agrees with every other, and all of them disagree
+  with the COMMITTED file.** Not nondeterminism at all: a stale artifact. An
+  engine default or derivation changed after the scene was last published and
+  nothing re-published it. ZEN-91's worked example is `ProcLevel.zscen`, whose
+  committed sun direction was exactly `Zenith_GetDefaultSunDirection()`'s return
+  value from *before* commit `d5d01253` changed it -- and DevilsPlayground's
+  authoring calls `AddStep_SetSunTimeOfDay` and never `AddStep_SetSunDirection`,
+  so `m_xDirection` was left at whatever default was compiled in, and serialized.
+  The remedy here IS to confirm the new value is intended and re-publish — and
+  ZEN-91 did, after earning it: `Null_*_Debug`, `Vulkan_*_Debug` and
+  `Vulkan_*_Release` boots all authored byte-identical `ProcLevel` output, which
+  is what rules out shape 3. The value that moved is a compile-time literal in
+  `Zenith_GetDefaultSunDirection()`, so there is no runtime float math for two
+  configurations to disagree about — but that was CHECKED, not assumed, because
+  the same assumption about `Dawnmere.zscen` was wrong (below).
+* **Shape 3 -- each config is internally deterministic, but two DIFFERENT
+  configs disagree with each other.** ZM-D-183 below is this shape, and it is
+  the dangerous one, because within any single config it is indistinguishable
+  from shape 2. Re-publishing "fixes" it until the next boot under the other
+  config, and the file ping-pongs in git forever. **A same-config repeat cannot
+  rule this out -- only a cross-config boot can.** The remedy is to freeze the
+  value, not to re-publish it.
+
+★ **So the cheap test that separates shape 2 from shape 3 is a boot under a
+SECOND configuration**, not a second boot under the first. `Debug` vs `Release`
+is the pair that caught ZM-D-183; do that before concluding "stale artifact".
+
+★★ **`Dawnmere.zscen` IS IN SHAPE 3 RIGHT NOW -- ZM-D-183 HAS RECURRED, ON THE
+SAME FILE, AND THE VALUE IS NOT VESPER'S FACING.** Measured on ZEN-91
+(2026-09-21), three MUTUALLY DISTINCT byte states of the same 76-entity/85199-byte
+scene:
+
+| state | differs from committed |
+|---|---|
+| committed on `master` | -- |
+| `Vulkan_vs2022_Debug_Win64_True` boot (x4, all identical) | 15 bytes |
+| `Vulkan_vs2022_Release_Win64_True` boot | 6 bytes |
+
+Debug and Release differ from each other by 9 bytes. Each config is internally
+deterministic -- four Debug boots agreed bit-for-bit -- so within either one this
+looks exactly like a stale artifact, and **the first pass of ZEN-91 nearly
+re-published it on that reading.** It is not stale: re-publishing picks one
+config's output and the other config dirties the file on its next boot, which is
+the ping-pong ZM-D-183 describes.
+
+The drift is ~2 ULP in five groups of three identical floats, the same magnitude
+ZM-D-183 records for MSVC Debug/Release codegen disagreeing on `atan2` /
+`angleAxis`. **But ZM-D-183's fix froze `ZM_DawnmereVesperFacing()` specifically,
+and this is not that value** -- a quaternion is four components and these are
+vec3s. So some OTHER authored value in Dawnmere is still computed from runtime
+float math instead of a frozen constant. Finding and freezing it is tracked
+separately; this scene is deliberately NOT re-published in the meantime, so
+`git status` after a Dawnmere-authoring boot is EXPECTED to be dirty until it is
+fixed. Do not re-commit it to make the tree clean.
+
+That invariant has been lost **twice**, both times on `Npc_RivalVesper`'s
+rotation and both times with every existing guard green -- **once in shape 1 and
+once in shape 3, which is exactly why they are listed separately above.** Read
+both before touching it:
 
 * **ZM-D-179** (2026-08-01) -- `Zenith_TransformComponent` serialized the LIVE JOLT
   BODY's pose, so any authored entity with a body saved a rotation that depended on
