@@ -173,14 +173,14 @@ class Zenith_TextureAsset : public Zenith_Asset
 Zenith_TextureAsset* pTex = handle.Resolve();
 
 // Equivalent explicit form (still supported, but more verbose):
-Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get<Zenith_TextureAsset>(handle.GetPath());
+Zenith_TextureAsset* pTex = Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(handle.GetPath());
 ```
 
 Asset handles (`TextureHandle`, `MaterialHandle`, etc.) store paths and manage ref-counting.
 
 - **`handle.Resolve()`** — default accessor for file-based handles. Returns the cached pointer if loaded; otherwise calls into `Zenith_AssetRegistry`, caches, and returns. Returns `nullptr` if path is empty and no procedural pointer was set, or if the load fails. Use this in game / component code unless you specifically need one of the alternatives below.
 - **`handle.GetDirect()`** — for procedural assets created via `Get().Create<T>()` and stored with `handle.Set(ptr)`. Returns the stored pointer without going through the registry. Returns `nullptr` for file-based handles that have not been loaded yet.
-- **`Zenith_AssetRegistry::Get<T>(handle.GetPath())`** — explicit static form. Equivalent to `Resolve()` but verbose; use when you want the registry call to be obvious at the call site.
+- **`Zenith_AssetRegistry::GetView<T>(handle.GetPath())`** — explicit static form. Equivalent to `Resolve()` but verbose; use when you want the registry call to be obvious at the call site.
 
 ## Material Assets (Zenith_MaterialAsset)
 
@@ -848,7 +848,7 @@ Inherit from `Zenith_Asset`, add `ZENITH_ASSET_TYPE_NAME(ClassName)` macro, impl
 
 ### 2. Use the Asset
 
-Load via `Zenith_AssetRegistry::Get<MyConfig>("game:path.zdata")` (returns cached if loaded), create programmatically via `Create<MyConfig>()`, save with `Save(pxAsset, "game:path.zdata")`.
+Load via `Zenith_AssetRegistry::GetView<MyConfig>("game:path.zdata")` (returns cached if loaded), create programmatically via `Create<MyConfig>()`, save with `Save(pxAsset, "game:path.zdata")`.
 
 ### Path Prefixes
 

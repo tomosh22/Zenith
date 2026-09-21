@@ -14,7 +14,7 @@ class Zenith_DataStream;
  * Assets are identified by path (no GUIDs) and use intrusive reference counting.
  *
  * Lifecycle:
- * - Created by registry (Get<T> or Create<T>)
+ * - Created by registry (GetView<T> or Create<T> or Acquire<T>)
  * - Reference count incremented by AssetHandle copies
  * - Reference count decremented on AssetHandle destruction
  * - Deleted by registry when ref count reaches 0

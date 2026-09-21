@@ -83,7 +83,7 @@ namespace Zenith_FileAccess
 			// (Zenith_Windows_FileAccess.cpp). "File is missing" is a
 			// RECOVERABLE condition this function already handles by returning
 			// null, and callers rely on that: the asset registry's contract is
-			// that Get<T>() of a non-existent path resolves to null, which
+			// that GetView<T>() of a non-existent path resolves to null, which
 			// Zenith_AssetRegistry.Tests.inl (AssetLoader/GetMissingFileReturnsNull)
 			// tests directly by loading "__loader_missing__.*". Breaking here
 			// made that passing test kill the process on Android.

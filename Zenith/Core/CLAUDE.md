@@ -232,7 +232,7 @@ Each mutable subsystem now has an `*Impl` class:
 
 For most subsystems, access state directly via `g_xEngine.X().Y()`; the transitional free-function forwarders were swept to zero.
 
-**Deliberate exception — `Zenith_AssetRegistry`.** Its static API (`Zenith_AssetRegistry::Get<T>(path)`, `Create<T>()`, `Save`, `UnloadUnused`, ...) is the *canonical* access path, not a forwarder slated for removal. The engine owns the single instance (`g_xEngine.Assets()`, published via `s_pxInstance` in `InitialiseAssets`); the static methods delegate to it. Call sites use the static form throughout — there is no planned migration to `g_xEngine.Assets().X()`.
+**Deliberate exception — `Zenith_AssetRegistry`.** Its static API (`Zenith_AssetRegistry::GetView<T>(path)`, `Acquire<T>(path)`, `Create<T>()`, `Save`, `UnloadUnused`, ...) is the *canonical* access path, not a forwarder slated for removal. The engine owns the single instance (`g_xEngine.Assets()`, published via `s_pxInstance` in `InitialiseAssets`); the static methods delegate to it. Call sites use the static form throughout — there is no planned migration to `g_xEngine.Assets().X()`.
 
 ### Macro-Driven APIs
 

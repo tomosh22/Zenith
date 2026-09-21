@@ -585,9 +585,22 @@ void Zenith_Engine::InitialiseAssets()
 	// Engine owns the AssetRegistry instance. Allocate and
 	// install the view-pointer BEFORE Zenith_AssetRegistry::Initialize()
 	// (which now only registers loaders and asserts s_pxInstance is set).
-	// The ~50 existing call sites of the static facade (Get<T>, Create<T>,
-	// Save, etc.) keep working through s_pxInstance until Phase 9 sweeps
-	// them away.
+	// The existing call sites of the static facade (GetView<T>, Acquire<T>,
+	// Create<T>, Save, etc.) keep working through s_pxInstance until Phase 9
+	// (ZEN-36) sweeps them away.
+	//
+	// ZEN-102: this comment previously named a phantom `Get<T>` and put "~50"
+	// on the call sites. The name is corrected; the COUNT is dropped rather
+	// than re-derived, because it was never checkable against `Get<T>` (which
+	// has none) and nothing keeps such a number honest.
+	//
+	// ★ The "until Phase 9" clause is kept DELIBERATELY, and it contradicts
+	// `Zenith/Core/CLAUDE.md`, which calls this same static API "the canonical
+	// access path, not a forwarder slated for removal" with "no planned
+	// migration". One of the two is wrong and ZEN-102 did not have the standing
+	// to decide which — ZEN-36 is open and is literally titled "static-API
+	// removal sweep", so deleting the pointer here would have hidden a live
+	// disagreement rather than settled it.
 	Zenith_Assert(m_pxAssets == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxAssets = new Zenith_AssetRegistry();
 	Zenith_AssetRegistry::s_pxInstance = m_pxAssets;

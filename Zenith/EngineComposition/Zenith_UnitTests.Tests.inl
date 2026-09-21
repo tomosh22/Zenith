@@ -11507,7 +11507,7 @@ void Zenith_UnitTests::TestPrefabLoadCorruptedFile(){
 		xOut.write(acGarbage, sizeof(acGarbage));
 	}
 
-	// Get<Zenith_Prefab>(path) returns nullptr if loading rejects the file.
+	// GetView<Zenith_Prefab>(path) returns nullptr if loading rejects the file.
 	// (Some versions assert; in either case the registry shouldn't end up with
 	// a valid prefab for this path.)
 	Zenith_Prefab* pxLoaded = Zenith_AssetRegistry::GetView<Zenith_Prefab>(strPath);

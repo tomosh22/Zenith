@@ -22,7 +22,7 @@
 // Every typed file asset is loaded through ONE of two templates instead of a
 // per-type free function. Both return Zenith_Result<Zenith_Asset*>: the loaded
 // asset on success, or a specific Zenith_ErrorCode on failure. The Result lives
-// only inside this asset-loading boundary; the public Get<T>()/Create<T>() facade
+// only inside this asset-loading boundary; the public GetView<T>()/Create<T>()/Acquire<T>() facade
 // still hands callers a raw T* (nullptr on failure), so nothing outside
 // AssetHandling changes.
 //

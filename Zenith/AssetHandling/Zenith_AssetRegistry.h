@@ -48,7 +48,7 @@ Zenith_Result<Zenith_Asset*> LoadSerializableAsset(const std::string& strPath);
  * Path-based IDs with "game:" / "engine:" prefixes for cross-machine portability;
  * ref-counted with UnloadUnused() cleanup; thread-safe.
  *
- * The static API (Get<T>(path) / Create<T>() / Save / UnloadUnused / ...) is the
+ * The static API (GetView<T>(path) / Acquire<T>(path) / Create<T>() / Save / UnloadUnused / ...) is the
  * CANONICAL access path — not a transitional forwarder. The engine owns the one
  * instance (reached via the Assets() accessor, wired through s_pxInstance in
  * InitialiseAssets); the static methods delegate to it. Call sites use the static
@@ -386,13 +386,13 @@ private:
 	// Type-specific loaders
 	Zenith_HashMap<Zenith_TypeIndex, AssetLoaderFn> m_xLoaders;
 
-	// Thread safety. CONTRACT: Zenith_Mutex MUST be recursive — Get<T>() runs the
-	// type-specific loader inside this lock, and a loader that calls Get<U>() for a
+	// Thread safety. CONTRACT: Zenith_Mutex MUST be recursive — GetView<T>() runs the
+	// type-specific loader inside this lock, and a loader that calls GetView<U>() for a
 	// sub-asset (e.g. a model loader pulling in its meshes) re-enters the registry.
 	// Zenith_Mutex is recursive on Windows (CRITICAL_SECTION) and Android
 	// (PTHREAD_MUTEX_RECURSIVE) — see Zenith_Windows_Multithreading.h:15 and
 	// Zenith_Android_Multithreading.h:15. A future port that swaps in a
-	// non-recursive primitive will deadlock on the first nested Get<>.
+	// non-recursive primitive will deadlock on the first nested GetView<>.
 	mutable Zenith_Mutex m_xMutex;
 
 	// Procedural asset ID counter

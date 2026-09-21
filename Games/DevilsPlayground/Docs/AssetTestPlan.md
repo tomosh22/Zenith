@@ -37,7 +37,7 @@ The verification surface for assets is wider than for gameplay because every ass
 | Asset property | Verifiable by Claude? | Method |
 |---|---|---|
 | Existence at expected path | ✅ | File-system check via `Zenith_FileAccess`. |
-| Loadability | ✅ | `Zenith_AssetRegistry::Get<T>(path) != nullptr`. |
+| Loadability | ✅ | `Zenith_AssetRegistry::GetView<T>(path) != nullptr`. |
 | Schema correctness (vertex format, bone count, texture format) | ✅ | Asset's runtime header / metadata. |
 | Bounding-box / dimensions / poly count | ✅ | Geometry inspection. |
 | Material slot count + channel population | ✅ | Material asset query. |
@@ -103,7 +103,7 @@ The manifest itself is a data file (`Games/DevilsPlayground/Assets/manifest.json
 For each asset type:
 
 ```cpp
-Zenith_<Type>* pxAsset = Zenith_AssetRegistry::Get<Zenith_<Type>>("game:.../path.zXX");
+Zenith_<Type>* pxAsset = Zenith_AssetRegistry::GetView<Zenith_<Type>>("game:.../path.zXX");
 ZENITH_ASSERT(pxAsset != nullptr, "Asset failed to load");
 ```
 
@@ -176,7 +176,7 @@ For each class of asset in [AssetManifest.md](AssetManifest.md), the test spec f
 **Proves:** every mesh in the manifest loads, has valid geometry, and matches its declared dimension bucket.
 
 - **Setup:** none.
-- **Step:** iterate `g_xMeshManifest` (table of `{path, kind, expectedDimsRange}`). For each entry, load via `Zenith_AssetRegistry::Get<Zenith_Mesh>`. Capture vertex count, tri count, bounding box.
+- **Step:** iterate `g_xMeshManifest` (table of `{path, kind, expectedDimsRange}`). For each entry, load via `Zenith_AssetRegistry::GetView<Zenith_Mesh>`. Capture vertex count, tri count, bounding box.
 - **Verify:** every load succeeded AND for each: tri count in `[kind.minTris, kind.maxTris]` AND `bbox.height` in `[kind.minHeight, kind.maxHeight]`.
 - **Sample manifest entry:**
   ```cpp

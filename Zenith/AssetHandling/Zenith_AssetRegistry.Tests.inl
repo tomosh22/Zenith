@@ -132,7 +132,7 @@ void Zenith_UnitTests::TestAssetRegistryGameAndEngineDirsSeparate()
 // The ten per-type registry loaders were collapsed onto two templates
 // (LoadAssetGeneric / LoadAssetViaStaticFactory) driven by a
 // Zenith_AssetLoadTraits<T> trait. These pin the branch logic that moved into
-// the templates — exercised through the PUBLIC Get<T>()/Create<T>() facade, so
+// the templates — exercised through the PUBLIC GetView<T>()/Create<T>()/Acquire<T>() facade, so
 // no on-disk fixtures or GPU are needed (an empty/missing path never reaches the
 // GPU-upload step). Created procedural assets are ForceUnload'd by their
 // generated path so the live registry the suite runs inside is left undisturbed.
@@ -162,14 +162,14 @@ namespace
 		}
 	}
 
-	// Get<T>() on a non-existent file must fail to null — member-contract types
+	// GetView<T>() on a non-existent file must fail to null — member-contract types
 	// via new -> LoadFromFile FILE_NOT_FOUND -> delete; static-factory types via
 	// the Result<T*> error unwrap.
 	template<typename T>
 	void CheckMissingFileNull(const char* szPath)
 	{
 		ZENITH_ASSERT_NULL(Zenith_AssetRegistry::GetView<T>(szPath),
-			"Get<T>() on a missing file must return null");
+			"GetView<T>() on a missing file must return null");
 	}
 }
 
@@ -189,7 +189,7 @@ ZENITH_TEST(AssetLoader, CreateProceduralAllTypes)
 ZENITH_TEST(AssetLoader, GetProceduralPathRejectedForGuardedTypes)
 {
 	// Animation + MeshGeometry set kGuardProcedural=true: a procedural:// load path
-	// returns INVALID_ARGUMENT from the loader, so Get<T> resolves to null. This is
+	// returns INVALID_ARGUMENT from the loader, so GetView<T> resolves to null. This is
 	// the single behavioural knob the trait encodes — lock it down.
 	ZENITH_ASSERT_NULL(Zenith_AssetRegistry::GetView<Zenith_AnimationAsset>("procedural://__loadertest__"),
 		"Animation must reject a procedural:// load path");
@@ -211,10 +211,10 @@ ZENITH_TEST(AssetLoader, GetMissingFileReturnsNull)
 
 ZENITH_TEST(AssetLoader, GetEmptyPathReturnsNull)
 {
-	// Empty path on Get<T> is rejected upstream of the loader (GetInternal),
+	// Empty path on GetView<T> is rejected upstream of the loader (GetInternal),
 	// distinct from Create<T>'s empty path (which makes a procedural instance).
 	ZENITH_ASSERT_NULL(Zenith_AssetRegistry::GetView<Zenith_TextureAsset>(""),
-		"Get<T>(\"\") must return null (empty is not procedural-create)");
+		"GetView<T>(\"\") must return null (empty is not procedural-create)");
 }
 
 ZENITH_TEST(AssetLoader, ForceUnloadOfFreshCreateRemovesAsset)

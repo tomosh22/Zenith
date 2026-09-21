@@ -454,7 +454,7 @@ or physical device.
   sibling, and zeroes the `ulSize` out-param on the failure path. Callers pair
   the two (`Zenith_DataStream::ReadFromFile` asserts
   `m_pData != nullptr || m_ulDataSize == 0`), and the asset registry's contract
-  is that `Get<T>()` of a missing path is a clean null.
+  is that `GetView<T>()` of a missing path is a clean null.
 - **Reading engine-owned files in tests** - go through `Zenith_FileAccess`, never a
   raw `std::ifstream`: on Android the file may be inside the APK, reachable only
   via AAssetManager. (This is what made the IBL shader-source tests fail there.)
