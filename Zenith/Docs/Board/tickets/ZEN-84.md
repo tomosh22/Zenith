@@ -6,8 +6,8 @@ title: "RenderTest tennis integration units must not depend on an asset a prior 
 category: "Engine"
 parent: "ZEN-1"
 sprint: null
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "MEDIUM"
 complexity: "SIMPLE"
 risk: "MEDIUM"
@@ -16,12 +16,13 @@ position: 84
 labels: ["flaky"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-19T17:36:41.770Z"
+updatedAt: "2026-09-21T09:30:02.244Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "6f61044c-34df-4070-ae9f-2dc33a69f3ed"
 ---
 ## Goal
 A durable finding from the Behaviour Graph parity program (2026-09): *"Deleting on-disk `.bgraph` before a gate reds `RenderTestTennis::Integration{LoadWiring,BlackboardPublish}`: those units load an asset authored by a prior tools boot."* A boot unit that depends on a file a PREVIOUS run wrote is order-dependent: green on a warm tree, red on a fresh clone or after a clean, and the gate cannot tell which. The pin (`ran == baseline`) counts it either way.
