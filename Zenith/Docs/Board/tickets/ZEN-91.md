@@ -13,10 +13,10 @@ complexity: "MODERATE"
 risk: "MEDIUM"
 storyPoints: 5
 position: 91
-labels: []
+labels: ["blocked-scope"]
 fixVersions: []
 blocks: []
-updatedAt: "2026-09-21T13:37:11.078Z"
+updatedAt: "2026-09-21T14:56:49.122Z"
 flagged: false
 severity: "S2_MAJOR"
 reproducibility: null
