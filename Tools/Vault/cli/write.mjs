@@ -882,7 +882,25 @@ const DOD_SCAN_IDENTIFIER_CAP = 8;
 const DOD_SCAN_TIMEOUT_MS = 5000;
 const DOD_SCAN_FILE_CAP = 20;
 
-async function dodBlastRadiusWarning(index, body) {
+// `selfPath` is the ticket's OWN file, excluded from the hits. It matters only
+// for `update`, and it is not a nicety: `create` scans BEFORE the ticket file
+// exists, but `update` scans AFTER runOperation — by which point applyJournal
+// has written the ticket into the WORKTREE carrying the very identifier the new
+// DoD just introduced. `git grep` with no tree-ish searches tracked files in the
+// working tree (not a frozen HEAD), so it finds it. Note the cause is the
+// worktree write, NOT the commit: this would self-match just the same under
+// `writes.commit: false`.
+//
+// Without the exclusion the warning names the ticket's own path on essentially
+// every `update --dod`, and a signal that fires on ~100% of inputs is not a
+// signal: the reader learns to skip the line, taking the genuine hits with it.
+// Measured on ZEN-77 before it shipped — the text read "1 file(s) using them
+// outside this ticket's cited file list: ZEN/tickets/ZEN-7.md".
+//
+// Only the SUBJECT ticket is excluded, so a hit in some OTHER board ticket is
+// still reported — a `.md` file listed as if it were code. Pre-existing, shared
+// with `create`, and not addressed here.
+async function dodBlastRadiusWarning(index, body, selfPath = null) {
   try {
     const repoRoot = repoRootOf(index);
     if (!repoRoot) return null;
@@ -891,6 +909,7 @@ async function dodBlastRadiusWarning(index, body) {
     const identifiers = scanIdentifiers(dodText).slice(0, DOD_SCAN_IDENTIFIER_CAP);
     if (identifiers.length === 0) return null;
     const declared = new Set(citationsIn(body).paths.map(value => String(value).replaceAll('\\', '/')));
+    if (selfPath) declared.add(String(selfPath).replaceAll('\\', '/'));
     const grepArgs = ['-C', repoRoot, 'grep', '-l', '-I', '--fixed-strings'];
     for (const identifier of identifiers) grepArgs.push('-e', identifier);
     const { stdout } = await execFileAsync('git', grepArgs, { timeout: DOD_SCAN_TIMEOUT_MS, maxBuffer: 1024 * 1024 });
@@ -1252,9 +1271,34 @@ async function update(index, argv, files, shorthand = null) {
   }
   const record = findTicket(index, key);
   const expected = record ? { [record.relativePath]: expectedRevision(record) } : {};
-  return runOperation(index, shorthand ?? 'update', argv, expected, async fresh => {
+  // ★ The DoD blast-radius scan (`dodBlastRadiusWarning`, above `create`)
+  // only earns its `git grep` cost when the Definition of Done text could
+  // actually have changed: `--dod` directly, or `--body`, which replaces
+  // the whole body (DoD section included). `--goal` alone also rebuilds the
+  // composed body (`changedFields` -> `replaceSections`), but leaves the
+  // "Definition of Done" section byte-identical, so it must NOT trigger a
+  // scan of text that did not change.
+  const dodMayHaveChanged = bodyValue(argv, files, ['dod']) !== undefined || bodyValue(argv, files, ['body']) !== undefined;
+  // Hoisted out of the `prepare` callback below so the scan can read what
+  // actually landed, rather than recomputing `changedFields`'s composition rule
+  // a second time out here.
+  //
+  // This is a CHOICE, not a constraint: `record` above carries `bodyText`, so
+  // the body could have been composed before `runOperation`, matching `create`'s
+  // ordering and making `selfPath` unnecessary. Scanning what landed is worth
+  // the exclusion, because the pre-op record can be stale relative to the
+  // `fresh` index `prepare` actually merges into.
+  //
+  // ★ One asymmetry with `create` follows from it: on an idempotent replay
+  // (same `--operation-id`), `executeOperation` returns the prior result WITHOUT
+  // calling `prepare`, so `composedBody` stays undefined and no warning is
+  // emitted, where `create` — which scans before its write — still emits one.
+  // Advisory only, so a replay losing the line costs nothing but the line.
+  let composedBody;
+  const response = await runOperation(index, shorthand ?? 'update', argv, expected, async fresh => {
     const current = requireTicket(fresh, key);
     const { updates, body } = changedFields(argv, current, files);
+    composedBody = body;
     if (shorthand === 'estimate') {
       const raw = positional(argv, 2);
       const points = pointsValue(argv) ?? (raw?.toLowerCase() === 'none' ? null : Number(raw));
@@ -1291,6 +1335,18 @@ async function update(index, argv, files, shorthand = null) {
     }
     return { changes: [{ path: current.relativePath, bytes: patchRecord(current, updates, body) }], result: { key: keyFor(current), changed: Object.keys(updates) } };
   });
+  if (response.exitCode === 0 && dodMayHaveChanged && composedBody !== undefined) {
+    // The ticket's own file is excluded: applyJournal has already written the
+    // new DoD into the worktree, and `git grep` searches tracked working-tree
+    // files, so without this the scan reports this very ticket as its own blast
+    // radius on every update that introduces an identifier. See
+    // dodBlastRadiusWarning's comment.
+    const blastRadiusWarning = await dodBlastRadiusWarning(index, composedBody, record?.relativePath ?? null);
+    if (blastRadiusWarning) {
+      response.payload = { ...(response.payload && typeof response.payload === 'object' ? response.payload : {}), dodBlastRadiusWarning: blastRadiusWarning };
+    }
+  }
+  return response;
 }
 
 function parseKnowledgeInput(command, argv, files) {

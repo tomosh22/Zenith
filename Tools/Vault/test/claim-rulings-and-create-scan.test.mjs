@@ -24,7 +24,11 @@
 //       `--goal` is a file for `update`, prose for `sprint`.
 //
 // (E), the create-time DoD blast-radius scan, is covered in its own
-// `describe` block below.
+// `describe` block below. (E2), the same scan wired into
+// `update --dod`/`--body` (create()'s scan runs once, before `create`
+// exists; `update()`'s runs after `runOperation` returns, over the
+// composed body `changedFields` already built), is covered in the
+// `describe` block right after it.
 //
 // (C) is tested against the pure renderer
 // (`renderRulingsMarkdown`) and the shared matcher (`matchGoverningRulings`)
@@ -424,6 +428,122 @@ describe('E: create() DoD blast-radius scan', () => {
   test('scanIdentifiers extracts CONSTANT_CASE and Prefixed_PascalCase shapes and dedupes', () => {
     const found = scanIdentifiers('Touches `ZM_TRAINER_ROUTE1_RAMBLER` and Zenith_Entity, and ZM_TRAINER_ROUTE1_RAMBLER again.');
     assert.deepEqual(found, ['ZM_TRAINER_ROUTE1_RAMBLER', 'Zenith_Entity']);
+  });
+});
+
+// ═══ (E2) update --dod / update --body run the same blast-radius scan ═══
+// ═══      create() does; update() previously never called it at all ═════
+//
+// `create()`'s scan (`dodBlastRadiusWarning`) runs BEFORE the ticket file
+// is written, so `git grep` — which reads the tracked working tree, not a
+// frozen HEAD — never sees the new ticket's own text. `update()`'s scan
+// runs AFTER `runOperation` returns, so by scan time `applyJournal` has
+// already written the ticket's own file into the worktree carrying whatever
+// identifier the `--dod`/`--body` text just introduced — and `git grep`
+// searches the tracked WORKING TREE, so it finds it. Left alone, EVERY
+// update introducing a new identifier would name the ticket itself as its
+// own blast radius; measured before the fix, the text read "1 file(s) using
+// them outside this ticket's cited file list: ZEN/tickets/ZEN-7.md".
+//
+// `update` therefore passes the subject ticket's own `relativePath` to
+// `dodBlastRadiusWarning` as `selfPath`, which adds it to the declared set.
+// The "stays quiet when cited" test below consequently cites ONLY the
+// pre-existing hit file, and the test after it pins the exclusion directly.
+// A warning that fires on ~100% of updates is not a signal: the reader
+// learns to skip the line, and the genuine hits go with it.
+
+describe('E2: update --dod / update --body run the DoD blast-radius scan', () => {
+  async function fixtureWithHit(t) {
+    const root = await fixture(t);
+    await fs.mkdir(path.join(root, 'hits'), { recursive: true });
+    await fs.writeFile(
+      path.join(root, 'hits', 'BlastRadiusHit.cpp'),
+      '// pre-existing file the DoD identifier already appears in\nconst int ZM_TEST_BLAST_RADIUS_TOKEN = 1;\n',
+    );
+    await git(root, ['add', '.']);
+    await git(root, ['commit', '-qm', 'blast radius fixture file']);
+    return root;
+  }
+
+  test('update --dod warns and names the file when the identifier lives outside the cited list', async t => {
+    const root = await fixtureWithHit(t);
+    const index = await loadVault(root);
+    const dod = '- [ ] `ZM_TEST_BLAST_RADIUS_TOKEN` behaves correctly';
+    const res = await dispatchWrite(index, ['update', 'ZEN-7', '--dod', dod, '--human'], {});
+    assert.equal(res.exitCode, 0, JSON.stringify(res.payload));
+    // Single source change that reds this test: deleting the whole
+    // post-`runOperation` scan block in `update()` (write.mjs), or the
+    // `--dod` disjunct of `dodMayHaveChanged` — either leaves
+    // `dodBlastRadiusWarning` undefined here.
+    // NOT deleting `dodMayHaveChanged` wholesale: that makes the scan run
+    // unconditionally, so this test still gets its warning and still passes.
+    // Measured — that mutation reds exactly one test, the goal-only one below.
+    assert.ok(res.payload.dodBlastRadiusWarning, 'expected an advisory warning on update --dod, mirroring create()');
+    assert.match(res.payload.dodBlastRadiusWarning, /ZM_TEST_BLAST_RADIUS_TOKEN/);
+    assert.match(res.payload.dodBlastRadiusWarning, /hits\/BlastRadiusHit\.cpp/);
+  });
+
+  test('update --dod stays quiet when the hit file is cited', async t => {
+    const root = await fixtureWithHit(t);
+    const index = await loadVault(root);
+    // Cites ONLY the pre-existing hit file. The ticket's own path is not cited
+    // and must not need to be — see the next test.
+    const dod = '- [ ] `ZM_TEST_BLAST_RADIUS_TOKEN` behaves correctly (see `hits/BlastRadiusHit.cpp`)';
+    const res = await dispatchWrite(index, ['update', 'ZEN-7', '--dod', dod, '--human'], {});
+    assert.equal(res.exitCode, 0, JSON.stringify(res.payload));
+    // Single source change that reds this test: dropping the `!declared.has(value)`
+    // filter inside `dodBlastRadiusWarning`.
+    assert.equal(res.payload.dodBlastRadiusWarning, undefined, 'the only hit file is cited');
+  });
+
+  // ★ THE TICKET IS NEVER ITS OWN BLAST RADIUS, and this is the one case that
+  // does not arise for create(). create() scans BEFORE the ticket file exists;
+  // update() can only scan AFTER runOperation, which COMMITS — so `git grep`,
+  // reading the committed tree, finds the ticket file now carrying the very
+  // identifier the new DoD just introduced. Before the `selfPath` exclusion the
+  // warning read: "1 file(s) using them outside this ticket's cited file list:
+  // ZEN/tickets/ZEN-7.md" on an update whose blast radius was genuinely empty.
+  // A warning that fires on ~100% of updates teaches the reader to skip the
+  // line, and takes the real hits with it.
+  test('update --dod never reports the ticket\'s OWN file as blast radius', async t => {
+    const root = await fixtureWithHit(t);
+    const index = await loadVault(root);
+    // A token that exists NOWHERE in the fixture repo, so the ticket's own
+    // just-committed file is the only thing that can possibly match it.
+    const dod = '- [ ] `ZM_TEST_SELF_MATCH_ONLY_TOKEN` is handled';
+    const res = await dispatchWrite(index, ['update', 'ZEN-7', '--dod', dod, '--human'], {});
+    assert.equal(res.exitCode, 0, JSON.stringify(res.payload));
+    // Single source change that reds this test: dropping the `selfPath`
+    // argument at dodBlastRadiusWarning's call site in update(), or the
+    // `declared.add(selfPath)` line inside it.
+    assert.equal(
+      res.payload.dodBlastRadiusWarning, undefined,
+      'the only possible hit is the ticket\'s own committed file, which is not blast radius');
+  });
+
+  test('an update that does not touch the DoD runs no scan at all, even though the ticket already carries a blast-radius hit', async t => {
+    const root = await fixtureWithHit(t);
+    // Seed the ticket's Definition of Done with the (uncited) blast-radius
+    // identifier first — the test above proves this alone produces a
+    // warning when the DoD update runs the scan.
+    const seeded = await dispatchWrite(await loadVault(root), [
+      'update', 'ZEN-7', '--dod', '- [ ] `ZM_TEST_BLAST_RADIUS_TOKEN` behaves correctly', '--human',
+    ], {});
+    assert.equal(seeded.exitCode, 0, JSON.stringify(seeded.payload));
+    assert.ok(seeded.payload.dodBlastRadiusWarning, 'sanity: the seeded DoD does warn when the DoD update runs the scan');
+
+    // Now touch only --goal. The composed body still carries the same
+    // (uncited, outside-hitting) DoD text unchanged, so a warning here
+    // would mean the scan ran on an update that never touched the DoD.
+    const res = await dispatchWrite(await loadVault(root), [
+      'update', 'ZEN-7', '--goal', 'A new goal, unrelated to the DoD.', '--human',
+    ], {});
+    assert.equal(res.exitCode, 0, JSON.stringify(res.payload));
+    // Single source change that reds this test: removing the
+    // `dodMayHaveChanged` gate entirely (always scanning `composedBody`
+    // whenever it is defined) in `update()` (write.mjs) — the test above
+    // proves the scan WOULD warn here if it ran.
+    assert.equal(res.payload.dodBlastRadiusWarning, undefined, '--goal alone must not trigger the DoD scan');
   });
 });
 
