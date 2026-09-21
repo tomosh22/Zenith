@@ -4,6 +4,7 @@
 #ifdef ZENITH_INPUT_SIMULATOR
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_CommandLine.h"
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -15,6 +16,9 @@
 #include "DP_TestTGAHelpers.h"
 
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // Test_DPFogPass_VisualOutput
@@ -43,12 +47,49 @@
 
 namespace
 {
-	constexpr const char* SHOT_A = "C:/tmp/dp_fog_memory_A.tga";
-	constexpr const char* SHOT_B = "C:/tmp/dp_fog_memory_B.tga";
+	// ★ FIXED BUFFERS, NOT std::string (ZEN-D-031 / ZEN-92 measured 5-of-5
+	// windowed-teardown crashes for a namespace-scope std::string array in a
+	// DevilsPlayground test TU). SHOT_A/SHOT_B are built once in Setup and read
+	// back in Step and Verify, so they must survive across the whole test.
+	constexpr size_t ulFOGVISUAL_PATH_MAX = 512u;
+	char g_szShotA[ulFOGVISUAL_PATH_MAX] = {};
+	char g_szShotB[ulFOGVISUAL_PATH_MAX] = {};
 
 	bool g_bVisualSetupOk = false;
 	Zenith_Maths::Vector3 g_xRevealCentre = { 0.0f, 0.0f, 0.0f };
 	bool g_bHaveCentre = false;
+
+	void SetShotPath(char (&aszDest)[ulFOGVISUAL_PATH_MAX], const std::filesystem::path& xPath)
+	{
+		const std::string strPath = xPath.string();
+		if (strPath.size() >= ulFOGVISUAL_PATH_MAX)
+		{
+			aszDest[0] = '\0';
+			return;
+		}
+		std::memcpy(aszDest, strPath.c_str(), strPath.size() + 1u);
+	}
+
+	// Absolute Build/artifacts/devilsplayground/fogmemory/<tag> dir, derived
+	// from GAME_ASSETS_DIR (<repo>/Games/DevilsPlayground/Assets/ -> up three ->
+	// <repo>), so it resolves regardless of the process working directory --
+	// the same derivation Test_MaterialEditorLivePreview / ZM_AnimEditorShowcase
+	// use. `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run
+	// tag; absent, "run" is used so a bare run still lands somewhere
+	// predictable rather than silently overwriting a previous one at a fixed
+	// C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "devilsplayground" / "fogmemory" / szTag;
+	}
 
 	void RecordRevealBlock()
 	{
@@ -70,8 +111,20 @@ static void Setup_DPFogVisual()
 {
 	g_bVisualSetupOk = false;
 	g_bHaveCentre = false;
-	std::remove(SHOT_A);
-	std::remove(SHOT_B);
+
+	const std::filesystem::path xCaptureDir = CaptureDir();
+	std::error_code xDirError;
+	std::filesystem::create_directories(xCaptureDir, xDirError);
+	if (xDirError)
+	{
+		Zenith_Log(LOG_CATEGORY_AI, "DPFogVisual: could not create the capture output directory");
+		return;
+	}
+	SetShotPath(g_szShotA, xCaptureDir / "dp_fog_memory_A.tga");
+	SetShotPath(g_szShotB, xCaptureDir / "dp_fog_memory_B.tga");
+
+	std::remove(g_szShotA);
+	std::remove(g_szShotB);
 	g_xEngine.Scenes().LoadSceneByIndex(1, SCENE_LOAD_SINGLE); // ProcLevel
 	g_bVisualSetupOk = true;
 }
@@ -97,7 +150,7 @@ static bool Step_DPFogVisual(int iFrame)
 
 	if (iFrame == 145)
 	{
-		Flux_Screenshot::RequestDump(SHOT_A);
+		Flux_Screenshot::RequestDump(g_szShotA);
 	}
 
 	// Frame 150: forget everything; only the villagers' own cells repopulate.
@@ -108,7 +161,7 @@ static bool Step_DPFogVisual(int iFrame)
 
 	if (iFrame == 158)
 	{
-		Flux_Screenshot::RequestDump(SHOT_B);
+		Flux_Screenshot::RequestDump(g_szShotB);
 	}
 
 	return iFrame < 165;
@@ -123,9 +176,9 @@ static bool Verify_DPFogVisual()
 	}
 
 	DP_TestTGAImage xA, xB;
-	if (!DP_TestLoadTGA(SHOT_A, xA) || !DP_TestLoadTGA(SHOT_B, xB))
+	if (!DP_TestLoadTGA(g_szShotA, xA) || !DP_TestLoadTGA(g_szShotB, xB))
 	{
-		Zenith_Log(LOG_CATEGORY_AI, "DPFogVisual: screenshot load failed (%s / %s)", SHOT_A, SHOT_B);
+		Zenith_Log(LOG_CATEGORY_AI, "DPFogVisual: screenshot load failed (%s / %s)", g_szShotA, g_szShotB);
 		return false;
 	}
 	if (xA.m_uWidth != xB.m_uWidth || xA.m_uHeight != xB.m_uHeight)

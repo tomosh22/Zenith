@@ -4,6 +4,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_CommandLine.h"
 #include "Core/Zenith_Engine.h"
 
 #include "Editor/Zenith_Editor.h"
@@ -16,6 +17,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // GrassShowcase -- windowed proof that the GPU-driven grass pipeline actually
@@ -86,10 +89,31 @@ namespace
 
 	int   g_iReadyFrame     = -1;
 	bool  g_bFilesMissing   = false;
+	bool  g_bCaptureDirReady = false;
 	u_int g_uVisibleTiles   = 0u;
 	u_int g_uSubmittedDraws = 0u;
 	u_int g_uVisibleBlades  = 0u;
 	int   g_iDumpsRequested = 0;
+
+	// Absolute Build/artifacts/rendertest/grassshowcase/<tag> dir, derived from
+	// GAME_ASSETS_DIR (<repo>/Games/RenderTest/Assets/ -> up three -> <repo>),
+	// so it resolves regardless of the process working directory -- the same
+	// derivation Test_MaterialEditorLivePreview / ZM_AnimEditorShowcase use.
+	// `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run tag;
+	// absent, "run" is used so a bare run still lands somewhere predictable
+	// rather than silently overwriting a previous one at a fixed C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "rendertest" / "grassshowcase" / szTag;
+	}
 
 	void SetCam(float fX, float fY, float fZ, double fPitch, double fYaw, float fFOV)
 	{
@@ -144,6 +168,14 @@ namespace
 		g_uSubmittedDraws = 0u;
 		g_uVisibleBlades  = 0u;
 		g_iDumpsRequested = 0;
+
+		std::error_code xDirError;
+		std::filesystem::create_directories(CaptureDir(), xDirError);
+		g_bCaptureDirReady = !xDirError;
+		if (!g_bCaptureDirReady)
+		{
+			Zenith_Error(LOG_CATEGORY_TERRAIN, "[GrassShowcase] could not create the capture output directory");
+		}
 
 		// Stopped -> the editor free camera renders the world scene.
 		g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
@@ -234,22 +266,23 @@ namespace
 		const bool bModeDump = iMode < iTRAIL_FIRST_SLOT && iPhase == iFRAMES_PER_MODE / 2;
 		if (bModeDump || bTrailDump)
 		{
-			char szPath[256];
+			char szFile[64];
 			if (iMode < iDEBUG_MODE_COUNT)
 			{
-				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_%s.tga", aszDEBUG_MODE_NAMES[iMode]);
+				snprintf(szFile, sizeof(szFile), "grass_showcase_%s.tga", aszDEBUG_MODE_NAMES[iMode]);
 			}
 			else if (iMode < iTRAIL_FIRST_SLOT)
 			{
-				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_shadows_%s.tga",
+				snprintf(szFile, sizeof(szFile), "grass_showcase_shadows_%s.tga",
 					iMode == iDEBUG_MODE_COUNT ? "on" : "off");
 			}
 			else
 			{
-				snprintf(szPath, sizeof(szPath), "C:/tmp/grass_showcase_displacement_trail.tga");
+				snprintf(szFile, sizeof(szFile), "grass_showcase_displacement_trail.tga");
 			}
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[GrassShowcase] %s", szPath);
-			Flux_Screenshot::RequestDump(szPath);
+			const std::string strPath = (CaptureDir() / szFile).string();
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[GrassShowcase] %s", strPath.c_str());
+			Flux_Screenshot::RequestDump(strPath.c_str());
 			++g_iDumpsRequested;
 		}
 		return true;
@@ -258,6 +291,11 @@ namespace
 	bool Verify_GrassShowcase()
 	{
 		bool bPass = true;
+		if (!g_bCaptureDirReady)
+		{
+			Zenith_Error(LOG_CATEGORY_TERRAIN, "[GrassShowcase] capture output directory was not created");
+			return false;
+		}
 		if (g_bFilesMissing)
 		{
 			Zenith_Error(LOG_CATEGORY_TERRAIN,

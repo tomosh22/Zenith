@@ -18,6 +18,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // Test_DP_Minimap_RevealAndTracking
@@ -47,6 +49,27 @@ namespace
 	{
 		g_bMapFailed = true;
 		std::snprintf(g_szMapWhy, sizeof(g_szMapWhy), "%s", szWhy);
+	}
+
+	// Absolute Build/artifacts/devilsplayground/minimap/<tag> dir, derived from
+	// GAME_ASSETS_DIR (<repo>/Games/DevilsPlayground/Assets/ -> up three ->
+	// <repo>), so it resolves regardless of the process working directory --
+	// the same derivation Test_MaterialEditorLivePreview / ZM_AnimEditorShowcase
+	// use. `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run
+	// tag; absent, "run" is used so a bare run still lands somewhere
+	// predictable rather than silently overwriting a previous one at a fixed
+	// C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "devilsplayground" / "minimap" / szTag;
 	}
 
 	DPMinimap_Component* FindMinimap()
@@ -156,7 +179,16 @@ static bool Step_MinimapReveal(int iFrame)
 	// (skipped headless; the assertions above are the actual gate).
 	if (iFrame == 42 && !Zenith_IsNullRenderer())
 	{
-		Flux_Screenshot::RequestDump("C:/tmp/dp_minimap.tga");
+		const std::filesystem::path xCaptureDir = CaptureDir();
+		std::error_code xDirError;
+		std::filesystem::create_directories(xCaptureDir, xDirError);
+		if (xDirError)
+		{
+			MapFail("could not create the minimap capture output directory");
+			return false;
+		}
+		const std::string strPath = (xCaptureDir / "dp_minimap.tga").string();
+		Flux_Screenshot::RequestDump(strPath.c_str());
 	}
 
 	if (iFrame == 44)

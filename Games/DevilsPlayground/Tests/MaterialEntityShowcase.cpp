@@ -19,6 +19,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // MaterialEntityShowcase -- windowed capture sweep of the DevilsPlayground
@@ -36,6 +38,27 @@ namespace
 	constexpr float fCX = 50.0f;	// village centre X (GenConfig default bounds 0..100)
 	constexpr float fCZ = 50.0f;	// village centre Z
 	bool g_bLoaded = false;
+	bool g_bCaptureDirReady = false;
+
+	// Absolute Build/artifacts/devilsplayground/materialentity/<tag> dir, derived
+	// from GAME_ASSETS_DIR (<repo>/Games/DevilsPlayground/Assets/ -> up three ->
+	// <repo>), so it resolves regardless of the process working directory -- the
+	// same derivation Test_MaterialEditorLivePreview / ZM_AnimEditorShowcase use.
+	// `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run tag;
+	// absent, "run" is used so a bare run still lands somewhere predictable
+	// rather than silently overwriting a previous one at a fixed C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "devilsplayground" / "materialentity" / szTag;
+	}
 
 	void SetCam(float fX, float fY, float fZ, double fPitch, double fYaw, float fFOV)
 	{
@@ -60,9 +83,10 @@ namespace
 	void Shot(const char* szName)
 	{
 		Zenith_Log(LOG_CATEGORY_CORE, "[DPMaterialShot] %s", szName);
-		char szPath[256];
-		snprintf(szPath, sizeof(szPath), "C:/tmp/dp_mat_%s.tga", szName);
-		Flux_Screenshot::RequestDump(szPath);
+		char szFile[64];
+		snprintf(szFile, sizeof(szFile), "dp_mat_%s.tga", szName);
+		const std::string strPath = (CaptureDir() / szFile).string();
+		Flux_Screenshot::RequestDump(strPath.c_str());
 	}
 }
 
@@ -71,6 +95,14 @@ static void Setup_MaterialEntityShowcase()
 	g_bLoaded = false;
 	// Editor free-camera renders the world scene (no possessed-villager orbit cam).
 	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
+
+	std::error_code xDirError;
+	std::filesystem::create_directories(CaptureDir(), xDirError);
+	g_bCaptureDirReady = !xDirError;
+	if (!g_bCaptureDirReady)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialEntityShowcase] could not create the capture output directory");
+	}
 }
 
 static bool Step_MaterialEntityShowcase(int iFrame)
@@ -140,6 +172,11 @@ static bool Step_MaterialEntityShowcase(int iFrame)
 
 static bool Verify_MaterialEntityShowcase()
 {
+	if (!g_bCaptureDirReady)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialEntityShowcase] capture output directory was not created");
+		return false;
+	}
 	if (!g_bLoaded)
 	{
 		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialEntityShowcase] capture sequence did not run");

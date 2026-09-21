@@ -18,6 +18,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // Test_DPCamera_ModeTransition
@@ -53,6 +55,27 @@ namespace
 	{
 		g_bCamFailed = true;
 		std::snprintf(g_szCamWhy, sizeof(g_szCamWhy), "%s", szWhy);
+	}
+
+	// Absolute Build/artifacts/devilsplayground/cameramode/<tag> dir, derived
+	// from GAME_ASSETS_DIR (<repo>/Games/DevilsPlayground/Assets/ -> up three ->
+	// <repo>), so it resolves regardless of the process working directory --
+	// the same derivation Test_MaterialEditorLivePreview / ZM_AnimEditorShowcase
+	// use. `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run
+	// tag; absent, "run" is used so a bare run still lands somewhere
+	// predictable rather than silently overwriting a previous one at a fixed
+	// C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "devilsplayground" / "cameramode" / szTag;
 	}
 
 	DPOrbitCamera_Component* FindOrbitCam()
@@ -145,7 +168,16 @@ static bool Step_CameraModeTransition(int iFrame)
 	// headless; the numeric assertions below are the actual gate).
 	if (iFrame == 145 && !Zenith_IsNullRenderer())
 	{
-		Flux_Screenshot::RequestDump("C:/tmp/dp_camera_thirdperson.tga");
+		const std::filesystem::path xCaptureDir = CaptureDir();
+		std::error_code xDirError;
+		std::filesystem::create_directories(xCaptureDir, xDirError);
+		if (xDirError)
+		{
+			CamFail("could not create the camera-mode capture output directory");
+			return false;
+		}
+		const std::string strPath = (xCaptureDir / "dp_camera_thirdperson.tga").string();
+		Flux_Screenshot::RequestDump(strPath.c_str());
 	}
 
 	// ---- Phase B: converge to third-person (frames 60..149) ----

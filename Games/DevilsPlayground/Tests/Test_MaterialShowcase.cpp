@@ -4,6 +4,7 @@
 #if defined(ZENITH_TOOLS) && defined(ZENITH_INPUT_SIMULATOR)
 
 #include "Core/Zenith_AutomatedTest.h"
+#include "Core/Zenith_CommandLine.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Panels/Zenith_EditorPanel_MaterialEditor.h"
@@ -19,7 +20,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <functional>
+#include <string>
 #include <vector>
 
 // ============================================================================
@@ -103,12 +106,34 @@ namespace
 			g_pxMat->SetTexture(static_cast<MaterialTextureSlot>(u), TextureHandle());
 	}
 
+	// Absolute Build/artifacts/devilsplayground/materialshowcase/<tag> dir,
+	// derived from GAME_ASSETS_DIR (<repo>/Games/DevilsPlayground/Assets/ -> up
+	// three -> <repo>), so it resolves regardless of the process working
+	// directory -- the same derivation Test_MaterialEditorLivePreview /
+	// ZM_AnimEditorShowcase use. `--capture-tag`
+	// (Zenith_CommandLine::GetCaptureTag) selects the run tag; absent, "run" is
+	// used so a bare run still lands somewhere predictable rather than silently
+	// overwriting a previous one at a fixed C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "devilsplayground" / "materialshowcase" / szTag;
+	}
+
 	void Shot(const char* szName)
 	{
 		Zenith_Log(LOG_CATEGORY_CORE, "[MaterialShowcaseShot] %s", szName);
-		char szPath[256];
-		snprintf(szPath, sizeof(szPath), "C:/tmp/mat_showcase_%s.tga", szName);
-		Flux_Screenshot::RequestDump(szPath);
+		char szFile[64];
+		snprintf(szFile, sizeof(szFile), "mat_showcase_%s.tga", szName);
+		const std::string strPath = (CaptureDir() / szFile).string();
+		Flux_Screenshot::RequestDump(strPath.c_str());
 	}
 
 	void SetFloat(MaterialParamID e, float f)  { Zenith_MaterialParamTable::SetParamFloat(g_pxMat->ModifyParams(), e, f); }
@@ -123,6 +148,14 @@ static void Setup_MaterialShowcase()
 	Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
 	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
 	g_xEngine.Editor().GetMaterialEditorShowFlag() = true;
+
+	std::error_code xDirError;
+	std::filesystem::create_directories(CaptureDir(), xDirError);
+	if (xDirError)
+	{
+		Fail("could not create the material showcase output directory");
+		return;
+	}
 
 	// Procedural normal map: rounded bumps on a tangent-space grid.
 	g_xNormalTex.Set(MakeProceduralRGBA8(128, [](u_int x, u_int y, u_int8* p)

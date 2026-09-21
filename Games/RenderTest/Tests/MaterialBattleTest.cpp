@@ -12,6 +12,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <string>
 
 // ============================================================================
 // MaterialBattleTest -- windowed capture sweep of the RenderTest material
@@ -43,6 +45,28 @@ namespace
 	constexpr float fTOP_Y = 48.75f;	// platform top (matches RenderTest_Showcase::fPLATFORM_TOP_Y)
 	constexpr float fGridY = fTOP_Y + 0.8f;	// approx shape-centre height
 	bool g_bShowcasePresent = false;
+	bool g_bCaptureDirReady = false;
+
+	// Absolute Build/artifacts/rendertest/materialbattle/<tag> dir, derived
+	// from GAME_ASSETS_DIR (<repo>/Games/RenderTest/Assets/ -> up three ->
+	// <repo>), so it resolves regardless of the process working directory --
+	// the same derivation Test_MaterialEditorLivePreview / ZM_AnimEditorShowcase
+	// use. `--capture-tag` (Zenith_CommandLine::GetCaptureTag) selects the run
+	// tag; absent, "run" is used so a bare run still lands somewhere
+	// predictable rather than silently overwriting a previous one at a fixed
+	// C:/tmp path.
+	std::filesystem::path CaptureDir()
+	{
+		std::error_code xError;
+		const std::filesystem::path xRepoRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..", xError);
+		const char* szTag = Zenith_CommandLine::GetCaptureTag();
+		if (szTag == nullptr || szTag[0] == '\0')
+		{
+			szTag = "run";
+		}
+		return xRepoRoot / "Build" / "artifacts" / "rendertest" / "materialbattle" / szTag;
+	}
 
 	void SetCam(float fX, float fY, float fZ, double fPitch, double fYaw, float fFOV)
 	{
@@ -71,9 +95,10 @@ namespace
 	void Shot(const char* szName)
 	{
 		Zenith_Log(LOG_CATEGORY_CORE, "[MaterialBattleShot] %s", szName);
-		char szPath[256];
-		snprintf(szPath, sizeof(szPath), "C:/tmp/mat_battle_%s.tga", szName);
-		Flux_Screenshot::RequestDump(szPath);
+		char szFile[64];
+		snprintf(szFile, sizeof(szFile), "mat_battle_%s.tga", szName);
+		const std::string strPath = (CaptureDir() / szFile).string();
+		Flux_Screenshot::RequestDump(strPath.c_str());
 	}
 
 	// X centre of column-band b of 4, derived from the spawned grid extents.
@@ -92,6 +117,14 @@ static void Setup_MaterialBattleTest()
 	// cell entities with static colliders), so it survives the harness's Play->Stop
 	// restore — no manual re-spawn is needed any more.
 	g_xEngine.Editor().SetEditorMode(EditorMode::Stopped);
+
+	std::error_code xDirError;
+	std::filesystem::create_directories(CaptureDir(), xDirError);
+	g_bCaptureDirReady = !xDirError;
+	if (!g_bCaptureDirReady)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialBattleTest] could not create the capture output directory");
+	}
 }
 
 static bool Step_MaterialBattleTest(int iFrame)
@@ -144,6 +177,11 @@ static bool Step_MaterialBattleTest(int iFrame)
 
 static bool Verify_MaterialBattleTest()
 {
+	if (!g_bCaptureDirReady)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialBattleTest] capture output directory was not created");
+		return false;
+	}
 	if (!g_bShowcasePresent || RenderTest_Showcase::g_iColumns <= 0)
 	{
 		Zenith_Error(LOG_CATEGORY_CORE, "[MaterialBattleTest] showcase grid was not spawned (g_iColumns=%d)", RenderTest_Showcase::g_iColumns);
