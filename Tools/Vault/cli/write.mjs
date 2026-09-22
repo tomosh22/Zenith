@@ -843,9 +843,21 @@ async function checkFinishContent(index, key, status, commentText, worklog, curr
       repoRoot, key,
       currentBoardRow: { status: currentFields.status ?? null, assignee: currentFields.assignee ?? null, updatedAt: currentFields.updatedAt ?? null },
     });
-    if (moved.state === 'violated') {
+    // ★ `headMoved` IS EXPECTED HERE AND MUST NOT REFUSE. The protocol commits
+    // the ticket at step 7 and calls `finish` at step 8, so HEAD ALWAYS differs
+    // from predispatch by the time we are called — wiring a blanket `violated`
+    // refusal at this site made `finish` structurally impossible for EVERY
+    // ticket, on every harness. Found the first time a real tick reached step 8.
+    //
+    // `violated` belongs to `guard`, which runs BEFORE the commit and is where
+    // the design put it. What this site owns is the `unverified` case below.
+    // The other violation kinds are still worth refusing on here, because none
+    // of them is caused by step 7: a commit is.
+    const postCommitViolations = (moved.violations ?? []).filter(v => v.kind !== 'headMoved');
+    if (moved.state === 'violated' && postCommitViolations.length > 0) {
       throw new WriteError(
-        `refusing to finish ${key} — WORKER-MOVED-NOTHING found the worker itself touched the repository, which I1 forbids on every harness: ${moved.reason}`,
+        `refusing to finish ${key} — WORKER-MOVED-NOTHING found the worker itself touched the repository, which I1 forbids on every harness: `
+        + postCommitViolations.map(v => `${v.kind} (${v.detail})`).join('; '),
         'INVALID', 4,
       );
     }

@@ -904,3 +904,27 @@ test('workerMovedNothing: updatedAt moving on its own is NOT boardMoved -- statu
   assert.equal(moved.state, 'violated', JSON.stringify(moved));
   assert.ok(moved.violations.some(v => v.kind === 'boardMoved'));
 });
+
+// ★ REGRESSION. `finish` had a blanket `state === 'violated'` refusal wired at its
+// own site. The protocol COMMITS the ticket at step 7 and calls `finish` at step 8,
+// so HEAD always differs from predispatch by then — which made `finish` refuse
+// EVERY ticket, on every harness, the first time a real tick reached step 8.
+// `violated` belongs to `guard`, which runs before the commit. This site owns the
+// `unverified` case; `headMoved` here is the protocol working, not a violation.
+test('workerMovedNothing: headMoved alone is what step 7 CAUSES, and must not be the only thing refusing finish', async t => {
+  const root = await tempRepo(t);
+  const baseline = await seedCommit(root);
+  await writePredispatch(root, 'FD-1', baseline);
+
+  // Exactly step 7: stage the work and commit it, then ask again — as `finish` does.
+  await fs.writeFile(path.join(root, 'tracked.cpp'), 'the ticket\'s own work\n');
+  await git(root, ['add', '-A']);
+  await git(root, ['commit', '-m', 'FD-1: the ticket commit step 7 mandates']);
+
+  const result = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(result.state, 'violated', 'guard must still SEE the move');
+  assert.deepEqual(
+    result.violations.map(v => v.kind), ['headMoved'],
+    'a plain ticket commit must produce headMoved and NOTHING else — anything more would refuse finish',
+  );
+});
