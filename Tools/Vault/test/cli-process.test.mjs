@@ -13,9 +13,26 @@ import { loadVault } from '../server/main.js';
 const fixtureRoot = fileURLToPath(new URL('../fixtures/snapshot/vault/', import.meta.url));
 const cliPath = fileURLToPath(new URL('../cli/zagent.mjs', import.meta.url));
 
+// ★ `.zagent/` IS NOT VAULT CONTENT, AND HASHING IT MADE THIS TEST A DICE ROLL.
+// It is gitignored scratch (.gitignore:241; `git ls-files` returns zero files for
+// it), and EVERY zagent call writes `last.exit`/`last.json` into it by design --
+// the tick protocol depends on reading them. So a read-only command legitimately
+// writes there, and asserting it does not is simply wrong.
+//
+// Worse, `fixtureRoot` is the COMMITTED fixture shared by nine test files
+// (acceptance, cli-entry, cli-process, cli-queue, history, http, mutations,
+// parity, queries) which Vitest runs in PARALLEL -- so the before/after window
+// spans writes from eight other files. Measured across three full runs: five
+// different tests failed, never the same set twice, always on a `.zagent` byte.
+// That reds any gate list containing `npm test`, which is every ticket touching
+// Tools/**, and tick_gates' flake re-run does not rescue it because the re-run
+// fails on a DIFFERENT test and so reads as red-to-red.
+//
+// Skip it. The assertion is about vault bytes; this directory holds none.
 async function hashTree(root, current = root, rows = []) {
   for (const entry of await readdir(current, { withFileTypes: true })) {
     const absolute = path.join(current, entry.name);
+    if (entry.name === '.zagent') continue;
     if (entry.isDirectory()) {
       await hashTree(root, absolute, rows);
     } else if (entry.isFile()) {
