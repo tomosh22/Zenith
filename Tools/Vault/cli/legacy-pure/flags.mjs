@@ -8,8 +8,18 @@ const COMMAND_FLAGS = {
   auth: ["name", "email"],
   provision: [],
   doctor: [],
-  next: ["project", "category"],
-  claim: ["project", "category"],
+  // ★ THIRD instance of the shape this file's header already documents
+  // twice (`sprint --force`, `update --category`): the closed vocabulary
+  // narrower than what the function beneath actually reads. `claim()` in
+  // write.mjs serves BOTH `claim` and `next` (queueMode) and reads
+  // `--harness` on its first line, but the flag was missing here, so the
+  // real binary refused the exact invocation every harness entry point
+  // mandates at step 1 -- with green unit tests, because they exercised
+  // the validator directly and never crossed this table. Found by running
+  // an actual tick. This list mirrors what a command reads; it does not
+  // narrow it.
+  next: ["project", "category", "harness"],
+  claim: ["project", "category", "harness"],
   show: ["project"],
   check: ["project"],
   queue: ["project"],
