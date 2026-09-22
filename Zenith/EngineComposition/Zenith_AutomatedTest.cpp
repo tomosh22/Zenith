@@ -590,6 +590,26 @@ constexpr int kUnmatchedMessageBufferSize = 1024;
 // test, but this struct is a plain returnable value that pins the decision
 // ExitHarness would otherwise hide. Deleting or neutering the "not found"
 // branch below is exactly the fail-open this exists to close.
+//
+// This struct is as far as an in-process unit can reach. BuildHarnessExecutionList's
+// OWN three-line call site --
+//   if (!xResolution.m_bFound) { std::printf("%s", xResolution.m_acMessage); ExitHarness(xResolution.m_iExitCode); }
+// -- is still unreachable from any ZENITH_TEST: an edit that forgot the
+// ExitHarness call, or inverted the condition, would pass every unit in
+// Zenith_AutomatedTest.Tests.inl while a bogus --automated-test name exited 0 --
+// ZEN-93's symptom. The two differ in how completely: an inverted condition
+// reports nothing at all, while a deleted ExitHarness still PRINTS the message
+// and only then falls through (a null node is graceful all the way to
+// VerifyAndExit, which reports PASSED and exits 0). So the exit code is the
+// assertion that catches both; the message alone catches only one. That wiring is
+// covered instead by a PROCESS-level script,
+// Tools/Test_UnmatchedTestNameRefusal.ps1 (ZEN-106 / ZEN-D-032): it boots a
+// real *_False game exe with an unregistered name and asserts both the exit
+// code and the message, plus the mirror case -- a REGISTERED name must not
+// trip the same refusal. Wiring that script into a category's gate list is a
+// separate, protected-path edit (zagent.project.json) and is deliberately not
+// done here; see the script's own header comment for why it does not, itself,
+// dirty the tree.
 struct SingleTestResolution
 {
 	bool m_bFound    = false;
