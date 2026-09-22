@@ -10,6 +10,24 @@ import { git } from '../server/operations.mjs';
 
 const fixtureRoot = fileURLToPath(new URL('../fixtures/snapshot/vault/', import.meta.url));
 
+// ★ THE COMMITTED FIXTURE IS READ-ONLY; TAKE A COPY BEFORE INVOKING THE CLI.
+// Every zagent call writes `.zagent/last.exit`/`last.json` under its `--vault`
+// root by design (cli/client.mjs's `scratchRoot`), so pointing the CLI straight
+// at `fixtureRoot` drops scratch into a committed directory that eight other
+// test files read -- and Vitest runs them in PARALLEL. cli-process.test.mjs
+// hashes its vault before and after to prove a read-only command wrote nothing;
+// a neighbour writing into the same tree turned that assertion into a dice roll.
+// A per-test copy costs ~2 MB and keeps the shared fixture genuinely shared.
+async function isolatedVault(t) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'zenith-vault-cli-entry-fixture-'));
+  t.onTestFinished(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.cp(fixtureRoot, root, {
+    recursive: true,
+    filter: source => path.basename(source) !== '.zagent',
+  });
+  return root;
+}
+
 const WORKFLOW = `---
 kind: workflow
 statuses:
@@ -187,6 +205,7 @@ test('read commands dispatch through the shared read path and the vault= prefix 
 });
 
 test('gates and guard read caller files before dispatch', async t => {
+  const vaultRoot = await isolatedVault(t);
   const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'zenith-vault-cli-files-'));
   t.onTestFinished(() => fs.rm(scratch, { recursive: true, force: true }));
   const changedPath = path.join(scratch, 'changed.txt');
@@ -194,7 +213,7 @@ test('gates and guard read caller files before dispatch', async t => {
   await fs.writeFile(changedPath, 'Games/Foundry/Source/SimCore/FD_Core.cpp\n');
   await fs.writeFile(gatesPath, JSON.stringify({ gates: [] }));
 
-  const gates = await capture(() => runCli(['gates', 'FD-11', '--file', changedPath, '--vault', fixtureRoot]));
+  const gates = await capture(() => runCli(['gates', 'FD-11', '--file', changedPath, '--vault', vaultRoot]));
   assert.equal(gates.response.exitCode, 0);
   assert.ok(Array.isArray(gates.response.payload.gates));
   assert.ok(gates.response.payload.gates.length > 0);
@@ -203,12 +222,12 @@ test('gates and guard read caller files before dispatch', async t => {
   // guard replays the recorded gate selection: a fresh selection passes, a
   // stale one is refused with the re-run instruction.
   await fs.writeFile(gatesPath, `${JSON.stringify(gates.response.payload, null, 2)}\n`);
-  const guard = await capture(() => runCli(['guard', 'FD-11', '--file', changedPath, '--gates', gatesPath, '--vault', fixtureRoot]));
+  const guard = await capture(() => runCli(['guard', 'FD-11', '--file', changedPath, '--gates', gatesPath, '--vault', vaultRoot]));
   assert.equal(guard.response.exitCode, 0, guard.output);
   assert.equal(guard.response.payload.gateSelectionStale, false);
 
   await fs.writeFile(gatesPath, JSON.stringify({ gates: [] }));
-  const staleGuard = await capture(() => runCli(['guard', 'FD-11', '--file', changedPath, '--gates', gatesPath, '--vault', fixtureRoot]));
+  const staleGuard = await capture(() => runCli(['guard', 'FD-11', '--file', changedPath, '--gates', gatesPath, '--vault', vaultRoot]));
   assert.equal(staleGuard.response.exitCode, 1);
   assert.match(String(staleGuard.response.payload.gateSelectionStale ?? staleGuard.response.payload.stale ?? ''), /no longer describes|Re-run/);
 });

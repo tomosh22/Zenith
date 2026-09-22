@@ -51,12 +51,48 @@ export async function resolveAuthority(root) {
   return target.root;
 }
 
+// ★ ON WINDOWS A CORRECT `rename` STILL FAILS, AND IT IS NOT A BUG IN THE
+// CALLER. Replacing an existing file needs every handle on the DESTINATION
+// closed, and Defender and the search indexer both open a file moments after
+// it is created -- so the rename below throws `EPERM` (sometimes `EACCES` or
+// `EBUSY`) purely because something else is reading the file we are about to
+// overwrite. It is transient by construction: the scanner lets go.
+//
+// Measured: across seven full `npm test` runs on this tree, three failed, each
+// on a DIFFERENT write-path test. Only one of the three surfaced its cause --
+// `EPERM ... rename '<...>.json.vault-<uuid>.tmp' -> '<...>.json'` under
+// `.git/vault/operations/` -- because the other two asserted on an exit code
+// and threw the error payload away; they are consistent with the same cause but
+// were not proven to be it. Four runs after this retry landed were green.
+//
+// The load of 72 parallel Vitest forks is what makes it frequent, but nothing
+// about it is test-only -- a live `zagent` write hits the same call and would
+// fail the same way, which is why the retry lives here rather than in a test
+// helper.
+//
+// Retry rather than `rm` the destination first: an unlink-then-rename is not
+// atomic, and a reader arriving in that window sees the file missing instead of
+// seeing either version. `cli/zagent.mjs`'s `writeScratch` takes the unlink
+// route, which is tolerable for scratch and would not be for a vault journal.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+async function renameWithRetry(from, to, attempts = 6) {
+  for (let attempt = 1; ; attempt += 1) {
+    try { return await fs.rename(from, to); }
+    catch (error) {
+      if (!RENAME_RETRY_CODES.has(error?.code) || attempt >= attempts) throw error;
+      // 5, 10, 20, 40, 80 ms -- ~155 ms total, well inside a scanner's grip.
+      await new Promise(resolve => setTimeout(resolve, 5 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
 async function atomic(file, bytes) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temporary = `${file}.vault-${randomUUID()}.tmp`;
   const handle = await fs.open(temporary, 'wx');
   try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
-  try { await fs.rename(temporary, file); } catch (e) { await fs.rm(temporary, { force: true }); throw e; }
+  try { await renameWithRetry(temporary, file); } catch (e) { await fs.rm(temporary, { force: true }); throw e; }
 }
 const jsonWrite = (file, value) => atomic(file, Buffer.from(JSON.stringify(value, null, 2) + '\n'));
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };

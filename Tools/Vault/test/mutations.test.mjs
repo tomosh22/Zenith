@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
 import { dispatchRead } from '../cli/read.js';
@@ -10,8 +9,6 @@ import { dispatchWrite } from '../cli/write.mjs';
 import { loadVault } from '../server/main.js';
 import { git, readRevision, saveDocument } from '../server/operations.mjs';
 import { patchFields } from '../server/text-edit.mjs';
-
-const fixtureRoot = fileURLToPath(new URL('../fixtures/snapshot/vault/', import.meta.url));
 
 const WORKFLOW = `---
 kind: workflow
@@ -83,48 +80,55 @@ tables:
 `;
 }
 
-async function makeVault(t, { copyFixture = false } = {}) {
+// Every test gets its own synthesized vault in a fresh temp directory: nothing
+// here reads the committed `fixtures/snapshot/vault/`, which is what lets these
+// tests mutate freely while Vitest runs the suite in parallel.
+//
+// ★ THERE USED TO BE A `copyFixture` ESCAPE HATCH HERE, and it is deliberately
+// gone. No call site ever passed it, so it was dead -- but it copied the SHARED
+// committed fixture (stale `.zagent/` scratch included) and then `git add .`-ed
+// the result, which is precisely the isolation bug that made cli-process's
+// before/after hash a dice roll. Do not reintroduce it; synthesize what a new
+// test needs, or copy the fixture with a filter the way cli-process.test.mjs
+// and cli-entry.test.mjs do.
+async function makeVault(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'zenith-vault-mutations-'));
   t.onTestFinished(() => fs.rm(root, { recursive: true, force: true }));
-  if (copyFixture) {
-    await fs.cp(fixtureRoot, root, { recursive: true });
-  } else {
-    await fs.mkdir(path.join(root, 'FD', 'tickets'), { recursive: true });
-    await fs.mkdir(path.join(root, 'FD', 'sprints'), { recursive: true });
-    await fs.mkdir(path.join(root, 'FD', 'knowledge'), { recursive: true });
-    const config = {
-      formatVersion: 1,
-      boardRoots: [{ project: 'FD', path: 'FD' }],
-      supportingFiles: ['metadata.md'],
-      writes: { enabled: true, commit: false, agentEmail: 'agent@example.test' },
-      policy: {
-        board: { agentEmail: 'agent@example.test', guardrails: { protectedPaths: [], maxConsecutiveBlocked: 3 } },
-        client: { file: { project: 'FD', baseBranch: 'master', branching: 'direct', merge: { push: false } } },
-        resolved: {
-          routing: {}, guardrails: { protectedPaths: [], maxConsecutiveBlocked: 3 },
-          projects: { FD: { repo: root, baseBranch: 'master', branching: 'direct', gates: [], merge: { push: false }, reviewOn: [] } },
-        },
+  await fs.mkdir(path.join(root, 'FD', 'tickets'), { recursive: true });
+  await fs.mkdir(path.join(root, 'FD', 'sprints'), { recursive: true });
+  await fs.mkdir(path.join(root, 'FD', 'knowledge'), { recursive: true });
+  const config = {
+    formatVersion: 1,
+    boardRoots: [{ project: 'FD', path: 'FD' }],
+    supportingFiles: ['metadata.md'],
+    writes: { enabled: true, commit: false, agentEmail: 'agent@example.test' },
+    policy: {
+      board: { agentEmail: 'agent@example.test', guardrails: { protectedPaths: [], maxConsecutiveBlocked: 3 } },
+      client: { file: { project: 'FD', baseBranch: 'master', branching: 'direct', merge: { push: false } } },
+      resolved: {
+        routing: {}, guardrails: { protectedPaths: [], maxConsecutiveBlocked: 3 },
+        projects: { FD: { repo: root, baseBranch: 'master', branching: 'direct', gates: [], merge: { push: false }, reviewOn: [] } },
       },
-    };
-    await fs.writeFile(path.join(root, 'vault.config.json'), JSON.stringify(config, null, 2));
-    await fs.writeFile(path.join(root, 'FD', 'workflow.md'), WORKFLOW);
-    await fs.writeFile(path.join(root, 'FD', 'versions.md'), `---\nkind: catalog\nrows:\n  - {id: v1, name: "1.0", status: UNRELEASED}\n---\n`);
-    await fs.writeFile(path.join(root, 'FD', 'sprints', 'fd-s1.md'), `---\nkind: sprint\nslug: fd-s1\nname: S1\nstatus: PLANNED\n---\n`);
-    await fs.writeFile(path.join(root, 'metadata.md'), metadata());
-    await fs.writeFile(path.join(root, 'FD', 'knowledge', 'questions.md'), `---\nkind: knowledge\ndatabase: questions\nrows: []\n---\n`);
-    await fs.writeFile(path.join(root, 'FD', 'knowledge', 'decisions.md'), `---\nkind: knowledge\ndatabase: decisions\nrows: []\n---\n`);
-    await fs.writeFile(path.join(root, 'FD', 'knowledge', 'shortfalls.md'), `---\nkind: knowledge\ndatabase: shortfalls\nrows: []\n---\n`);
-    await fs.writeFile(path.join(root, 'FD', 'knowledge', 'changelog.md'), `---\nkind: knowledge\ndatabase: changelog\nrows: []\n---\n`);
-    await fs.writeFile(path.join(root, 'FD', 'knowledge', 'suggestions.md'), `---\nkind: knowledge\ndatabase: suggestions\nrows: []\n---\n`);
-    for (const spec of [
-      { id: 'one', key: 'FD-1', title: 'One' },
-      { id: 'two', key: 'FD-2', title: 'Two' },
-      { id: 'three', key: 'FD-3', title: 'Three' },
-      { id: 'four', key: 'FD-4', title: 'Four' },
-      { id: 'epic', key: 'FD-9', title: 'Epic', type: 'EPIC' },
-    ]) {
-      await fs.writeFile(path.join(root, 'FD', 'tickets', `${spec.key}.md`), ticket(spec));
-    }
+    },
+  };
+  await fs.writeFile(path.join(root, 'vault.config.json'), JSON.stringify(config, null, 2));
+  await fs.writeFile(path.join(root, 'FD', 'workflow.md'), WORKFLOW);
+  await fs.writeFile(path.join(root, 'FD', 'versions.md'), `---\nkind: catalog\nrows:\n  - {id: v1, name: "1.0", status: UNRELEASED}\n---\n`);
+  await fs.writeFile(path.join(root, 'FD', 'sprints', 'fd-s1.md'), `---\nkind: sprint\nslug: fd-s1\nname: S1\nstatus: PLANNED\n---\n`);
+  await fs.writeFile(path.join(root, 'metadata.md'), metadata());
+  await fs.writeFile(path.join(root, 'FD', 'knowledge', 'questions.md'), `---\nkind: knowledge\ndatabase: questions\nrows: []\n---\n`);
+  await fs.writeFile(path.join(root, 'FD', 'knowledge', 'decisions.md'), `---\nkind: knowledge\ndatabase: decisions\nrows: []\n---\n`);
+  await fs.writeFile(path.join(root, 'FD', 'knowledge', 'shortfalls.md'), `---\nkind: knowledge\ndatabase: shortfalls\nrows: []\n---\n`);
+  await fs.writeFile(path.join(root, 'FD', 'knowledge', 'changelog.md'), `---\nkind: knowledge\ndatabase: changelog\nrows: []\n---\n`);
+  await fs.writeFile(path.join(root, 'FD', 'knowledge', 'suggestions.md'), `---\nkind: knowledge\ndatabase: suggestions\nrows: []\n---\n`);
+  for (const spec of [
+    { id: 'one', key: 'FD-1', title: 'One' },
+    { id: 'two', key: 'FD-2', title: 'Two' },
+    { id: 'three', key: 'FD-3', title: 'Three' },
+    { id: 'four', key: 'FD-4', title: 'Four' },
+    { id: 'epic', key: 'FD-9', title: 'Epic', type: 'EPIC' },
+  ]) {
+    await fs.writeFile(path.join(root, 'FD', 'tickets', `${spec.key}.md`), ticket(spec));
   }
   await git(root, ['init', '-q']);
   await git(root, ['config', 'user.name', 'Vault mutation tests']);
@@ -140,6 +144,16 @@ async function indexAt(root) {
 
 async function write(root, args, files = {}) {
   return dispatchWrite(await indexAt(root), args, files);
+}
+
+// Asserts exit 0 AND surfaces the error payload when it is not. A bare
+// `assert.equal(response.exitCode, 0)` throws away the only thing that says
+// WHY, which is how two of three observed write-path flakes reached a human as
+// an unexplained `1 !== 0`.
+async function writeOk(root, args, files = {}) {
+  const response = await write(root, args, files);
+  assert.equal(response.exitCode, 0, JSON.stringify(response.payload));
+  return response;
 }
 
 test('claim, attempt CAS, human takeover comments, and mutable breaker are durable', async t => {
@@ -266,19 +280,19 @@ test('epics cannot enter In Progress through human moves or raw saves, while chi
 
 test('ticket field, relation, parent, and all status mutation families use the operation protocol', async t => {
   const root = await makeVault(t);
-  assert.equal((await write(root, ['claim', 'FD-1'])).exitCode, 0);
+  await writeOk(root, ['claim', 'FD-1']);
   let current = await indexAt(root);
   const attempt = current.getTicket('FD-1').metadata.claimAttempt;
-  assert.equal((await write(root, ['update', 'FD-1', '--title', 'Updated', '--label', 'important', '--attempt', attempt])).exitCode, 0);
-  assert.equal((await write(root, ['estimate', 'FD-1', '8', '--attempt', attempt])).exitCode, 0);
-  assert.equal((await write(root, ['flag', 'FD-1', '--attempt', attempt])).exitCode, 0);
-  assert.equal((await write(root, ['resolve', 'FD-1', 'DONE', '--attempt', attempt])).exitCode, 0);
-  assert.equal((await write(root, ['move', 'FD-1', 'In Review', '--attempt', attempt])).exitCode, 0);
-  assert.equal((await write(root, ['move', 'FD-1', 'In Progress', '--attempt', attempt, '--human'])).exitCode, 0);
-  assert.equal((await write(root, ['link', 'FD-1', 'relates', 'FD-2', '--reason', 'context'])).exitCode, 0);
-  assert.equal((await write(root, ['link', 'FD-1', 'blocks', 'FD-2', '--reason', 'must land first'])).exitCode, 0);
-  assert.equal((await write(root, ['unlink', 'FD-1', 'blocks', 'FD-2'])).exitCode, 0);
-  assert.equal((await write(root, ['parent', 'FD-1', 'FD-9'])).exitCode, 0);
+  await writeOk(root, ['update', 'FD-1', '--title', 'Updated', '--label', 'important', '--attempt', attempt]);
+  await writeOk(root, ['estimate', 'FD-1', '8', '--attempt', attempt]);
+  await writeOk(root, ['flag', 'FD-1', '--attempt', attempt]);
+  await writeOk(root, ['resolve', 'FD-1', 'DONE', '--attempt', attempt]);
+  await writeOk(root, ['move', 'FD-1', 'In Review', '--attempt', attempt]);
+  await writeOk(root, ['move', 'FD-1', 'In Progress', '--attempt', attempt, '--human']);
+  await writeOk(root, ['link', 'FD-1', 'relates', 'FD-2', '--reason', 'context']);
+  await writeOk(root, ['link', 'FD-1', 'blocks', 'FD-2', '--reason', 'must land first']);
+  await writeOk(root, ['unlink', 'FD-1', 'blocks', 'FD-2']);
+  await writeOk(root, ['parent', 'FD-1', 'FD-9']);
   current = await indexAt(root);
   assert.equal(current.getTicket('FD-1').metadata.title, 'Updated');
   assert.equal(current.getTicket('FD-1').metadata.parent, 'FD-9');
@@ -312,16 +326,16 @@ test('create, sprint, version, knowledge, rows, and suggestions mutations cover 
   assert.equal(createdAgain.exitCode, 0, JSON.stringify(createdAgain.payload));
   assert.notEqual(createdAgain.payload.key, created.payload.key, 'omitted operation ids represent new create intents');
 
-  assert.equal((await write(root, ['sprint', 'create', 'Release 2', '--project', 'FD'])).exitCode, 0);
-  assert.equal((await write(root, ['sprint', 'start', 'Release 2', '--project', 'FD'])).exitCode, 0);
-  assert.equal((await write(root, ['sprint', 'add', 'Release 2', 'FD-1', '--project', 'FD'])).exitCode, 0);
-  assert.equal((await write(root, ['sprint', 'gate', 'Release 2', 'FD-1', '--project', 'FD'])).exitCode, 0);
-  assert.equal((await write(root, ['sprint', 'remove', 'Release 2', 'FD-1', '--project', 'FD'])).exitCode, 0);
-  assert.equal((await write(root, ['sprint', 'complete', 'Release 2', '--project', 'FD'])).exitCode, 0);
+  await writeOk(root, ['sprint', 'create', 'Release 2', '--project', 'FD']);
+  await writeOk(root, ['sprint', 'start', 'Release 2', '--project', 'FD']);
+  await writeOk(root, ['sprint', 'add', 'Release 2', 'FD-1', '--project', 'FD']);
+  await writeOk(root, ['sprint', 'gate', 'Release 2', 'FD-1', '--project', 'FD']);
+  await writeOk(root, ['sprint', 'remove', 'Release 2', 'FD-1', '--project', 'FD']);
+  await writeOk(root, ['sprint', 'complete', 'Release 2', '--project', 'FD']);
 
-  assert.equal((await write(root, ['version', 'create', '2.0', '--project', 'FD', '--description', 'next'])).exitCode, 0);
-  assert.equal((await write(root, ['version', 'release', '2.0', '--project', 'FD'])).exitCode, 0);
-  assert.equal((await write(root, ['version', 'set', '2.0', 'FD-1', '--project', 'FD'])).exitCode, 0);
+  await writeOk(root, ['version', 'create', '2.0', '--project', 'FD', '--description', 'next']);
+  await writeOk(root, ['version', 'release', '2.0', '--project', 'FD']);
+  await writeOk(root, ['version', 'set', '2.0', 'FD-1', '--project', 'FD']);
 
   for (const [command, body] of [
     ['ask', 'Why?'], ['decide', JSON.stringify({ Decision: 'Use local files' })],

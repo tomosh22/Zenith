@@ -327,6 +327,23 @@ function bytesFromWrite(write) {
   throw new Error('Scratch write has no content');
 }
 
+// See `atomic()` in server/operations.mjs for the full account: on Windows a
+// rename over an existing file throws EPERM/EACCES/EBUSY whenever another
+// process holds a handle on the DESTINATION, which Defender and the search
+// indexer routinely do for a second or so after a file appears. Transient, so
+// retry with a short backoff instead of surfacing it to the caller.
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+async function renameWithRetry(from, to, attempts = 6) {
+  for (let attempt = 1; ; attempt += 1) {
+    try { return await fs.rename(from, to); }
+    catch (error) {
+      if (!RENAME_RETRY_CODES.has(error?.code) || attempt >= attempts) throw error;
+      await new Promise(resolve => setTimeout(resolve, 5 * 2 ** (attempt - 1)));
+    }
+  }
+}
+
 async function atomicWrite(file, bytes, { exclusive = false } = {}) {
   await fs.mkdir(path.dirname(file), { recursive: true });
   if (exclusive) {
@@ -336,7 +353,7 @@ async function atomicWrite(file, bytes, { exclusive = false } = {}) {
   const temporary = `${file}.tmp-${randomUUID()}`;
   try {
     await fs.writeFile(temporary, bytes, { flag: 'wx' });
-    await fs.rename(temporary, file);
+    await renameWithRetry(temporary, file);
   } finally {
     await fs.rm(temporary, { force: true });
   }
