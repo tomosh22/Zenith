@@ -543,6 +543,7 @@ bool ZM_CreatureAssetPath(ZM_SPECIES_ID eId, ZM_CREATURE_ASSET_KIND eKind,
 #include "AssetHandling/Zenith_AssetRegistry.h"   // Zenith_AssetRegistry::Create<> owning-handle pattern
 #include "Collections/Zenith_Vector.h"            // Zenith_Vector<std::string> material list
 #include "Zenithmon/Source/Gen/ZM_BakeManifest.h"    // per-family bake guard (check) + stamp (write)
+#include "Zenithmon/Source/Gen/ZM_AuthoredCreature.h"
 #include <filesystem>
 #include <string>
 
@@ -565,6 +566,9 @@ namespace
 
 bool ZM_BakeCreature(ZM_SPECIES_ID eId)
 {
+	char acAuthoredRef[512]; bool bAuthored = false;
+	if (!ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) return false;
+	if (ZM_AuthoredCreature::Try(eId, acAuthoredRef, true, bAuthored)) return bAuthored;
 	ZM_Creature xCreature;
 	ZM_BuildCreature(eId, xCreature);
 
@@ -747,15 +751,16 @@ bool ZM_BakeAllCreatures()
 {
 	// Per-family bake guard: skip when the stamp is current + every file present.
 	const std::filesystem::path xRoot(GAME_ASSETS_DIR);
-	if (ZM_BakeManifestCheck(ZM_ASSET_FAMILY_CREATURES, xRoot))
-	{
-		return true;   // warm: stamp current + all files present -> skip the family
-	}
+	const bool bWarm = ZM_BakeManifestCheck(ZM_ASSET_FAMILY_CREATURES, xRoot);
 	bool bOk = true;
 	const u_int uCount = ZM_GetSpeciesCount();
 	for (u_int u = 0; u < uCount; ++u)
 	{
 		const ZM_SPECIES_ID eId = static_cast<ZM_SPECIES_ID>(u);
+		char acRef[512]; bool bAuthored = false;
+		if (!ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MODEL, acRef, sizeof(acRef))) { bOk = false; continue; }
+		if (ZM_AuthoredCreature::Try(eId, acRef, false, bAuthored)) { bOk &= bAuthored; continue; }
+		if (bWarm) continue;
 		// All 8 archetype builders are wired (SC5a), so this guard is now effectively a
 		// no-op -- every species dispatches to a non-null builder. Kept defensively: a
 		// null builder would otherwise make ZM_BuildCreatureMesh assert.

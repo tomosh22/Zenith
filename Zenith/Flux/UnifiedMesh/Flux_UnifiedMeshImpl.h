@@ -9,6 +9,7 @@
 class Flux_ShaderBinder;
 class Flux_MeshInstance;
 class Flux_AnimationTexture;
+class Flux_RendererImpl;
 
 // =====================================================================
 // Flux_UnifiedMeshImpl — the unified GPU-driven opaque static-mesh feature
@@ -88,6 +89,7 @@ public:
 	// indices, and host-uploads the dynamic buffers + culling constants. After it
 	// returns the per-frame state is frozen; the record callbacks are pure readers.
 	void GatherUnifiedPacket(void*);
+	void GatherSkinningPacket(Flux_RendererImpl& xRenderer, bool bVelocityActive);
 
 	// ===== Data =====
 

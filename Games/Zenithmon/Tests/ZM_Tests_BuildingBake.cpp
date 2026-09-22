@@ -61,6 +61,11 @@ namespace
 ZENITH_TEST(ZM_Gen, BuildingBake_StaticModelFilesLandAndNoRig)
 {
 	const ZM_BUILDING_ID eId = ZM_BUILDING_CARE_CENTER;
+	char acSourceRef[512];
+	ZENITH_ASSERT_TRUE(ZM_BuildingAssetPath(eId,ZM_BUILDING_ASSET_MODEL,acSourceRef,sizeof(acSourceRef)),"model path must fit");
+	auto xSource=std::filesystem::path(Zenith_AssetRegistry::ResolvePath(acSourceRef));xSource.replace_extension(".glb");
+	std::error_code xSourceError;
+	const bool bAuthored=std::filesystem::is_regular_file(xSource,xSourceError);
 	if (!ZM_BakeBuilding(eId))
 	{
 		ZENITH_SKIP("ZM_BakeBuilding failed -- bake environment unavailable (GAME_ASSETS_DIR not writable?)");
@@ -68,7 +73,7 @@ ZENITH_TEST(ZM_Gen, BuildingBake_StaticModelFilesLandAndNoRig)
 
 	// (a) The per-model bundle (.zmesh / _facade.ztxtr / .zmtrl / .zmodel) must all be
 	// present non-empty. The per-model kinds are 0..ZM_BUILDING_ASSET_KIND_COUNT.
-	for (u_int k = 0; k < static_cast<u_int>(ZM_BUILDING_ASSET_KIND_COUNT); ++k)
+	for (u_int k = 0; !bAuthored && k < static_cast<u_int>(ZM_BUILDING_ASSET_KIND_COUNT); ++k)
 	{
 		char acRef[512];
 		ZENITH_ASSERT_TRUE(ZM_BuildingAssetPath(eId, static_cast<ZM_BUILDING_ASSET_KIND>(k), acRef, sizeof(acRef)),
@@ -90,6 +95,23 @@ ZENITH_TEST(ZM_Gen, BuildingBake_StaticModelFilesLandAndNoRig)
 	Zenith_ModelAsset xModel;
 	const Zenith_Status xStatus = xModel.ParseStream(xStream);
 	ZENITH_ASSERT_TRUE(xStatus.IsOk(), "failed to parse baked .zmodel: %s", strModelAbs.c_str());
+	if(bAuthored)
+	{
+		// Authored buildings own their material sections; procedural surface-file
+		// names are not dependencies of this model. Baking must preserve that.
+		ZENITH_ASSERT_EQ(xModel.GetNumMeshes(),1u,"GLB building must remain one imported mesh");
+		if(xModel.GetNumMeshes()==1u)
+		{
+			const auto& xBinding=xModel.GetMeshBinding(0);
+			const auto xActual=std::filesystem::path(Zenith_AssetRegistry::ResolvePath(xBinding.GetMeshPath()));
+			auto xExpected=xSource;xExpected.replace_extension(".zmesh");
+			ZENITH_ASSERT_TRUE(std::filesystem::equivalent(xActual,xExpected,xSourceError),"bake overwrote the authored building mesh binding");
+			ZM_AssertBakedRefExistsNonEmpty(xBinding.GetMeshPath().c_str(),"imported building mesh");
+			ZENITH_ASSERT_GT(xBinding.m_xMaterials.GetSize(),0u,"imported building needs materials");
+			for(u_int m=0;m<xBinding.m_xMaterials.GetSize();++m)
+				ZM_AssertBakedRefExistsNonEmpty(xBinding.GetMaterialPath(m).c_str(),"imported building material");
+		}
+	}
 
 	// The STATIC contract: a building .zmodel binds NO skeleton and lists NO animations.
 	ZENITH_ASSERT_TRUE(xModel.GetSkeletonPath().empty(),

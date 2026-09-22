@@ -111,8 +111,7 @@ private:
 	// the end once anyway (never triggers under zm_instant_battles). WALL-CLOCK, not
 	// a frame count -- nothing pins the frame rate.
 	static constexpr float fRUNNING_DEADLINE_SECONDS = 30.0f;
-	// How far above a platform's centre a creature model is placed so it sits on the
-	// slab rather than intersecting it.
+	// Fallback only when the platform or its real bounds are unavailable.
 	static constexpr float fCREATURE_Y_LIFT = 1.0f;
 
 	// One-shot: read the payload, Begin the core, place both models, -> RUNNING.

@@ -317,11 +317,15 @@ ZM_CreatureClipValidation ZM_ValidateCreatureClip(const Flux_AnimationClip& xCli
 #ifdef ZENITH_TOOLS
 
 #include "AssetHandling/Zenith_AssetRegistry.h"   // ResolvePath: "game:" ref -> absolute FS path
+#include "Zenithmon/Source/Gen/ZM_AuthoredCreature.h"
 #include <filesystem>
 #include <string>
 
 bool ZM_BakeCreatureClips(ZM_SPECIES_ID eId)
 {
+	char acModelRef[512]; bool bAuthored = false;
+	if (!ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MODEL, acModelRef, sizeof(acModelRef))) return false;
+	if (ZM_AuthoredCreature::Try(eId, acModelRef, true, bAuthored)) return bAuthored;
 	// The clip set is a pure function of the species' body plan.
 	const ZM_ARCHETYPE eArch = ZM_GetSpeciesData(eId).m_eArchetype;
 	if (ZM_GetArchetypeAnimBuilder(eArch) == nullptr)

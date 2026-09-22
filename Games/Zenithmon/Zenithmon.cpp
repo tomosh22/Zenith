@@ -80,6 +80,21 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 
 #include <string>
+#include <filesystem>
+
+// A local authored source owns its matching bundle, including the three rocks
+// whose procedural fallbacks otherwise present shared engine stones. Rendering
+// and authoring-time bounds fitting must make the same ownership decision.
+static bool ZM_HasAuthoredPropSource(ZM_PROP_ID eProp)
+{
+	if (!ZM_PropUsesEngineRock(eProp)) { return false; }
+	char acRef[512];
+	if (!ZM_PropAssetPath(eProp, ZM_PROP_ASSET_MODEL, acRef, sizeof(acRef))) { return false; }
+	auto xSource = std::filesystem::path(Zenith_AssetRegistry::ResolvePath(acRef));
+	xSource.replace_extension(".glb");
+	std::error_code xError;
+	return std::filesystem::is_regular_file(xSource, xError) && !xError;
+}
 
 #ifdef ZENITH_INPUT_SIMULATOR
 #include "Core/Zenith_AutomatedTest.h"
@@ -87,6 +102,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "Core/Zenith_CommandLine.h"
+#include "Zenithmon/Source/Gen/ZM_AuthoredCreature.h"
 #include "Editor/TerrainEditor/Zenith_TerrainEditor.h"         // Zenith_TerrainBrushTool::TreePaint (ZM-D-217 woodland)
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_EditorAutomation.h"
@@ -471,7 +487,7 @@ private:
 	{
 		char acModelRef[256];
 
-		// ★ TRY THE ARTIST-AUTHORED MODEL FIRST, FOR THE ONE HUMAN THAT HAS ONE,
+		// Try the cast's imported model first,
 		// and fall THROUGH rather than out when it does not resolve -- the same
 		// shape the block fallback below already uses. The imported bundle is
 		// gitignored art: a fresh clone, a runtime-only build or a failed bind all
@@ -484,7 +500,7 @@ private:
 		if (szImported != nullptr)
 		{
 			xModel.LoadModel(std::string(szImported));
-			if (xModel.GetSkeletonInstance() != nullptr)
+			if (xModel.GetModelPath() == szImported && xModel.GetSkeletonInstance() != nullptr)
 			{
 				return FinishHumanModel(xModel, *xModel.GetSkeletonInstance());
 			}
@@ -649,13 +665,10 @@ private:
 	// caller falls back to the cold shape.
 	bool ApplyPropModel(Zenith_ModelComponent& xModel, ZM_PROP_ID eProp)
 	{
-		// ★ ZM_PropModelRef, NOT ZM_PropAssetPath(MODEL). The two differ for the
-		// ROCK kinds, which present the shared engine stones under
-		// engine:Meshes/Rocks rather than their own generated bundle -- which is
-		// one box. Resolving the bundle directly here would put that box back on
-		// screen with every unit still green (see ZM_PropGen.h).
+		// Authored rocks use their own imports; without a source the resolver
+		// keeps the shared engine stones instead of the procedural cube.
 		char acModelRef[256];
-		if (!ZM_PropModelRef(eProp, acModelRef, static_cast<u_int>(sizeof(acModelRef))))
+		if (!ZM_PropModelRef(eProp, acModelRef, static_cast<u_int>(sizeof(acModelRef)), ZM_HasAuthoredPropSource(eProp)))
 		{
 			return false;
 		}
@@ -1342,10 +1355,9 @@ public:
 			return;
 		}
 
-		// The presenter's ref, which is the ENGINE stone for a rock kind and the
-		// prop's own bundle for everything else (ZM_PropGen.h).
+		// Use the same source ownership decision as authoring-time bounds fitting.
 		char acModelRef[512];
-		if (!ZM_PropModelRef(eProp, acModelRef, static_cast<u_int>(sizeof(acModelRef))))
+		if (!ZM_PropModelRef(eProp, acModelRef, static_cast<u_int>(sizeof(acModelRef)), ZM_HasAuthoredPropSource(eProp)))
 		{
 			return;
 		}
@@ -3569,12 +3581,9 @@ namespace
 		}
 		(void)ZM_EnsurePropBaked(eProp);
 
-		// ★ THE MESH THAT WILL ACTUALLY RENDER, which for a ROCK kind is the shared
-		// engine stone rather than this prop's own bake. Measuring the bundle here
-		// while presenting the engine model would fit the stone to a cube's
-		// dimensions -- a wrong scale on every rock in the world.
+		// Measure the same authored or fallback mesh that the presenter loads.
 		char acMeshRef[512];
-		if (!ZM_PropMeshRef(eProp, acMeshRef, sizeof(acMeshRef)))
+		if (!ZM_PropMeshRef(eProp, acMeshRef, sizeof(acMeshRef), ZM_HasAuthoredPropSource(eProp)))
 		{
 			return xFit;
 		}
@@ -4277,6 +4286,16 @@ void Project_InitializeResources()
 	for (u_int uRecipe = 0; uRecipe < uRecipeCount; ++uRecipe)
 	{
 		ZM_InitializeTerrainMaterialsForRecipe(uRecipe);
+	}
+	// Imported creature sources own their runtime bundle. Check them on every
+	// tools boot, independently of the procedural family manifest's warmth.
+	for (u_int u = 0; u < ZM_GetSpeciesCount(); ++u)
+	{
+		char acRef[512]; bool bImported = false;
+		const auto eId = static_cast<ZM_SPECIES_ID>(u);
+		if (ZM_CreatureAssetPath(eId, ZM_CREATURE_ASSET_MODEL, acRef, sizeof(acRef)) &&
+			ZM_AuthoredCreature::Try(eId, acRef, false, bImported) && !bImported)
+			Zenith_Error(LOG_CATEGORY_TOOLS, "Authored creature import failed: %s", ZM_GetSpeciesName(eId));
 	}
 }
 

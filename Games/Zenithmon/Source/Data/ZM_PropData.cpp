@@ -207,6 +207,13 @@ namespace
 	{
 		false, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
 	};
+
+	// AB-PROP-08: centre of the authored amber glazing, in metre-scale GLB
+	// coordinates (base at Y=0). The hanging head is offset along +X.
+	const ZM_PropBulb s_xLanternPostBulb =
+	{
+		true, 0.285f, 1.895f, 0.0f, 35.0f, 10.0f, 1.00f, 0.68f, 0.32f
+	};
 }
 
 // TOTAL for every id, in range or not: only the rows that emit answer a bulb.
@@ -216,12 +223,9 @@ const ZM_PropBulb& ZM_GetPropBulb(ZM_PROP_ID eId)
 	{
 	case ZM_PROP_LAMP_POST:
 		return s_xLampPostBulb;
+	case ZM_PROP_LANTERN_POST:
+		return s_xLanternPostBulb;
 	default:
-		// ★ THE LANTERN POST (ZM_PROP_LANTERN_POST) IS DELIBERATELY NOT HERE. It
-		// is a different asset with a different head, still generated, and its
-		// bulb has never been measured -- inheriting the lamp post's offset would
-		// put a light at a point on a mesh nobody has looked at. Add a row when
-		// that asset is imported and measured, not before.
 		return s_xNoBulb;
 	}
 }

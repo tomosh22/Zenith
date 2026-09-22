@@ -176,6 +176,7 @@
 #include "ZenithECS/Zenith_SceneSystem.h"
 #include "Zenithmon/Components/ZM_FollowCamera.h"      // the SHIPPED framing constants
 #include "Zenithmon/Components/ZM_GameStateManager.h"  // the warp into Route 1
+#include "Zenithmon/Source/Party/ZM_GameState.h"
 #include "Zenithmon/Components/ZM_GroundItemProp.h"    // the component a prop must carry
 #include "Zenithmon/Source/Data/ZM_WorldSpec.h"        // build index + terrain set, READ never spelled
 #include "Zenithmon/Source/World/ZM_GroundItem.h"      // ZM_GroundItemName, for the diagnostics
@@ -184,6 +185,9 @@
 
 namespace
 {
+	bool g_bGIPCSpentReview = false;
+	bool g_bGIPCCollectionSaved = false;
+	ZM_GroundItemSet g_xGIPCPreviousCollection;
 	constexpr float fGIPC_FIXED_DT = 1.0f / 60.0f;
 
 	// The warp barrier's frame budget, the same figure and for the same reason as
@@ -680,6 +684,21 @@ namespace
 
 	bool GIPCStepResolve()
 	{
+		if (g_bGIPCSpentReview && !g_bGIPCCollectionSaved)
+		{
+			ZM_GameState* pxState = nullptr;
+			if (!ZM_GameStateManager::TryGetGameState(pxState) || !pxState)
+			{
+				if (g_iGIPCPhaseFrames > iGIPC_RESOLVE_DEADLINE_FRAMES)
+					{ FailGIPC("no game state for spent-item review"); return false; }
+				return true;
+			}
+			g_xGIPCPreviousCollection = pxState->m_xCollectedGroundItems;
+			for (const auto& xSubject : axGIPC_SUBJECTS)
+				{ pxState->m_xCollectedGroundItems.Mark(xSubject.m_eId); }
+			g_bGIPCCollectionSaved = true;
+			return true; // allow normal component updates to replace the model
+		}
 		// The authored camera. Named from ZM_Route1Placement.h rather than found by
 		// component, so a renamed camera entity fails HERE with a name in the message
 		// instead of silently handing the harness some other camera.
@@ -894,8 +913,10 @@ namespace
 	}
 }
 
-static void Setup_ZMGroundItemPropCapture()
+static void Setup_ZMGroundItemPropCaptureImpl(bool bSpent)
 {
+	g_bGIPCSpentReview = bSpent;
+	g_bGIPCCollectionSaved = false;
 	g_eGIPCPhase       = GIPCPhase::Done;
 	g_iGIPCPhaseFrames = 0;
 	g_uGIPCSubject     = 0u;
@@ -943,7 +964,7 @@ static void Setup_ZMGroundItemPropCapture()
 	for (u_int u = 0u; u < uGIPC_SUBJECT_COUNT; ++u)
 	{
 		g_axGIPCShots[u].m_strPath =
-			(xCaptureDir / (std::string(axGIPC_SUBJECTS[u].m_szShotStem) + ".tga"))
+			(xCaptureDir / (std::string(axGIPC_SUBJECTS[u].m_szShotStem) + (bSpent ? "_spent.tga" : ".tga")))
 				.string();
 		// ★ REMOVED, NOT OVERWRITTEN. A stale TGA that survived a failed capture
 		// would be pasted into a work log as though it were this run's, and in a
@@ -957,6 +978,11 @@ static void Setup_ZMGroundItemPropCapture()
 
 	g_eGIPCPhase  = GIPCPhase::RequestWarp;
 	g_bGIPCActive = true;
+}
+
+static void Setup_ZMGroundItemPropCapture()
+{
+	Setup_ZMGroundItemPropCaptureImpl(false);
 }
 
 static bool Step_ZMGroundItemPropCapture(int)
@@ -1132,6 +1158,14 @@ static bool Verify_ZMGroundItemPropCapture()
 
 static void Teardown_ZMGroundItemPropCapture()
 {
+	if (g_bGIPCCollectionSaved)
+	{
+		ZM_GameState* pxState = nullptr;
+		if (ZM_GameStateManager::TryGetGameState(pxState) && pxState)
+			{ pxState->m_xCollectedGroundItems = g_xGIPCPreviousCollection; }
+	}
+	g_bGIPCCollectionSaved = false;
+	g_bGIPCSpentReview = false;
 	// The harness destroys the world between tests, so the paused flag on the scene
 	// data dies with it -- this only matters for a single-test run that leaves the
 	// process alive, and costs nothing.
@@ -1160,5 +1194,17 @@ static const Zenith_AutomatedTest g_xZMGroundItemPropCaptureTest = {
 	&Teardown_ZMGroundItemPropCapture,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMGroundItemPropCaptureTest);
+
+static void Setup_ZMSpentItemPropCapture()
+{
+	Setup_ZMGroundItemPropCaptureImpl(true);
+}
+
+static const Zenith_AutomatedTest g_xZMSpentItemPropCaptureTest = {
+	"ZM_SpentItemPropCapture_Test", &Setup_ZMSpentItemPropCapture,
+	&Step_ZMGroundItemPropCapture, &Verify_ZMGroundItemPropCapture,
+	3000, true, true, &Teardown_ZMGroundItemPropCapture,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMSpentItemPropCaptureTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

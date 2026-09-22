@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Zenithmon/Source/Gen/ZM_AuthoredStatic.h"
 
 // ============================================================================
 // ZM_PropGen -- the S4 prop generator driver. See the header for the architecture
@@ -460,9 +461,9 @@ namespace
 	}
 }
 
-bool ZM_PropModelRef(ZM_PROP_ID eId, char* szOut, u_int uCap)
+bool ZM_PropModelRef(ZM_PROP_ID eId, char* szOut, u_int uCap, bool bAuthoredSource)
 {
-	if (const char* szStem = ZM_PropEngineRockStem(eId))
+	if (const char* szStem = bAuthoredSource ? nullptr : ZM_PropEngineRockStem(eId))
 	{
 		// The .zmodel Tools/Zenith_Tools_RockAssetExport.cpp writes beside each
 		// stone -- "what AddStep_LoadModel / a ModelComponent reference".
@@ -471,9 +472,9 @@ bool ZM_PropModelRef(ZM_PROP_ID eId, char* szOut, u_int uCap)
 	return ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL, szOut, uCap);
 }
 
-bool ZM_PropMeshRef(ZM_PROP_ID eId, char* szOut, u_int uCap)
+bool ZM_PropMeshRef(ZM_PROP_ID eId, char* szOut, u_int uCap, bool bAuthoredSource)
 {
-	if (const char* szStem = ZM_PropEngineRockStem(eId))
+	if (const char* szStem = bAuthoredSource ? nullptr : ZM_PropEngineRockStem(eId))
 	{
 		// The Zenith_MeshAsset export (.zasset) -- the same class ZM's own .zmesh
 		// is, so ZM_ResolvePropFit measures it through the same ParseStream.
@@ -1054,6 +1055,10 @@ bool ZM_PropAssetPath(ZM_PROP_ID eId, ZM_PROP_ASSET_KIND eKind, char* szOut, u_i
 
 bool ZM_BakeProp(ZM_PROP_ID eId)
 {
+	char acAuthoredRef[512];
+	if (!ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) { return false; }
+	bool bAuthored = false;
+	if (ZM_TryAuthoredStatic(acAuthoredRef, true, bAuthored)) { return bAuthored; }
 	ZM_Prop xProp;
 	ZM_BuildProp(eId, xProp);
 
@@ -1204,6 +1209,10 @@ namespace
 
 bool ZM_EnsurePropBaked(ZM_PROP_ID eId)
 {
+	char acAuthoredRef[512];
+	if (!ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) { return false; }
+	bool bAuthored = false;
+	if (ZM_TryAuthoredStatic(acAuthoredRef, false, bAuthored)) { return bAuthored; }
 	// TOTAL on a garbage id, like every other entry point here: ZM_GetPropName would
 	// answer "NONE" and we would stat game:Props/NONE/... forever.
 	if (static_cast<u_int>(eId) >= static_cast<u_int>(ZM_PROP_COUNT))

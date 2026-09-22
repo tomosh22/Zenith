@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-09-19
+**Last updated:** 2026-09-22
 
 **Board:** `ZM` on the agent board. **The work items live there** — epics, stories,
 tasks, bugs, blockers, sprints and releases — and [Board.md](Board.md) explains the
@@ -17,11 +17,123 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-21):
-ZM boot `4578`; engine boot (Null Combat) `2725`; Null RenderTest `2828`; registry **73**.**
+**★ LIVE PIN (UPDATED 2026-09-22):
+ZM boot `4584`; engine boot (Null Combat) `2731`; Null RenderTest `2834`; registry **116**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **+4 REGISTRY (2026-09-22) — lark sources; user-requested stop.** Pipwit,
+> Trillark and Stratavis have normal/shiny GLBs and editable Blender sources.
+> Their final 27-pose engine review and six working skin/PBR audits passed.
+> The isolated Vulkan listing observed 116 entries (`lark_registry.log`).
+> Null Zenithmon observed 4,584 ran, 4,582 passed, zero failed and two skipped
+> (`lark_null_units.log`); boot pins are unchanged. Six production/runtime
+> audits and all three real battle captures passed, followed by the original
+> round-trip regression (`lark_verified`). The gallery has 436 actual engine
+> frames; 125 creature primary sources remain missing. This is the requested
+> stopping point: pause after committing, and start no further assets.
+> Photorealistic acceptance remains open.
+
+> **STOP VERIFICATION:** required cross-project/backend builds and Combat's
+> headless suite passed. Full unit gates with exports enabled passed the pinned
+> Combat and Zenithmon counts. Zenithmon's 116-test headless batch found two
+> outdated generated-asset expectations; both corrected integration checks
+> passed in a targeted rerun. Sixty graphics cases skipped in the headless
+> batch; actual asset captures are recorded separately. Both doc lints pass.
+> The full engine lint/complexity gate retains twelve prior findings outside
+> the changed files. See `Tools/Art/CREATURE_REVIEW.md` for exact evidence and
+> commit exclusions. No all-green full-gate claim is made.
+
+> **+4 REGISTRY (2026-09-22) — fire biped sources.** Kindlet, Scorchel and
+> Pyroclast now have normal/shiny GLBs and editable Blender sources. Their
+> corrected 27-pose engine review and six working skin/PBR audits passed.
+> Six installed-source/runtime-mesh audits, all three real battle captures and
+> the original round-trip regression also passed (`ember_verified`). The gallery
+> now contains 403 actual engine frames.
+> The Null Zenithmon run again observed 4,584 ran, 4,582 passed, zero failures
+> and two skips (`ember_null_units.log`); no boot-unit baseline changed.
+> The Vulkan listing observed 112 entries (`ember_registry.log`), including
+> three new battle captures and the family review. There are 128 missing
+> creature primary sources. Photorealistic finishing remains incomplete;
+> no creature art checkbox was closed.
+
+> **+1 EVERY GAME / +5 REGISTRY (2026-09-22) — windseed and GLB facing.**
+> All three unit counts were observed from separate Null runs with zero failures
+> (`winding_null_*_units.log`). RenderTest needed a rerun with fixture-write
+> access after a sandbox denial. The new importer regression covers open
+> triangles across translations and reflected transforms; glTF facing no
+> longer depends on signed volume. Creature cache receipts are v4. The Vulkan
+> registry listing reports 108 entries (`windseed_registry.log`): three battle
+> captures, one family review and one isolated Zephyrbloom diagnostic review.
+> Puffseed, Dandelift and Zephyrbloom now have normal/shiny/editable sources.
+> Their corrected 27-pose review, six production audits, three battle captures
+> and original battle round-trip regression passed. The gallery has 370 actual
+> engine frames; 131 creature primary sources remain absent. Photorealistic
+> finishing is incomplete and no creature art checkbox was closed.
+
+> **+5 EVERY GAME (2026-09-22) — authored creature skin import.** All three
+> counts were observed from separate Null runs with zero failures. The five
+> units cover joint-order remapping, corrupt-skin refusal, anatomical rest-rig
+> import, inverse-bind refusal and protection from static publication. Logs are
+> under `Build/artifacts/authored_assets/skin_null_*_units.log`. The registry's
+> 83 entries were observed with `--list-automated-tests`; the ten additions are
+> authored-asset review, pickup and battle captures. These counts establish
+> technical coverage, not photorealistic acceptance of the candidate assets.
+
+> **+4 REGISTRY (2026-09-22) — fungal creature captures.** The Vulkan listing
+> reports 87 entries (`fungal_registry.log`): three real battle captures and one
+> 27-pose family review were added for Sporeling, Duskcap and Fungrove. All four
+> passed. The boot-unit baselines are unchanged; no new boot units were added.
+
+> **+3 REGISTRY (2026-09-22) — adult grove-deer captures.** The Vulkan listing
+> reports 90 entries (`grove_deer_registry.log`): two battle captures and one
+> 18-pose family review were added for Thicketbuck and Sylvastag. These passed,
+> as did Fernfawn's motion regression and a refreshed 27-pose fungal review.
+> The boot-unit baselines remain unchanged. These sources are art candidates.
+
+> **+4 REGISTRY (2026-09-22) — lancefish captures.** The Vulkan listing reports
+> 94 entries (`lancefish_registry.log`): three real battle captures and one
+> 27-pose family review for Finlet, Marlance and Tidesabre. All four passed after
+> fitting action bends and refining clearance around fin/bill transitions.
+> Six production skin/PBR audits passed. Boot-unit baselines are unchanged;
+> these sources remain candidates requiring photorealistic finishing.
+
+> **+4 REGISTRY (2026-09-22) — mineral-beetle captures.** The Vulkan listing
+> reports 98 entries (`beetle_registry.log`). Prismite, Geoborer and Crystallisk
+> passed their corrected 27-pose review and all three real battle round trips.
+> Six production audits passed. The shared-clearance refactor left all 18
+> lancefish clips byte-identical and passed their pose regression. Capture
+> battles now use a healthy lead, require victory and restore game state;
+> Finlet and the original round-trip test passed afterward. Boot-unit pins are
+> unchanged. The beetles remain candidates needing photorealistic refinement.
+
+> **+1 REGISTRY (2026-09-22) — scanned Prismite review.** The Vulkan listing
+> reports 99 entries (`beetle_scan_registry.log`). A licensed scan adaptation
+> replaces Prismite's earlier procedural candidate after a corrected nine-pose
+> review. Its real battle capture and the original round-trip regression pass;
+> both production GLB audits pass. Credits and the source license accompany the
+> model. The gallery contains 304 engine frames; 137 creature sources remain
+> absent. Photorealistic finishing is still incomplete. Boot pins are unchanged.
+
+> **+4 REGISTRY (2026-09-22) — shoalfish captures.** The Vulkan listing reports
+> 103 entries (`shoalfish_registry.log`). Minnet, Shoalfin and Torrentfin now
+> have normal/shiny GLBs, editable sources and retained scan credits. Their
+> closer 27-pose review, six production audits and three battle round trips
+> pass, followed by the original battle regression. The gallery has 337 engine
+> frames; 134 creature primary sources remain missing. Fin translucency and
+> photographic/animation finish remain open. Boot-unit pins are unchanged.
+
+> **SHOALFISH FIN REVISION (2026-09-22).** The scene translucent pass now
+> consumes compute-skinned vertices, and GLB import preserves opacity using
+> BC3 sRGB. Three normal/shiny source pairs were rebuilt with two-sided fin
+> membranes (124,054 triangles each) and installed with backups. The final
+> 27-pose review passed in 3,151 frames, including skin-only/empty-scene and
+> animated-packet/texture checks (`translucent_alpha_final_review`). Six source
+> audits verify alpha compression as well as skin/PBR. All three fresh battle
+> captures and the original round-trip regression passed; the Vulkan unit run
+> reports 4,618 passed, zero failed, two skipped. Registry and boot pins are
+> unchanged; 134 creature sources are still missing and art acceptance is open.
 
 > **★ +7 EVERY GAME (2026-09-21, ZEN-93) — PINNING THE UNMATCHED-TEST-NAME REFUSAL.**
 > Zenithmon 4571 -> **4578**, Combat 2718 -> **2725**, RenderTest 2821 -> **2828**.

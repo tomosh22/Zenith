@@ -7,6 +7,13 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Flux/Flux_Screenshot.h"
+#include "Zenithmon/Components/ZM_BattleDirector.h"
+#include "Zenithmon/Components/ZM_GameStateManager.h"
+#include "Zenithmon/Source/Party/ZM_Monster.h"
+#include "Zenithmon/Source/Gen/ZM_CreatureGen.h"
 #include "Flux/Vegetation/Flux_GrassImpl.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
@@ -27,6 +34,7 @@
 #include "Zenithmon/Tests/ZM_GrassBaseline.h"
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -357,6 +365,7 @@ namespace
 
 	// ---- Walk captures (the latched encounter payload) ----
 	ZM_SPECIES_ID g_eBDSeenSpecies     = ZM_SPECIES_NONE;
+	ZM_SPECIES_ID g_eBDRequestedSpecies = ZM_SPECIES_FERNFAWN;
 	u_int         g_uBDSeenLevel       = 0u;
 	ZM_SCENE_ID   g_eBDSeenSourceScene = ZM_SCENE_NONE;
 
@@ -396,6 +405,7 @@ namespace
 
 	void Setup_ZMBattleDirectorRoundTrip()
 	{
+		g_eBDRequestedSpecies = ZM_SPECIES_FERNFAWN;
 		g_eBDPhase                      = BDPhase::Done;
 		g_iBDPhaseFrames                = 0;
 		g_iBDResumeSettle               = 0;
@@ -543,7 +553,7 @@ namespace
 				return false;
 			}
 			pxSystem->SetRngSeedForTests(0xABCull);
-			pxSystem->ForceEncounterOnNextTransitionForTests(ZM_SPECIES_FERNFAWN, 5u);
+			pxSystem->ForceEncounterOnNextTransitionForTests(g_eBDRequestedSpecies, 5u);
 
 			// Data-driven direction pick from the SAME density map the system reads.
 			ZM_TerrainGrass* pxGrass = xTerrain.TryGetComponent<ZM_TerrainGrass>();
@@ -788,7 +798,7 @@ namespace
 			// regression shows as a trend; entryPos is a diagnostic only.
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_BattleDirectorRoundTrip] captured: failed=%s (%s) fadeOpaque=%s species=%d "
-				"(want FERNFAWN=%d) level=%u (want 5) source=%d (want DAWNMERE=%d) "
+				"(want species=%d) level=%u (want 5) source=%d (want DAWNMERE=%d) "
 				"issuedLoads=%u (want 1) battleSceneValid=%s buildInBattle=%d (want 1) "
 				"battleCamActive=%s overworldPausedInBattle=%s grassInBattle=%u (want 0) "
 				"entryGrass=%u arenaFullyBuilt=%s arenaChildren=%u (want %u) biome=%d "
@@ -799,7 +809,7 @@ namespace
 				"parkedPos=(%f,%f,%f) resumePos=(%f,%f,%f)",
 				g_bBDFailed ? "true" : "false", g_szBDFailure,
 				g_bBDSeenFadeOpaque ? "true" : "false",
-				(int)g_eBDSeenSpecies, (int)ZM_SPECIES_FERNFAWN,
+				(int)g_eBDSeenSpecies, (int)g_eBDRequestedSpecies,
 				g_uBDSeenLevel,
 				(int)g_eBDSeenSourceScene, (int)ZM_SCENE_DAWNMERE,
 				g_uBDIssuedLoads,
@@ -859,11 +869,11 @@ namespace
 			}
 
 			// --- the latched encounter payload ---
-			if (g_eBDSeenSpecies != ZM_SPECIES_FERNFAWN)
+			if (g_eBDSeenSpecies != g_eBDRequestedSpecies)
 			{
 				Zenith_Error(LOG_CATEGORY_UNITTEST,
-					"[ZM_BattleDirectorRoundTrip] latched species was %d, expected FERNFAWN %d",
-					(int)g_eBDSeenSpecies, (int)ZM_SPECIES_FERNFAWN);
+					"[ZM_BattleDirectorRoundTrip] latched species was %d, expected %d",
+					(int)g_eBDSeenSpecies, (int)g_eBDRequestedSpecies);
 				bPassed = false;
 			}
 			if (g_uBDSeenLevel != 5u)
@@ -1045,6 +1055,7 @@ namespace
 		}
 		Zenith_InputSimulator::ResetAllInputState();
 		g_bBDActive = false;
+		g_eBDRequestedSpecies = ZM_SPECIES_FERNFAWN;
 
 		return bPassed || !g_bBDPrereqsPresent;
 	}
@@ -1059,5 +1070,230 @@ static const Zenith_AutomatedTest g_xZMBattleDirectorRoundTripTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleDirectorRoundTripTest);
+
+// Review the authored source through the real grass encounter, battle scene,
+// director-owned model placement and HUD. The existing round-trip assertions
+// still run after the two screenshots; the test uses its isolated save sandbox.
+namespace
+{
+	int g_iCreatureBattleHold = 0;
+	bool g_bCreatureBattleCameraSaved = false;
+	Zenith_Maths::Vector3 g_xCreatureBattleCameraPosition;
+	double g_fCreatureBattlePitch = 0, g_fCreatureBattleYaw = 0;
+	float g_fCreatureBattleFov = 0;
+	ZM_SPECIES_ID g_eCreatureBattleSpecies = ZM_SPECIES_FERNFAWN;
+	ZM_GameState g_xCreatureBattleSavedState;
+	bool g_bCreatureBattlePartyInstalled = false, g_bCreatureBattleWon = false;
+	void RestoreCreatureBattleState()
+	{
+		if (!g_bCreatureBattlePartyInstalled) return;
+		ZM_GameState* state = nullptr;
+		if (ZM_GameStateManager::TryGetGameState(state) && state) *state = g_xCreatureBattleSavedState;
+		g_bCreatureBattlePartyInstalled = false;
+	}
+	std::string CreatureBattleShot(bool bClose)
+	{
+		const auto root = std::filesystem::weakly_canonical(std::filesystem::path(GAME_ASSETS_DIR) / "../../..");
+		return (root / "Build/artifacts/authored_assets/screenshots" /
+			(std::string(ZM_GetSpeciesName(g_eCreatureBattleSpecies)) + (bClose ? "_battle_close.tga" : "_battle.tga"))).string();
+	}
+	void SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_ID eSpecies)
+	{
+		g_eCreatureBattleSpecies = eSpecies;
+		g_iCreatureBattleHold = 0; g_bCreatureBattleCameraSaved = false;
+		g_bCreatureBattleWon = false;
+		char ref[512]; ZM_CreatureAssetPath(eSpecies, ZM_CREATURE_ASSET_MODEL, ref, sizeof(ref));
+		auto source = std::filesystem::path(Zenith_AssetRegistry::ResolvePath(ref)); source.replace_extension(".glb");
+		if (!DiskFilePresent(source.string())) { Zenith_AutomatedTestRunner::RequestSkip("Requested authored creature source absent"); return; }
+		std::error_code ec; std::filesystem::create_directories(std::filesystem::path(CreatureBattleShot(false)).parent_path(), ec);
+		std::filesystem::remove(CreatureBattleShot(false), ec); std::filesystem::remove(CreatureBattleShot(true), ec);
+		Setup_ZMBattleDirectorRoundTrip(); g_eBDRequestedSpecies = eSpecies; ZM_SetInstantBattlesForTests(false);
+	}
+	void SetupCreatureBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_FERNFAWN); }
+	void SetupRubbletBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_RUBBLET); }
+	void SetupCairngoBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_CAIRNGO); }
+	void SetupMonolodeBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_MONOLODE); }
+	void SetupSporelingBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_SPORELING); }
+	void SetupDuskcapBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_DUSKCAP); }
+	void SetupFungroveBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_FUNGROVE); }
+	void SetupThicketbuckBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_THICKETBUCK); }
+	void SetupSylvastagBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_SYLVASTAG); }
+	void SetupFinletBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_FINLET); }
+	void SetupMarlanceBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_MARLANCE); }
+	void SetupTidesabreBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_TIDESABRE); }
+	void SetupPrismiteBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_PRISMITE); }
+	void SetupMinnetBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_MINNET); }
+	void SetupShoalfinBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_SHOALFIN); }
+	void SetupTorrentfinBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_TORRENTFIN); }
+	void SetupPuffseedBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_PUFFSEED); }
+	void SetupKindletBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_KINDLET); }
+	void SetupPipwitBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_PIPWIT); }
+	void SetupTrillarkBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_TRILLARK); }
+	void SetupStratavisBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_STRATAVIS); }
+	void SetupScorchelBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_SCORCHEL); }
+	void SetupPyroclastBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_PYROCLAST); }
+	void SetupDandeliftBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_DANDELIFT); }
+	void SetupZephyrbloomBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_ZEPHYRBLOOM); }
+	void SetupGeoborerBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_GEOBORER); }
+	void SetupCrystalliskBattleCapture() { SetupCreatureBattleCaptureForSpecies(ZM_SPECIES_CRYSTALLISK); }
+	bool StepCreatureBattleCapture(int iFrame)
+	{
+		if (g_bBDFailed) return false;
+		if (!g_bCreatureBattlePartyInstalled && g_eBDPhase == BDPhase::Baseline)
+		{
+			// This fixture verifies a victory return to the encounter location.
+			// A weak/injured saved lead can instead trigger the legitimate whiteout
+			// warp. Use a healthy deterministic lead and restore all state afterward.
+			ZM_GameState* state = nullptr;
+			if (!ZM_GameStateManager::TryGetGameState(state) || !state)
+				{ FailBD("authored capture game state did not resolve"); return false; }
+			g_xCreatureBattleSavedState = *state; g_bCreatureBattlePartyInstalled = true;
+			state->m_xParty = ZM_Party{};
+			if (!state->m_xParty.Add(ZM_BuildMonsterRecord(ZM_SPECIES_FERNFAWN,60u)))
+				{ FailBD("authored capture party fixture failed"); return false; }
+			state->m_bPendingWhiteout = false;
+		}
+		if (g_eBDPhase == BDPhase::AwaitResume)
+			g_xEngine.Scenes().QueryAllScenes<ZM_BattleDirector>().ForEach([&](Zenith_EntityID, ZM_BattleDirector& director)
+			{
+				if (director.GetCore().IsOver()) g_bCreatureBattleWon = director.GetCore().GetWinner() == ZM_SIDE_PLAYER;
+			});
+		if (g_eBDPhase != BDPhase::AwaitResume || g_iCreatureBattleHold >= 120) return Step_ZMBattleDirectorRoundTrip(iFrame);
+		Zenith_InputSimulator::ClearHeldKeys(); ++g_iCreatureBattleHold;
+		Zenith_EntityID xCreatureID = INVALID_ENTITY_ID;
+		g_xEngine.Scenes().QueryAllScenes<ZM_BattleDirector>().ForEach([&](Zenith_EntityID, ZM_BattleDirector& director)
+			{ xCreatureID = director.GetCreatureModelEntityID(ZM_SIDE_ENEMY); });
+		auto creature = g_xEngine.Scenes().ResolveEntity(xCreatureID);
+		if (!creature.IsValid()) { FailBD("authored battle creature did not resolve"); return false; }
+		auto* model = creature.TryGetComponent<Zenith_ModelComponent>();
+		char ref[512]; ZM_CreatureAssetPath(g_eCreatureBattleSpecies, ZM_CREATURE_ASSET_MODEL, ref, sizeof(ref));
+		if (!model || model->GetModelPath() != ref || !model->GetSkeletonInstance() || !model->GetNumMeshes())
+			{ FailBD("battle did not load the requested authored creature bundle"); return false; }
+		Zenith_Maths::Vector3 p, lo, hi; creature.GetComponent<Zenith_TransformComponent>().GetPosition(p);
+		BDArenaView arena; if (!FindUniqueArenaBD(arena) || !model->GetFirstMeshLocalBounds(lo, hi)) return false;
+		auto platform = g_xEngine.Scenes().ResolveEntity(arena.m_pxArena->GetChildEntityID(2));
+		if (!platform.IsValid()) return false;
+		Zenith_Maths::Vector3 anchor; platform.GetComponent<Zenith_TransformComponent>().GetPosition(anchor);
+		Zenith_Maths::Vector3 scale, platformLo, platformHi; platform.GetComponent<Zenith_TransformComponent>().GetScale(scale);
+		if (!platform.GetComponent<Zenith_ModelComponent>().GetFirstMeshLocalBounds(platformLo, platformHi)) return false;
+		const float fHover = ZM_CreaturePresentationFloorY(ZM_GetCreatureOriginPolicy(ZM_ResolveCreatureRecipe(g_eCreatureBattleSpecies).m_eArchetype));
+		if (std::abs(p.y + lo.y - (anchor.y + platformHi.y * scale.y + fHover)) > .001f)
+			{ FailBD("authored battle creature does not rest on its presentation floor"); return false; }
+		auto cameraEntity = g_xEngine.Scenes().ResolveEntity(g_xEngine.Scenes().FindMainCameraEntityAcrossScenes());
+		auto* camera = cameraEntity.IsValid() ? cameraEntity.TryGetComponent<Zenith_CameraComponent>() : nullptr;
+		if (!camera) return false;
+		if (g_iCreatureBattleHold == 70) Flux_Screenshot::RequestDump(CreatureBattleShot(false).c_str());
+		if (g_iCreatureBattleHold >= 90)
+		{
+			if (!g_bCreatureBattleCameraSaved)
+			{
+				camera->GetPosition(g_xCreatureBattleCameraPosition); g_fCreatureBattlePitch = camera->GetPitch(); g_fCreatureBattleYaw = camera->GetYaw();
+				g_fCreatureBattleFov = camera->GetFOV(); g_bCreatureBattleCameraSaved = true;
+			}
+			const float size = std::max({hi.x-lo.x, hi.y-lo.y, hi.z-lo.z});
+			const auto position = p + Zenith_Maths::Vector3(size*1.25f,size*.95f,size*1.95f);
+			const auto direction = glm::normalize(p + Zenith_Maths::Vector3(0,hi.y*.48f,0) - position);
+			camera->SetPosition(position); camera->SetYaw(std::atan2(-direction.x, direction.z)); camera->SetPitch(std::asin(direction.y)); camera->SetFOV(glm::radians(40.f));
+		}
+		if (g_iCreatureBattleHold == 110) Flux_Screenshot::RequestDump(CreatureBattleShot(true).c_str());
+		if (g_iCreatureBattleHold == 120)
+		{
+			camera->SetPosition(g_xCreatureBattleCameraPosition); camera->SetYaw(g_fCreatureBattleYaw); camera->SetPitch(g_fCreatureBattlePitch); camera->SetFOV(g_fCreatureBattleFov);
+			ZM_SetInstantBattlesForTests(true);
+		}
+		return true;
+	}
+	bool VerifyCreatureBattleCapture()
+	{
+		const bool captured = g_iCreatureBattleHold == 120 && DiskFilePresent(CreatureBattleShot(false)) && DiskFilePresent(CreatureBattleShot(true));
+		const bool won = g_bCreatureBattlePartyInstalled && g_bCreatureBattleWon;
+		if (!won) Zenith_Log(LOG_CATEGORY_UNITTEST,"Authored creature capture did not observe the expected player victory");
+		RestoreCreatureBattleState();
+		const bool roundTrip = Verify_ZMBattleDirectorRoundTrip();
+		return captured && won && roundTrip;
+	}
+}
+static const Zenith_AutomatedTest g_xCreatureBattleCapture = {"ZM_AuthoredCreatureBattleCapture_Test", &SetupCreatureBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xCreatureBattleCapture);
+static const Zenith_AutomatedTest g_xRubbletBattleCapture = {"ZM_AuthoredRubbletBattleCapture_Test", &SetupRubbletBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xRubbletBattleCapture);
+static const Zenith_AutomatedTest g_xCairngoBattleCapture = {"ZM_AuthoredCairngoBattleCapture_Test", &SetupCairngoBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xCairngoBattleCapture);
+static const Zenith_AutomatedTest g_xMonolodeBattleCapture = {"ZM_AuthoredMonolodeBattleCapture_Test", &SetupMonolodeBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xMonolodeBattleCapture);
+static const Zenith_AutomatedTest g_xSporelingBattleCapture = {"ZM_AuthoredSporelingBattleCapture_Test", &SetupSporelingBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xSporelingBattleCapture);
+static const Zenith_AutomatedTest g_xDuskcapBattleCapture = {"ZM_AuthoredDuskcapBattleCapture_Test", &SetupDuskcapBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xDuskcapBattleCapture);
+static const Zenith_AutomatedTest g_xFungroveBattleCapture = {"ZM_AuthoredFungroveBattleCapture_Test", &SetupFungroveBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xFungroveBattleCapture);
+static const Zenith_AutomatedTest g_xThicketbuckBattleCapture = {"ZM_AuthoredThicketbuckBattleCapture_Test", &SetupThicketbuckBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xThicketbuckBattleCapture);
+static const Zenith_AutomatedTest g_xSylvastagBattleCapture = {"ZM_AuthoredSylvastagBattleCapture_Test", &SetupSylvastagBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xSylvastagBattleCapture);
+static const Zenith_AutomatedTest g_xFinletBattleCapture = {"ZM_AuthoredFinletBattleCapture_Test", &SetupFinletBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xFinletBattleCapture);
+static const Zenith_AutomatedTest g_xMarlanceBattleCapture = {"ZM_AuthoredMarlanceBattleCapture_Test", &SetupMarlanceBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xMarlanceBattleCapture);
+static const Zenith_AutomatedTest g_xTidesabreBattleCapture = {"ZM_AuthoredTidesabreBattleCapture_Test", &SetupTidesabreBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xTidesabreBattleCapture);
+static const Zenith_AutomatedTest g_xPrismiteBattleCapture = {"ZM_AuthoredPrismiteBattleCapture_Test", &SetupPrismiteBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPrismiteBattleCapture);
+static const Zenith_AutomatedTest g_xGeoborerBattleCapture = {"ZM_AuthoredGeoborerBattleCapture_Test", &SetupGeoborerBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xGeoborerBattleCapture);
+static const Zenith_AutomatedTest g_xCrystalliskBattleCapture = {"ZM_AuthoredCrystalliskBattleCapture_Test", &SetupCrystalliskBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xCrystalliskBattleCapture);
+static const Zenith_AutomatedTest g_xMinnetBattleCapture = {"ZM_AuthoredMinnetBattleCapture_Test", &SetupMinnetBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xMinnetBattleCapture);
+static const Zenith_AutomatedTest g_xShoalfinBattleCapture = {"ZM_AuthoredShoalfinBattleCapture_Test", &SetupShoalfinBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xShoalfinBattleCapture);
+static const Zenith_AutomatedTest g_xTorrentfinBattleCapture = {"ZM_AuthoredTorrentfinBattleCapture_Test", &SetupTorrentfinBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xTorrentfinBattleCapture);
+
+static const Zenith_AutomatedTest g_xPuffseedBattleCapture = {"ZM_AuthoredPuffseedBattleCapture_Test", &SetupPuffseedBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPuffseedBattleCapture);
+static const Zenith_AutomatedTest g_xKindletBattleCapture = {"ZM_AuthoredKindletBattleCapture_Test", &SetupKindletBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xKindletBattleCapture);
+static const Zenith_AutomatedTest g_xPipwitBattleCapture = {"ZM_AuthoredPipwitBattleCapture_Test", &SetupPipwitBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPipwitBattleCapture);
+static const Zenith_AutomatedTest g_xTrillarkBattleCapture = {"ZM_AuthoredTrillarkBattleCapture_Test", &SetupTrillarkBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xTrillarkBattleCapture);
+static const Zenith_AutomatedTest g_xStratavisBattleCapture = {"ZM_AuthoredStratavisBattleCapture_Test", &SetupStratavisBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xStratavisBattleCapture);
+static const Zenith_AutomatedTest g_xScorchelBattleCapture = {"ZM_AuthoredScorchelBattleCapture_Test", &SetupScorchelBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xScorchelBattleCapture);
+static const Zenith_AutomatedTest g_xPyroclastBattleCapture = {"ZM_AuthoredPyroclastBattleCapture_Test", &SetupPyroclastBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xPyroclastBattleCapture);
+static const Zenith_AutomatedTest g_xDandeliftBattleCapture = {"ZM_AuthoredDandeliftBattleCapture_Test", &SetupDandeliftBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xDandeliftBattleCapture);
+static const Zenith_AutomatedTest g_xZephyrbloomBattleCapture = {"ZM_AuthoredZephyrbloomBattleCapture_Test", &SetupZephyrbloomBattleCapture,
+	&StepCreatureBattleCapture, &VerifyCreatureBattleCapture, 2400, true, false, &RestoreCreatureBattleState};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZephyrbloomBattleCapture);
 
 #endif // ZENITH_INPUT_SIMULATOR

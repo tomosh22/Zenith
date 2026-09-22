@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Zenithmon/Source/Gen/ZM_AuthoredStatic.h"
 
 // ============================================================================
 // ZM_InteriorGen -- the room-shell generator driver. See the header for the
@@ -1727,6 +1728,10 @@ namespace
 
 bool ZM_BakeInterior(ZM_INTERIOR_ROOM eRoom)
 {
+	char acAuthoredRef[512];
+	if (!ZM_InteriorAssetPath(eRoom, ZM_INTERIOR_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) { return false; }
+	bool bAuthored = false;
+	if (ZM_TryAuthoredStatic(acAuthoredRef, true, bAuthored)) { return bAuthored; }
 	ZM_Interior xInterior;
 	ZM_BuildInterior(eRoom, xInterior);
 
@@ -1846,6 +1851,10 @@ bool ZM_BakeAllInteriors()
 
 bool ZM_EnsureInteriorBaked(ZM_INTERIOR_ROOM eRoom)
 {
+	char acAuthoredRef[512];
+	if (!ZM_InteriorAssetPath(eRoom, ZM_INTERIOR_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) { return false; }
+	bool bAuthored = false;
+	if (ZM_TryAuthoredStatic(acAuthoredRef, false, bAuthored)) { return bAuthored; }
 	if (static_cast<u_int>(eRoom) >= static_cast<u_int>(ZM_INTERIOR_ROOM_COUNT))
 	{
 		return false;

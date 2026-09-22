@@ -643,11 +643,14 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	m_uNumViews = 1u;
 	m_axBucketDraws.Clear();
 
-	Flux_RendererImpl& xRenderer = g_xEngine.FluxRenderer();
+	auto& xEngine = g_xEngine;
+	Flux_RendererImpl& xRenderer = xEngine.FluxRenderer();
 	if (!m_bResourcesReady)
 	{
 		return;
 	}
+
+	GatherSkinningPacket(xRenderer, xEngine.FluxGraphics().IsVelocityMRTActive());
 
 	const Flux_GPUSceneBuildResult&    xScene    = xRenderer.GetUnifiedGPUScene();
 	const Flux_GPUSceneBucketRegistry& xRegistry = xRenderer.GetUnifiedBucketRegistry();
@@ -722,7 +725,6 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	Flux_BuildBucketOffsets(m_auBucketCountScratch, m_auBucketOffsetScratch);
 
 	// --- per-bucket mesh / material resolve + live-bucket draw list ---
-	auto& xEngine = g_xEngine;
 	Flux_MaterialTable&   xTable = xEngine.FluxGraphics().MaterialTable();
 	Zenith_MaterialAsset* pxBlank = xEngine.FluxGraphics().m_xBlankMaterial.GetDirect();
 	for (u_int uSlot = 0; uSlot < uSlotCount; ++uSlot)
@@ -838,6 +840,17 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 	xCull.m_uActiveViewMask     = uActiveViewMask;
 	xMem.UploadBufferData(m_xCullingConstantsBuffer.GetBuffer().m_xVRAMHandle, &xCull, sizeof(xCull));
 
+
+	m_uTotalDrawItems  = uNumDrawItems;
+	m_uBucketSlotCount = uSlotCount;
+	m_uNumViews        = uNumViews;
+}
+
+// Upload skinning independently of opaque draws: an all-translucent scene
+// still needs its poses, and an empty scene must clear the prior dispatch.
+void Flux_UnifiedMeshImpl::GatherSkinningPacket(Flux_RendererImpl& xRenderer, bool bVelocityActive)
+{
+	Flux_MemoryManager& xMem = g_xEngine.FluxMemory();
 	// --- Stage 5: skinning inputs (host-uploaded) + arena grow ---
 	// The renderer built the bind-pose pool / bone palette / skin-jobs CPU-side in
 	// SyncUnifiedBucketsFromSnapshot; upload them + size the per-frame skinning dispatch. The arena
@@ -905,9 +918,6 @@ void Flux_UnifiedMeshImpl::GatherUnifiedPacket(void*)
 		}
 	}
 
-	m_uTotalDrawItems  = uNumDrawItems;
-	m_uBucketSlotCount = uSlotCount;
-	m_uNumViews        = uNumViews;
 }
 
 //=============================================================================

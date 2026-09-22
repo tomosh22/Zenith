@@ -207,8 +207,8 @@ ZM_GenImage ZM_BuildPropEmissive(const ZM_PropRecipe& xR);
 // engine:Meshes/Rocks (Tools/Zenith_Tools_RockAssetExport.cpp -- the same set
 // RenderTest and Dawnmere's scatter dress with), so a rock prop resolves to one
 // of those and ZM_PropFit scales it to the roster row like any other delivery.
-// The generated bundle is still baked (the family manifest enumerates every
-// row) but nothing loads it for these three ids.
+// An authored source overrides that substitution. Callers pass the same source
+// ownership flag to both resolvers so fitting and rendering use the same mesh.
 //
 // Every presenter goes through THESE two rather than ZM_PropAssetPath(MODEL /
 // MESH) directly, so the substitution has one home.
@@ -219,8 +219,8 @@ const char* ZM_PropEngineRockStem(ZM_PROP_ID eId);
 inline bool ZM_PropUsesEngineRock(ZM_PROP_ID eId) { return ZM_PropEngineRockStem(eId) != nullptr; }
 // The .zmodel ref to LoadModel, and the mesh ref ZM_ResolvePropFit measures.
 // Same buffer contract as ZM_PropAssetPath: false on truncation.
-bool ZM_PropModelRef(ZM_PROP_ID eId, char* szOut, u_int uCap);
-bool ZM_PropMeshRef (ZM_PROP_ID eId, char* szOut, u_int uCap);
+bool ZM_PropModelRef(ZM_PROP_ID eId, char* szOut, u_int uCap, bool bAuthoredSource = false);
+bool ZM_PropMeshRef (ZM_PROP_ID eId, char* szOut, u_int uCap, bool bAuthoredSource = false);
 
 // ---------------------------------------------------------------------------
 // ZM_Prop -- the full in-memory bundle SC4 produces (mesh + placeholder albedo).

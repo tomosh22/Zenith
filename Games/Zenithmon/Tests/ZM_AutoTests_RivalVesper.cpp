@@ -1191,14 +1191,21 @@ namespace
 
 			if (bWarm)
 			{
-				// WARM: the body wears its OWN generated model, resolved through the
-				// same row -> ZM_HUMAN_ID -> asset-path chain the component walks.
+				// WARM: authored imports take precedence over the generated bundle.
+				// Resolve the expected path independently of the loaded model so a
+				// different NPC's otherwise valid model still fails this check.
 				char acExpectedRef[256];
 				const ZM_HUMAN_ID eHumanId = ZM_GetNpcData(eNpcId).m_eHuman;
+				const char* szImported = ZM_HumanImportedModelRef(eHumanId);
+				std::error_code xImportError;
+				const bool bImportedPresent = szImported != nullptr
+					&& std::filesystem::is_regular_file(Zenith_AssetRegistry::ResolvePath(szImported), xImportError)
+					&& !xImportError;
 				if (eHumanId < ZM_HUMAN_COUNT
 					&& ZM_HumanAssetPath(eHumanId, ZM_HUMAN_ASSET_MODEL, acExpectedRef,
 						(u_int)sizeof(acExpectedRef))
-					&& pxModel->GetModelPath() == acExpectedRef)
+					&& pxModel->GetModelPath() == (bImportedPresent ? szImported : acExpectedRef)
+					&& pxModel->GetSkeletonInstance() != nullptr)
 				{
 					++uNpcModelsCorrect;
 				}

@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Zenithmon/Source/Gen/ZM_PropGen.h"
 
 #ifdef ZENITH_INPUT_SIMULATOR
 
@@ -479,6 +480,30 @@ namespace
 		{ "signpost_route", "DawnmereSignRoute", 2u, ZM_PROP_SIGN_POST,
 			/* three-quarter */ { 25.0f, 8.0f, 1.55f },
 			/* detail        */ { 8.0f, 12.0f, 1.15f } },
+		{ "lantern_west", "DawnmereLanternWest", 2u, ZM_PROP_LANTERN_POST,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "lantern_east", "DawnmereLanternEast", 2u, ZM_PROP_LANTERN_POST,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "townboard", "DawnmereTownBoard", 2u, ZM_PROP_TOWN_BOARD,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "fence_wood", "DawnmereFenceWood1", 2u, ZM_PROP_FENCE_WOOD,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "fence_stone", "DawnmereFenceStone1", 2u, ZM_PROP_FENCE_STONE,
+			{ 35.0f, 18.0f, 1.65f }, { 15.0f, 22.0f, 1.15f } },
+		{ "bridge_plank", "DawnmereBridgePlank1", 2u, ZM_PROP_BRIDGE_PLANK,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "bridge_stone", "DawnmereBridgeStone1", 2u, ZM_PROP_BRIDGE_STONE,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "rock_small", "DawnmereRockSmallWest", 2u, ZM_PROP_ROCK_SMALL,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "rock_large", "DawnmereRockLargeWest", 2u, ZM_PROP_ROCK_LARGE,
+			{ 35.0f, 18.0f, 1.65f }, { 15.0f, 22.0f, 1.15f } },
+		{ "boulder", "DawnmereBoulder", 2u, ZM_PROP_BOULDER,
+			{ 145.0f, 18.0f, 1.65f }, { 165.0f, 22.0f, 1.15f } },
+		{ "ledge_low", "DawnmereLedgeLowWest", 2u, ZM_PROP_LEDGE_LOW,
+			{ 35.0f, 18.0f, 1.65f }, { 15.0f, 22.0f, 1.15f } },
+		{ "ledge_high", "DawnmereLedgeHighWest", 2u, ZM_PROP_LEDGE_HIGH,
+			{ 35.0f, 18.0f, 1.65f }, { 15.0f, 22.0f, 1.15f } },
 	};
 	constexpr u_int uIPS_SUBJECT_COUNT =
 		(u_int)(sizeof(axIPS_SUBJECTS) / sizeof(axIPS_SUBJECTS[0]));
@@ -881,6 +906,21 @@ namespace
 		{
 			return;
 		}
+		char acAuthoredRef[512];
+		if (!ZM_PropAssetPath(xRow.m_eProp, ZM_PROP_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef)) ||
+			pxModel->GetModelPath() != acAuthoredRef)
+		{
+			FailIPS("the imported subject must render its own authored bundle, not an engine substitute");
+			return;
+		}
+		auto xSource = std::filesystem::path(Zenith_AssetRegistry::ResolvePath(acAuthoredRef));
+		xSource.replace_extension(".glb");
+		std::error_code xSourceError;
+		if (!std::filesystem::is_regular_file(xSource, xSourceError))
+		{
+			FailIPS("the imported subject must have an authored GLB source");
+			return;
+		}
 		const Flux_MeshInstance* pxInstance = pxModel->GetMeshInstance(0u);
 		if (pxInstance == nullptr)
 		{
@@ -945,12 +985,10 @@ namespace
 		xState.m_fAuthoredScale = xScale.x;
 		xState.m_fAuthoredGroundY = xPosition.y;
 		xState.m_xModelSize = xLocal.m_xMax - xLocal.m_xMin;
-		// Local bounds scaled and offset by the authored transform. Rotation is
-		// deliberately ignored: the aiming only needs a point and a radius, and
-		// every interior prop's authored yaw is a multiple of a quarter turn about
-		// Y, which leaves the centre put.
+		// Rotate the bounds centre too: the hanging LanternPost is asymmetric
+		// about its origin, so even a half turn moves its visual centre.
 		xState.m_xWorldCentre =
-			xPosition + (xLocal.m_xMin + xLocal.m_xMax) * 0.5f * xScale.x;
+			xPosition + xRotation * ((xLocal.m_xMin + xLocal.m_xMax) * 0.5f * xScale.x);
 		xState.m_xWorldSize = xState.m_xModelSize * xScale.x;
 		// The axis-aligned extent the prop actually occupies once its authored
 		// rotation is applied -- which is what the room, the corridor clause and
@@ -1924,7 +1962,7 @@ static const Zenith_AutomatedTest g_xZMImportedPropShowcaseTest = {
 	// only a backstop, and it is deliberately generous enough that adding a roster
 	// row -- or a third room, which now costs another 600 up front -- does not
 	// silently truncate the run instead of naming what went wrong.
-	/* maxFrames */ 9000,
+	/* maxFrames */ 18000,
 	true /* m_bRequiresGraphics */,
 	false /* m_bManualOnly */,
 	&Teardown_ZMImportedPropShowcase,

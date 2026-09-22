@@ -7,6 +7,7 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Collections/Zenith_Vector.h"
 #include "Maths/Zenith_Maths.h"
@@ -20,6 +21,8 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <cmath>
+#include <functional>
 
 // See the header for why this path exists at all and what it deliberately
 // produces. The short version: Assimp cannot open a meshopt-compressed .glb, and
@@ -627,6 +630,7 @@ namespace
 	struct PrimitiveInstance
 	{
 		int m_iMesh = -1;
+		int m_iNode = -1;
 		int m_iPrimitive = -1;
 		int m_iMaterial = -1;
 		Zenith_Maths::Matrix4 m_xWorld = Zenith_Maths::Matrix4(1.0f);
@@ -672,6 +676,7 @@ namespace
 						}
 						PrimitiveInstance xInstance;
 						xInstance.m_iMesh = iMesh;
+						xInstance.m_iNode = iNodeIndex;
 						xInstance.m_iPrimitive = static_cast<int>(p);
 						xInstance.m_iMaterial = GetInt(xPrimitive, "material", -1);
 						xInstance.m_xWorld = xWorld;
@@ -946,6 +951,10 @@ bool LoadGlbMesh(const std::string& strGlbPath, Zenith_MeshAsset& xMesh, GlbImpo
 				xUV);
 		}
 
+		// glTF declares CCW front faces; Zenith uses cross(C-A, B-A).
+		// Baking a reflected node already reverses winding. Decide per instance,
+		// never from signed volume: open leaves/petals have no enclosed volume.
+		const bool bReverseWinding = glm::determinant(Zenith_Maths::Matrix3(xWorld)) >= 0.f;
 		for (size_t t = 0; t + 2 < xIndices.size(); t += 3)
 		{
 			if (xIndices[t] >= uCount || xIndices[t + 1] >= uCount || xIndices[t + 2] >= uCount)
@@ -956,8 +965,8 @@ bool LoadGlbMesh(const std::string& strGlbPath, Zenith_MeshAsset& xMesh, GlbImpo
 			}
 			xMesh.AddTriangle(
 				uVertexBase + xIndices[t + 0],
-				uVertexBase + xIndices[t + 1],
-				uVertexBase + xIndices[t + 2]);
+				uVertexBase + xIndices[t + (bReverseWinding ? 2u : 1u)],
+				uVertexBase + xIndices[t + (bReverseWinding ? 1u : 2u)]);
 		}
 
 		const u_int uMaterialSlot = (xInstance.m_iMaterial >= 0)
@@ -979,48 +988,6 @@ bool LoadGlbMesh(const std::string& strGlbPath, Zenith_MeshAsset& xMesh, GlbImpo
 		return false;
 	}
 
-	// ★★ THIS ENGINE WINDS THE OTHER WAY FROM glTF, and an import is INSIDE-OUT
-	// until that is fixed.
-	//
-	// Zenith's outward normal is cross(C-A, B-A) (Zenith_Tools_TestAssetExport.cpp
-	// :1284 states it, and the rock exporter re-winds its icosphere for exactly
-	// this reason); glTF, like OpenGL, uses the other handedness. Copying indices
-	// verbatim therefore leaves every triangle of a closed mesh facing inward.
-	//
-	// ★ THE SYMPTOM IS NOT "the shading looks odd". Normals come from the file and
-	// stay correct, so lighting is fine and nothing errors. Backface culling keeps
-	// the FAR surface, so you see through the model to its far side -- on a prop
-	// that is a subtle wrongness nobody names, and on a CHARACTER it reads as
-	// FACING BACKWARDS, with anything attached behind them drawing in front. That
-	// is what shipped here, and it survived a screenshot pass because the picture
-	// is of a plausible person looking the wrong way, not of anything broken.
-	//
-	// MEASURED, not assumed: the signed volume of a closed mesh states its winding
-	// directly, so a source that already winds the engine's way is left alone. The
-	// reference is the shipped StickFigure, whose sum is NEGATIVE under this
-	// formula.
-	{
-		double dVolume = 0.0;
-		for (u_int i = 0u; i + 2u < xMesh.m_xIndices.GetSize(); i += 3u)
-		{
-			const Zenith_Maths::Vector3& a = xMesh.m_xPositions.Get(xMesh.m_xIndices.Get(i));
-			const Zenith_Maths::Vector3& b = xMesh.m_xPositions.Get(xMesh.m_xIndices.Get(i + 1u));
-			const Zenith_Maths::Vector3& c = xMesh.m_xPositions.Get(xMesh.m_xIndices.Get(i + 2u));
-			dVolume += glm::dot(a, glm::cross(b, c));
-		}
-		if (dVolume > 0.0)
-		{
-			for (u_int i = 0u; i + 2u < xMesh.m_xIndices.GetSize(); i += 3u)
-			{
-				const u_int uSwap = xMesh.m_xIndices.Get(i + 1u);
-				xMesh.m_xIndices.Get(i + 1u) = xMesh.m_xIndices.Get(i + 2u);
-				xMesh.m_xIndices.Get(i + 2u) = uSwap;
-			}
-			Zenith_Log(LOG_CATEGORY_TOOLS,
-				"GLB_IMPORT: %s winds the glTF way (signed volume %+.6f); re-wound to the engine's "
-				"cross(C-A, B-A) convention", strGlbPath.c_str(), dVolume / 6.0);
-		}
-	}
 
 	xResult.m_uNumVerts = xMesh.GetNumVerts();
 	xResult.m_uNumIndices = xMesh.GetNumIndices();
@@ -1168,7 +1135,10 @@ bool ExportGlbMaterials(const std::string& strGlbPath, const std::string& strBas
 		{
 			Zenith_Tools_TextureExport::ExportFromDataCompressed(
 				xImage.m_xRGBA.data(), strAlbedoPath, xImage.m_iWidth, xImage.m_iHeight,
-				TextureCompressionMode::BC1, TextureColourSpace::SRGB);
+				// BC1 here is RGB-only. Both alpha blend and alpha mask need the
+				// authored coverage channel, including filtered mip values.
+				eBlendMode == MATERIAL_BLEND_OPAQUE ? TextureCompressionMode::BC1 : TextureCompressionMode::BC3,
+				TextureColourSpace::SRGB);
 			bWroteAlbedo = true;
 			++uTexturesOut;
 		}
@@ -1284,6 +1254,19 @@ bool ExportGlbMaterials(const std::string& strGlbPath, const std::string& strBas
 GlbImportResult ImportGlbFile(const std::string& strGlbPath)
 {
 	GlbImportResult xResult;
+	// A static publication must never erase an artist skin. Species/humanoid
+	// owners publish the mesh, rig and clips together through the explicit skin
+	// reader. Refuse before touching even an existing mesh/model marker.
+	GlbDocument xSource; xSource.m_strSourcePath = strGlbPath;
+	if (!ReadWholeFile(strGlbPath, xSource.m_xFileBytes) || !ParseGlbContainer(xSource)) return xResult;
+	bool bHasSkin = FindMember(xSource.m_xJson, "skins") != nullptr;
+	if (const auto* pxNodes = GetArray(xSource.m_xJson, "nodes", 0))
+		for (const auto& xNode : pxNodes->GetArray()) bHasSkin |= FindMember(xNode, "skin") != nullptr;
+	if (bHasSkin)
+	{
+		Zenith_Log(LOG_CATEGORY_TOOLS, "GLB_IMPORT: %s contains a skin; explicit rig owner must publish this bundle", strGlbPath.c_str());
+		return xResult;
+	}
 	Zenith_MeshAsset xMesh;
 	if (!LoadGlbMesh(strGlbPath, xMesh, xResult))
 	{
@@ -1396,4 +1379,234 @@ void ImportGlbsInDirectory(const std::string& strDirectory)
 	}
 }
 
+bool LoadGlbMeshForSharedSkeleton(const std::string& strGlbPath,
+	const Zenith_SkeletonAsset& xSkeleton, const std::string& strSkeletonRef,
+	Zenith_MeshAsset& xMeshOut, GlbImportResult& xResultOut)
+{
+	xResultOut = GlbImportResult();
+	auto Refuse = [&](const char* szReason)
+	{
+		Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_SKIN: %s: %s", strGlbPath.c_str(), szReason);
+		return false;
+	};
+	GlbDocument xDoc;
+	xDoc.m_strSourcePath = strGlbPath;
+	if (!ReadWholeFile(strGlbPath, xDoc.m_xFileBytes) || !ParseGlbContainer(xDoc) || !ResolveBufferViews(xDoc))
+		return Refuse("unreadable source");
+	const auto* pxNodes = GetArray(xDoc.m_xJson, "nodes", 1);
+	const auto* pxSkins = GetArray(xDoc.m_xJson, "skins", 1);
+	const auto* pxAccessors = GetArray(xDoc.m_xJson, "accessors", 1);
+	if (!pxNodes || !pxSkins || !pxAccessors || pxSkins->Size() != 1 || strSkeletonRef.empty() ||
+		xSkeleton.GetNumBones() == 0 || xSkeleton.GetNumBones() > Zenith_SkeletonAsset::MAX_BONES)
+		return Refuse("one skin and an explicit valid shared rig are required");
+	const auto& xSkin = (*pxSkins)[0];
+	const auto* pxJoints = GetArray(xSkin, "joints", 1);
+	if (!pxJoints || pxJoints->Size() != xSkeleton.GetNumBones())
+		return Refuse("joint count differs from shared rig");
+	for (const auto& xAccessor : pxAccessors->GetArray())
+		if (FindMember(xAccessor, "sparse") || GetInt(xAccessor, "count", 0) <= 0)
+			return Refuse("sparse or empty accessors are unsupported by the shared-skin reader");
+
+	// Validate transforms before LocalTransformOfNode's numeric reads. A malformed
+	// art file must return failure rather than trip a rapidjson type assertion.
+	std::vector<int> aiParents(pxNodes->Size(), -1), aiState(pxNodes->Size(), 0);
+	std::vector<Zenith_Maths::Matrix4> axWorld(pxNodes->Size(), Zenith_Maths::Matrix4(1));
+	for (u_int i = 0; i < pxNodes->Size(); ++i)
+	{
+		const auto& xNode = (*pxNodes)[i];
+		if (!xNode.IsObject()) return Refuse("node is not an object");
+		const char* aszFields[] = { "matrix", "translation", "rotation", "scale" };
+		const u_int auSizes[] = { 16, 3, 4, 3 };
+		for (u_int f = 0; f < 4; ++f)
+		{
+			const auto* pxValue = FindMember(xNode, aszFields[f]);
+			if (!pxValue) continue;
+			if (!pxValue->IsArray() || pxValue->Size() != auSizes[f]) return Refuse("invalid node transform size");
+			for (const auto& xValue : pxValue->GetArray())
+				if (!xValue.IsNumber() || !std::isfinite(xValue.GetDouble())) return Refuse("non-finite node transform");
+		}
+		if (FindMember(xNode, "matrix") && (FindMember(xNode, "translation") || FindMember(xNode, "rotation") || FindMember(xNode, "scale")))
+			return Refuse("node mixes matrix and TRS");
+		if (const auto* pxChildren = FindMember(xNode, "children"))
+		{
+			if (!pxChildren->IsArray()) return Refuse("invalid children array");
+			for (const auto& xChild : pxChildren->GetArray())
+			{
+				if (!xChild.IsUint() || xChild.GetUint() >= pxNodes->Size() || aiParents[xChild.GetUint()] != -1)
+					return Refuse("invalid child or multiple parents");
+				aiParents[xChild.GetUint()] = static_cast<int>(i);
+			}
+		}
+	}
+	std::function<bool(int, u_int)> World = [&](int i, u_int uDepth)
+	{
+		if (aiState[i] == 2) return true;
+		if (aiState[i] == 1 || uDepth > 64) return false;
+		aiState[i] = 1;
+		const int p = aiParents[i];
+		if (p >= 0 && !World(p, uDepth + 1)) return false;
+		axWorld[i] = (p < 0 ? Zenith_Maths::Matrix4(1) : axWorld[p]) * LocalTransformOfNode((*pxNodes)[i]);
+		aiState[i] = 2;
+		return true;
+	};
+	for (u_int i = 0; i < pxNodes->Size(); ++i)
+		if (!World(static_cast<int>(i), 0)) return Refuse("cyclic or over-deep node hierarchy");
+	auto MatrixMatches = [](const Zenith_Maths::Matrix4& a, const Zenith_Maths::Matrix4& b)
+	{
+		for (u_int c = 0; c < 4; ++c) for (u_int r = 0; r < 4; ++r)
+			if (!std::isfinite(a[c][r]) || !std::isfinite(b[c][r]) || std::abs(a[c][r] - b[c][r]) > 1e-5f) return false;
+		return true;
+	};
+	std::vector<int> aiNodeBone(pxNodes->Size(), -1);
+	std::vector<u_int> auRemap(pxJoints->Size());
+	std::vector<bool> abUsed(xSkeleton.GetNumBones(), false);
+	std::vector<float> afInverse;
+	u_int uWidth = 0, uCount = 0;
+	if (!ReadAccessorFloats(xDoc, GetInt(xSkin, "inverseBindMatrices", -1), afInverse, uWidth, uCount) || uWidth != 16 || uCount != pxJoints->Size())
+		return Refuse("missing or invalid inverse bind matrices");
+	for (u_int j = 0; j < pxJoints->Size(); ++j)
+	{
+		if (!(*pxJoints)[j].IsUint() || (*pxJoints)[j].GetUint() >= pxNodes->Size()) return Refuse("invalid joint node");
+		const u_int uNode = (*pxJoints)[j].GetUint();
+		const int iBone = xSkeleton.GetBoneIndex(GetString((*pxNodes)[uNode], "name", ""));
+		if (iBone < 0 || abUsed[iBone] || aiNodeBone[uNode] >= 0) return Refuse("unknown or duplicate joint name");
+		abUsed[iBone] = true; auRemap[j] = static_cast<u_int>(iBone); aiNodeBone[uNode] = iBone;
+		Zenith_Maths::Matrix4 xInverse(1);
+		for (u_int c = 0; c < 4; ++c) for (u_int r = 0; r < 4; ++r) xInverse[c][r] = afInverse[j * 16 + c * 4 + r];
+		if (!MatrixMatches(axWorld[uNode], xSkeleton.GetBone(iBone).m_xBindPoseModel) ||
+			!MatrixMatches(xInverse, xSkeleton.GetBone(iBone).m_xInverseBindPose) ||
+			!MatrixMatches(axWorld[uNode] * xInverse, Zenith_Maths::Matrix4(1)))
+			return Refuse("source bind pose differs from shared rig");
+	}
+	for (u_int j = 0; j < pxJoints->Size(); ++j)
+	{
+		int p = aiParents[(*pxJoints)[j].GetUint()];
+		while (p >= 0 && aiNodeBone[p] < 0) p = aiParents[p];
+		if ((p < 0 ? -1 : aiNodeBone[p]) != xSkeleton.GetBone(auRemap[j]).m_iParentIndex)
+			return Refuse("source joint hierarchy differs from shared rig");
+	}
+	const auto axPrimitives = GatherPrimitives(xDoc);
+	std::vector<glm::uvec4> axIndices;
+	std::vector<glm::vec4> axWeights;
+	for (const auto& xInstance : axPrimitives)
+	{
+		if (xInstance.m_iNode < 0 || GetInt((*pxNodes)[xInstance.m_iNode], "skin", -1) != 0 ||
+			!MatrixMatches(xInstance.m_xWorld, Zenith_Maths::Matrix4(1)))
+			return Refuse("every mesh must use skin zero and have applied transforms");
+		const auto& xPrimitive = xDoc.m_xJson["meshes"][xInstance.m_iMesh]["primitives"][xInstance.m_iPrimitive];
+		const auto* pxAttributes = FindMember(xPrimitive, "attributes");
+		if (!pxAttributes || FindMember(*pxAttributes, "JOINTS_1") || FindMember(*pxAttributes, "WEIGHTS_1") || FindMember(xPrimitive, "targets"))
+			return Refuse("missing attributes, extra influences, or unsupported morph targets");
+		const int iJoints = GetInt(*pxAttributes, "JOINTS_0", -1), iWeights = GetInt(*pxAttributes, "WEIGHTS_0", -1);
+		if (iJoints < 0 || iWeights < 0 || static_cast<u_int>(iJoints) >= pxAccessors->Size() || static_cast<u_int>(iWeights) >= pxAccessors->Size())
+			return Refuse("missing joint/weight accessors");
+		const auto& xJointAccessor = (*pxAccessors)[iJoints];
+		const int iJointType = GetInt(xJointAccessor, "componentType", -1);
+		const auto* pxNormalized = FindMember(xJointAccessor, "normalized");
+		if ((iJointType != iCT_UNSIGNED_BYTE && iJointType != iCT_UNSIGNED_SHORT) ||
+			(pxNormalized && (!pxNormalized->IsBool() || pxNormalized->GetBool()))) return Refuse("invalid JOINTS_0 encoding");
+		const auto& xWeightAccessor = (*pxAccessors)[iWeights];
+		const int iWeightType = GetInt(xWeightAccessor, "componentType", -1);
+		const auto* pxWeightNormalized = FindMember(xWeightAccessor, "normalized");
+		if (pxWeightNormalized && !pxWeightNormalized->IsBool()) return Refuse("invalid weight normalization flag");
+		const bool bWeightNormalized = pxWeightNormalized && pxWeightNormalized->GetBool();
+		if (!((iWeightType == iCT_FLOAT && !bWeightNormalized) ||
+			((iWeightType == iCT_UNSIGNED_BYTE || iWeightType == iCT_UNSIGNED_SHORT) && bWeightNormalized)))
+			return Refuse("invalid WEIGHTS_0 encoding");
+		std::vector<float> afJoints, afWeights, afPositions;
+		u_int uJW = 0, uJN = 0, uWW = 0, uWN = 0, uPW = 0, uPN = 0;
+		if (!ReadAccessorFloats(xDoc, iJoints, afJoints, uJW, uJN) || !ReadAccessorFloats(xDoc, iWeights, afWeights, uWW, uWN) ||
+			!ReadAccessorFloats(xDoc, GetInt(*pxAttributes, "POSITION", -1), afPositions, uPW, uPN) ||
+			uJW != 4 || uWW != 4 || uPW != 3 || uJN != uWN || uJN != uPN)
+			return Refuse("skin accessor counts or vector sizes differ");
+		for (float f : afPositions) if (!std::isfinite(f)) return Refuse("non-finite vertex position");
+		for (u_int i = 0; i < uJN; ++i)
+		{
+			glm::uvec4 xIndices(0); glm::vec4 xWeights(0); float fSum = 0;
+			for (u_int k = 0; k < 4; ++k)
+			{
+				const float j = afJoints[i * 4 + k], w = afWeights[i * 4 + k];
+				if (!std::isfinite(j) || j < 0 || j >= static_cast<float>(auRemap.size()) || std::floor(j) != j || !std::isfinite(w) || w < 0)
+					return Refuse("invalid joint index or weight");
+				xIndices[k] = auRemap[static_cast<u_int>(j)]; xWeights[k] = w; fSum += w;
+			}
+			if (std::abs(fSum - 1) > 1e-4f) return Refuse("weights must sum to one");
+			axIndices.push_back(xIndices); axWeights.push_back(xWeights / fSum);
+		}
+	}
+	Zenith_MeshAsset xCandidate;
+	GlbImportResult xCandidateResult;
+	if (!LoadGlbMesh(strGlbPath, xCandidate, xCandidateResult) || xCandidate.GetNumVerts() != axWeights.size())
+		return Refuse("geometry does not match skin stream");
+	for (u_int i = 0; i < xCandidate.GetNumVerts(); ++i)
+		xCandidate.SetVertexSkinning(i, axIndices[i], axWeights[i]);
+	xCandidate.SetSkeletonPath(strSkeletonRef);
+	xMeshOut = std::move(xCandidate);
+	xResultOut = xCandidateResult;
+	return true;
+}
+
+bool LoadGlbMeshWithSkeletonTopology(const std::string& strGlbPath,
+	const Zenith_SkeletonAsset& xTopology, const std::string& strSkeletonRef,
+	Zenith_SkeletonAsset& xSkeletonOut, Zenith_MeshAsset& xMeshOut,
+	GlbImportResult& xResultOut)
+{
+	xResultOut = GlbImportResult();
+	auto Refuse = [&](const char* szReason)
+	{
+		Zenith_Error(LOG_CATEGORY_TOOLS, "GLB_REST: %s: %s", strGlbPath.c_str(), szReason);
+		return false;
+	};
+	GlbDocument xDoc; xDoc.m_strSourcePath = strGlbPath;
+	if (!ReadWholeFile(strGlbPath, xDoc.m_xFileBytes) || !ParseGlbContainer(xDoc) || !ResolveBufferViews(xDoc)) return Refuse("unreadable source");
+	const auto* pxSkins = GetArray(xDoc.m_xJson, "skins", 1);
+	const auto* pxNodes = GetArray(xDoc.m_xJson, "nodes", 1);
+	if (!pxSkins || pxSkins->Size() != 1 || !pxNodes || !xTopology.GetNumBones() || xTopology.GetNumBones() > Zenith_SkeletonAsset::MAX_BONES)
+		return Refuse("one skin and a valid named topology are required");
+	const auto& xSkin = (*pxSkins)[0]; const auto* pxJoints = GetArray(xSkin, "joints", 1);
+	if (!pxJoints || pxJoints->Size() != xTopology.GetNumBones()) return Refuse("joint count differs from topology");
+	std::vector<float> afInverse; u_int uWidth = 0, uCount = 0;
+	if (!ReadAccessorFloats(xDoc, GetInt(xSkin, "inverseBindMatrices", -1), afInverse, uWidth, uCount) || uWidth != 16 || uCount != pxJoints->Size())
+		return Refuse("invalid inverse bind accessor");
+	std::vector<Zenith_Maths::Vector3> axPositions(xTopology.GetNumBones());
+	std::vector<bool> abFound(xTopology.GetNumBones(), false);
+	for (u_int j = 0; j < pxJoints->Size(); ++j)
+	{
+		if (!(*pxJoints)[j].IsUint() || (*pxJoints)[j].GetUint() >= pxNodes->Size()) return Refuse("invalid joint node");
+		const int iBone = xTopology.GetBoneIndex(GetString((*pxNodes)[(*pxJoints)[j].GetUint()], "name", ""));
+		if (iBone < 0 || abFound[iBone]) return Refuse("unknown or duplicate bone");
+		abFound[iBone] = true;
+		// Translation-only inverse bind: no singular inversion, rotation-axis
+		// guess or silent scale correction can enter the animation retarget.
+		for (u_int c = 0; c < 4; ++c) for (u_int r = 0; r < 4; ++r)
+		{
+			const float f = afInverse[j * 16 + c * 4 + r];
+			if (!std::isfinite(f)) return Refuse("non-finite inverse bind");
+			if (c == 3 && r < 3) continue;
+			if (std::abs(f - (c == r ? 1.f : 0.f)) > 1e-5f) return Refuse("source bind orientation/scale is not translation-only");
+			const float fTemplate = xTopology.GetBone(iBone).m_xBindPoseModel[c][r];
+			if (!std::isfinite(fTemplate) || std::abs(fTemplate - (c == r ? 1.f : 0.f)) > 1e-5f)
+				return Refuse("template bind orientation/scale is not translation-only");
+		}
+		axPositions[iBone] = {-afInverse[j * 16 + 12], -afInverse[j * 16 + 13], -afInverse[j * 16 + 14]};
+	}
+	Zenith_SkeletonAsset xCandidate;
+	for (u_int i = 0; i < xTopology.GetNumBones(); ++i)
+	{
+		const auto& xBone = xTopology.GetBone(i); const int p = xBone.m_iParentIndex;
+		if (p < -1 || p >= static_cast<int>(i)) return Refuse("template is not in parent-first order");
+		xCandidate.AddBone(xBone.m_strName, p, axPositions[i] - (p < 0 ? Zenith_Maths::Vector3(0) : axPositions[p]),
+			glm::identity<Zenith_Maths::Quat>(), Zenith_Maths::Vector3(1));
+	}
+	xCandidate.ComputeBindPoseMatrices();
+	Zenith_MeshAsset xMesh; GlbImportResult xImport;
+	if (!LoadGlbMeshForSharedSkeleton(strGlbPath, xCandidate, strSkeletonRef, xMesh, xImport)) return false;
+	xSkeletonOut = std::move(xCandidate); xMeshOut = std::move(xMesh); xResultOut = xImport;
+	return true;
+}
+
 } // namespace Zenith_Tools_GlbImport
+
+#ifdef ZENITH_TOOLS
+#include "Zenith_Tools_GlbImport.Tests.inl"
+#endif

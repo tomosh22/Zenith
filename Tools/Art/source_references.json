@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "id": "artec-fish",
+      "title": "Fish",
+      "author": "Artec Group inc. / Artec 3D",
+      "sourcePage": "https://www.artec3d.com/3d-models/fish",
+      "download": "https://cdn.artec3d.com/content-hub-3dmodels/fish_obj.zip?VersionId=uTKVUs.zbTAsN.U6m10QOiLnBnR2Aq63",
+      "license": "CC-BY-3.0 (archive notice); CC-BY-4.0 (publisher page)",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "publisherLicenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "retrieved": "2026-09-22",
+      "sha256": "66fe006cc74962321418b73cb40a271a4d3129d2b6c35119a77b9b1886bea015",
+      "localReviewPath": "Build/artifacts/authored_assets/reference_sources/Artec_Fish/fish_obj.zip",
+      "files": {
+        "Fish.obj": "bbc974d47b94f4bd56782c3b7f04e21a511fd724c99db9c56254ff4c96f84623",
+        "Fish_0.jpg": "e55b6d97aa8bee4043980c5bfe2203cdd7d697191fbbad24a0bf1e43be86a0db",
+        "license.txt": "4211d679dceb5d5e7d11541db839c2cbafcd7a5fa746c903da36b30c369178cc"
+      },
+      "use": "Anatomical body source for Minnet, Shoalfin and Torrentfin via create_shoalfish.py. Straightened and individually proportioned, decimated with baked geometric normals, new body UVs and tinted photographic colour. Fins, rays, eye overlays and canonical eight-joint skin are newly authored. Derivatives include attribution, source license and GLB copyright metadata.",
+      "limitations": "The source fins are incomplete and rebuilt rather than presented as captured anatomy. The original photograph is 1K; rebaking to 2K does not add photographic resolution or fully remove lighting. Roughness is authored rather than measured. All models require visual and animation acceptance."
+    },
+    {
+      "id": "artec-beetle",
+      "title": "Beetle",
+      "author": "Artec Group inc. / Artec 3D",
+      "sourcePage": "https://www.artec3d.com/3d-models/beetle",
+      "download": "https://cdn.artec3d.com/content-hub-3dmodels/beetle_obj.zip?VersionId=xdGQbLE2fPh4NzyM4zv8ocFpD9l5oKzZ",
+      "license": "CC-BY-3.0 (archive notice); CC-BY-4.0 (publisher page)",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "publisherLicenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "retrieved": "2026-09-22",
+      "sha256": "ef04e47bbb0712072dd8877b0a9f1d5a6738a0b457f22f78722103f579441140",
+      "localReviewPath": "Build/artifacts/authored_assets/reference_sources/Artec_Beetle/beetle_obj.zip",
+      "files": {
+        "Beetle.obj": "70a623ef67b82d87ff391e52fdd3fdf2620c7ed52941af5139351cecd93ba3d1",
+        "Beetle_1.jpg": "ee81439e3851f0bf4d31f241f3cda8b676b2309763024ddb8c95bc14d45589d0",
+        "license.txt": "4211d679dceb5d5e7d11541db839c2cbafcd7a5fa746c903da36b30c369178cc"
+      },
+      "use": "Revised Prismite candidate using create_scanned_mineral_beetles.py, installed after the nine-pose review. Reoriented, scaled, exposure-adjusted photograph, authored dielectric roughness, canonical skin and original mineral clusters. Original attribution and archive license accompany derivative outputs and GLB copyright metadata.",
+      "limitations": "The scan supplies captured diffuse colour and geometric relief, not measured PBR maps. Baked illumination is not fully removed. Mineral integration, motion polish and triangle-budget review remain outstanding. Neither source availability nor a technical pass establishes photorealistic acceptance."
+    },
+    {
+      "id": "cdmir-old-deer-male",
+      "title": "Old Deer Male",
+      "author": "CDmir",
+      "collaborators": ["TinyWorlds"],
+      "sourcePage": "https://opengameart.org/content/old-deer-male",
+      "download": "https://opengameart.org/sites/default/files/deer1.blend",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "retrieved": "2026-09-22",
+      "sha256": "729f47b10f29e13d128aa2e0a2a5ba47be40cb6593e1e86ac31e236e93bef003",
+      "localReviewPath": "Build/artifacts/authored_assets/reference_sources/CDmir_Deer/deer1.blend",
+      "use": "Anatomical topology and diffuse/normal source for the Fernfawn, Thicketbuck and Sylvastag candidates, adapted by create_fernfawn_from_reference.py. Named invocations author adult proportions, coats and original fern-bearing antlers under creature_work/GroveDeer. The original download is preserved. Photorealistic visual acceptance remains outstanding.",
+      "limitations": "Legacy diffuse/normal materials, not a complete metallic-roughness PBR delivery. Preview roughness is an assessment default. The original source file is retained unchanged and opened with Blender script auto-execution disabled."
+    },
+    {
+      "id": "polyhaven-rock-face",
+      "title": "Rock Face",
+      "authors": ["Greg Zaal (photography)", "Dario Barresi (processing)"],
+      "sourcePage": "https://polyhaven.com/a/rock_face",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://polyhaven.com/license",
+      "retrieved": "2026-09-22",
+      "localReviewPath": "Build/artifacts/authored_assets/reference_sources/PolyHaven_RockFace",
+      "files": {
+        "rock_face_diff_4k.png": "2a16bcca46d1e76f436997120b252a3edb0dc46128090cf58c0d3abb82f1c245",
+        "rock_face_arm_4k.png": "f1d4d804b6aa63863bbd32346f9a6605957417c10225f7cb0bf8fc8b13b3cf37",
+        "rock_face_nor_gl_4k.png": "3e86b0e4e966e2008cb24f393d0b5f32c2bb409900af136a62dbe89650f166d4",
+        "rock_face_disp_4k.png": "6f1b83b97237e34accad628e685114613cb4f3c88193b1ff399711c784b79aef"
+      },
+      "downloadPattern": "https://dl.polyhaven.org/file/ph-assets/Textures/png/4k/rock_face/<filename>",
+      "use": "Photographic PBR stone surface for the individually composed Rubblet, Cairngo and Monolode candidates. The Blender recipe pins source hashes and downsamples derivative maps to 2K. Creature geometry, eyes, quartz and skin are original authoring.",
+      "limitations": "Photographic textures do not establish visual acceptance of the creature geometry, mineral details or animation. Original maps are retained unchanged. No preview render or website artwork is included in the delivery."
+    }
+  ]
+}

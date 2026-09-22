@@ -14,6 +14,8 @@ class Flux_RenderSceneSnapshot;
 class Flux_GraphicsImpl;
 class Flux_LightClusteringImpl;
 class Flux_IBLImpl;
+class Flux_ReadWriteBuffer;
+class Flux_RendererImpl;
 
 // Per-frame draw item resolved on the main thread during Prepare: one
 // translucent/additive SUBMESH (the gather walks every model's meshes and
@@ -30,6 +32,8 @@ struct Flux_TranslucentDrawItem
 	float                 m_fViewDepthSq = 0.0f;	// camera-distance² (sort key)
 	bool                  m_bAdditive = false;
 	bool                  m_bTwoSided = false;
+	bool                  m_bSkinned = false;
+	u_int                 m_uVertexOffset = 0u;
 };
 
 // Forward-lit translucency: Translucent/Additive blend-mode materials render
@@ -39,8 +43,8 @@ struct Flux_TranslucentDrawItem
 // lights — via Shaders/Translucency/Flux_Translucent_Forward.slang, which
 // shares the uber-material evaluation with the G-buffer writers.
 //
-// v1 scope: STATIC meshes only. Skinned-animated translucent submeshes are
-// skipped with a one-shot warning (forward bone path is future work).
+// Scene skinned sections consume the unified compute-skinning arena, using
+// the same packed vertex format and forward shader as static sections.
 class Flux_TranslucencyImpl
 {
 public:
@@ -69,6 +73,7 @@ public:
 	// Phase 2: engine-owned uncullled snapshot injected at the composition root. The
 	// Prepare reads it instead of running its own ECS scan. Keeps this TU off the ratchet.
 	void SetSnapshot(const Flux_RenderSceneSnapshot* pxSnapshot) { m_pxSnapshot = pxSnapshot; }
+	void SetSkinningArena(Flux_ReadWriteBuffer* pxArena) { m_pxSkinnedArena = pxArena; }
 
 	// Prepare callback: gathers + depth-sorts the per-frame packets (main thread).
 	// ONE callback — on the MAIN pass — fills EVERY view's packet: the main view
@@ -76,6 +81,7 @@ public:
 	// the renderer's preserved external translucent items. The preview pass has no
 	// Prepare of its own (a second one would double-gather).
 	void GatherDrawPacket(void* pUserData);
+	void GatherScenePacket(const Zenith_Maths::Vector3& xCameraPos, const Flux_RendererImpl& xRenderer);
 
 	// Per-frame draw packets, one per fixed render-view slot (gather-sorted
 	// back-to-front against THAT view's camera). Only the main + preview slots
@@ -93,10 +99,8 @@ public:
 	Flux_Pipeline m_axPipelineAdditive[FLUX_VIEW_SHADING_MODE_COUNT];			// additive,    cull back
 	Flux_Pipeline m_axPipelineAdditiveTwoSided[FLUX_VIEW_SHADING_MODE_COUNT];	// additive,    cull none
 
-	// One-shot warning latch for unsupported animated translucent submeshes.
-	bool m_bWarnedAnimatedTranslucent = false;
-
 	// Phase 2: engine-owned uncullled scene snapshot, injected at the composition root
 	// (non-owning). Read in GatherDrawPacket; null until injected (early boot).
 	const Flux_RenderSceneSnapshot* m_pxSnapshot = nullptr;
+	Flux_ReadWriteBuffer* m_pxSkinnedArena = nullptr;
 };

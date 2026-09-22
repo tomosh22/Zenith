@@ -16,6 +16,8 @@
 
 #include <cstdio>    // snprintf
 #include <cstring>   // memcmp, memcpy, strlen
+#include <array>
+#include <string>
 
 namespace
 {
@@ -468,5 +470,18 @@ bool ZM_BakeAllHumans()
 // ---------------------------------------------------------------------------
 const char* ZM_HumanImportedModelRef(ZM_HUMAN_ID eId)
 {
-	return (eId == ZM_HUMAN_PLAYER_M) ? "engine:Meshes/Humans/Male/Male.zmodel" : nullptr;
+	if (eId >= ZM_HUMAN_COUNT) { return nullptr; }
+	if (eId == ZM_HUMAN_PLAYER_M) { return "engine:Meshes/Humans/Male/Male.zmodel"; }
+	// Stable storage: consumers validate the imported bundle before selecting it,
+	// retaining the generated fallback on a checkout without these source assets.
+	static const auto xPaths = [] {
+		std::array<std::string, ZM_HUMAN_COUNT> xResult;
+		for (u_int u=0;u<ZM_HUMAN_COUNT;++u)
+		{
+			const std::string strName=ZM_GetHumanName(static_cast<ZM_HUMAN_ID>(u));
+			xResult[u]="game:Meshes/Humans/"+strName+"/"+strName+".zmodel";
+		}
+		return xResult;
+	}();
+	return xPaths[eId].c_str();
 }

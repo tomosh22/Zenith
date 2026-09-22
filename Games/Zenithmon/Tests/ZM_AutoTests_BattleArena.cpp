@@ -4,6 +4,11 @@
 
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
+#include "Core/Zenith_TestTGA.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "Flux/Flux_Screenshot.h"
+#include "UnitTests/Zenith_UnitTests.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Maths/Zenith_Maths.h"
@@ -605,5 +610,106 @@ static const Zenith_AutomatedTest g_xZMBattleArenaOwnSceneTest = {
 	false /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMBattleArenaOwnSceneTest);
+
+// Artist review: photograph the actual six arena-owned dressing entities.
+// Shares the isolated scene setup/cleanup above; never changes game save state.
+namespace
+{
+	Zenith_EntityID g_xArtCamera = INVALID_ENTITY_ID;
+	u_int g_uArtShots = 0u;
+	int g_iArtStart = -1;
+	std::string ArtDressingPath(u_int u)
+	{
+		const auto xRoot = std::filesystem::weakly_canonical(
+			std::filesystem::path(GAME_ASSETS_DIR) / ".." / ".." / "..");
+		return (xRoot / "Build/artifacts/authored_assets/screenshots" /
+			(std::string(ZM_GetPropName(ZM_BattleArena::DressingPropForBiome(
+				static_cast<ZM_BATTLE_BIOME>(u)))) + ".tga")).string();
+	}
+}
+
+static void Setup_ZMAuthoredDressingCapture()
+{
+	g_xArtCamera = INVALID_ENTITY_ID;
+	g_uArtShots = 0u;
+	g_iArtStart = -1;
+	for (u_int u = 0; u < ZM_BATTLE_BIOME_COUNT; ++u)
+	{
+		std::error_code xError;
+		std::filesystem::create_directories(std::filesystem::path(ArtDressingPath(u)).parent_path(), xError);
+		std::filesystem::remove(ArtDressingPath(u), xError);
+	}
+	Setup_ZMBattleArena();
+}
+
+static bool Step_ZMAuthoredDressingCapture(int iFrame)
+{
+	if (!g_bBAActive || g_bBAFailed) { return false; }
+	ArenaView xArena;
+	if (!FindUniqueArena(xArena) || !xArena.m_pxArena->IsFullyBuilt())
+	{
+		if (iFrame > 300) { FailBA("authored dressing arena never became ready"); }
+		return !g_bBAFailed;
+	}
+	Zenith_SceneData* pxData = g_xEngine.Scenes().GetSceneData(g_xBAScene);
+	if (g_iArtStart < 0)
+	{
+		Zenith_Entity xCamera = g_xEngine.Scenes().CreateEntity(pxData, "AuthoredDressingReviewCamera");
+		xCamera.SetTransient(true);
+		xCamera.AddComponent<Zenith_CameraComponent>();
+		g_xArtCamera = xCamera.GetEntityID();
+		Zenith_UnitTests::SetMainCameraForTest(pxData, g_xArtCamera);
+		g_iArtStart = iFrame;
+	}
+	const int iElapsed = iFrame - g_iArtStart;
+	const u_int uBiome = static_cast<u_int>(iElapsed / 180);
+	if (uBiome >= ZM_BATTLE_BIOME_COUNT) { return false; }
+	xArena.m_pxArena->SetBiome(static_cast<ZM_BATTLE_BIOME>(uBiome));
+	Zenith_Entity xSubject = g_xEngine.Scenes().ResolveEntity(xArena.m_pxArena->GetChildEntityID(3u + uBiome));
+	Zenith_ModelComponent* pxModel = xSubject.TryGetComponent<Zenith_ModelComponent>();
+	if (!pxModel || pxModel->GetNumMeshes() == 0u)
+	{
+		FailBA("authored dressing model did not load");
+		return false;
+	}
+	Zenith_Maths::Vector3 xPosition;
+	xSubject.GetComponent<Zenith_TransformComponent>().GetPosition(xPosition);
+	const Zenith_Maths::Vector3 xEye = xPosition + Zenith_Maths::Vector3(3.1f, 2.1f, -3.6f);
+	const auto xDir = glm::normalize(xPosition + Zenith_Maths::Vector3(0, .45f, 0) - xEye);
+	Zenith_Entity xCamera = g_xEngine.Scenes().ResolveEntity(g_xArtCamera);
+	auto& xCam = xCamera.GetComponent<Zenith_CameraComponent>();
+	xCam.SetPosition(xEye);
+	xCam.SetPitch(std::asin(xDir.y));
+	xCam.SetYaw(std::atan2(-xDir.x, xDir.z));
+	xCam.SetFOV(glm::radians(50.0f));
+	xCam.SetNearPlane(.05f);
+	xCam.SetFarPlane(100.0f);
+	xCam.SetAspectRatio(16.0f / 9.0f);
+	if (iElapsed % 180 == 160)
+	{
+		Flux_Screenshot::RequestDump(ArtDressingPath(uBiome).c_str());
+		++g_uArtShots;
+	}
+	return true;
+}
+
+static bool Verify_ZMAuthoredDressingCapture()
+{
+	bool bPassed = !g_bBAFailed && g_uArtShots == ZM_BATTLE_BIOME_COUNT;
+	for (u_int u = 0; u < ZM_BATTLE_BIOME_COUNT; ++u)
+	{
+		Zenith_TestTGAImage xImage;
+		bPassed = Zenith_TestLoadTGA(ArtDressingPath(u).c_str(), xImage) && bPassed;
+	}
+	CleanupBAScene();
+	return bPassed;
+}
+
+static const Zenith_AutomatedTest g_xZMAuthoredDressingCaptureTest = {
+	"ZM_AuthoredDressingCapture_Test", &Setup_ZMAuthoredDressingCapture,
+	&Step_ZMAuthoredDressingCapture, &Verify_ZMAuthoredDressingCapture,
+	1500, true, true, &CleanupBAScene,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZMAuthoredDressingCaptureTest);
 
 #endif // ZENITH_INPUT_SIMULATOR

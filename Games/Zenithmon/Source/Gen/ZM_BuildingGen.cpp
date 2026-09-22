@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#include "Zenithmon/Source/Gen/ZM_AuthoredStatic.h"
 
 // ============================================================================
 // ZM_BuildingGen -- the S4 building generator driver. See the header for the
@@ -2081,6 +2082,10 @@ bool ZM_EnsureBuildingMicroDetailBaked()
 
 bool ZM_BakeBuilding(ZM_BUILDING_ID eId)
 {
+	char acAuthoredRef[512];
+	if (!ZM_BuildingAssetPath(eId, ZM_BUILDING_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) { return false; }
+	bool bAuthored = false;
+	if (ZM_TryAuthoredStatic(acAuthoredRef, true, bAuthored)) { return bAuthored; }
 	// Every wall and roof material this writes REFERENCES the shared pair, so it
 	// has to exist first -- a material pointing at an absent texture loads with
 	// the slot empty, which silently turns the detail flag off.
@@ -2275,6 +2280,10 @@ namespace
 
 bool ZM_EnsureBuildingBaked(ZM_BUILDING_ID eId)
 {
+	char acAuthoredRef[512];
+	if (!ZM_BuildingAssetPath(eId, ZM_BUILDING_ASSET_MODEL, acAuthoredRef, sizeof(acAuthoredRef))) { return false; }
+	bool bAuthored = false;
+	if (ZM_TryAuthoredStatic(acAuthoredRef, false, bAuthored)) { return bAuthored; }
 	// ★ WHY THIS EXISTS. ZM_BakeAllAssets has no shipped caller -- the whole
 	// generated library is baked as a side effect of whichever automated test runs
 	// first. That was harmless while nothing in a SHIPPED scene referenced a

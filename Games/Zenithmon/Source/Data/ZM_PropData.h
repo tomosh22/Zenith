@@ -225,8 +225,8 @@ const char*			ZM_GetPropName(ZM_PROP_ID eId);
 struct ZM_PropBulb
 {
 	bool  m_bHasBulb;
-	// In the MODEL's own units, from the model ORIGIN (these models are
-	// origin-centred, so a positive Y is above the middle of the post).
+	// In the MODEL's own units, from its origin. LampPost is centred and
+	// normalised; LanternPost is authored in metres with its base at Y=0.
 	float m_fX;
 	float m_fY;
 	float m_fZ;

@@ -42,6 +42,20 @@
 static ZM_ITEM_ID g_eCatchBallForTests = ZM_ITEM_CATCHORB;
 void ZM_SetCatchBallForTests(ZM_ITEM_ID eBall) { g_eCatchBallForTests = eBall; }
 
+static Zenith_Maths::Vector3 ZM_BattleCreatureAnchor(Zenith_EntityID xPlatformID, float fFallbackY, float fUnmeasuredLift)
+{
+	Zenith_Maths::Vector3 p(0, fFallbackY, 0);
+	auto platform = g_xEngine.Scenes().ResolveEntity(xPlatformID);
+	if (!platform.IsValid()) return p;
+	auto& transform = platform.GetComponent<Zenith_TransformComponent>(); transform.GetPosition(p);
+	Zenith_Maths::Vector3 scale, lo, hi; transform.GetScale(scale);
+	auto* model = platform.TryGetComponent<Zenith_ModelComponent>();
+	// Arena platforms are axis-aligned slabs. Use their actual top surface;
+	// the old one-metre centre offset left grounded creatures floating above it.
+	p.y += model && model->GetFirstMeshLocalBounds(lo, hi) ? std::max(lo.y * scale.y, hi.y * scale.y) : fUnmeasuredLift;
+	return p;
+}
+
 ZM_BattleDirector::ZM_BattleDirector(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
 {
@@ -354,17 +368,7 @@ void ZM_BattleDirector::PlaceCreatureModels(ZM_SPECIES_ID ePlayerSpecies, ZM_SPE
 	// back to the arena world plane when the platform can't be resolved.
 	auto fnResolvePlacePos = [](Zenith_EntityID xPlatformID) -> Zenith_Maths::Vector3
 	{
-		Zenith_Maths::Vector3 xPos(0.0f, ZM_BattleArena::fARENA_WORLD_Y + fCREATURE_Y_LIFT, 0.0f);
-		Zenith_Entity xPlatform = g_xEngine.Scenes().ResolveEntity(xPlatformID);
-		if (xPlatform.IsValid())
-		{
-			Zenith_TransformComponent& xPlatformTransform = xPlatform.GetComponent<Zenith_TransformComponent>();
-			Zenith_Maths::Vector3 xPlatformPos;
-			xPlatformTransform.GetPosition(xPlatformPos);
-			xPos = xPlatformPos;
-			xPos.y += fCREATURE_Y_LIFT;
-		}
-		return xPos;
+		return ZM_BattleCreatureAnchor(xPlatformID, ZM_BattleArena::fARENA_WORLD_Y + fCREATURE_Y_LIFT, fCREATURE_Y_LIFT);
 	};
 
 	auto fnPlaceOne = [&](ZM_SPECIES_ID eSpecies, const Zenith_Maths::Vector3& xPos) -> Zenith_EntityID
@@ -390,10 +394,15 @@ void ZM_BattleDirector::PlaceCreatureModels(ZM_SPECIES_ID ePlayerSpecies, ZM_SPE
 		// correction only -- battle models remain cosmetic and no creature bake or
 		// collision dimension changes here.
 		Zenith_Maths::Vector3 xPresentedPos = xPos;
-		xPresentedPos.y += ZM_CreaturePresentationOriginOffsetY(eSpecies);
+		auto& xModel = xEntity.AddComponent<Zenith_ModelComponent>(); xModel.LoadModel(szRef);
+		Zenith_Maths::Vector3 xMin, xMax;
+		const float fOffset = xModel.GetFirstMeshLocalBounds(xMin, xMax)
+			? ZM_CreaturePresentationFloorY(ZM_GetCreatureOriginPolicy(ZM_GetSpeciesData(eSpecies).m_eArchetype)) - xMin.y
+			: ZM_CreaturePresentationOriginOffsetY(eSpecies);
+		xPresentedPos.y += fOffset;
 		xTransform.SetPosition(xPresentedPos);
-		// A missing/unbaked .zmodel loads model-less (mirrors ZM_BattleArena dressing).
-		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
+		// Authored and generated meshes use their actual loaded bounds. A missing
+		// bundle retains the procedural-origin fallback and renders model-less.
 		return xEntity.GetEntityID();
 	};
 
@@ -442,6 +451,19 @@ void ZM_BattleDirector::SetCreatureModelSpecies(ZM_SIDE eSide, ZM_SPECIES_ID eSp
 	}
 	xEntity.SetName(ZM_GetSpeciesName(eSpecies));
 	pxModel->LoadModel(szRef);
+	Zenith_Maths::Vector3 xMin, xMax;
+	if (pxModel->GetFirstMeshLocalBounds(xMin, xMax))
+	{
+		float fFloor = ZM_BattleArena::fARENA_WORLD_Y + fCREATURE_Y_LIFT;
+		g_xEngine.Scenes().QueryAllScenes<ZM_BattleArena>().ForEach([&](Zenith_EntityID xArenaID, ZM_BattleArena& xArena)
+		{
+			if (g_xEngine.Scenes().GetSceneDataForEntity(xArenaID) != m_xParentEntity.GetSceneData()) return;
+			fFloor = ZM_BattleCreatureAnchor(xArena.GetChildEntityID(1u + static_cast<u_int>(eSide)), fFloor, fCREATURE_Y_LIFT).y;
+		});
+		auto& xTransform = xEntity.GetComponent<Zenith_TransformComponent>(); Zenith_Maths::Vector3 p; xTransform.GetPosition(p);
+		p.y = fFloor + ZM_CreaturePresentationFloorY(ZM_GetCreatureOriginPolicy(ZM_GetSpeciesData(eSpecies).m_eArchetype)) - xMin.y;
+		xTransform.SetPosition(p);
+	}
 }
 
 ZM_BattleMonsterSpec ZM_BattleDirector::BuildPlaceholderPlayerSpec()

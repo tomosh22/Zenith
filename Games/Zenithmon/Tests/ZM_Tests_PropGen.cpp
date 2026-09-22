@@ -979,6 +979,15 @@ ZENITH_TEST(ZM_Gen, PropGen_RockKindsResolveToTheSharedEngineStones)
 			ZENITH_ASSERT_STREQ(acModel, acExpected,
 				"'%s' resolves to a ref the rock exporter does not write",
 				ZM_GetPropName(eId));
+			// Source ownership must bypass the substitution for BOTH rendering
+			// and bounds fitting, while the default above retains the cold fallback.
+			char acAuthoredModel[512], acAuthoredMesh[512], acOwnMesh[512], acOwnModel[512];
+			ZENITH_ASSERT_TRUE(ZM_PropModelRef(eId, acAuthoredModel, sizeof(acAuthoredModel), true), "authored model ref");
+			ZENITH_ASSERT_TRUE(ZM_PropMeshRef(eId, acAuthoredMesh, sizeof(acAuthoredMesh), true), "authored mesh ref");
+			ZENITH_ASSERT_TRUE(ZM_PropAssetPath(eId, ZM_PROP_ASSET_MODEL, acOwnModel, sizeof(acOwnModel)), "own model path");
+			ZENITH_ASSERT_TRUE(ZM_PropAssetPath(eId, ZM_PROP_ASSET_MESH, acOwnMesh, sizeof(acOwnMesh)), "own mesh path");
+			ZENITH_ASSERT_STREQ(acAuthoredModel, acOwnModel, "authored rock renders its imported model");
+			ZENITH_ASSERT_STREQ(acAuthoredMesh, acOwnMesh, "authored rock is fitted using its imported mesh");
 			Zenith_Log(LOG_CATEGORY_UNITTEST,
 				"[ZM_Gen] OBSERVED '%s' presents the shared engine stone '%s'",
 				ZM_GetPropName(eId), acModel);

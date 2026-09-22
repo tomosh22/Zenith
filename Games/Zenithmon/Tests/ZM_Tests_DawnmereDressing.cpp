@@ -1020,7 +1020,18 @@ ZENITH_TEST(ZM_Dressing, PropBulbsSitInsideTheirOwnModel)
 		// and normalised so their longest axis is ~1.0, which makes +/-0.5 the
 		// bound on every axis; the roster's metres are the FITTED size and are the
 		// wrong space entirely to compare an unfitted offset against.
-		constexpr float fMODEL_HALF_EXTENT = 0.5f;
+		// LampPost uses the original normalised centred coordinates. The new
+		// LanternPost uses metres from the ground; its glass occupies
+		// X .225..345, Y 1.7675..2.0225, Z -.06..+.06 in the source GLB.
+		if (eId == ZM_PROP_LANTERN_POST)
+		{
+			ZENITH_ASSERT_GT(xBulb.m_fX, 0.225f, "lantern bulb must be inside its glass");
+			ZENITH_ASSERT_LE(xBulb.m_fX, 0.345f, "lantern bulb must be inside its glass");
+			ZENITH_ASSERT_GT(xBulb.m_fY, 1.7675f, "lantern bulb must be inside its glass");
+			ZENITH_ASSERT_LE(xBulb.m_fY, 2.0225f, "lantern bulb must be inside its glass");
+			ZENITH_ASSERT_LE(std::fabs(xBulb.m_fZ), 0.06f, "lantern bulb must be inside its glass");
+		}
+		const float fMODEL_HALF_EXTENT = eId == ZM_PROP_LANTERN_POST ? 2.4f : 0.5f;
 		ZENITH_ASSERT_LE(std::fabs(xBulb.m_fX), fMODEL_HALF_EXTENT,
 			"'%s' bulb X %.4f is outside the model", ZM_GetPropName(eId),
 			(double)xBulb.m_fX);
@@ -1039,11 +1050,10 @@ ZENITH_TEST(ZM_Dressing, PropBulbsSitInsideTheirOwnModel)
 			"'%s' declares a bulb with no range", ZM_GetPropName(eId));
 
 		Zenith_Log(LOG_CATEGORY_UNITTEST,
-			"[ZM_Dressing] OBSERVED '%s' bulb at model (%.4f, %.4f, %.4f) = %.1f%% "
-			"of its height, %.0f lm over %.1f m",
+			"[ZM_Dressing] OBSERVED '%s' bulb at model (%.4f, %.4f, %.4f), "
+			"%.0f lm over %.1f m",
 			ZM_GetPropName(eId), (double)xBulb.m_fX, (double)xBulb.m_fY,
 			(double)xBulb.m_fZ,
-			(double)((xBulb.m_fY + fMODEL_HALF_EXTENT) * 100.0f),
 			(double)xBulb.m_fLumens, (double)xBulb.m_fRange);
 	}
 

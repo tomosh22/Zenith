@@ -325,12 +325,9 @@ void ZM_BuildHumanMesh(const ZM_HumanRecipe& xRecipe, ZM_GenMesh& xMesh);
 // point of the recipe's m_fHeightScale.
 // ---------------------------------------------------------------------------
 
-// ★ THE ONE HUMAN WITH AN ARTIST-AUTHORED MODEL, and the reason this is a
-// FUNCTION rather than a constant. Every NPC stays on the generated loft -- 34
-// of them, each a different build, hair and outfit, which is exactly what the
-// generator is for -- and only the player has a hand-made mesh. Returning
-// nullptr for everyone else means "no imported model", so NPCs are excluded by
-// construction rather than by a call site remembering to ask.
+// Imported cast sources use Meshes/Humans/<Name>, owned by the shared-rig
+// binder. PlayerM retains its supplied engine Male source. Invalid IDs return
+// nullptr; a valid path is a candidate, not proof that the import exists.
 //
 // The bundle is written by Zenith_Tools_HumanModelExport at tools boot and is
 // gitignored art, so a fresh clone or a runtime-only build simply gets the

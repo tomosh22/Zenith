@@ -911,6 +911,7 @@ void Zenith_Engine::InitialiseECS()
 	// g_xEngine.FluxRenderer()) keeps those Flux TUs off the singleton ratchet.
 	const Flux_RenderSceneSnapshot* pxSceneSnapshot = &g_xEngine.FluxRenderer().GetSceneSnapshot();
 	g_xEngine.Translucency().SetSnapshot(pxSceneSnapshot);
+	g_xEngine.Translucency().SetSkinningArena(&g_xEngine.UnifiedMesh().m_xSkinnedArenaBuffer);
 
 #ifdef ZENITH_TOOLS
 	// Phase 3: install the scene-graph debug overlays (world-AABB wireframes + cull stats),

@@ -351,6 +351,13 @@ public:
 		u_int              m_uVertexOffset = 0u;       // base vertex in the skinned arena (this instance's slice)
 	};
 	const Zenith_HashMap<u_int, Flux_UnifiedSkinnedDraw>& GetUnifiedSkinnedDrawById() const { return m_xUnifiedSkinnedDrawById; }
+	// Resolve only this frame's skin output. Forward translucent sections share
+	// the same arena slice and bind-pose index buffer as opaque sections.
+	const Flux_UnifiedSkinnedDraw* FindUnifiedSkinnedDraw(const Flux_SkinnedInstanceKey& xKey) const
+	{
+		u_int uId = 0u;
+		return m_xUnifiedSkinnedIdRegistry.TryGetId(xKey, uId) ? m_xUnifiedSkinnedDrawById.TryGet(uId) : nullptr;
+	}
 	const Zenith_Vector<u_int>&           GetUnifiedBindPosePoolWords() const { return m_xUnifiedSkinnedPoseRegistry.GetPoolWords(); }
 	u_int GetUnifiedBindPosePoolGeneration() const { return m_xUnifiedSkinnedPoseRegistry.GetPoolGeneration(); }
 	const Zenith_Vector<Zenith_Maths::Matrix4>& GetUnifiedBonePalette() const { return m_xUnifiedBonePalette.Matrices(); }

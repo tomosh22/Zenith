@@ -5,6 +5,7 @@
 #include "Collections/Zenith_Vector.h"
 
 class Zenith_MeshAsset;
+class Zenith_SkeletonAsset;
 
 // ============================================================================
 // Zenith_Tools_GlbImport -- the .glb import path, for binary glTF that the
@@ -35,8 +36,8 @@ class Zenith_MeshAsset;
 // roughness in G and metallic in B of one texture, which is precisely what
 // Flux's SampleRoughnessMetallic reads, so that map is passed through with no
 // swizzle. Base colour is already sRGB-encoded in its source file and goes to
-// BC1 unchanged (BC1 has no sRGB variant -- the engine's convention is encoded
-// bytes sampled as UNORM). Normal maps go to BC5, which keeps R and G and lets
+// BC1 sRGB for opaque materials or alpha-preserving BC3 sRGB otherwise.
+// Normal maps go to BC5, which keeps R and G and lets
 // the shader rebuild Z. An absent occlusion map is written as neutral white
 // rather than skipped, because a partial bundle reads to a generator as "not
 // baked yet" and gets overwritten.
@@ -70,9 +71,31 @@ namespace Zenith_Tools_GlbImport
 	// keeps the alternative from being a second copy of the parser.
 	//
 	// LoadGlbMesh: parse + decode to memory with the node transform baked in.
+	// Converts glTF front faces per instance, including reflected node transforms.
 	// NO tangents, NO bounds, NOTHING written. Generate tangents yourself, after
 	// the vertices stop moving.
 	bool LoadGlbMesh(const std::string& strGlbPath, Zenith_MeshAsset& xMeshOut, GlbImportResult& xResultOut);
+
+	// Read artist-painted weights against a caller-owned shared rig. Joint indices
+	// are remapped BY NAME; glTF's skin order is not the engine bone order. The
+	// source must have one skin, applied mesh transforms, matching bind matrices
+	// and hierarchy, and at most four normalized influences. No files are written.
+	// Failure leaves xMeshOut untouched. The caller supplies the rig identity;
+	// untrusted source extras never choose dependency paths.
+	bool LoadGlbMeshForSharedSkeleton(const std::string& strGlbPath,
+		const Zenith_SkeletonAsset& xSkeleton, const std::string& strSkeletonRef,
+		Zenith_MeshAsset& xMeshOut, GlbImportResult& xResultOut);
+
+	// Artist rest proportions with an existing named bone topology. This narrow
+	// path requires translation-only bind poses, preserving the archetype's axes
+	// for rotation curves. It imports the source's real joint positions and then
+	// runs the same strict skin validation above. Caller must retarget position
+	// tracks to the returned rest pose before using existing clips. No publication;
+	// both output assets remain untouched on failure.
+	bool LoadGlbMeshWithSkeletonTopology(const std::string& strGlbPath,
+		const Zenith_SkeletonAsset& xTopology, const std::string& strSkeletonRef,
+		Zenith_SkeletonAsset& xSkeletonOut, Zenith_MeshAsset& xMeshOut,
+		GlbImportResult& xResultOut);
 
 	// ExportGlbMaterials: the textures and .zmtrl for one .glb, written beside
 	// strBaseName, appending each material's normalised ref to xRefsOut.

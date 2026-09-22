@@ -422,9 +422,11 @@ inline constexpr ZM_DawnmereProp axZM_DAWNMERE_PROPS[] =
 	{ "DawnmereLanternWest",    ZM_PROP_LANTERN_POST, 110.00f, 120.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 	{ "DawnmereLanternEast",    ZM_PROP_LANTERN_POST, 130.00f, 136.00f,
-		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
+		// The hanging head projects +X in the GLB: turn the eastern post so
+		// both lanterns hang towards the route lane.
+		fZM_INTERIOR_YAW180_W, fZM_INTERIOR_YAW180_Y, ZM_DAWNMERE_ANCHOR_FREE },
 
-	// ---- A timber field boundary west of the home ---------------------------
+	// ---- A timber field boundary behind the home ---------------------------
 	//
 	// ★★ THE SPACING IS THE PROP'S OWN LENGTH, WHICH IS WHAT "TILES END TO END"
 	// MEANS. A fence row is 2.0 m wide in the roster and ZM_ComputePropFit scales
@@ -432,23 +434,23 @@ inline constexpr ZM_DawnmereProp axZM_DAWNMERE_PROPS[] =
 	// and no overlap however the mesh was authored. Change the roster width and
 	// this spacing must change with it -- FenceRunSpacingMatchesTheRosterLength
 	// is what refuses the mismatch.
-	{ "DawnmereFenceWood0",     ZM_PROP_FENCE_WOOD,  68.00f,  92.00f,
+	{ "DawnmereFenceWood0",     ZM_PROP_FENCE_WOOD,  84.00f, 116.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereFenceWood1",     ZM_PROP_FENCE_WOOD,  70.00f,  92.00f,
+	{ "DawnmereFenceWood1",     ZM_PROP_FENCE_WOOD,  86.00f, 116.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereFenceWood2",     ZM_PROP_FENCE_WOOD,  72.00f,  92.00f,
+	{ "DawnmereFenceWood2",     ZM_PROP_FENCE_WOOD,  88.00f, 116.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereFenceWood3",     ZM_PROP_FENCE_WOOD,  74.00f,  92.00f,
+	{ "DawnmereFenceWood3",     ZM_PROP_FENCE_WOOD,  90.00f, 116.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 
-	// ---- A dry-stone wall east of the lab, same tiling rule -----------------
-	{ "DawnmereFenceStone0",    ZM_PROP_FENCE_STONE, 166.00f,  92.00f,
+	// ---- A dry-stone wall behind the lab, same tiling rule -----------------
+	{ "DawnmereFenceStone0",    ZM_PROP_FENCE_STONE, 140.00f, 123.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereFenceStone1",    ZM_PROP_FENCE_STONE, 168.00f,  92.00f,
+	{ "DawnmereFenceStone1",    ZM_PROP_FENCE_STONE, 142.00f, 123.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereFenceStone2",    ZM_PROP_FENCE_STONE, 170.00f,  92.00f,
+	{ "DawnmereFenceStone2",    ZM_PROP_FENCE_STONE, 144.00f, 123.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereFenceStone3",    ZM_PROP_FENCE_STONE, 172.00f,  92.00f,
+	{ "DawnmereFenceStone3",    ZM_PROP_FENCE_STONE, 146.00f, 123.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 
 	// ---- Stone scatter on the outskirts -------------------------------------
@@ -464,18 +466,18 @@ inline constexpr ZM_DawnmereProp axZM_DAWNMERE_PROPS[] =
 		fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y, ZM_DAWNMERE_ANCHOR_FREE },
 	{ "DawnmereRockLargeEast",  ZM_PROP_ROCK_LARGE, 188.00f, 106.00f,
 		fZM_INTERIOR_YAW90_W, fZM_INTERIOR_YAW90_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereBoulder",        ZM_PROP_BOULDER,    200.00f,  86.00f,
+	{ "DawnmereBoulder",        ZM_PROP_BOULDER,    196.00f,  86.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 
 	// ---- Traversal ledges on the rising ground south of town ----------------
 	//
 	// The town sits on a ~24 m shelf and the hills crest at 32-36 m, so the south
 	// flanks are where a step-down reads as one.
-	{ "DawnmereLedgeLowWest",   ZM_PROP_LEDGE_LOW,   66.00f,  40.00f,
+	{ "DawnmereLedgeLowWest",   ZM_PROP_LEDGE_LOW,   70.00f,  40.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 	{ "DawnmereLedgeLowEast",   ZM_PROP_LEDGE_LOW,  176.00f,  40.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
-	{ "DawnmereLedgeHighWest",  ZM_PROP_LEDGE_HIGH,  58.00f,  32.00f,
+	{ "DawnmereLedgeHighWest",  ZM_PROP_LEDGE_HIGH,  62.00f,  32.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },
 	{ "DawnmereLedgeHighEast",  ZM_PROP_LEDGE_HIGH, 184.00f,  32.00f,
 		fZM_INTERIOR_YAW0_W, fZM_INTERIOR_YAW0_Y, ZM_DAWNMERE_ANCHOR_FREE },

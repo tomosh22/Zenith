@@ -1,0 +1,2 @@
+# Preserve the upstream license bytes and their recorded SHA-256 values.
+*.txt -text

@@ -67,6 +67,18 @@ four-map PBR sets, so what remains missing is FORM, not material.
 
 ## 0. The tick-off protocol
 
+**2026-09-22 stopping point (user requested):** Pipwit, Trillark and Stratavis
+now have normal/shiny GLBs and editable sources, bringing the local inventory
+to 149 GLBs (113 new primary candidates, 27 shiny variants, nine retained
+sources). 125 creature primary models remain missing. Their final 27-pose
+review, six production skin/PBR/runtime-mesh audits, three real battle captures
+and the original battle round-trip regression passed. The gallery contains
+436 actual engine frames. Feather variation, anatomy, material response and
+geometry budgets still need refinement, so these three art rows remain open.
+The goal is paused at this family; no additional asset family is started.
+Details and provenance are in `Tools/Art/CREATURE_REVIEW.md` and the source
+sidecars. Source presence is not photorealistic acceptance.
+
 Every commissionable item below is a checkbox row, in the same shape
 `Roadmap.md` uses. The convention there is ZM-D-162: **where a document and a
 checkbox disagree, the checkbox wins, and it is scored against its LITERAL
@@ -75,7 +87,7 @@ TEXT.** That applies here too.
 ### 0.1 The row format
 
 ```
-- [ ] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- <prompt>
+- [x] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- <prompt> -- source: `Games/Zenithmon/Assets/Props/Bed/Bed.glb`
 ```
 
 and once the asset is in the game:
@@ -329,11 +341,11 @@ m_fHeight`).
 ### 1.1 Interior furniture -- highest value, seen closest
 
 - [ ] `AB-PROP-01` **Bed** -- 2.0 x 1.2 x 0.7 m -- A single wooden bed with a stuffed mattress and a folded blanket, low headboard, slightly worn. Reads from above and from one side; the player never sees under it.
-- [ ] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately.
-- [ ] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber.
-- [ ] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive.
-- [ ] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture.
-- [ ] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors.
+- [x] `AB-PROP-02` **Table** -- 1.4 x 0.9 x 0.9 m -- A plain four-legged kitchen table in stained timber, scuffed along one edge. Nothing on it; props are placed separately. -- source: `Games/Zenithmon/Assets/Props/Table/Table.glb`
+- [x] `AB-PROP-03` **Chair** -- 0.6 x 0.6 x 1.0 m -- A simple wooden chair with a slatted back, matching the table's timber. -- source: `Games/Zenithmon/Assets/Props/Chair/Chair.glb`
+- [x] `AB-PROP-04` **Shelf** -- 1.2 x 0.4 x 2.0 m -- A tall open bookshelf, four shelves, leaning very slightly. Books, jars and boxes modelled in as part of the mesh: it is set dressing, never interactive. -- source: `Games/Zenithmon/Assets/Props/Shelf/Shelf.glb`
+- [x] `AB-PROP-05` **Counter** -- 2.2 x 0.7 x 1.0 m -- A laboratory bench: pale resin worktop, steel frame, a shallow lip at the back. Clinical rather than domestic; this is the ProfLab's furniture. -- source: `Games/Zenithmon/Assets/Props/Counter/Counter.glb`
+- [x] `AB-PROP-06` **Barrel** -- 0.7 x 0.7 x 1.0 m -- A banded wooden barrel, lid on, staves slightly uneven. Used as storage indoors and as scatter outdoors. -- source: `Games/Zenithmon/Assets/Props/Barrel/Barrel.glb`
 
 **★ THE FOOTPRINT IS A HARD CONSTRAINT, NOT A GUIDE.** Interior furniture carries
 an AABB static collider sized from its own mesh bounds
@@ -345,7 +357,7 @@ collider in a corridor the automated walk driver has no way around
 
 ### 1.2 Outdoor fixtures
 
-- [ ] `AB-PROP-07` **LampPost** -- 0.4 x 0.4 x 3.0 m -- A cast-iron street lamp with a glass lantern head, town-scale.
+- [x] `AB-PROP-07` **LampPost** -- 0.4 x 0.4 x 3.0 m -- A cast-iron street lamp with a glass lantern head, town-scale. -- source: `Games/Zenithmon/Assets/Props/LampPost/LampPost.glb`
 - [ ] `AB-PROP-08` **LanternPost** -- 0.4 x 0.4 x 2.4 m -- The shorter, warmer cousin of the lamp post; a hung lantern rather than a fixed head.
 - [ ] `AB-PROP-09` **FenceWood** -- A short run of rough post-and-rail timber fencing. Must tile end to end with no visible seam.
 - [ ] `AB-PROP-10` **FenceStone** -- A dry-stone wall section, same tiling requirement.
@@ -958,7 +970,199 @@ room that already lights it correctly. That held up.
 Anything part-delivered, blocked or rejected goes here with its id, rather than
 being encoded as a ticked-with-a-caveat row (protocol 0.1).
 
-*(none)*
+2026-09-22 local authoring pass: `AB-PROP-08..10` and `AB-PROP-12..28`
+now have Blender-authored GLBs under `Assets/Props/<Name>/<Name>.glb` and
+editable `.blend` sources. `Tools/Art/create_missing_props.py` reproduces them;
+the eight earlier imports are preserved. All twenty new models embed 1024-square
+base colour, tangent normal and glTF G-roughness/B-metallic textures. They are
+in visual review, so their rows remain unchecked. Export and PBR-map presence
+alone do not establish the requested photorealistic quality.
+
+The seven earlier furniture/lamp deliveries had lost their checkmarks despite
+their sources and runtime placements still existing. Their rows have been
+reconciled against the local GLBs and the passing imported-prop capture run.
+
+The same pass adds sources for all thirty compiled building rows (including the
+four omitted from section 4), both interior shells, and thirty-four missing
+humans. Architecture reads its dimensions from the live C++ contracts. Human
+sources are costume/sculpt variants of the supplied Male anatomical source,
+under `Assets/Meshes/Humans/<Name>/`; the existing binder retains the shared rig.
+PlayerM continues using its existing engine source. These are **first-pass
+candidates**, not thirty-four independently approved photorealistic characters.
+Their rows remain unchecked pending art review.
+
+The source inventory is reproducible with `Tools/Art/audit_art_brief.py`. It
+finds **243 model rows** (28 props, 152 creatures, 35 humans, 26 buildings and
+2 interiors), rather than relying on the stale headline counts. **137 creature
+rows still have no primary GLB source**; fifteen creatures are candidates under visual
+review. PlayerM's real runtime mapping to the supplied engine `Male.glb` counts
+once. There are 125 local source GLBs including the four additional compiled
+buildings: nine pre-existing sources, 101 new primary candidates and fifteen shiny variants.
+Audio, iconography and VFX are outside this 3D-model inventory.
+
+The Fernfawn procedural study and its anatomy revision did not meet the requested
+photorealistic quality. They are deliberately outside runtime Assets, under
+`Build/artifacts/authored_assets/studies/`. `Tools/Art/create_fernfawn_study.py`
+retains the experiment; it is not a delivered creature and does not justify
+checking any creature row. The remaining creature commission is outstanding.
+
+The subsequent `Tools/Art/create_fernfawn.py` source is retained separately at
+`Build/artifacts/authored_assets/creature_work/Fernfawn/`. It has a continuous
+body, 2K coat maps and an 18-joint glTF skin. The shared-skeleton reader remaps
+glTF joint order by name and refuses mismatched bind matrices or invalid weights.
+Six engine review-world poses have been captured through
+`ZM_AuthoredCreatureStudyCapture_Test`. Those captures expose unsatisfactory
+shoulder/neck deformation in the action poses, and the surface still falls short
+of photorealism. This remains an unaccepted study outside runtime Assets; no
+creature delivery checkbox changes for that earlier study.
+
+The next anatomical development source, `create_fernfawn_from_reference.py`,
+adapts the CC0 CDmir deer with provenance in `Tools/Art/source_references.json`.
+Its working source lives under `creature_work/FernfawnReference/`, with an
+18-joint anatomical rest rig, embedded glTF PBR textures, juvenile markings and a
+fern crown. The normal/shiny GLBs and editable blend are now also installed as
+candidates in `Assets/Creatures/Fernfawn`. The explicit importer preserves this
+rig, material sections and six clips, and the new Faint recipe supplies a
+grounded side fall. The shiny audit proves unchanged geometry, skin and relief.
+Tools boot and explicit bakes respect source ownership, including on warm runs.
+Nine engine review captures cover the six main poses, two intermediate fall
+poses and shiny Idle. Visual finish is still unsatisfactory, so no creature
+delivery checkbox has been checked.
+
+The production-source unit suite passed (4,620 ran, 4,618 passed, zero failed,
+two skipped). `ZM_AuthoredCreatureBattleCapture_Test` verified the actual grass
+encounter, loaded source model, platform grounding, battle completion and return
+to the overworld. Two real battle captures now accompany the review poses.
+
+`create_stone_creatures.py` supplies Rubblet, Cairngo and Monolode candidates
+with separately composed cobble, cairn and monolith forms, recessed mineral eyes,
+quartz veins and the four named blob joints. Their normal/shiny GLBs and editable
+scenes are installed under the corresponding `Assets/Creatures` directories.
+The stone surface derives from the CC0 Poly Haven Rock Face maps; provenance
+and original hashes are retained. Each delivery embeds 2K glTF PBR maps.
+The production importer fits all six clips to the actual surface and replaces
+soft-body deflation with a grounded sideways fall. Nine engine review poses per
+species cover the normal actions, intermediate falls and shiny Idle. These are
+candidates; source presence does not close their art review or check their rows.
+All three installed stone models passed real encounter/battle round trips and
+the final 27-pose engine review. Six battle views and the motion poses are in the
+174-image authored-asset gallery; original full frames are retained alongside
+the viewport crops.
+
+`create_fungal_creatures.py` adds Sporeling, Duskcap and Fungrove candidates with
+button, parasol and layered canopy forms. Original modelled lamellae, velum scales
+and branching mycelium accompany embedded pigment, normal and roughness maps.
+Ten-joint skins retain the floater topology, with a fitted wilt and measured
+clearance across all six actions. Normal/shiny sources and editable Blender
+scenes are installed in their `Assets/Creatures` folders. The 27-pose engine
+review passed, including intermediate wilt poses and shiny Idle. Surface finish,
+organic asymmetry, cap/branch intersections and photorealistic acceptance remain
+open; these source additions do not check any delivery row.
+The three installed candidates also passed real grass encounter/battle round
+trips, including canonical source identity, skin loading, hover placement and
+return to the overworld. Six production-source skin/PBR audits passed. The
+gallery includes six fungal battle views and 27 fungal motion poses; full
+framebuffers remain alongside crops.
+
+Named invocations of `create_fernfawn_from_reference.py` now also supply
+Thicketbuck and Sylvastag candidates from the same pinned CC0 deer anatomy.
+Adult proportions, fading juvenile markings, fused branching antlers and fern
+growth distinguish the later stages. All six material sections have embedded
+glTF PBR textures; the antler UVs are explicitly checked after remeshing and
+joining. Normal/shiny sources, editable scenes and provenance are installed in
+their respective `Assets/Creatures` folders. The two-species 18-pose engine
+review passed, and Fernfawn's nine-pose regression capture passed after sharing
+the anatomical side-fall recipe. Surface quality, antler naturalism and final
+art/animation acceptance remain open; no delivery row is checked by this work.
+Both installed adults passed real encounter/battle round trips, with source
+identity, skin loading, presentation-floor placement and overworld return
+verified. Four production skin/PBR audits passed, with bind errors below 3e-8.
+The adult pose review also passed after separating the normal/shiny subjects
+to prevent the other model from entering the large-creature camera view.
+The refreshed gallery contains 229 actual engine frames, including four adult
+deer battle views and 18 adult motion poses. Original full frames are retained.
+
+`create_lancefish.py` supplies Finlet, Marlance and Tidesabre source candidates,
+with original continuous bodies, fins and rays, gill seams, eyes and graduated
+rostra. All seven material sections embed glTF PBR maps; eight aquatic joints
+use anatomical rest positions. Normal/shiny sources and editable scenes are
+installed under their `Assets/Creatures` folders. The final 27-pose review
+passed after fitting the action bends, a whole-body Faint roll, and adaptive
+surface clearance around fin/bill transitions. Six production skin/PBR audits
+passed with zero bind and joint-position errors. The models still need natural
+surface detail, fin translucency, facial anatomy and final visual/motion review;
+their delivery rows remain unchecked.
+All three installed sources passed real encounter/battle round trips, including
+source identity, skin loading, hover placement and overworld return. The gallery
+now contains 262 actual engine captures, including six lancefish battle views
+and 27 lancefish motion poses; full framebuffers are retained beside crops.
+
+`create_mineral_beetles.py` adds Prismite, Geoborer and Crystallisk candidates,
+with paired wing cases, ventral plates, articulated legs/tarsi/claws, segmented
+antennae, mandibles, tactile setae and developing mineral growth. Seven embedded
+glTF PBR sections use original cuticle, compound-eye and mineral/deposit maps.
+The 19-joint anatomical skins preserve insectoid topology. Normal/shiny sources,
+editable scenes and provenance are installed in their `Assets/Creatures` folders.
+The corrected 27-pose review passed after visual inspection caught and corrected
+an unnatural Faint pose balancing on the legs. The shared clearance helper also
+passed the lancefish regression with all 18 clips byte-identical. Mineral
+response, surface irregularity, stronger stage distinctions and final art/motion
+acceptance remain outstanding; source presence does not check the delivery rows.
+All three installed beetles passed real battle round trips after making the
+capture party fixture deterministic and requiring an observed player victory.
+Six production source audits passed; Finlet and the original round-trip test
+also passed after the capture fixture restored game state. The gallery now has
+295 actual engine frames, including six beetle battle views and 27 motion poses.
+
+Prismite now uses a revised anatomical candidate adapted from Artec 3D's Beetle
+scan, with pinned source hashes, retained attribution/license notices and
+copyright metadata in both GLBs. Its 19-joint skin passed a closer nine-pose
+review after correcting visible leg stretching. The installed pair passed
+production audits and a real battle round trip; the original battle regression
+also passed afterward. The gallery contains 304 engine frames. Its photographic
+lighting, mineral finish, motion polish and triangle budget remain under review,
+so the delivery checkbox stays open. Geoborer and Crystallisk retain their prior
+sources, and 137 creature primary sources are still missing.
+
+Minnet, Shoalfin and Torrentfin now have attributed scan-derived body sources
+with original fin membranes/rays and eye overlays. Each retains the eight-joint
+aquatic topology, five embedded PBR sections and normal/shiny/editable deliveries.
+The closer 27-pose review, six production audits and all three real battle round
+trips passed, followed by the original battle regression. The gallery contains
+337 actual engine frames and 134 creature primary sources remain absent.
+The three art rows stay open: photo lighting, face/motion polish and
+fin-root and ray detail remain unfinished. The revised fin membranes now use
+two-sided glTF BLEND textures, preserved as BC3 sRGB by the importer and drawn
+from the engine's animated vertex arena. Their technical and visual review
+does not establish final photorealistic finish.
+
+Puffseed, Dandelift and Zephyrbloom now have original botanical normal/shiny
+GLBs, editable Blender sources and ten-joint floater skins. Their 27-pose review,
+six installed source audits and three real battle captures passed, followed by
+the original battle round-trip regression. Open petals exposed a signed-volume
+winding error in the GLB importer; node-transform-aware conversion corrects it.
+The gallery contains 370 engine frames and 131 creature primary sources remain
+absent. These rows remain open pending photorealistic finishing and filament,
+leaf, material and motion review.
+
+Kindlet, Scorchel and Pyroclast also have original Blender-authored normal/shiny
+GLBs with embedded PBR maps and canonical fourteen-joint biped skins. A continuous
+voxel sculpt replaces disconnected body primitives; skin pigmentation, scale
+relief and roughness are baked to 2048px maps. The family-specific motion adapter
+fits floor contact and provides a side collapse. The 27-pose review and six
+working-source audits passed before installation. There are now 128 creature
+primary sources missing. Six installed-source/runtime-mesh audits and all three
+real battle captures also passed, followed by the original round-trip regression.
+The gallery has 403 actual engine frames. These three rows remain open: anatomy, hip/shoulder
+folds, scale variation and mineral erosion still need photorealistic finishing.
+
+Runtime integration uses the existing prop, interior-shell and facade consumers.
+`ZM_HumanImportedModelRef` now offers each cast member's imported bundle and the
+runtime validates the requested path and skeleton before falling back. Static
+bakes check source ownership before writing, so a later generator invocation
+cannot replace an imported building, interior or prop. Dedicated architecture
+and cast capture tests place the entire rosters in in-engine review worlds;
+they do not add unrelated gyms or characters to the story town.
 
 ★ `AB-PROP-01` HELD AN ENTRY HERE AND NO LONGER DOES. It was unticked-and-noted
 while the only thing standing between it and a tick was that its source is

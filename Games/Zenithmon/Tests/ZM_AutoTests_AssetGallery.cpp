@@ -4,15 +4,25 @@
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Flux_Screenshot.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "Flux/Flux_RendererImpl.h"
+#include "Flux/Translucency/Flux_TranslucencyImpl.h"
+#include "Flux/UnifiedMesh/Flux_UnifiedMeshImpl.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Input/Zenith_InputSimulator.h"
 #include "Maths/Zenith_Maths.h"
 #include "UnitTests/Zenith_UnitTests.h"
@@ -28,6 +38,14 @@
 #include "Zenithmon/Source/Data/ZM_HumanData.h"
 #include "Zenithmon/Source/Data/ZM_BuildingData.h"
 #include "Zenithmon/Source/Data/ZM_PropData.h"
+#include "Zenithmon/Source/World/ZM_HumanBody.h"
+#ifdef ZENITH_TOOLS
+#include "../../../Tools/Zenith_Tools_HumanModelExport.h"
+#include "../../../Tools/Zenith_Tools_GlbImport.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "Zenithmon/Source/Gen/ZM_CreatureAnimGen.h"
+#include "Zenithmon/Source/Gen/ZM_AuthoredCreature.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -35,6 +53,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 // ============================================================================
 // ZM_AutoTests_AssetGallery -- the S4 ALL-FAMILIES visual sign-off gate. A
@@ -255,6 +274,7 @@ namespace
 	{
 		g_szAGFailure = szReason;
 		g_bAGFailed = true;
+		Zenith_Error(LOG_CATEGORY_UNITTEST,"[Authored asset review] %s",szReason);
 	}
 
 	bool DiskFilePresent(const std::string& strPath)
@@ -397,12 +417,14 @@ namespace
 		// The gallery deliberately normalises family display size, but it must still
 		// honour the same measured mesh-origin policy as the battle presenter or a
 		// serpent can sink through the common floor while a floater drifts arbitrarily.
-		xTransform.SetPosition({ fX,
-			ZM_CreaturePresentationOriginOffsetY(xEntry.m_eSpecies) * fScale,
-			fZM_AG_CREATURE_ROW_Z });
+		auto& xModel = xEntity.AddComponent<Zenith_ModelComponent>(); xModel.LoadModel(szRef);
+		Zenith_Maths::Vector3 xMin, xMax;
+		const float fOffset = xModel.GetFirstMeshLocalBounds(xMin, xMax)
+			? ZM_CreaturePresentationFloorY(ZM_GetCreatureOriginPolicy(ZM_GetSpeciesData(xEntry.m_eSpecies).m_eArchetype)) - xMin.y
+			: ZM_CreaturePresentationOriginOffsetY(xEntry.m_eSpecies);
+		xTransform.SetPosition({ fX, fOffset * fScale, fZM_AG_CREATURE_ROW_Z });
 		xTransform.SetScale({ fScale, fScale, fScale });
 
-		xEntity.AddComponent<Zenith_ModelComponent>().LoadModel(szRef);
 	}
 
 	void BuildAGHuman(Zenith_SceneData* pxSceneData, u_int uIndex)
@@ -746,5 +768,514 @@ static const Zenith_AutomatedTest g_xZMAssetGalleryTest = {
 	true /* m_bRequiresGraphics */,
 };
 ZENITH_AUTOMATED_TEST_REGISTER(g_xZMAssetGalleryTest);
+
+// Full architecture review world. Every roster building is placed at its real
+// metre scale on a separate plot, so new sources can be reviewed even before
+// their story town has been authored. Dawnmere still loads Home/Lab normally.
+namespace
+{
+	u_int g_uArchitectureShots = 0;
+	std::string ArchitectureShot(u_int u)
+	{
+		const auto xRoot = std::filesystem::weakly_canonical(std::filesystem::path(GAME_ASSETS_DIR) / "../../..");
+		return (xRoot / "Build/artifacts/authored_assets/architecture" /
+			(std::string(ZM_GetBuildingName(static_cast<ZM_BUILDING_ID>(u))) + ".tga")).string();
+	}
+	Zenith_Maths::Vector3 ArchitecturePlot(u_int u)
+	{
+		return { static_cast<float>(u % 6u) * 65.0f, 0.0f, static_cast<float>(u / 6u) * 65.0f };
+	}
+	void SetupArchitecture()
+	{
+		g_bAGFailed = false; g_bAGActive = false; g_uArchitectureShots = 0;
+		ApplyAGGraphicsOptions();
+		Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+		g_xAGPreviousScene = g_xEngine.Scenes().GetActiveScene();
+		g_xAGScene = g_xEngine.Scenes().LoadScene("ZM_AuthoredArchitecture", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		auto* pxScene = g_xEngine.Scenes().GetSceneData(g_xAGScene);
+		if (!pxScene || !g_xEngine.Scenes().SetActiveScene(g_xAGScene)) { FailAG("architecture scene unavailable"); return; }
+		g_bAGActive = true;
+		auto xCamera = g_xEngine.Scenes().CreateEntity(pxScene, "ArchitectureCamera");
+		auto& xCam = xCamera.AddComponent<Zenith_CameraComponent>();
+		xCam.SetFOV(glm::radians(52.0f)); xCam.SetNearPlane(.1f); xCam.SetFarPlane(120.0f);
+		Zenith_UnitTests::SetMainCameraForTest(pxScene, xCamera.GetEntityID());
+		auto xSun = g_xEngine.Scenes().CreateEntity(pxScene, "ArchitectureSun");
+		auto& xLight = xSun.AddComponent<Zenith_LightComponent>();
+		xLight.SetLightType(LIGHT_TYPE_DIRECTIONAL); xLight.SetColor({1.0f,.96f,.88f});
+		xLight.SetIntensity(2.5f); xLight.SetWorldDirection(glm::normalize(Zenith_Maths::Vector3(-.4f,-.8f,.35f)));
+		g_xAGFloorGeometry = Zenith_MeshGeometryAsset::CreateUnitCube();
+		g_xAGFloorMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto* pxMat = g_xAGFloorMaterial.GetDirect();
+		pxMat->SetName("Architecture gravel plot"); pxMat->SetBaseColor({.24f,.24f,.21f,1});
+		pxMat->SetRoughness(.92f); pxMat->SetMetallic(0);
+		for (u_int u=0; u<ZM_BUILDING_COUNT; ++u)
+		{
+			const auto eId = static_cast<ZM_BUILDING_ID>(u);
+			std::error_code xError;
+			std::filesystem::create_directories(std::filesystem::path(ArchitectureShot(u)).parent_path(), xError);
+			std::filesystem::remove(ArchitectureShot(u), xError);
+			char acRef[512]; ZM_BuildingAssetPath(eId,ZM_BUILDING_ASSET_MODEL,acRef,sizeof(acRef));
+			auto xSource = std::filesystem::path(Zenith_AssetRegistry::ResolvePath(acRef)); xSource.replace_extension(".glb");
+			if (!DiskFilePresent(xSource.string()) || !ZM_EnsureBuildingBaked(eId)) { FailAG("authored building source/import missing"); return; }
+			auto xEntity = g_xEngine.Scenes().CreateEntity(pxScene,ZM_GetBuildingName(eId));
+			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(ArchitecturePlot(u));
+			auto& xModel=xEntity.AddComponent<Zenith_ModelComponent>(); xModel.LoadModel(acRef);
+			if (xModel.GetModelPath()!=acRef || !xModel.GetNumMeshes()) { FailAG("authored building failed to load"); return; }
+			auto xFloor=g_xEngine.Scenes().CreateEntity(pxScene,"ArchitecturePlot");
+			xFloor.GetComponent<Zenith_TransformComponent>().SetPosition(ArchitecturePlot(u)+Zenith_Maths::Vector3(0,-.1f,0));
+			xFloor.GetComponent<Zenith_TransformComponent>().SetScale({44,.2f,44});
+			xFloor.AddComponent<Zenith_ModelComponent>().AddMeshEntry(*g_xAGFloorGeometry.GetDirect()->GetGeometry(),*pxMat);
+		}
+	}
+	bool StepArchitecture(int iFrame)
+	{
+		if (!g_bAGActive || g_bAGFailed) { return false; }
+		const u_int u=static_cast<u_int>(iFrame/150);
+		if(u>=ZM_BUILDING_COUNT) { return false; }
+		const auto& xData=ZM_GetBuildingData(static_cast<ZM_BUILDING_ID>(u));
+		// Model bounds vary with architectural silhouette (spires, tank domes,
+		// stepped tower). A generous plot-sized lens keeps the entire roof visible.
+		const auto xBase=ArchitecturePlot(u);
+		const float fDistance=(u==ZM_BUILDING_BATTLE_TOWER)?23.0f:std::max(10.0f,std::max(xData.m_fWidth,xData.m_fDepth)*1.25f);
+		auto* pxCamera=FindAGCamera();
+		if(!pxCamera) { FailAG("architecture camera missing"); return false; }
+		pxCamera->SetFarPlane(fDistance*2.0f);
+		AimCameraAt(*pxCamera,xBase+Zenith_Maths::Vector3(fDistance*.65f,fDistance*.50f,-fDistance),
+			xBase+Zenith_Maths::Vector3(0,(u==ZM_BUILDING_BATTLE_TOWER)?8.0f:3.5f,0));
+		if(iFrame%150==130) { Flux_Screenshot::RequestDump(ArchitectureShot(u).c_str()); ++g_uArchitectureShots; }
+		return true;
+	}
+	bool VerifyArchitecture()
+	{
+		bool bOk=!g_bAGFailed && g_uArchitectureShots==ZM_BUILDING_COUNT && CountLoadedAGModels()==ZM_BUILDING_COUNT;
+		for(u_int u=0;u<ZM_BUILDING_COUNT;++u) { bOk=DiskFilePresent(ArchitectureShot(u)) && bOk; }
+		CleanupAGScene(); return bOk;
+	}
+}
+static const Zenith_AutomatedTest g_xArchitectureCapture = {
+	"ZM_AuthoredArchitectureCapture_Test", &SetupArchitecture, &StepArchitecture,
+	&VerifyArchitecture, 4700, true, true, &CleanupAGScene,
+};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xArchitectureCapture);
+
+#ifdef ZENITH_TOOLS
+namespace
+{
+	std::vector<Zenith_EntityID> g_xCastEntities;
+	u_int g_uCastShots=0;
+	std::string CastShot(u_int u, bool bWalk)
+	{
+		const auto xRoot=std::filesystem::weakly_canonical(std::filesystem::path(GAME_ASSETS_DIR)/"../../..");
+		return (xRoot/"Build/artifacts/authored_assets/cast"/(std::string(ZM_GetHumanName(static_cast<ZM_HUMAN_ID>(u)))+(bWalk?"_walk.tga":"_idle.tga"))).string();
+	}
+	void SetupCast()
+	{
+		g_bAGFailed=false;g_bAGActive=false;g_uCastShots=0;g_xCastEntities.clear();
+		ApplyAGGraphicsOptions();Zenith_InputSimulator::SetFixedDt(1.0f/60.0f);
+		g_xAGPreviousScene=g_xEngine.Scenes().GetActiveScene();
+		g_xAGScene=g_xEngine.Scenes().LoadScene("ZM_AuthoredCast",SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		auto* pxScene=g_xEngine.Scenes().GetSceneData(g_xAGScene);
+		if(!pxScene||!g_xEngine.Scenes().SetActiveScene(g_xAGScene)){FailAG("cast scene unavailable");return;}
+		g_bAGActive=true;
+		auto xCamera=g_xEngine.Scenes().CreateEntity(pxScene,"CastCamera");
+		auto& xCam=xCamera.AddComponent<Zenith_CameraComponent>();xCam.SetFOV(glm::radians(45.0f));xCam.SetNearPlane(.05f);xCam.SetFarPlane(8);
+		Zenith_UnitTests::SetMainCameraForTest(pxScene,xCamera.GetEntityID());
+		auto xSun=g_xEngine.Scenes().CreateEntity(pxScene,"CastKey");auto& xLight=xSun.AddComponent<Zenith_LightComponent>();
+		xLight.SetLightType(LIGHT_TYPE_DIRECTIONAL);xLight.SetColor({1,.96f,.90f});xLight.SetIntensity(2.5f);xLight.SetWorldDirection(glm::normalize(Zenith_Maths::Vector3(-.4f,-.7f,-.5f)));
+		g_xAGFloorGeometry=Zenith_MeshGeometryAsset::CreateUnitCube();g_xAGFloorMaterial=Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto* pxMat=g_xAGFloorMaterial.GetDirect();pxMat->SetName("Cast review floor");pxMat->SetBaseColor({.20f,.21f,.19f,1});pxMat->SetRoughness(.9f);
+		auto xFloor=g_xEngine.Scenes().CreateEntity(pxScene,"CastFloor");
+		xFloor.GetComponent<Zenith_TransformComponent>().SetPosition({85,-.1f,0});xFloor.GetComponent<Zenith_TransformComponent>().SetScale({180,.2f,10});
+		xFloor.AddComponent<Zenith_ModelComponent>().AddMeshEntry(*g_xAGFloorGeometry.GetDirect()->GetGeometry(),*pxMat);
+		for(u_int u=0;u<ZM_HUMAN_COUNT;++u)
+		{
+			const auto eId=static_cast<ZM_HUMAN_ID>(u);const char* szRef=ZM_HumanImportedModelRef(eId);
+			if(!szRef){FailAG("cast imported path missing");return;}
+			auto xModelFile=std::filesystem::path(Zenith_AssetRegistry::ResolvePath(szRef));auto xSource=xModelFile;xSource.replace_extension(".glb");
+			std::error_code xError;
+			if(!DiskFilePresent(xSource.string())){FailAG("cast source missing");return;}
+			if(!DiskFilePresent(xModelFile.string()) || std::filesystem::last_write_time(xSource,xError)>std::filesystem::last_write_time(xModelFile,xError))
+			{
+				if(!Zenith_Tools_HumanModelExport::ExportBoundHumanModel(xSource.string()).m_bSuccess){FailAG("cast binding rejected");return;}
+			}
+			std::filesystem::create_directories(std::filesystem::path(CastShot(u,false)).parent_path(),xError);
+			std::filesystem::remove(CastShot(u,false),xError);std::filesystem::remove(CastShot(u,true),xError);
+			auto xEntity=g_xEngine.Scenes().CreateEntity(pxScene,ZM_GetHumanName(eId));
+			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition({u*5.0f,0,0});
+			xEntity.GetComponent<Zenith_TransformComponent>().SetScale({fZM_HUMAN_VISUAL_SCALE,fZM_HUMAN_VISUAL_SCALE,fZM_HUMAN_VISUAL_SCALE});
+			auto& xModel=xEntity.AddComponent<Zenith_ModelComponent>();xModel.LoadModel(szRef);
+			if(xModel.GetModelPath()!=szRef || !xModel.GetSkeletonInstance()){FailAG("cast model has no valid shared rig");return;}
+			const auto* pxAsset=Zenith_AssetRegistry::GetView<Zenith_ModelAsset>(szRef);
+			if(!pxAsset||!pxAsset->GetNumMeshes()){FailAG("cast model binding missing");return;}
+			const auto* pxMesh=Zenith_AssetRegistry::GetView<Zenith_MeshAsset>(pxAsset->GetMeshBinding(0).GetMeshPath());
+			if(!pxMesh){FailAG("cast mesh missing");return;}
+			xModel.SetModelSpaceOffset({0,-pxMesh->GetBoundsMin().y,0});
+			auto& xAnimator=xEntity.AddComponent<Zenith_AnimatorComponent>();xAnimator.GetController().Initialize(xModel.GetSkeletonInstance());
+			// Imported humans bind the shared rig; the game loads its five used
+			// clips explicitly rather than reading the model's animation list.
+			for(u_int c=0;c<ZM_HUMAN_CLIP_COUNT;++c)
+			{
+				char acClip[512];
+				if(!ZM_HumanSharedAssetPath(static_cast<ZM_HUMAN_SHARED_ASSET_KIND>(ZM_HUMAN_SHARED_ASSET_ANIM_IDLE+c),acClip,sizeof(acClip)) ||
+					!xAnimator.AddClipFromFile(Zenith_AssetRegistry::ResolvePath(acClip))){FailAG("cast clip failed to load");return;}
+			}
+			g_xCastEntities.push_back(xEntity.GetEntityID());
+		}
+	}
+	bool StepCast(int iFrame)
+	{
+		if(g_bAGFailed||!g_bAGActive){return false;}
+		const u_int u=static_cast<u_int>(iFrame/240);if(u>=g_xCastEntities.size()){return false;}
+		auto xEntity=g_xEngine.Scenes().ResolveEntity(g_xCastEntities[u]);auto& xAnimator=xEntity.GetComponent<Zenith_AnimatorComponent>();
+		const int iLocal=iFrame%240;
+		if(iLocal==2)xAnimator.PlayAnimation(ZM_HumanClipName(ZM_HUMAN_CLIP_IDLE),0);
+		if(iLocal==122)xAnimator.PlayAnimation(ZM_HumanClipName(ZM_HUMAN_CLIP_WALK),0);
+		auto* pxCamera=FindAGCamera();if(!pxCamera){FailAG("cast camera missing");return false;}
+		const Zenith_Maths::Vector3 xBase(u*5.0f,0,0);
+		AimCameraAt(*pxCamera,xBase+Zenith_Maths::Vector3(.85f,1.18f,3.2f),xBase+Zenith_Maths::Vector3(0,.93f,0));
+		if(iLocal==110||iLocal==230){Flux_Screenshot::RequestDump(CastShot(u,iLocal==230).c_str());++g_uCastShots;}
+		return true;
+	}
+	bool VerifyCast()
+	{
+		bool bOk=!g_bAGFailed&&g_uCastShots==ZM_HUMAN_COUNT*2u;
+		for(u_int u=0;u<ZM_HUMAN_COUNT;++u)bOk=DiskFilePresent(CastShot(u,false))&&DiskFilePresent(CastShot(u,true))&&bOk;
+		CleanupAGScene();g_xCastEntities.clear();return bOk;
+	}
+}
+static const Zenith_AutomatedTest g_xCastCapture={"ZM_AuthoredCastCapture_Test",&SetupCast,&StepCast,&VerifyCast,8600,true,true,&CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xCastCapture);
+
+// Development review of skinned sources. This harness publishes its separate
+// bundle in Build/artifacts; production source installation is an explicit step.
+namespace
+{
+	Zenith_EntityID g_xCreatureStudyEntity;
+	Zenith_EntityID g_xCreatureStudyShinyEntity;
+	u_int g_uCreatureStudyShots = 0;
+	std::string g_strCreatureStudyDirectory = "FernfawnReference", g_strCreatureStudyName = "Fernfawn";
+	float g_fCreatureStudyHeight = .8f, g_fCreatureStudySize = .8f, g_fCreatureStudyOffset = 0;
+	std::filesystem::path CreatureStudyPath(const std::string& strSuffix)
+	{
+		const auto xRoot = std::filesystem::weakly_canonical(std::filesystem::path(GAME_ASSETS_DIR) / "../../..");
+		return xRoot / "Build/artifacts/authored_assets/creature_work" / g_strCreatureStudyDirectory / (g_strCreatureStudyName + strSuffix);
+	}
+	std::string CreatureStudyShot(u_int u)
+	{
+		if (u == ZM_ANIM_CLIP_COUNT) return CreatureStudyPath("_engine_Shiny_Idle.tga").string();
+		return CreatureStudyPath(std::string("_engine_") + ZM_CreatureClipName(static_cast<ZM_ANIM_CLIP>(u)) + ".tga").string();
+	}
+	void SetupCreatureStudyForSpecies(ZM_SPECIES_ID eSpecies, const std::string& strDirectory)
+	{
+		g_strCreatureStudyName = ZM_GetSpeciesName(eSpecies); g_strCreatureStudyDirectory = strDirectory;
+		g_bAGFailed = false; g_bAGActive = false; g_uCreatureStudyShots = 0;
+		const auto strSource = CreatureStudyPath(".glb").string();
+		if (!DiskFilePresent(strSource)) { Zenith_AutomatedTestRunner::RequestSkip("Requested creature authoring source is absent"); return; }
+		const auto strModel = CreatureStudyPath(".zmodel").string();
+		const auto strShinyModel = CreatureStudyPath("_shiny.zmodel").string();
+		bool bImported = false;
+		if (!ZM_AuthoredCreature::Try(eSpecies, strModel, true, bImported) || !bImported)
+			{ FailAG("authored creature bundle import failed"); return; }
+		// A warm boot must preserve the published bundle, including the authored
+		// collapse, instead of running either the static importer or the generator.
+		std::error_code xError;
+		const auto xModelTime = std::filesystem::last_write_time(strModel, xError);
+		const auto xClipTime = std::filesystem::last_write_time(CreatureStudyPath("_Faint.zanim"), xError);
+		if (xError || !ZM_AuthoredCreature::Try(eSpecies, strModel, false, bImported) || !bImported ||
+			std::filesystem::last_write_time(strModel, xError) != xModelTime ||
+			std::filesystem::last_write_time(CreatureStudyPath("_Faint.zanim"), xError) != xClipTime || xError)
+			{ FailAG("authored creature warm import changed the bundle"); return; }
+		for (u_int u = 0; u <= ZM_ANIM_CLIP_COUNT; ++u) std::filesystem::remove(CreatureStudyShot(u), xError);
+		std::filesystem::remove(CreatureStudyPath("_engine_Faint_033.tga"), xError);
+		std::filesystem::remove(CreatureStudyPath("_engine_Faint_067.tga"), xError);
+		ApplyAGGraphicsOptions(); Zenith_InputSimulator::SetFixedDt(1.0f / 60.0f);
+		g_xAGPreviousScene = g_xEngine.Scenes().GetActiveScene();
+		g_xAGScene = g_xEngine.Scenes().LoadScene("ZM_CreatureStudy", SCENE_LOAD_ADDITIVE_WITHOUT_LOADING);
+		auto* pxScene = g_xEngine.Scenes().GetSceneData(g_xAGScene);
+		if (!pxScene || !g_xEngine.Scenes().SetActiveScene(g_xAGScene)) { FailAG("creature study scene unavailable"); return; }
+		g_bAGActive = true;
+		auto xCamera = g_xEngine.Scenes().CreateEntity(pxScene, "CreatureStudyCamera");
+		auto& xCam = xCamera.AddComponent<Zenith_CameraComponent>(); xCam.SetFOV(glm::radians(40.f)); xCam.SetNearPlane(.02f); xCam.SetFarPlane(15);
+		Zenith_UnitTests::SetMainCameraForTest(pxScene, xCamera.GetEntityID());
+		AimCameraAt(xCam, {51.12f,.78f,1.65f}, {50,.44f,.03f});
+		auto xSun = g_xEngine.Scenes().CreateEntity(pxScene, "CreatureStudySun"); auto& xLight = xSun.AddComponent<Zenith_LightComponent>();
+		xLight.SetLightType(LIGHT_TYPE_DIRECTIONAL); xLight.SetColor({1,.96f,.90f}); xLight.SetIntensity(2.5f);
+		xLight.SetWorldDirection(glm::normalize(Zenith_Maths::Vector3(-.4f,-.7f,-.5f)));
+		if (strDirectory.rfind("Windseed/", 0) == 0)
+		{
+			// The dense seed crown shades its stem. A low studio fill exposes
+			// leaf and pod response for review without changing source materials.
+			auto xFill = g_xEngine.Scenes().CreateEntity(pxScene, "WindseedStudyFill");
+			auto& xFillLight = xFill.AddComponent<Zenith_LightComponent>();
+			xFillLight.SetLightType(LIGHT_TYPE_DIRECTIONAL); xFillLight.SetColor({.85f,.9f,1.f});
+			xFillLight.SetIntensity(1.f);
+			xFillLight.SetWorldDirection(glm::normalize(Zenith_Maths::Vector3(.6f,-.25f,-.7f)));
+		}
+		g_xAGFloorGeometry = Zenith_MeshGeometryAsset::CreateUnitCube(); g_xAGFloorMaterial = Zenith_AssetRegistry::Create<Zenith_MaterialAsset>();
+		auto* pxMat = g_xAGFloorMaterial.GetDirect(); pxMat->SetName("Creature review ground"); pxMat->SetBaseColor({.16f,.19f,.12f,1}); pxMat->SetRoughness(.96f);
+		// Separate large normal/shiny models beyond the camera far plane. A tall
+		// antlered creature's wider framing could otherwise reveal the other pose.
+		for (u_int v = 0; v < 2; ++v)
+		{
+			auto xFloor = g_xEngine.Scenes().CreateEntity(pxScene, v ? "CreatureStudyShinyGround" : "CreatureStudyGround");
+			xFloor.GetComponent<Zenith_TransformComponent>().SetPosition({50+v*50.f,-.052f,0}); xFloor.GetComponent<Zenith_TransformComponent>().SetScale({32,.1f,12});
+			xFloor.AddComponent<Zenith_ModelComponent>().AddMeshEntry(*g_xAGFloorGeometry.GetDirect()->GetGeometry(), *pxMat);
+		}
+		for (u_int v = 0; v < 2; ++v)
+		{
+			auto xEntity = g_xEngine.Scenes().CreateEntity(pxScene, (g_strCreatureStudyName + (v ? "ShinyStudy" : "Study")).c_str());
+			(v ? g_xCreatureStudyShinyEntity : g_xCreatureStudyEntity) = xEntity.GetEntityID();
+			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition({50 + v * 50.f,0,0});
+			auto& xModel = xEntity.AddComponent<Zenith_ModelComponent>(); xModel.LoadModel(v ? strShinyModel : strModel);
+			if (!xModel.GetSkeletonInstance() || !xModel.GetNumMeshes()) { FailAG("creature study has no runtime skin"); return; }
+			Zenith_Maths::Vector3 lo, hi;
+			if (!xModel.GetFirstMeshLocalBounds(lo, hi)) { FailAG("creature study has no bounds"); return; }
+			g_fCreatureStudyHeight = hi.y;
+			g_fCreatureStudyOffset = ZM_CreaturePresentationFloorY(ZM_GetCreatureOriginPolicy(ZM_ResolveCreatureRecipe(eSpecies).m_eArchetype)) - lo.y;
+			xEntity.GetComponent<Zenith_TransformComponent>().SetPosition({50 + v * 50.f,g_fCreatureStudyOffset,0});
+			g_fCreatureStudySize = std::max({hi.x-lo.x,hi.y-lo.y,hi.z-lo.z});
+			auto& xAnimator = xEntity.AddComponent<Zenith_AnimatorComponent>(); xAnimator.GetController().Initialize(xModel.GetSkeletonInstance());
+			for (u_int u = 0; u < ZM_ANIM_CLIP_COUNT; ++u)
+			{
+				const auto strClip = CreatureStudyPath(std::string("_") + ZM_CreatureClipName(static_cast<ZM_ANIM_CLIP>(u)) + ".zanim").string();
+				if (!xAnimator.AddClipFromFile(strClip)) { FailAG("creature study clip cannot load"); return; }
+			}
+		}
+	}
+	void SetupCreatureStudy() { SetupCreatureStudyForSpecies(ZM_SPECIES_FERNFAWN, "FernfawnReference"); }
+	bool CheckSkinningWithoutOpaqueDraws()
+	{
+		// Exercise the production prepare with real animated fish, but no opaque
+		// draw items, then no skin jobs. Restore before this frame's normal gather.
+		auto& xRenderer = g_xEngine.FluxRenderer();
+		auto& xUnified = g_xEngine.UnifiedMesh();
+		const u_int uJobs = xRenderer.GetUnifiedSkinJobs().GetSize();
+		if (!uJobs) return false;
+		auto xScene = std::move(xRenderer.m_xUnifiedGPUScene);
+		xUnified.m_uSkinJobCount = 0;
+		xUnified.GatherUnifiedPacket(nullptr);
+		const bool bSkinOnly = xUnified.m_uSkinJobCount == uJobs && xUnified.m_uTotalDrawItems == 0;
+		auto xJobs = std::move(xRenderer.m_axUnifiedSkinJobs);
+		xUnified.GatherUnifiedPacket(nullptr);
+		const bool bEmpty = xUnified.m_uSkinJobCount == 0;
+		xRenderer.m_axUnifiedSkinJobs = std::move(xJobs);
+		xRenderer.m_xUnifiedGPUScene = std::move(xScene);
+		xUnified.GatherUnifiedPacket(nullptr);
+		return bSkinOnly && bEmpty && xUnified.m_uSkinJobCount == uJobs;
+	}
+	bool CheckShoalfishTranslucency(Flux_ModelInstance& xModel)
+	{
+		const auto& xPacket = g_xEngine.Translucency().m_axDrawPackets[kuFluxViewSlotMain];
+		u_int uExpected = 0;
+		for (u_int m = 0; m < xModel.GetNumMeshes(); ++m)
+		{
+			Flux_SkinnedInstanceKey xKey;
+			xKey.m_pvSkeleton = xModel.GetSkeletonInstance();
+			xKey.m_pvMeshAsset = xModel.GetMeshInstance(m)->GetSourceAsset();
+			xKey.m_uSubmeshSlot = m;
+			const auto* pxSkin = g_xEngine.FluxRenderer().FindUnifiedSkinnedDraw(xKey);
+			for (u_int s = 0; s < xModel.GetNumDrawSections(m); ++s)
+			{
+				Flux_MeshDrawSection xSection;
+				if (!xModel.GetDrawSection(m, s, xSection)) return false;
+				auto* pxMat = xModel.GetMeshMaterial(m, xSection.m_uMaterialSlot);
+				if (!pxMat || pxMat->GetResolved().m_xParams.m_eBlendMode != MATERIAL_BLEND_TRANSLUCENT) continue;
+				const auto* pxAlbedo = pxMat->GetDiffuseTexture();
+				if (!pxAlbedo || pxAlbedo->GetFormat() != TEXTURE_FORMAT_BC3_RGBA_SRGB) return false;
+				++uExpected;
+				bool bFound = false;
+				for (u_int i = 0; i < xPacket.GetSize(); ++i)
+				{
+					const auto& xDraw = xPacket.Get(i);
+					if (pxSkin && xDraw.m_pxMaterial == pxMat && xDraw.m_bSkinned &&
+						xDraw.m_pxMeshInstance == pxSkin->m_pxMesh && xDraw.m_uVertexOffset == pxSkin->m_uVertexOffset &&
+						xDraw.m_uFirstIndex == xSection.m_uFirstIndex && xDraw.m_uIndexCount == xSection.m_uIndexCount)
+						bFound = true;
+				}
+				if (!bFound) return false;
+			}
+		}
+		return uExpected > 0;
+	}
+	bool StepCreatureStudy(int iFrame)
+	{
+		if (!g_bAGActive || g_bAGFailed) return false;
+		const u_int u = static_cast<u_int>(iFrame / 150); if (u > ZM_ANIM_CLIP_COUNT) return false;
+		const bool bShiny = u == ZM_ANIM_CLIP_COUNT;
+		auto xEntity = g_xEngine.Scenes().ResolveEntity(bShiny ? g_xCreatureStudyShinyEntity : g_xCreatureStudyEntity); auto& xAnimator = xEntity.GetComponent<Zenith_AnimatorComponent>();
+		auto* pxCamera = FindAGCamera(); if (!pxCamera) { FailAG("creature study camera missing"); return false; }
+		const float fBase = bShiny ? 100.f : 50.f;
+		const bool bScanReview = g_strCreatureStudyDirectory == "MineralBeetlesScan/Prismite";
+		const bool bShoalfishReview = g_strCreatureStudyDirectory.rfind("Shoalfish/", 0) == 0;
+		if (bShoalfishReview && iFrame == 15 && !CheckSkinningWithoutOpaqueDraws())
+			{ FailAG("skin-only or empty scene retained incorrect skin jobs"); return false; }
+		AimCameraAt(*pxCamera, {fBase+g_fCreatureStudySize*(bScanReview ? .8f : 1.15f),
+			g_fCreatureStudyOffset+(bScanReview ? g_fCreatureStudySize*.85f : g_fCreatureStudyHeight*.95f),
+			g_fCreatureStudySize*(bScanReview ? 1.3f : bShoalfishReview ? .65f : 2.1f)},
+			{fBase,g_fCreatureStudyOffset+g_fCreatureStudyHeight*.48f,.03f});
+		const auto eClip = bShiny ? ZM_ANIM_CLIP_IDLE : static_cast<ZM_ANIM_CLIP>(u);
+		if (iFrame % 150 == 2) { xAnimator.PlayAnimation(ZM_CreatureClipName(eClip), 0); xAnimator.SetPlaybackSpeed(0); }
+		const float afPosePhases[] = {.3f, .25f, .5f, .5f, .25f, 1.f};
+		const int iLocal = iFrame % 150;
+		// Check the previous rendered packet after the pose/camera has settled.
+		// A bind-pose fallback or silently skipped membrane must fail the capture.
+		if (bShoalfishReview && (iLocal == 55 || iLocal == 80 || iLocal == 110) &&
+			!CheckShoalfishTranslucency(*xEntity.GetComponent<Zenith_ModelComponent>().GetModelInstance()))
+			{ FailAG("shoalfish membrane did not reach the animated translucent draw packet"); return false; }
+		const float fPhase = eClip == ZM_ANIM_CLIP_FAINT ? (iLocal < 60 ? 1.f/3 : iLocal < 85 ? 2.f/3 : 1.f) : afPosePhases[eClip];
+		if (iLocal >= 3 && !xAnimator.GetController().SeekDirectPlay(ZM_CreatureClipDurationSeconds(eClip) * fPhase))
+			{ FailAG("creature study clip cannot be sampled"); return false; }
+		if (iFrame % 150 == 110) { Flux_Screenshot::RequestDump(CreatureStudyShot(u).c_str()); ++g_uCreatureStudyShots; }
+		if (eClip == ZM_ANIM_CLIP_FAINT && (iLocal == 55 || iLocal == 80))
+		{
+			Flux_Screenshot::RequestDump(CreatureStudyPath(iLocal == 55 ? "_engine_Faint_033.tga" : "_engine_Faint_067.tga").string().c_str());
+			++g_uCreatureStudyShots;
+		}
+		return true;
+	}
+	bool VerifyCreatureStudy()
+	{
+		bool bOk = !g_bAGFailed && g_uCreatureStudyShots == ZM_ANIM_CLIP_COUNT + 3;
+		for (u_int u = 0; u <= ZM_ANIM_CLIP_COUNT; ++u) bOk = DiskFilePresent(CreatureStudyShot(u)) && bOk;
+		bOk = DiskFilePresent(CreatureStudyPath("_engine_Faint_033.tga").string()) && DiskFilePresent(CreatureStudyPath("_engine_Faint_067.tga").string()) && bOk;
+		CleanupAGScene(); return bOk;
+	}
+}
+static const Zenith_AutomatedTest g_xCreatureStudyCapture = {"ZM_AuthoredCreatureStudyCapture_Test", &SetupCreatureStudy, &StepCreatureStudy, &VerifyCreatureStudy, 1150, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xCreatureStudyCapture);
+
+namespace
+{
+	constexpr ZM_SPECIES_ID aeStoneSpecies[] = {ZM_SPECIES_RUBBLET,ZM_SPECIES_CAIRNGO,ZM_SPECIES_MONOLODE};
+	constexpr ZM_SPECIES_ID aeFungalSpecies[] = {ZM_SPECIES_SPORELING,ZM_SPECIES_DUSKCAP,ZM_SPECIES_FUNGROVE};
+	constexpr ZM_SPECIES_ID aeGroveDeerSpecies[] = {ZM_SPECIES_THICKETBUCK,ZM_SPECIES_SYLVASTAG};
+	constexpr ZM_SPECIES_ID aeLancefishSpecies[] = {ZM_SPECIES_FINLET,ZM_SPECIES_MARLANCE,ZM_SPECIES_TIDESABRE};
+	constexpr ZM_SPECIES_ID aeMineralBeetleSpecies[] = {ZM_SPECIES_PRISMITE,ZM_SPECIES_GEOBORER,ZM_SPECIES_CRYSTALLISK};
+	constexpr ZM_SPECIES_ID aeShoalfishSpecies[] = {ZM_SPECIES_MINNET,ZM_SPECIES_SHOALFIN,ZM_SPECIES_TORRENTFIN};
+	constexpr ZM_SPECIES_ID aeWindseedSpecies[] = {ZM_SPECIES_PUFFSEED,ZM_SPECIES_DANDELIFT,ZM_SPECIES_ZEPHYRBLOOM};
+	constexpr ZM_SPECIES_ID aeEmberBipedSpecies[] = {ZM_SPECIES_KINDLET,ZM_SPECIES_SCORCHEL,ZM_SPECIES_PYROCLAST};
+	constexpr ZM_SPECIES_ID aeLarkSpecies[] = {ZM_SPECIES_PIPWIT,ZM_SPECIES_TRILLARK,ZM_SPECIES_STRATAVIS};
+	const ZM_SPECIES_ID* g_peStudyFamily = aeStoneSpecies;
+	std::string g_strStudyFamily = "StoneLine/";
+	u_int g_uFamilySpecies = 0, g_uStudyFamilySize = 3;
+	bool g_bFamilyCaptureFailed = false;
+	void SetupStoneLineCapture()
+	{
+		g_peStudyFamily = aeStoneSpecies; g_strStudyFamily = "StoneLine/";
+		g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+		SetupCreatureStudyForSpecies(aeStoneSpecies[0], "StoneLine/Rubblet");
+	}
+	void SetupFungalLineCapture()
+	{
+		g_peStudyFamily = aeFungalSpecies; g_strStudyFamily = "FungalLine/";
+		g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+		SetupCreatureStudyForSpecies(aeFungalSpecies[0], "FungalLine/Sporeling");
+	}
+	void SetupGroveDeerCapture()
+	{
+		g_peStudyFamily = aeGroveDeerSpecies; g_strStudyFamily = "GroveDeer/";
+		g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 2;
+		SetupCreatureStudyForSpecies(aeGroveDeerSpecies[0], "GroveDeer/Thicketbuck");
+	}
+	void SetupLancefishCapture()
+	{
+		g_peStudyFamily = aeLancefishSpecies; g_strStudyFamily = "Lancefish/";
+		g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+		SetupCreatureStudyForSpecies(aeLancefishSpecies[0], "Lancefish/Finlet");
+	}
+	void SetupMineralBeetleCapture()
+	{
+		g_peStudyFamily = aeMineralBeetleSpecies; g_strStudyFamily = "MineralBeetles/";
+		g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+		SetupCreatureStudyForSpecies(aeMineralBeetleSpecies[0], "MineralBeetles/Prismite");
+	}
+	void SetupScannedBeetleCapture()
+	{
+		SetupCreatureStudyForSpecies(ZM_SPECIES_PRISMITE, "MineralBeetlesScan/Prismite");
+	}
+	void SetupShoalfishCapture()
+	{
+		g_peStudyFamily = aeShoalfishSpecies; g_strStudyFamily = "Shoalfish/";
+		g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+		SetupCreatureStudyForSpecies(aeShoalfishSpecies[0], "Shoalfish/Minnet");
+	}
+	bool StepCreatureFamilyCapture(int iFrame)
+	{
+		if (g_bFamilyCaptureFailed || g_bAGFailed) return false;
+		const u_int uSpecies = static_cast<u_int>(iFrame / 1050);
+		if (uSpecies >= g_uStudyFamilySize) return false;
+		if (uSpecies != g_uFamilySpecies)
+		{
+			if (!VerifyCreatureStudy()) { g_bFamilyCaptureFailed = true; return false; }
+			g_uFamilySpecies = uSpecies;
+			SetupCreatureStudyForSpecies(g_peStudyFamily[uSpecies], g_strStudyFamily + ZM_GetSpeciesName(g_peStudyFamily[uSpecies]));
+		}
+		return StepCreatureStudy(iFrame % 1050);
+	}
+	bool VerifyCreatureFamilyCapture()
+	{
+		const bool bFinal = VerifyCreatureStudy();
+		return !g_bFamilyCaptureFailed && g_uFamilySpecies + 1 == g_uStudyFamilySize && bFinal;
+	}
+}
+static void SetupLarkCapture()
+{
+	g_peStudyFamily = aeLarkSpecies; g_strStudyFamily = "LarkLine/";
+	g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+	SetupCreatureStudyForSpecies(aeLarkSpecies[0], "LarkLine/Pipwit");
+}
+static const Zenith_AutomatedTest g_xLarkCapture = {"ZM_AuthoredLarkCapture_Test", &SetupLarkCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xLarkCapture);
+
+static void SetupEmberBipedCapture()
+{
+	g_peStudyFamily = aeEmberBipedSpecies; g_strStudyFamily = "EmberBipeds/";
+	g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+	SetupCreatureStudyForSpecies(aeEmberBipedSpecies[0], "EmberBipeds/Kindlet");
+}
+static const Zenith_AutomatedTest g_xEmberBipedCapture = {"ZM_AuthoredEmberBipedCapture_Test", &SetupEmberBipedCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xEmberBipedCapture);
+
+static void SetupWindseedCapture()
+{
+	g_peStudyFamily = aeWindseedSpecies; g_strStudyFamily = "Windseed/";
+	g_uFamilySpecies = 0; g_bFamilyCaptureFailed = false; g_uStudyFamilySize = 3;
+	SetupCreatureStudyForSpecies(aeWindseedSpecies[0], "Windseed/Puffseed");
+}
+static const Zenith_AutomatedTest g_xWindseedCapture = {"ZM_AuthoredWindseedCapture_Test", &SetupWindseedCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xWindseedCapture);
+
+static void SetupZephyrbloomStudyCapture()
+{
+	SetupCreatureStudyForSpecies(ZM_SPECIES_ZEPHYRBLOOM, "Windseed/Zephyrbloom");
+}
+static const Zenith_AutomatedTest g_xZephyrbloomStudyCapture = {"ZM_AuthoredZephyrbloomStudyCapture_Test", &SetupZephyrbloomStudyCapture,
+	&StepCreatureStudy, &VerifyCreatureStudy, 1150, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xZephyrbloomStudyCapture);
+static const Zenith_AutomatedTest g_xStoneLineCapture = {"ZM_AuthoredStoneLineCapture_Test", &SetupStoneLineCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xStoneLineCapture);
+static const Zenith_AutomatedTest g_xFungalLineCapture = {"ZM_AuthoredFungalLineCapture_Test", &SetupFungalLineCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xFungalLineCapture);
+static const Zenith_AutomatedTest g_xGroveDeerCapture = {"ZM_AuthoredGroveDeerCapture_Test", &SetupGroveDeerCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 2200, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xGroveDeerCapture);
+static const Zenith_AutomatedTest g_xLancefishCapture = {"ZM_AuthoredLancefishCapture_Test", &SetupLancefishCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xLancefishCapture);
+static const Zenith_AutomatedTest g_xMineralBeetleCapture = {"ZM_AuthoredMineralBeetleCapture_Test", &SetupMineralBeetleCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xMineralBeetleCapture);
+static const Zenith_AutomatedTest g_xScannedBeetleCapture = {"ZM_AuthoredScannedBeetleCapture_Test", &SetupScannedBeetleCapture,
+	&StepCreatureStudy, &VerifyCreatureStudy, 1150, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xScannedBeetleCapture);
+static const Zenith_AutomatedTest g_xShoalfishCapture = {"ZM_AuthoredShoalfishCapture_Test", &SetupShoalfishCapture,
+	&StepCreatureFamilyCapture, &VerifyCreatureFamilyCapture, 3250, true, true, &CleanupAGScene};
+ZENITH_AUTOMATED_TEST_REGISTER(g_xShoalfishCapture);
+#endif
 
 #endif // ZENITH_INPUT_SIMULATOR

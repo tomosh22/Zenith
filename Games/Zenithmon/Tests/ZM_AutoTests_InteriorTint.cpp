@@ -68,6 +68,8 @@
 #include <string>
 
 #include "AssetHandling/Zenith_MaterialAsset.h"                 // GetName / GetBaseColor
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "Core/Zenith_AutomatedTest.h"
 #include "Core/Zenith_Engine.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -144,6 +146,7 @@ namespace
 	// ---- Per-room observation ------------------------------------------------
 	struct ITRoomSample
 	{
+		u_int m_uExpected = static_cast<u_int>(ZM_INTERIOR_SURFACE_COUNT);
 		u_int m_uCollected = 0u;
 		u_int m_uOverflow = 0u;             // block table larger than the sample cap
 		u_int m_uUnresolved = 0u;           // named blocks with no entity / no model / no material
@@ -259,6 +262,15 @@ namespace
 			? ZM_INTERIOR_ROOM_PROF_LAB : ZM_INTERIOR_ROOM_PLAYER_HOME;
 		const char* szShellName = (eRoom == IT_ROOM_PROFLAB)
 			? szZM_PROFLAB_SHELL_ENTITY_NAME : szZM_PLAYERHOME_SHELL_ENTITY_NAME;
+		char acModelRef[256];
+		ZM_InteriorAssetPath(eGenRoom, ZM_INTERIOR_ASSET_MODEL, acModelRef, sizeof(acModelRef));
+		auto xSource = std::filesystem::path(Zenith_AssetRegistry::ResolvePath(acModelRef));
+		xSource.replace_extension(".glb");
+		std::error_code xSourceError;
+		const bool bAuthored = std::filesystem::is_regular_file(xSource, xSourceError) && !xSourceError;
+		// The authored shell is one mesh with material sections, rather than one
+		// generated mesh per surface. These counts are the two authored recipes.
+		if (bAuthored) { xRoom.m_uExpected = eRoom == IT_ROOM_PROFLAB ? 6u : 7u; }
 
 		Zenith_Entity xShell = pxData != nullptr
 			? pxData->FindEntityByName(szShellName) : Zenith_Entity();
@@ -271,7 +283,15 @@ namespace
 		}
 		else
 		{
-			const u_int uMeshes = pxShellModel->GetNumMeshes();
+			const auto* pxInstance = pxShellModel->GetModelInstance();
+			if (pxShellModel->GetModelPath() != acModelRef
+				|| (bAuthored && (!pxInstance || pxInstance->GetNumMeshes() != 1u
+					|| pxInstance->GetNumMaterials() != xRoom.m_uExpected)))
+			{
+				++xRoom.m_uWrongMaterial;
+			}
+			const u_int uMeshes = bAuthored && pxInstance
+				? pxInstance->GetNumDrawSections(0u) : pxShellModel->GetNumMeshes();
 			for (u_int uSurface = 0u; uSurface < uMeshes; ++uSurface)
 			{
 				if (uCollected >= uIT_MAX_SAMPLED)
@@ -279,7 +299,11 @@ namespace
 					++xRoom.m_uOverflow;   // Verify reds rather than judging a subset
 					continue;
 				}
-				const Zenith_MaterialAsset* pxMaterial = pxShellModel->GetMaterial(uSurface);
+				Flux_MeshDrawSection xSection;
+				const Zenith_MaterialAsset* pxMaterial = bAuthored
+					? (pxInstance && pxInstance->GetDrawSection(0u, uSurface, xSection)
+						? pxInstance->GetMeshMaterial(0u, xSection.m_uMaterialSlot) : nullptr)
+					: pxShellModel->GetMaterial(uSurface);
 				if (pxMaterial == nullptr)
 				{
 					++xRoom.m_uUnresolved;
@@ -299,6 +323,11 @@ namespace
 					ZM_InteriorSurfaceName((ZM_INTERIOR_SURFACE)
 						(uSurface < (u_int)ZM_INTERIOR_SURFACE_COUNT
 							? uSurface : 0u)));
+				if (bAuthored)
+				{
+					if (uSurface == 0u) { snprintf(acExpected, sizeof(acExpected), "%s", ZM_InteriorRoomName(eGenRoom)); }
+					else { snprintf(acExpected, sizeof(acExpected), "%s_mat%u", ZM_InteriorRoomName(eGenRoom), uSurface); }
+				}
 				if (pxMaterial->GetName() != acExpected)
 				{
 					++xRoom.m_uWrongMaterial;
@@ -465,8 +494,8 @@ static bool Verify_ZMInteriorTint()
 	// now, by design (see ITScanActiveScene).
 	const u_int auExpectedBlocks[IT_ROOM_COUNT] =
 	{
-		(u_int)ZM_INTERIOR_SURFACE_COUNT,
-		(u_int)ZM_INTERIOR_SURFACE_COUNT,
+		g_axITRooms[IT_ROOM_PLAYERHOME].m_uExpected,
+		g_axITRooms[IT_ROOM_PROFLAB].m_uExpected,
 	};
 
 	// ---- THE VACUITY GUARD, FIRST AND SEPARATE ------------------------------
