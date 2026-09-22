@@ -664,7 +664,29 @@ const KNOWN_SCRATCH_FILES = new Set([
   'filelist.txt', 'build_prompt.exit', 'predispatch.json', 'gates.json',
   'changed.txt', 'tick_gates.json', 'gates.log', 'diff.patch',
   'worklog.md', 'result.md',
+  // ★ ADDED after the first REAL tick refused itself. tick_gates.ps1 writes
+  // all of these into the same directory, BETWEEN predispatch and guard --
+  // so every one of them read as a worker violation and guard refused a
+  // clean ticket. 26 false positives on ZEN-106, none of them reachable by a
+  // worker that has no shell and no board.
+  'gates.prev.log', 'report.json', 'comment.md',
 ]);
+
+/**
+ * ★ AND A FIXED NAME SET CANNOT COVER THE REST: tick_gates.ps1 writes one
+ * `gate_<random>.ps1` per gate line, plus `.out` and `.out.err` beside each.
+ * The number is fresh every run, so no enumeration can ever match it. Match
+ * the SHAPE instead. This is the orchestrator's own scratch by construction --
+ * a worker cannot produce it, because producing it means running a gate.
+ */
+const ORCHESTRATOR_SCRATCH_PATTERNS = [
+  /^gate_\d+\.ps1$/,
+  /^gate_\d+\.ps1\.out$/,
+  /^gate_\d+\.ps1\.out\.err$/,
+];
+
+const isOrchestratorScratch = name =>
+  KNOWN_SCRATCH_FILES.has(name) || ORCHESTRATOR_SCRATCH_PATTERNS.some(re => re.test(name));
 
 /**
  * `.zagent/run/<KEY>/predispatch.json` — the baseline `build_prompt.ps1`
@@ -827,7 +849,13 @@ export async function workerMovedNothing({ repoRoot, key, currentBoardRow = null
     if (!beforeStaged.has(line)) violations.push({ kind: 'indexStaged', detail: line });
   }
   if (currentBoardRow && typeof currentBoardRow === 'object' && before.boardRow && typeof before.boardRow === 'object') {
-    for (const field of ['status', 'assignee', 'updatedAt']) {
+    // ★ `updatedAt` WAS IN THIS LIST AND IS NOT A WORKER SIGNAL. The board moves
+    // it for its own reasons -- on ZEN-106 predispatch captured `null` and the
+    // row carried a timestamp by guard, with no board call in between that any
+    // worker could have made. `status` and `assignee` are the fields a worker
+    // calling `zagent move`/`finish` would actually move; a timestamp changing
+    // on its own is noise that refuses clean tickets.
+    for (const field of ['status', 'assignee']) {
       const was = before.boardRow[field] ?? null;
       const now = currentBoardRow[field] ?? null;
       if (String(was ?? '') !== String(now ?? '')) {
@@ -836,7 +864,7 @@ export async function workerMovedNothing({ repoRoot, key, currentBoardRow = null
     }
   }
   for (const name of await scratchEntries(repoRoot, key)) {
-    if (!KNOWN_SCRATCH_FILES.has(name)) violations.push({ kind: 'scratchMutated', detail: `.zagent/run/${key}/${name}` });
+    if (!isOrchestratorScratch(name)) violations.push({ kind: 'scratchMutated', detail: `.zagent/run/${key}/${name}` });
   }
 
   return {

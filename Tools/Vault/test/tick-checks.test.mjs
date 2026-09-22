@@ -846,3 +846,61 @@ test("finish: the work log's routing-line harness must agree with predispatch.js
     assert.equal(result.exitCode, 0, JSON.stringify(result.payload));
   }
 });
+
+// ★ REGRESSION, from the first REAL tick (ZEN-106). Every synthetic fixture above
+// passed while the check refused a genuinely clean ticket 26 times over, because
+// none of them reproduced what the ORCHESTRATOR writes into the same directory
+// between predispatch and guard. Both halves below are things no worker can do:
+// writing a gate script means running a gate, and moving `updatedAt` means the
+// board moved itself.
+test('workerMovedNothing: the orchestrator\'s own tick_gates scratch is CLEAN, including its randomised gate_<n> names', async t => {
+  const root = await tempRepo(t);
+  const baseline = await seedCommit(root);
+  await writePredispatch(root, 'FD-1', baseline);
+
+  // tick_gates.ps1 writes one of these per gate LINE, with a fresh random number
+  // every run -- so a fixed name set can never enumerate them. 26 of these reded
+  // guard on ZEN-106.
+  await writeRun(root, 'FD-1', 'gate_1007488055.ps1', 'the orchestrator running a gate line');
+  await writeRun(root, 'FD-1', 'gate_1007488055.ps1.out', 'its stdout');
+  await writeRun(root, 'FD-1', 'gate_1007488055.ps1.out.err', 'its stderr');
+  await writeRun(root, 'FD-1', 'gates.prev.log', 'the previous phase, archived');
+  await writeRun(root, 'FD-1', 'report.json', 'the worker report the orchestrator writes');
+  await writeRun(root, 'FD-1', 'comment.md', 'finish --comment');
+
+  const result = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(result.state, 'clean', JSON.stringify(result));
+  assert.equal(result.violations.length, 0, JSON.stringify(result.violations));
+
+  // ...and the check has NOT been widened into uselessness: something the
+  // orchestrator does not write is still caught.
+  await writeRun(root, 'FD-1', 'gate_notanumber.ps1', 'not the orchestrator shape');
+  const still = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(still.state, 'violated', JSON.stringify(still));
+  assert.ok(still.violations.some(v => v.kind === 'scratchMutated'));
+});
+
+test('workerMovedNothing: updatedAt moving on its own is NOT boardMoved -- status and assignee are', async t => {
+  const root = await tempRepo(t);
+  const baseline = await seedCommit(root);
+  await writePredispatch(root, 'FD-1', {
+    ...baseline,
+    boardRow: { status: 'In Progress', assignee: 'agent@example.test', updatedAt: null },
+  });
+
+  // Exactly what ZEN-106 saw: predispatch captured null, the row carried a
+  // timestamp by guard, and no board call a worker could make happened between.
+  const drifted = await workerMovedNothing({
+    repoRoot: root, key: 'FD-1',
+    currentBoardRow: { status: 'In Progress', assignee: 'agent@example.test', updatedAt: '2026-09-22T00:27:27.137Z' },
+  });
+  assert.equal(drifted.state, 'clean', JSON.stringify(drifted));
+
+  // The fields that DO mean a worker touched the board are still caught.
+  const moved = await workerMovedNothing({
+    repoRoot: root, key: 'FD-1',
+    currentBoardRow: { status: 'Done', assignee: 'agent@example.test', updatedAt: null },
+  });
+  assert.equal(moved.state, 'violated', JSON.stringify(moved));
+  assert.ok(moved.violations.some(v => v.kind === 'boardMoved'));
+});
