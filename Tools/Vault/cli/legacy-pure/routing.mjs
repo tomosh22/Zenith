@@ -1,17 +1,68 @@
 // Generated from the upstream board application's read-only policy helpers; see provenance.json. No DB or network imports.
-// config.routing here is DATA supplied by the caller: Tools/Vault/cli/compat.mjs's policyOf()/legacyConfigOf() load it from vault.config.json's policy.board.routing and pass it in.
+// config.routing here is DATA supplied by the caller. MEASURED 2026-09-22
+// (Tools/zagent/Test-HarnessParity.ps1, assertion 10) against a live
+// vault.config.json rather than assumed from this file's own name-shape:
+// Tools/Vault/cli/compat.mjs's legacyConfigOf() returns
+// withProjectFileOverlay(policy.resolved, index) whenever policy.resolved is
+// non-empty -- which it is in this repo's vault.config.json -- and only
+// falls back to `{routing: policy.board.routing, ...}` for a bare test
+// fixture that hands policyOf() an empty `resolved` block. So in PRACTICE
+// the block actually read and passed to resolveRouting() below is
+// policy.resolved.routing, not policy.board.routing as an earlier version
+// of this comment claimed. The two blocks are kept equal by hand today
+// (Test-HarnessParity.ps1 asserts that too, so a future edit to one and
+// not the other reds instead of silently forking which config a fixture
+// vs. a real checkout each resolve against).
 import {
   ConfigError,
   projectConfig
 } from "./config.mjs";
 import { matchesGlob, normalizeChangedPath } from "./guardrails.mjs";
 const MODEL_LADDER = ["haiku", "sonnet", "opus"];
+// `TRIVIAL` was retired from the complexity vocabulary in a concurrent
+// change (write-time validation now rejects it), which made the ORIGINAL
+// shape of this function unreachable through any validated write path --
+// but unreachable-through-validation is not the same as impossible, and a
+// caller that hands this a stale or hand-built config (a fixture, a
+// migration, a future vocabulary edit) still reaches it directly. The
+// original body read `config.routing.modelByComplexity[complexity]` and
+// `config.routing.effortByComplexity[complexity]` with no existence check,
+// so an unknown complexity produced `{model: undefined, effort: undefined}`
+// -- two silently-undefined fields, no thrown error, nothing for the
+// caller's own try/catch (see `routingOf` in cli/compat.mjs) to catch. That
+// is a FAIL-OPEN: a ticket would dispatch to `undefined` model at
+// `undefined` effort rather than being refused. Unknown complexity or risk
+// now fails LOUDLY instead -- `routingOf` already wraps this call in
+// try/catch and substitutes a safe default on ANY throw, so this change
+// only replaces one silent-undefined path with one that caller already
+// handles; it adds no new unhandled exception anywhere in the tree (see
+// Tools/Vault/test/compat-branches.test.mjs's "fall back when the project
+// is not mapped" case, which already relies on that catch for a different
+// missing-config shape).
 function resolveRouting(config, complexity, risk) {
-  const base = config.routing.modelByComplexity[complexity];
-  const steps = config.routing.riskEscalation[risk];
+  const modelByComplexity = config.routing?.modelByComplexity ?? {};
+  const effortByComplexity = config.routing?.effortByComplexity ?? {};
+  const riskEscalation = config.routing?.riskEscalation ?? {};
+  if (!Object.prototype.hasOwnProperty.call(modelByComplexity, complexity)) {
+    throw new ConfigError(
+      `resolveRouting: unknown complexity "${complexity}" -- not in routing.modelByComplexity (known: ${Object.keys(modelByComplexity).join(", ") || "(none)"}). Refusing to dispatch with an undefined model.`
+    );
+  }
+  if (!Object.prototype.hasOwnProperty.call(riskEscalation, risk)) {
+    throw new ConfigError(
+      `resolveRouting: unknown risk "${risk}" -- not in routing.riskEscalation (known: ${Object.keys(riskEscalation).join(", ") || "(none)"}). Refusing to dispatch with an undefined escalation.`
+    );
+  }
+  if (!Object.prototype.hasOwnProperty.call(effortByComplexity, complexity)) {
+    throw new ConfigError(
+      `resolveRouting: unknown complexity "${complexity}" -- not in routing.effortByComplexity (known: ${Object.keys(effortByComplexity).join(", ") || "(none)"}). Refusing to dispatch with an undefined effort.`
+    );
+  }
+  const base = modelByComplexity[complexity];
+  const steps = riskEscalation[risk];
   const index = MODEL_LADDER.indexOf(base);
   const escalated = MODEL_LADDER[Math.min(index + steps, MODEL_LADDER.length - 1)];
-  return { model: escalated, effort: config.routing.effortByComplexity[complexity] };
+  return { model: escalated, effort: effortByComplexity[complexity] };
 }
 // `project.conventions` is UNIVERSAL -- true of every category regardless of
 // language ("Root CLAUDE.md is binding", "Never run Sharpmake in a

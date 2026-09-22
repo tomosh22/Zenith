@@ -10,7 +10,7 @@
 //       positive evidence the freshness fold ever ran.
 //   (C) `claim`/`next` never resolved which recorded rulings govern a
 //       ticket's subject matter into durable scratch, although I3
-//       (.claude/commands/tick.md) requires exactly that be pasted into
+//       (Tools/zagent/protocol/TICK.md) requires exactly that be pasted into
 //       the worker prompt.
 //   (D) `zagent decide` was silent (exit 0, "wrote a row") when the
 //       ticket's category declares no decisionLog, even though such a row

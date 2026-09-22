@@ -133,13 +133,11 @@
       "agentEmail": "agent@zenith.invalid",
       "routing": {
         "effortByComplexity": {
-          "TRIVIAL": "low",
           "SIMPLE": "low",
           "MODERATE": "medium",
           "COMPLEX": "high"
         },
         "modelByComplexity": {
-          "TRIVIAL": "haiku",
           "SIMPLE": "sonnet",
           "MODERATE": "sonnet",
           "COMPLEX": "opus"
@@ -156,10 +154,15 @@
           "packages/database/drizzle/**",
           ".claude/**",
           "agent.config*.json",
-          "zagent.project.json"
+          "zagent.project.json",
+          "vault.config.json",
+          "Tools/zagent/protocol/**",
+          "Tools/zagent/Build-HarnessArtifacts.ps1",
+          "Tools/zagent/Test-HarnessParity.ps1",
+          ".codex/**",
+          ".opencode/**"
         ],
         "ticketTimeoutMinutes": {
-          "TRIVIAL": 15,
           "SIMPLE": 15,
           "MODERATE": 30,
           "COMPLEX": 90
@@ -382,13 +385,11 @@
       "agentEmail": "agent@zenith.invalid",
       "routing": {
         "effortByComplexity": {
-          "TRIVIAL": "low",
           "SIMPLE": "low",
           "MODERATE": "medium",
           "COMPLEX": "high"
         },
         "modelByComplexity": {
-          "TRIVIAL": "haiku",
           "SIMPLE": "sonnet",
           "MODERATE": "sonnet",
           "COMPLEX": "opus"
@@ -405,10 +406,15 @@
           "packages/database/drizzle/**",
           ".claude/**",
           "agent.config*.json",
-          "zagent.project.json"
+          "zagent.project.json",
+          "vault.config.json",
+          "Tools/zagent/protocol/**",
+          "Tools/zagent/Build-HarnessArtifacts.ps1",
+          "Tools/zagent/Test-HarnessParity.ps1",
+          ".codex/**",
+          ".opencode/**"
         ],
         "ticketTimeoutMinutes": {
-          "TRIVIAL": 15,
           "SIMPLE": 15,
           "MODERATE": 30,
           "COMPLEX": 90

@@ -13,7 +13,7 @@ The repository currently names three different DP integration contracts:
   `branching: "direct"`, and `push: false`.
 - `zagent.project.json:163-176` overrides that for `DevilsPlayground` with
   `branching: "branch"` and `branchPrefix: "agent/"`.
-- `.claude/commands/tick.md:1497-1500` requires `switch <baseBranch>` plus
+- `Tools/zagent/protocol/TICK.md#6-verify` requires `switch <baseBranch>` plus
   `merge --ff-only <branch>`, while
   `Games/DevilsPlayground/Docs/CIPolicy.md:7-30,59-69` describes protected
   `master` and squash PRs. `Games/DevilsPlayground/Docs/Status.md:14` still
@@ -62,7 +62,7 @@ This path is different from an ordinary failure while the agent still owns the
 ticket. An ordinary failure may restore the persisted `previousStatus` and
 clear the assignee; the takeover path must keep the new assignee. The only
 durable source for `previousStatus` is the claimed ticket scratch described in
-`.claude/commands/tick.md:1058-1063`. `tick.md:1699-1707` requires comment-only
+`Tools/zagent/protocol/TICK.md#5-dispatch-the-worker`. `Tools/zagent/protocol/TICK.md#7-integrate` requires comment-only
 abandonment and explicitly forbids clearing the assignee.
 
 `human-gate` is a third state, not a takeover: the agent may complete the
@@ -99,7 +99,7 @@ verdict consumption. A killed process must leave `running` and never be read as
 green. A watchdog timeout, if enabled, is an infrastructure failure, not a
 green verdict. The mandatory order remains
 `owns → measure → edits → reviewer → verify → guard → coverage → owns` from
-`.claude/commands/tick.md:1079-1081`; the final ownership check must cover the
+`Tools/zagent/protocol/TICK.md#5-dispatch-the-worker`; the final ownership check must cover the
 integration/finish race.
 
 Required verdict tests include: edit during verify; delete and rename; ignored

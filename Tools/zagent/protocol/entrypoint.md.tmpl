@@ -1,0 +1,86 @@
+This is **{{HARNESS_NAME}}**'s entry point for `/tick`.
+
+The rules are in `Tools/zagent/protocol/TICK.md` (repo root — a plain
+backticked path, not a relative link, because this template is reused at a
+different directory depth per harness: `.claude/commands/`, `.opencode/
+commands/`, `.codex/skills/tick/`, ... and a single hardcoded `../` count
+cannot be correct for all of them). That file
+is harness-neutral: it names no harness, tool, or model, and speaks only in
+its five control verbs (`DISPATCH`, `AWAIT`, `ABORT`, `SCHEDULE`, `STOP`),
+its two roles (`WORKER`, `REVIEWER`) and its three tiers
+(`haiku`/`sonnet`/`opus`). Everything below is how THIS harness resolves
+those verbs, roles and tiers into concrete mechanism. When TICK.md and this
+section disagree about what a verb or role MEANS on this harness, this
+section wins — TICK.md does not know this harness exists.
+
+{{TICK_BODY_OR_POINTER}}
+
+## Controls
+
+TICK.md's five control verbs, resolved to this harness's own mechanism.
+`null` means no mechanism was found — read `{{HARNESS_ID}}`'s row in
+`Tools/zagent/protocol/harnesses.json` for why, and treat that verb as
+unavailable rather than guessing at a substitute.
+
+| Verb | Resolves to |
+| --- | --- |
+| `DISPATCH` | {{CONTROL_DISPATCH}} |
+| `AWAIT` | {{CONTROL_AWAIT}} |
+| `ABORT` | {{CONTROL_ABORT}} |
+| `SCHEDULE` | {{CONTROL_SCHEDULE}} |
+| `STOP` | {{CONTROL_STOP}} |
+
+`loopMode`: **{{LOOP_MODE}}**. When `manual`, TICK.md's own dispatch table
+(step 1) already says what to do with each `next.json` disposition instead
+of calling `SCHEDULE` — report and let a human re-invoke.
+
+## Roles
+
+Every routed worker tier and every reviewer risk maps 1:1 to a concrete
+role file. There is no role file for a tier absent from this table —
+`haiku` is deliberately unrouted (see `harnesses.json`'s `unusedTiers`) and
+generates nothing.
+
+| TICK.md role | Tier / risk | Role file |
+| --- | --- | --- |
+| WORKER | sonnet | {{ROLE_WORKER_SONNET}} |
+| WORKER | opus | {{ROLE_WORKER_OPUS}} |
+| REVIEWER | LOW | {{ROLE_REVIEWER_LOW}} |
+| REVIEWER | MEDIUM | {{ROLE_REVIEWER_MEDIUM}} |
+| REVIEWER | HIGH | {{ROLE_REVIEWER_HIGH}} |
+
+**Worker tool denial:** `{{WORKER_TOOL_DENIAL}}`. When `enforced`, the role
+file's own tool list IS invariant I1 — widen it and I1 is gone with nothing
+else failing loudly, which is why role files sit under this harness's own
+protected-path mechanism. When `declared`, the role's text is advisory
+only and I1 is carried instead by the orchestrator's WORKER-MOVED-NOTHING
+check at TICK.md step 6.4 — that check is not optional on this harness.
+
+## Review policy
+
+`review.mode`: **{{REVIEW_MODE}}**. `review.mode` only ever WIDENS what
+TICK.md's own `review.required` (the OR of `reviewOn` and the
+Definition-of-Done assertion scan) already asks for:
+
+- `payload` — review exactly when `review.required` is true on the claim
+  payload; no wider and no narrower.
+- `always` — review every dispatch, regardless of the payload. There is no
+  `never`: a harness profile can only add review, not remove it.
+
+## Pre-authorisation
+
+`{{PREAUTH_KIND}}`, sourced from: {{PREAUTH_SOURCES}}.
+
+Every gate line `zagent gates <KEY>` can produce for this repo's categories
+must be reachable through this mechanism before a tick runs unattended —
+that is what "pre-authorised" means here, and `Tools/zagent/Test-HarnessParity.ps1`
+checks it for all three harnesses so a gate line added without its
+authorisation reds a gate instead of stalling an unattended loop on a
+permission prompt.
+
+## Human prerequisites
+
+Checked outside this repo, before the first unattended firing on this
+harness — nothing in this checkout can verify these:
+
+{{HUMAN_PREREQUISITES}}

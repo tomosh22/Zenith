@@ -1,7 +1,7 @@
 # tick_gates.ps1 -- run one ticket's gates, in the order that only costs one cycle.
 # =============================================================================
 # This is `/tick` step 6.2 as a MECHANISM. It used to be four paragraphs of
-# prose in `.claude/commands/tick.md`, each added after the rule it describes
+# prose in `Tools/zagent/protocol/TICK.md`, each added after the rule it describes
 # was forgotten once -- which is the defect this repo keeps naming: a rule in
 # prose in front of a check IS the defect. Every paragraph below became code.
 #
@@ -56,7 +56,7 @@
 #         let a $Code of 0 leave here with an empty steps array; it rewrites
 #         the exit code to 8 and says so in the verdict instead.
 #         NOT 6: this script's own ladder had 6 free, but `zagent`'s ladder
-#         (root CLAUDE.md; branched on throughout .claude/commands/tick.md) is
+#         (root CLAUDE.md; branched on throughout Tools/zagent/protocol/TICK.md) is
 #         0/1/3/4/5/6/7, and 6 there means CIRCUIT BREAKER OPEN -- a tick reads
 #         both ladders, often in the same step, and a shared number meaning
 #         "nothing ran" from one and "the loop is thrashing, stop" from the
@@ -356,7 +356,7 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
     #
     # 8, NOT 6: this file's own exit ladder (0/2/3/4/5/10) had 6 free, but
     # `zagent`'s SEPARATE ladder -- root CLAUDE.md, branched on throughout
-    # .claude/commands/tick.md -- already spends 6 on CIRCUIT BREAKER OPEN. A
+    # Tools/zagent/protocol/TICK.md -- already spends 6 on CIRCUIT BREAKER OPEN. A
     # tick reads both ladders, often in the same step, so reusing 6 here would
     # make the same number mean "nothing ran" from this script and "the loop
     # is thrashing, stop" from zagent -- exactly the ambiguity "exit codes are

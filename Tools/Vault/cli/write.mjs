@@ -42,9 +42,13 @@ import {
   commitCompleteness,
   durableFindingsAnswer,
   fileListExcursion,
+  harnessProfile,
+  knownHarnessIds,
   needsGpuCompanion,
+  routingHarnessMatches,
   unexplainedExcursions,
   unmetDoneCriteria,
+  workerMovedNothing,
 } from './tick-checks.mjs';
 import { workingTreeChanges } from './working-tree.mjs';
 
@@ -57,7 +61,7 @@ const STATUS_IN_REVIEW = 'In Review';
 
 const ISSUE_TYPES = ['EPIC', 'STORY', 'TASK', 'BUG', 'SUBTASK'];
 const PRIORITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'TRIVIAL'];
-const COMPLEXITIES = ['TRIVIAL', 'SIMPLE', 'MODERATE', 'COMPLEX'];
+const COMPLEXITIES = ['SIMPLE', 'MODERATE', 'COMPLEX'];
 const RISKS = ['LOW', 'MEDIUM', 'HIGH'];
 const RESOLUTIONS = ['DONE', 'WONT_DO', 'DUPLICATE', 'CANNOT_REPRODUCE'];
 const SEVERITIES = ['S1_CRITICAL', 'S2_MAJOR', 'S3_MINOR', 'S4_TRIVIAL'];
@@ -617,9 +621,38 @@ function queueCandidate(index, argv) {
   throw new WriteError('Nothing in "To Do".', 'EMPTY', 3);
 }
 
+// `--harness <id>` is validated against `Tools/zagent/protocol/harnesses.json`'s
+// own keys and RECORDED on the ticket; the Vault never branches on it, the
+// same opaque treatment `workerTools` already gets. A repo with no
+// `harnesses.json` at all (an embedded/synthetic index in a unit fixture, or
+// a checkout that predates this file) skips validation rather than refusing
+// every claim — there is nothing to validate against, and "unknown" here
+// must not read the same as "invalid".
+async function ensureKnownHarness(index, harness) {
+  if (harness === undefined) return;
+  const repoRoot = repoRootOf(index);
+  if (!repoRoot) return;
+  const known = await knownHarnessIds(repoRoot);
+  if (known.length === 0) return;
+  if (!known.includes(harness)) {
+    throw new WriteError(
+      `--harness "${harness}" is not a key Tools/zagent/protocol/harnesses.json declares (known: ${known.join(', ')}).`,
+      'INVALID',
+      4,
+    );
+  }
+}
+
 async function claim(index, argv, files, queueMode) {
   const requested = queueMode ? undefined : positional(argv, 1);
   if (!queueMode && !requested) return errorResult('Usage: zagent claim <TICKET_KEY>', 1);
+  const harness = valueOf(argv, 'harness');
+  try {
+    await ensureKnownHarness(index, harness);
+  } catch (error) {
+    if (error instanceof WriteError) return errorResult(error.message, error.exitCode, error.code);
+    throw error;
+  }
   const initial = requested ? findTicket(index, requested) : undefined;
   const expected = initial ? { [initial.relativePath]: expectedRevision(initial) } : {};
   const actor = actorOf(index, argv);
@@ -654,8 +687,20 @@ async function claim(index, argv, files, queueMode) {
     payload.assignee = actor.email;
     payload.claimAttempt = claimAttempt;
     payload.attempt = claimAttempt;
+    // `harness` is opaque here too: recorded when the caller passes one,
+    // left as whatever the ticket already carried otherwise (a re-claim
+    // after ownership was lost should not erase the fact of which harness
+    // originally worked it, absent a new value saying otherwise).
+    const recordedHarness = harness !== undefined ? harness : (metadata.harness ?? null);
+    payload.harness = recordedHarness;
     return {
-      changes: [{ path: selected.relativePath, bytes: patchRecord(selected, { status: STATUS_IN_PROGRESS, assignee: actor.email, claimAttempt }) }],
+      changes: [{
+        path: selected.relativePath,
+        bytes: patchRecord(selected, {
+          status: STATUS_IN_PROGRESS, assignee: actor.email, claimAttempt,
+          ...(harness !== undefined ? { harness } : {}),
+        }),
+      }],
       result: payload,
     };
   });
@@ -729,7 +774,7 @@ function repoRootOf(index) {
  * so a ticket the agent no longer owns still fails with OWNERSHIP/HUMAN_GATE
  * rather than a content refusal that would obscure the real reason.
  */
-async function checkFinishContent(index, key, status, commentText, worklog) {
+async function checkFinishContent(index, key, status, commentText, worklog, current = null) {
   const repoRoot = repoRootOf(index);
   const statusNorm = String(status ?? '').trim().toLowerCase();
   const isDone = statusNorm === STATUS_DONE.toLowerCase();
@@ -786,6 +831,48 @@ async function checkFinishContent(index, key, status, commentText, worklog) {
         );
       }
     }
+
+    // ★★ I1's COMPENSATING CONTROL, CHECKED ON EVERY TERMINAL STATUS — not
+    // just Done. WORKER-MOVED-NOTHING is `guard`'s job first (TICK.md step
+    // 6.4, before a commit ever lands), but a ticket can reach `finish`
+    // without a `guard` run at all (a hand-run tick, a fix-forward that
+    // skipped it) — so this is the second, not the only, site.
+    const currentFields = current ? canonicalOf(current) : {};
+    const harness = typeof currentFields.harness === 'string' && currentFields.harness ? currentFields.harness : null;
+    const moved = await workerMovedNothing({
+      repoRoot, key,
+      currentBoardRow: { status: currentFields.status ?? null, assignee: currentFields.assignee ?? null, updatedAt: currentFields.updatedAt ?? null },
+    });
+    if (moved.state === 'violated') {
+      throw new WriteError(
+        `refusing to finish ${key} — WORKER-MOVED-NOTHING found the worker itself touched the repository, which I1 forbids on every harness: ${moved.reason}`,
+        'INVALID', 4,
+      );
+    }
+    if (moved.state === 'unverified') {
+      const denial = (await harnessProfile(repoRoot, harness))?.workerToolDenial ?? null;
+      if (denial === 'declared') {
+        // On a `declared` harness the role's own text is advisory, not a
+        // wall — WORKER-MOVED-NOTHING is the ONLY thing standing in for I1
+        // there, so an absent probe on THIS harness is indistinguishable
+        // from a deleted one, and tolerating it would be exactly the "widen
+        // the tool list and I1 is gone with nothing failing loudly" failure
+        // mode the Operating Invariants section names by name.
+        throw new WriteError(
+          `refusing to finish ${key} as a terminal status — ${moved.reason} This ticket's harness ("${harness ?? '(none recorded)'}") declares I1 rather than enforcing it structurally, so a missing predispatch.json baseline cannot be told apart from a deleted one. Re-run build_prompt.ps1 (step 5) before dispatching, then finish again.`,
+          'INVALID', 4,
+        );
+      }
+      process.stderr.write(`zagent: finish ${key} — ${moved.reason}\n`);
+    }
+
+    const routing = await routingHarnessMatches({ repoRoot, key, worklog });
+    if (routing.state === 'mismatch') {
+      throw new WriteError(`refusing to finish ${key} — ${routing.reason}`, 'INVALID', 4);
+    }
+    if (routing.state === 'unverified') {
+      process.stderr.write(`zagent: finish ${key} — ${routing.reason}\n`);
+    }
   }
 
   const findings = durableFindingsAnswer(worklog);
@@ -810,7 +897,7 @@ async function finish(index, argv, files) {
     ensureTransition(fresh, project, canonicalOf(current).status, status);
     ensureHumanGateCloseout(fresh, current, project, actor, status);
     requireAgentOwnership(fresh, current, actor, { attempt: attemptOf(argv) });
-    await checkFinishContent(fresh, keyFor(current), status, commentText, worklog);
+    await checkFinishContent(fresh, keyFor(current), status, commentText, worklog, current);
     let body = bodyTextOf(current);
     body = appendSection(body, 'Comments', commentText);
     body = upsertWorklog(body, keyFor(current), worklog);
@@ -1249,7 +1336,7 @@ async function update(index, argv, files, shorthand = null) {
     if (!gpuCheck.ok) return errorResult(gpuCheck.reason, 4, 'INVALID');
 
     // ★★ `blocked-scope` IS EXCLUDED FROM `maxConsecutiveBlocked`
-    // (tick.md:1457), SO MISLABELLING A GATE FAILURE AS A SCOPE PROBLEM LETS
+    // (Tools/zagent/protocol/TICK.md#6-verify), SO MISLABELLING A GATE FAILURE AS A SCOPE PROBLEM LETS
     // A THRASHING LOOP PAST ITS OWN CIRCUIT BREAKER. "Only label what you can
     // defend" was a paragraph to remember; this reads the same
     // `tick_gates.json` verdict a human would and refuses before the label

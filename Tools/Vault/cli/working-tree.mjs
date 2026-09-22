@@ -1,7 +1,7 @@
 /*
  * The one sanctioned way to ask "what changed in the working tree".
  *
- * `.claude/commands/tick.md` documents that both obvious `git` spellings for
+ * `Tools/zagent/protocol/TICK.md` documents that both obvious `git` spellings for
  * this question are wrong in ways nothing used to catch: `<base>...HEAD` is
  * empty because a tick's edits are never committed yet when `gates`/`guard`
  * run, and `git diff --name-only` cannot see a file the worker CREATED

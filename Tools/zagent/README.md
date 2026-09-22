@@ -71,7 +71,10 @@ Verify with `zagent doctor`.
 | | Where | Why |
 |---|---|---|
 | Gates, pinned baselines, conventions, categories | `zagent.project.json`, repo root, **committed** | A pinned unit count already lives in `Status.md`, `zm-tests.yml` and `run_unit_gate.ps1`. A fourth copy on a machine you cannot see could only be remembered. |
-| The `/tick` protocol | `.claude/commands/tick.md` | It is this repo's operating procedure. |
+| The `/tick` protocol | `Tools/zagent/protocol/TICK.md` | It is this repo's operating procedure — harness-neutral, the only copy. |
+| The three per-harness entry points | `.claude/commands/tick.md`, `.opencode/commands/tick.md`, `.codex/skills/tick/SKILL.md` | **All generated**, never hand-edited — see `Tools/zagent/CLAUDE.md`. `/tick` runs today on Claude Code (`/tick`), OpenCode (`/tick`), and Codex (`$tick`, a skill mention — Codex has no repo-level slash commands). |
+| The generator + the harness profiles | `Tools/zagent/Build-HarnessArtifacts.ps1`, `Tools/zagent/protocol/harnesses.json` | Turns the canonical protocol + role charters into every harness's own entry point and role files. `-Harness <id>` scopes a run to one harness; `-Check` reports staleness without writing. |
+| The cross-harness gate | `Tools/zagent/Test-HarnessParity.ps1` | Checks the three harnesses stay in parity with each other and with `TICK.md`. |
 | Run scratch | `.zagent/`, **gitignored** | The tick treats a dirty tree as fatal, so `git status --porcelain` must never see it. A `claim`/`next` **through `zagent` (i.e. `cli/client.mjs`)** that finds an existing `.zagent/run/<KEY>/` renames it to `<KEY>.prev/` (replacing an older `.prev`) BEFORE writing the fresh scratch, and reports `archivedPriorRun` on the result — so a stale `body.md`/`ticket.json`/gate verdict from a previous attempt is never sitting where the new one is read from. ★ The `npm run vault` entry point (`cli/zagent.mjs`) writes the same run scratch and does **not** archive, so a claim made through it can leave a stale prior run in place. |
 | The agent account, model routing, guardrail floors | the board | Policy, not topology. |
 

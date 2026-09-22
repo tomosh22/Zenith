@@ -208,5 +208,5 @@
 
 ## Sizing legend
 
-`--complexity` (TRIVIAL/SIMPLE/MODERATE/COMPLEX) and `--risk` (LOW/MEDIUM/HIGH) route the model; `--points` (Fibonacci) size the sprint; priority orders the queue within a sprint. Points are estimates made before any code exists -- re-estimate with `zagent estimate <KEY> <N>` when a ticket is claimed, and record why in its work log.
+`--complexity` (SIMPLE/MODERATE/COMPLEX) and `--risk` (LOW/MEDIUM/HIGH) route the model; `--points` (Fibonacci) size the sprint; priority orders the queue within a sprint. Points are estimates made before any code exists -- re-estimate with `zagent estimate <KEY> <N>` when a ticket is claimed, and record why in its work log.
 

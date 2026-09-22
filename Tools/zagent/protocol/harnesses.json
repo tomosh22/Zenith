@@ -1,0 +1,171 @@
+{
+  "$comment": "Tools/zagent/protocol/harnesses.json -- per-harness profiles consumed by Tools/zagent/Build-HarnessArtifacts.ps1. JSON has no comments, so every explanatory note lives in a \"$comment\"-prefixed key beside the data it explains -- read those before editing a value. Only Claude's artifacts are generated as of Stage 3 (see the two \"$comment\" fields inside harnesses.opencode/harnesses.codex below); all three profiles are written now as DATA so a later stage is a wiring exercise, not a design one.",
+
+  "_roster": [
+    "MODEL ROSTER -- the single place to swap models. This mirrors the",
+    "convention in ~/.config/opencode/opencode.jsonc: change ONE line here,",
+    "then run `pwsh Tools/zagent/Build-HarnessArtifacts.ps1 -Harness <id>`,",
+    "and nothing else needs to change. The roster is repeated as literal",
+    "values inside each harness's `roles`/`unusedTiers` below (JSON has no",
+    "variables/anchors), so THIS array is documentation of intent, not the",
+    "read path -- the generator reads the literal values in `harnesses.<id>`.",
+    "Keep this list and those values in sync by hand; a mismatch here is a",
+    "stale comment, not a bug, but let it drift and the next swap edits the",
+    "wrong copy.",
+    "",
+    "claude:    worker sonnet=sonnet          worker opus=opus",
+    "           reviewer LOW/MEDIUM=sonnet    reviewer HIGH=opus",
+    "           parked haiku=haiku",
+    "opencode:  worker sonnet=opencode-go/deepseek-v4.1-flash",
+    "           worker opus=opencode-go/glm-5.3",
+    "           reviewer LOW/MEDIUM=opencode-go/glm-5.3-flash",
+    "           reviewer HIGH=opencode-go/glm-5.3",
+    "           parked haiku=null (no haiku-class model in this roster)",
+    "codex:     worker sonnet=gpt-5.6-terra   worker opus=gpt-5.6-sol",
+    "           reviewer LOW=gpt-5.6-luna     reviewer MEDIUM=gpt-5.6-terra",
+    "           reviewer HIGH=gpt-5.6-sol     parked haiku=gpt-5.6-luna",
+    "",
+    "★ unusedTiers is about the worker tier LADDER, not about models.",
+    "codex's gpt-5.6-luna is UNREACHABLE as a worker (haiku is not in",
+    "roles.worker -- TRIVIAL is being retired from the complexity",
+    "vocabulary in a concurrent change, so there is nothing that routes to",
+    "it) AND LIVE as the codex LOW-risk reviewer, in the very same file. A",
+    "reader who asks \"is luna live?\" gets a different answer depending on",
+    "which role they mean -- say so here rather than let the two rows",
+    "silently disagree."
+  ],
+
+  "tierLadder": "Tools/Vault/cli/legacy-pure/routing.mjs::MODEL_LADDER",
+
+  "$comment_review_mode": "review.mode may only WIDEN -- legal values are \"payload\" (review exactly when review.required is true on the claim payload) or \"always\" (review every dispatch regardless of the payload). There is no \"never\": a profile can only ADD review over what the payload already asks for, never subtract from it.",
+
+  "$comment_haiku_retirement": "TRIVIAL is being retired from the complexity vocabulary in a concurrent change (see zagent.project.json / routing.mjs editors), so haiku becomes an UNROUTED worker tier here ahead of that landing. An unrouted tier is one absent from roles.worker and present in unusedTiers, which is a MAP (not an array) specifically so the parked model+its wiring survive intact -- re-introducing TRIVIAL->haiku later is one entry moving back from unusedTiers to roles.worker, not a re-derivation. The generator emits role files ONLY from roles.worker, so every harness below yields exactly five generated role files (2 worker + 3 reviewer) regardless of what unusedTiers carries.",
+
+  "$comment_effort": "There is NO effortSettable key here, deliberately. Effort comes from complexity alone (see zagent.project.json policy.resolved.routing.effortByComplexity) and the MODEL escalates with complexity AND risk together as independent axes (e.g. SIMPLE+HIGH routes to model:opus at effort:low) -- so no single per-tier role definition could carry the right effort for every ticket that tier receives. A key with exactly one legal value would be dead data; routing.effort stays advisory everywhere and is not modelled per-role in this file.",
+
+  "harnesses": {
+    "claude": {
+      "$comment": "The only harness Stage 3 actually generates artifacts for.",
+      "entryPoint": ".claude/commands/tick.md",
+      "invocation": "/tick",
+      "roleDir": ".claude/agents",
+      "roleFormat": "yaml-md",
+      "bodyDelivery": "generated",
+      "deliveryMode": "inline",
+      "$comment_deliveryMode": "Set to \"inline\" (TICK.md's full body copied into .claude/commands/tick.md) rather than \"stub\" (a pointer telling Claude to go Read TICK.md itself). The design wanted a real measurement of which form a worker actually follows better -- two or three ticks run each way -- and that measurement has not been run. Absent it, the default stays the form ALREADY PROVEN IN PRODUCTION (today's .claude/commands/tick.md IS a full inline copy) rather than betting on the unmeasured alternative. See Build-HarnessArtifacts.ps1's own header for the paired headroom measurement that bounds how long \"stub\" stays viable at all.",
+      "roles": {
+        "worker": { "sonnet": {"model": "sonnet"}, "opus": {"model": "opus"} },
+        "reviewerByRisk": { "LOW": {"model": "sonnet"}, "MEDIUM": {"model": "sonnet"}, "HIGH": {"model": "opus"} }
+      },
+      "$comment_reviewerByRisk_LOW": "claude's LOW row is an ASSUMPTION, not a measured owner decision -- the owner named MEDIUM and HIGH only (reviewOn: [\"HIGH\",\"MEDIUM\"] in zagent.project.json). It is filled in because review.required can be true on a LOW-risk ticket via the DoD-assertion scan (TICK.md), which then needs a reviewer model that does not exist in reviewOn's own vocabulary. One line to change if the owner picks a different tier for it.",
+      "unusedTiers": { "haiku": {"model": "haiku"} },
+      "workerToolDenial": "enforced",
+      "review": {"mode": "payload"},
+      "loopMode": "in-harness",
+      "controls": {
+        "DISPATCH": "Agent",
+        "AWAIT": "completion notification",
+        "ABORT": "TaskStop",
+        "SCHEDULE": "ScheduleWakeup",
+        "STOP": "ScheduleWakeup{stop:true}"
+      },
+      "preauth": {
+        "kind": "prefix-allowlist",
+        "sources": [".claude/commands/tick.md (allowed-tools frontmatter)", ".claude/settings.json"]
+      },
+      "humanPrerequisites": []
+    },
+
+    "opencode": {
+      "$comment": "DATA ONLY in Stage 3 -- Build-HarnessArtifacts.ps1 throws \"not yet implemented -- Stage 5/6\" if asked to emit this harness's artifacts. Filled from Stage 0's measured verdicts (stage0-verdicts.md), not guessed.",
+      "entryPoint": ".opencode/commands/tick.md",
+      "$comment_entryPoint": "PLURAL directory pinned per Stage 0 probe 5: OpenCode accepts singular or plural, but plural matches ~/.config/opencode/commands/ and .claude/agents/, so plural is used everywhere for consistency rather than relying on the permissive fallback.",
+      "invocation": "/tick",
+      "roleDir": ".opencode/opencode.json",
+      "$comment_roleDir": "FOUND FALSE ON DISK during Stage 5 and corrected here: this used to read \".opencode/agent\", implying a directory of one file per role the way .claude/agents/ works. OpenCode has no such directory -- Stage 0 probe 9 (measured) and probe 4 (measured) both point at a SINGLE project config file, .opencode/opencode.json, whose top-level \"agent\" key is a map of role name -> AgentConfig (confirmed against the bundled @opencode-ai/sdk v2 types.gen.d.ts and the user's own now-deleted ~/.config/opencode/opencode.jsonc, which used exactly this shape for ten hand-written subagents). roleFormat \"json-inline\" already said as much; roleDir just had not been fixed to match. There is no \".opencode/agent/\" directory anywhere in this repo's generated output.",
+      "roleFormat": "json-inline",
+      "bodyDelivery": "reference",
+      "$comment_bodyDelivery": "Stage 0 probe 4 (measured): {file:...} in a repo-level .opencode/opencode.json resolves against THAT config file's OWN directory, applied to raw text before JSONC parsing -- so {file:../Tools/zagent/protocol/roles/generated/worker.resolved.md} from .opencode/opencode.json lands on the real repo path. bodyDelivery is therefore \"reference\": OpenCode's role config points AT the resolved charter file (Tools/zagent/protocol/roles/generated/{worker,reviewer}.resolved.md) rather than embedding a copy of the text, unlike Claude's \"generated\" (a full copy baked into each per-tier .md).",
+      "deliveryMode": "inline",
+      "$comment_deliveryMode": "\"inline\", like the other two. This was \"stub\" and was changed deliberately. \"stub\" and bodyDelivery \"reference\" are DIFFERENT AXES: bodyDelivery concerns the ROLE bodies, which OpenCode really does resolve natively via {file:...} (measured), while deliveryMode concerns the ENTRY POINT, and the stub entry point did NOT use {file:...} -- it told the session to go Read TICK.md in full. That makes it depend on OpenCode reading ~1950 lines in one go, and the 2000-line headroom figure bounding that is CLAUDE CODE'S Read-tool default, never measured for OpenCode. \"stub\" is unmeasured on every harness -- the design wanted two or three real ticks per form and that comparison was never run -- so shipping the one harness that used it on an unmeasured limit borrowed from a different tool was the weakest link here. Flipping to \"inline\" costs a larger generated file and removes the bet. To revert, set this back to \"stub\": the parity test's headroom assertion then BINDS again and will fail loudly with a margin someone has to justify, which is exactly the signal that should gate that decision.",
+      "roles": {
+        "worker": { "sonnet": {"model": "opencode-go/deepseek-v4.1-flash"}, "opus": {"model": "opencode-go/glm-5.3"} },
+        "reviewerByRisk": { "LOW": {"model": "opencode-go/glm-5.3-flash"}, "MEDIUM": {"model": "opencode-go/glm-5.3-flash"}, "HIGH": {"model": "opencode-go/glm-5.3"} }
+      },
+      "unusedTiers": { "haiku": null },
+      "$comment_unusedTiers": "null, not omitted: \"every harness declares every key\" applies to unusedTiers too. There is no haiku-class model in the confirmed OpenCode roster (Stage 0 probe 8 lists exactly three ids), so the parked slot is explicitly empty rather than missing.",
+      "workerToolDenial": "enforced",
+      "$comment_workerToolDenial": "Stage 0 probe 3, MEASURED: repo-level permission:{bash:deny,task:deny} is a real top-level Config field, deep-merged project-over-global, enforced by an allow/deny/ask ruleset at tool-execution time. Probe 10, MEASURED: subagent_depth defaults to 1 and IS enforced (walks parentID) -- a depth-0 orchestrator may spawn, the depth-1 worker child may not spawn further, and a spawned child gets an auto-added task:deny permission unless it grants itself one. Ship the default; do not raise it.",
+      "permissionByRole": {
+        "$comment": "STAGE 5 CORRECTION -- the design this was drafted from carried a single flat `permission:{edit:deny,bash:deny,task:deny,webfetch:deny}` block copied from the user's own read-only `explorer` agent and applied to EVERY generated agent, WORKER included. `edit:deny` on a WORKER is wrong -- authoring file edits is the worker's entire job -- so permission is per-ROLE here, not a harness-wide constant. Verified against the bundled @opencode-ai/sdk's v2 config schema (Tools/zagent/protocol -- see Build-HarnessArtifacts.ps1's opencode emitter comment for the exact file) and against the user's own now-deleted ~/.config/opencode/opencode.jsonc, which used this identical vocabulary for ten hand-written subagents: permission keys are edit/bash/task/webfetch/read/glob/grep/list/... (allow|ask|deny), NOT edit/write -- there is no separate 'write' key, 'edit' alone gates every file mutation. The v1 SDK generation bundled alongside v2 in the same package omits 'task' entirely, but Stage 0 probe 3 measured permission:{bash:deny,task:deny} actually enforced at tool-execution time, so the v2-shaped vocabulary (the one with 'task') is what this runtime honours, and that is what these two blocks use. read/glob/grep/list are left unset (default allow) on both roles -- REVIEWER needs them for Read/Grep/Glob, and WORKER needs them for Read/Grep/Glob too.",
+        "worker": {"edit": "allow", "bash": "deny", "task": "deny", "webfetch": "deny"},
+        "reviewer": {"edit": "deny", "bash": "deny", "task": "deny", "webfetch": "deny"}
+      },
+      "subagentDepth": 1,
+      "$comment_subagentDepth": "Stage 0 probe 10, MEASURED: subagent_depth defaults to 1 and is already the smallest value that lets a depth-0 orchestrator (the OpenCode session driving /tick) dispatch a depth-1 WORKER or REVIEWER subagent -- a spawned child cannot itself spawn further (auto-added task:deny) at the default. Emitted into .opencode/opencode.json EXPLICITLY, with a comment saying why, rather than left to the (identical) default implicitly -- ship the default, do not raise it. The user's own ~/.config/opencode/opencode.jsonc set this to 4 for an unrelated multi-layer /develop workflow (orchestrator -> proposer/reviewer chains); that value has no bearing on this repo's project-level config.",
+      "review": {"mode": "payload"},
+      "loopMode": "manual",
+      "$comment_loopMode": "Stage 0 found no CLI/config authoring surface for a recurring OpenCode job (nothing equivalent was probed as present), so a queue wakeup is a human re-invocation, matching next.json's `loopMode: manual` row in TICK.md.",
+      "controls": {
+        "DISPATCH": "task tool (subagent, depth 1)",
+        "AWAIT": "subagent return value",
+        "ABORT": null,
+        "SCHEDULE": null,
+        "STOP": null
+      },
+      "$comment_controls": "ABORT/SCHEDULE/STOP are null: no probed mechanism exists for any of the three under `manual` loopMode. TICK.md's own dispatch table already has a `manual` row for SCHEDULE (\"report the delay; the human waits\" / \"report and end\"), so null here is read by the entry point template, not treated as a gap.",
+      "preauth": {
+        "kind": "config",
+        "sources": [".opencode/opencode.json (permission)"]
+      },
+      "humanPrerequisites": [
+        "No in-harness scheduling exists (loopMode: manual) -- a human re-invokes /tick for each firing, or drives it from an external loop."
+      ]
+    },
+
+    "codex": {
+      "$comment": "DATA ONLY in Stage 3 -- Build-HarnessArtifacts.ps1 throws \"not yet implemented -- Stage 5/6\" if asked to emit this harness's artifacts. Filled from Stage 0's measured verdicts (stage0-verdicts.md), not guessed.",
+      "entryPoint": ".codex/skills/tick/SKILL.md",
+      "$comment_entryPoint": "Stage 0 probe 11, MEASURED via two independent code paths: .codex/skills/tick/SKILL.md, NOT .agents/skills/ as an earlier plan assumed.",
+      "invocation": "$tick",
+      "roleDir": ".codex/agents",
+      "$comment_roleDir": "PLURAL, per Stage 0 probe 5 (MEASURED): Codex accepts plural ONLY, unlike OpenCode's either-spelling tolerance.",
+      "roleFormat": "toml",
+      "bodyDelivery": "generated",
+      "$comment_bodyDelivery": "\"generated\" (a full copy of the resolved charter embedded in the role's TOML), not \"reference\": Codex has no probed equivalent of OpenCode's {file:...} config-time inclusion, so the charter text has to be physically present in the emitted file. See item 6 of the Stage 3 plan (and Build-HarnessArtifacts.ps1) for the TOML quoting rule this implies -- literal ''' strings, never \"\"\".",
+      "deliveryMode": "inline",
+      "$comment_deliveryMode": "\"inline\", matching bodyDelivery: with no reference mechanism, a \"stub\" entry point pointing at TICK.md would leave the worker unable to resolve it the way OpenCode's {file:...} does -- so the SKILL.md entry point carries the same full-body-inline shape as Claude's, not the stub shape.",
+      "roles": {
+        "worker": { "sonnet": {"model": "gpt-5.6-terra"}, "opus": {"model": "gpt-5.6-sol"} },
+        "reviewerByRisk": { "LOW": {"model": "gpt-5.6-luna"}, "MEDIUM": {"model": "gpt-5.6-terra"}, "HIGH": {"model": "gpt-5.6-sol"} }
+      },
+      "$comment_reviewerByRisk_LOW": "Sending LOW-risk reviews to the SMALLEST model (gpt-5.6-luna) is defensible only because Codex is the harness most likely to run review.mode:\"always\" -- if every ticket is reviewed here, LOW-risk reviews are far more numerous and mostly routine, so a cheaper model on the highest-volume lowest-signal band is a deliberate cost trade. That argument is CONDITIONAL ON PROBE 1, which is incomplete (see workerToolDenial's own $comment). If probe 1 is later re-run and Codex turns out to ENFORCE shell/spawn denial, review.mode drops from \"always\" to \"payload\", LOW-risk reviews become as rare as on the other harnesses, and the volume premise evaporates -- leaving only \"the smallest model reviews the band the DoD-assertion scan targets\", which the protocol argues AGAINST (a LOW-risk ticket's review.required is set precisely because its DoD asserts something a gate cannot settle -- exactly the kind of finding a small model is least equipped to catch). The fix is then one line: reviewerByRisk.LOW model -> gpt-5.6-terra. Written down here so whoever next re-runs probe 1 finds the consequence beside the roster, not buried in a stage-6 report nobody re-reads.",
+      "unusedTiers": { "haiku": {"model": "gpt-5.6-luna"} },
+      "reviewerSandbox": "read-only",
+      "$comment_reviewerSandbox": "Codex's sandbox_mode has exactly two values -- read-only (blocks edits too) and workspace-write (grants a shell, see workerToolDenial's $comment) -- so there is no per-tool denial to configure, only a binary choice per role. read-only is exactly right for the REVIEWER (it never edits, builds, or runs anything by charter already) and is emitted into every reviewer's own .toml as sandbox_mode. So Codex CAN enforce the reviewer structurally even though it cannot enforce the worker: review.mode:\"always\" plus a sandboxed reviewer is the compensating pair for a worker whose tool denial is merely \"declared\". The worker's own sandbox_mode (\"workspace-write\" -- it must be able to edit files) is not parked here as data because there is nothing to choose: read-only would break the worker's entire job, so workspace-write is the only legal value and Build-HarnessArtifacts.ps1 hardcodes it with this same reasoning inline rather than round-tripping a one-value choice through this file.",
+      "workerToolDenial": "declared",
+      "$comment_workerToolDenial": "Stage 0 probe 1: usage cap blocked the behavioural confirmation run before it could complete. Static evidence (the shell tool is registered behind a feature flag) leans toward `enforced`, but the CONSERVATIVE reading (`declared`) is kept until the behavioural run in stage0-verdicts.md's \"Still open\" item 1 actually completes both halves (shell refusal AND spawn refusal from a scratch dir). What would upgrade this to `enforced`: re-running that exact probe after the usage cap resets and getting a clean double-refusal.",
+      "review": {"mode": "always"},
+      "$comment_review_mode": "Forced to \"always\" by policy: workerToolDenial:\"declared\" means I1 (worker never builds/tests/commits/touches the board) is NOT structurally enforced on this harness, only asserted in the role's own text -- so every dispatch is reviewed rather than only the payload-flagged subset, until workerToolDenial is confirmed enforced (see the comment on that key) and this can drop back to \"payload\".",
+      "loopMode": "manual",
+      "$comment_loopMode": "Stage 0 probe 7: Codex Automations exist and are enabled, but have NO CLI or config authoring surface -- GUI only. loopMode cannot be in-harness until that surface exists (see humanPrerequisites and stage0-verdicts.md's \"Still open\" item 3).",
+      "controls": {
+        "DISPATCH": "multi-agent spawn (features.multi_agent)",
+        "AWAIT": "subagent completion",
+        "ABORT": null,
+        "SCHEDULE": null,
+        "STOP": null
+      },
+      "preauth": {
+        "kind": "config",
+        "sources": [".codex/config.toml"]
+      },
+      "$comment_preauth": "Stage 0 probe 6, MEASURED: approval_policy is a real config key settable by -c and in TOML. trust_level is MACHINE-LOCAL (~/.codex/config.toml [projects.'<path>']) and NOT repo-committable, so it cannot be asserted from a checkout. [windows] sandbox=\"elevated\" parses but its backing feature is disabled in this build -- it enforces NOTHING today. Both caveats travel with this key rather than being silently assumed away. What a PARITY TEST can and cannot assert: it can assert .codex/config.toml exists and parses as valid TOML (Tools/zagent/Test-HarnessParity.ps1, a later pass); it CANNOT assert that Codex actually loads and applies it as a project config layer end to end -- that half of Stage 0 probe 1/2's confirming run was blocked by a usage cap and is still open (stage0-verdicts.md, 'Still open' item 2), and it CANNOT assert trust_level or the Windows elevated sandbox at all, both being machine-local or inert respectively.",
+      "humanPrerequisites": [
+        "Codex Automations authoring is GUI-only (Stage 0 probe 7) -- no CLI or config surface exists to wire a repo skill to a schedule, so SCHEDULE/loopMode:in-harness cannot be configured from this checkout alone.",
+        "trust_level (machine-local, ~/.codex/config.toml) must be set by a human on each machine that runs this harness; it cannot be committed or asserted from the repo.",
+        "features.multi_agent (DISPATCH's own mechanism) lives in ~/.codex/config.toml -- outside this repo, so no test here can assert it. It is not explicitly set today and defaults to true (Stage 0, stage0-verdicts.md). Declared here so the entry point's own pre-flight checks it before relying on a multi-agent spawn as DISPATCH; Tools/zagent/Test-HarnessParity.ps1 must not assert it -- nothing in this checkout can reach a machine-local config file to verify."
+      ]
+    }
+  }
+}

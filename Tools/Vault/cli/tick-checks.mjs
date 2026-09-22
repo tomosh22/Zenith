@@ -1,8 +1,8 @@
 /*
- * Pure(ish) decision logic for rules `.claude/commands/tick.md` used to
+ * Pure(ish) decision logic for rules `Tools/zagent/protocol/TICK.md` used to
  * enforce only by asking the orchestrator to remember them.
  *
- * `.claude/commands/tick.md:1274` states the principle this module exists to
+ * `Tools/zagent/protocol/TICK.md#6-verify` states the principle this module exists to
  * serve: "a rule enforced at a check that already fails is a rule, and the
  * same rule in this paragraph is a hope." This is the sole implementation of
  * these checks — there is no second copy anywhere else in the repo.
@@ -190,7 +190,7 @@ export function unexplainedExcursions(excursions, explanationText) {
 /**
  * Checks that every file recorded as changed (`.zagent/run/<KEY>/changed.txt`,
  * written by the `gates` step) actually landed in the commit — the
- * `commit -am` failure mode tick.md:1496 names by name: `-a` stages
+ * `commit -am` failure mode Tools/zagent/protocol/TICK.md#6-verify names by name: `-a` stages
  * modifications to tracked files and leaves a worker-CREATED file behind,
  * untracked, so the gates that certified the ticket green ran against a tree
  * where the file existed and the break surfaces on somebody else's next
@@ -364,7 +364,7 @@ export function durableFindingsAnswer(worklog) {
 
 /**
  * Answers whether `blocked-scope` is defensible for this ticket right now,
- * per tick.md:1457's rule that the label means "not buildable as filed", not
+ * per Tools/zagent/protocol/TICK.md#6-verify's rule that the label means "not buildable as filed", not
  * "a run failed". A RED verdict (exit 2/3/4 — a gate actually ran and
  * actually failed) means this is a FAILURE block, not a scope one, whatever
  * else is true of the ticket. Exit 10 (a pin needs bumping) is explicitly
@@ -609,4 +609,287 @@ export function forbiddenAbandonFlags(argv) {
     if (hit) present.push(name);
   }
   return present;
+}
+
+// ─── 9. Harness identity ────────────────────────────────────────────────
+
+/**
+ * `Tools/zagent/protocol/harnesses.json`, read once. Every caller below
+ * treats a missing or unparsable file as "no harnesses known" rather than
+ * throwing — a harness lookup is a courtesy check (refuse an unknown id,
+ * name a known one's `workerToolDenial`), never something a corrupt config
+ * file should be able to turn into a hard crash on every `claim`/`finish`.
+ */
+async function readHarnessesConfig(repoRoot) {
+  const filePath = path.join(repoRoot, 'Tools', 'zagent', 'protocol', 'harnesses.json');
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    return { found: false, path: filePath, harnesses: {}, error: error?.code === 'ENOENT' ? null : error.message };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return { found: true, path: filePath, harnesses: (parsed && typeof parsed.harnesses === 'object' && parsed.harnesses) || {}, error: null };
+  } catch (error) {
+    return { found: true, path: filePath, harnesses: {}, error: error.message };
+  }
+}
+
+/** Every harness id `harnesses.json` declares — what `claim --harness` validates against. */
+export async function knownHarnessIds(repoRoot) {
+  const config = await readHarnessesConfig(repoRoot);
+  return Object.keys(config.harnesses);
+}
+
+/** One harness's profile object (`workerToolDenial`, `review`, …), or `null` if unknown/unset. */
+export async function harnessProfile(repoRoot, harnessId) {
+  if (!harnessId) return null;
+  const config = await readHarnessesConfig(repoRoot);
+  return config.harnesses[harnessId] ?? null;
+}
+
+// ─── 10. WORKER-MOVED-NOTHING — the I1 compensating control ────────────
+
+/**
+ * The fixed set of files `.zagent/run/<KEY>/` legitimately holds once the
+ * ORCHESTRATOR itself has written to it — everything `claim` through
+ * `finish` are documented to produce. Anything else found there is not one
+ * of "the orchestrator's own writes" `scratchMutated` is named for: on a
+ * `declared` harness (one whose worker has a real shell) that is exactly
+ * where a worker with no business in `.zagent/` would leave a trace.
+ */
+const KNOWN_SCRATCH_FILES = new Set([
+  'ticket.json', 'body.md', 'drift.txt', 'rulings.md', 'prompt.md',
+  'filelist.txt', 'build_prompt.exit', 'predispatch.json', 'gates.json',
+  'changed.txt', 'tick_gates.json', 'gates.log', 'diff.patch',
+  'worklog.md', 'result.md',
+]);
+
+/**
+ * `.zagent/run/<KEY>/predispatch.json` — the baseline `build_prompt.ps1`
+ * writes LAST, after `claim` and after step 4's `git switch -c`, precisely
+ * so neither of those two legitimate moves ever reads as a violation (see
+ * that script's own header and TICK.md step 5).
+ */
+async function readPredispatch(repoRoot, key) {
+  const filePath = path.join(repoRoot, '.zagent', 'run', String(key), 'predispatch.json');
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { found: false, path: filePath, data: null, error: null };
+    throw error;
+  }
+  try {
+    return { found: true, path: filePath, data: JSON.parse(raw), error: null };
+  } catch (error) {
+    return { found: true, path: filePath, data: null, error: error.message };
+  }
+}
+
+/**
+ * One `git status --porcelain` (v1, two-letter status) line, split into its
+ * INDEX (position 0 — staged) and WORKTREE (position 1 — unstaged) status
+ * characters. This function reads ONLY the index character; nothing in this
+ * file's `indexStaged` logic ever branches on the worktree one — see the
+ * doc comment on `workerMovedNothing` for why that separation is load-
+ * bearing, not incidental.
+ */
+function porcelainIndexChar(line) {
+  return typeof line === 'string' && line.length >= 2 ? line[0] : null;
+}
+
+/** The RAW porcelain lines (trimmed) whose INDEX column marks them staged. */
+function stagedLines(lines) {
+  const set = new Set();
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const index = porcelainIndexChar(line);
+    if (index && index !== ' ' && index !== '?') set.add(String(line).trim());
+  }
+  return set;
+}
+
+async function currentGitState(repoRoot) {
+  const runGit = args => execFile('git', ['-C', repoRoot, ...args], { encoding: 'utf8' }).then(r => r.stdout).catch(() => null);
+  const [headRaw, branchRaw, statusRaw] = await Promise.all([
+    runGit(['rev-parse', 'HEAD']),
+    runGit(['rev-parse', '--abbrev-ref', 'HEAD']),
+    runGit(['status', '--porcelain']),
+  ]);
+  return {
+    head: headRaw ? headRaw.trim() : null,
+    branch: branchRaw ? branchRaw.trim() : null,
+    lines: statusRaw ? statusRaw.split(/\r?\n/).filter(Boolean) : [],
+  };
+}
+
+/** Every plain FILE currently under `.zagent/run/<KEY>/` — no subdirectory convention exists there, so one level deep is exhaustive. */
+async function scratchEntries(repoRoot, key) {
+  const dir = path.join(repoRoot, '.zagent', 'run', String(key));
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries.filter(entry => entry.isFile()).map(entry => entry.name);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+/**
+ * The I1 compensating control TICK.md's Operating Invariants promise on a
+ * `declared` harness (one whose worker has a real shell and no structural
+ * denial): did the WORKER commit, branch, stage anything, touch the board,
+ * or write into scratch it has no business touching, between the baseline
+ * `build_prompt.ps1` recorded (step 5, deliberately the LAST write before
+ * dispatch — never `claim`'s own; see that script's own header) and right
+ * now?
+ *
+ * `state` is three-valued, matching this file's fail-closed convention: a
+ * missing or unparsable baseline is `'unverified'`, never folded into
+ * `'clean'` — the same distinction every other check here makes. `ok` is
+ * `true` for both `clean` and `unverified` (this function ABSTAINS on a
+ * missing baseline rather than refusing; what an `unverified` result means
+ * is a call-site decision — `guard` tolerates it unconditionally, `finish`
+ * only refuses it on a `declared` harness — never `false` unless `state`
+ * is `'violated'`.
+ *
+ * `currentBoardRow` is caller-supplied (`{status, assignee, updatedAt}`)
+ * because this file otherwise touches only git and the filesystem, never a
+ * live Vault index — the two real call sites (`guard`'s dispatcher, which
+ * already holds one, and `finish`'s `checkFinishContent`, which already
+ * holds the ticket record) can supply it cheaply; omitted, `boardMoved` is
+ * simply never checked rather than treated as evidence either way.
+ *
+ * ★ DELIBERATELY DISJOINT FROM `fileListExcursion`, NOT MERELY ORDERED
+ * AROUND IT — that is how the two avoid double-reporting the same line.
+ * The worker is SUPPOSED to change files: every edit moves a worktree-
+ * column `M`, every new file adds a `??` line, so a naive set difference
+ * over the whole of `git status --porcelain` reports `violated` on every
+ * successful ticket. This function never reads the WORKTREE column or an
+ * untracked (`??`) line for ANY purpose — `indexStaged` reads only the
+ * INDEX column, because staging anything, even a file the worker was
+ * authorised to edit, is the ORCHESTRATOR's own job at step 7
+ * ("Integrate"), never the worker's; `guard` (where this runs) fires
+ * BEFORE step 7, so a staged index column at that point is never
+ * legitimate regardless of which file it names. Which file changed in the
+ * WORKTREE, and whether that file was authorised, is `fileListExcursion`'s
+ * question alone. The two checks read disjoint columns of the same `git
+ * status` output — no single line can ever satisfy both, so neither has to
+ * know the other ran, and there is no ordering rule to maintain.
+ *
+ * `indexStaged` is differential against `predispatch.json`'s own recorded
+ * porcelain lines, not absolute against an assumed-empty baseline: step 3's
+ * precondition requires a clean tree before `claim`, so the baseline
+ * should always show zero staged lines in practice, but a baseline that
+ * (for whatever reason) already had one staged must not have that SAME
+ * line blamed on the worker. Only a staged line ABSENT from the baseline
+ * counts.
+ *
+ * ★ NARROWER THAN I1, AND THAT GAP IS ACCEPTED, NOT CLOSED. This sees
+ * commits, staged files, branches, board rows and stray scratch files. It
+ * CANNOT see a worker that ran a BUILD: build output is gitignored, so it
+ * leaves nothing in `git status` and nothing under `.zagent/run/<KEY>/`
+ * for this function to find. On a `declared` harness that is a real
+ * exposure — this repo has already measured a concurrent build producing
+ * zero-byte assets — so a green result here is evidence the worker did
+ * not commit, branch, stage, touch the board, or litter scratch; it is
+ * NEVER proof the worker had no shell at all.
+ */
+export async function workerMovedNothing({ repoRoot, key, currentBoardRow = null }) {
+  const record = await readPredispatch(repoRoot, key);
+  if (!record.found) {
+    return {
+      ok: true, state: 'unverified', violations: [],
+      reason: `no predispatch.json at ${record.path} — build_prompt.ps1 has not run (or never reached its write) for this ticket, so WORKER-MOVED-NOTHING cannot be checked. Tolerated at guard; whether that is tolerated at finish depends on the ticket's harness.`,
+    };
+  }
+  const before = record.data;
+  if (record.error || !before || typeof before !== 'object'
+    || typeof before.head !== 'string' || typeof before.branch !== 'string' || !Array.isArray(before.porcelain)) {
+    return {
+      ok: true, state: 'unverified', violations: [],
+      reason: `predispatch.json at ${record.path} ${record.error ? `did not parse (${record.error})` : 'is missing one of head/branch/porcelain'} — an incomplete baseline is treated the same as no baseline.`,
+    };
+  }
+
+  const violations = [];
+  const after = await currentGitState(repoRoot);
+
+  if (after.head && after.head !== before.head) {
+    violations.push({ kind: 'headMoved', detail: `predispatch HEAD ${before.head} -> current HEAD ${after.head}` });
+  }
+  if (after.branch && after.branch !== before.branch) {
+    violations.push({ kind: 'branchMoved', detail: `predispatch branch "${before.branch}" -> current branch "${after.branch}"` });
+  }
+  const beforeStaged = stagedLines(before.porcelain);
+  for (const line of stagedLines(after.lines)) {
+    if (!beforeStaged.has(line)) violations.push({ kind: 'indexStaged', detail: line });
+  }
+  if (currentBoardRow && typeof currentBoardRow === 'object' && before.boardRow && typeof before.boardRow === 'object') {
+    for (const field of ['status', 'assignee', 'updatedAt']) {
+      const was = before.boardRow[field] ?? null;
+      const now = currentBoardRow[field] ?? null;
+      if (String(was ?? '') !== String(now ?? '')) {
+        violations.push({ kind: 'boardMoved', detail: `${field}: ${JSON.stringify(was)} -> ${JSON.stringify(now)}` });
+      }
+    }
+  }
+  for (const name of await scratchEntries(repoRoot, key)) {
+    if (!KNOWN_SCRATCH_FILES.has(name)) violations.push({ kind: 'scratchMutated', detail: `.zagent/run/${key}/${name}` });
+  }
+
+  return {
+    ok: violations.length === 0,
+    state: violations.length === 0 ? 'clean' : 'violated',
+    violations,
+    reason: violations.length === 0 ? null
+      : `${violations.length} WORKER-MOVED-NOTHING violation(s) for ${key}: ${violations.map(v => `${v.kind} (${v.detail})`).join('; ')}`,
+  };
+}
+
+// ─── 11. Routing-line harness assertion ─────────────────────────────────
+
+const ROUTING_LINE_HARNESS = /\bran on ([^:\s]+):/i;
+
+/** The `<harness>` token out of a `ran on <harness>:<model>/<effort> …` routing line, or `null` if the line is absent. */
+export function routingLineHarness(worklogText) {
+  const match = ROUTING_LINE_HARNESS.exec(String(worklogText ?? ''));
+  return match ? match[1] : null;
+}
+
+/**
+ * Does the work log's own routing line ("ran on <harness>:…", TICK.md step
+ * 8) name the same harness `predispatch.json` recorded at dispatch time
+ * (step 5)? Three-valued for the identical reason `workerMovedNothing` is:
+ * a missing `harness` field — on either side — is `'unverified'`, never a
+ * throw and never a silent `'match'`. `finish` reads this the same way it
+ * reads that check's `state`: on an `enforced` harness a missing
+ * `predispatch.json` is tolerated, so `'unverified'` here must not itself
+ * become a refusal; only a genuine `'mismatch'` does.
+ */
+export async function routingHarnessMatches({ repoRoot, key, worklog }) {
+  const claimed = routingLineHarness(worklog);
+  const record = await readPredispatch(repoRoot, key);
+  const recorded = record.found && !record.error && record.data && typeof record.data === 'object' && typeof record.data.harness === 'string'
+    ? record.data.harness
+    : null;
+  if (recorded === null) {
+    return {
+      state: 'unverified', match: null, claimed, recorded: null,
+      reason: `no harness recorded in predispatch.json for ${key} — the work log's routing-line harness token cannot be checked against anything`,
+    };
+  }
+  if (claimed === null) {
+    return {
+      state: 'unverified', match: null, claimed, recorded,
+      reason: `the work log carries no "ran on <harness>:<model>/<effort> …" routing line for ${key} — cannot check its harness token`,
+    };
+  }
+  const match = claimed === recorded;
+  return {
+    state: match ? 'match' : 'mismatch', match, claimed, recorded,
+    reason: match ? null
+      : `the work log's routing line names harness "${claimed}", but predispatch.json recorded "${recorded}" for ${key} — the two must agree`,
+  };
 }

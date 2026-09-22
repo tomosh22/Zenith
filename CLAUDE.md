@@ -403,8 +403,8 @@ can develop here and ignore it entirely, with three exceptions.
 | File | Carries |
 |---|---|
 | `zagent.project.json` | Gate command lines, pinned unit baselines, per-category conventions, branching mode, living-doc directories. **Sent to the board with every request** |
-| `.claude/commands/tick.md` | The `/tick` protocol — nine steps, seven invariants |
-| `Tools/zagent/` | There is exactly one backend: `zagent.ps1` is a thin PowerShell dispatch shim that execs `node Tools/Vault/cli/client.mjs --vault <repoRoot>` with argv/env passed straight through, and exits — nothing else in this directory runs in a default checkout, and there is no config file to pick a backend because there is nothing left to pick between. It carries: `zagent.ps1` (the dispatch shim above), `ZagentClient.psm1` (pure helpers used by `build_prompt.ps1`), `build_prompt.ps1` (assembles a tick's worker prompt deterministically — invoked directly with `pwsh -File`; see `tick.md` step 5), `zagent.cmd` shim, and two assert scripts — `Test-ZagentClient.ps1`, `Test-BuildPrompt.ps1` — each prints its own count; do not pin one here, this line has been stale twice. `Tools/Vault/cli/tick-checks.mjs` is the sole implementation of the tick-protocol checks (excursions, commit completeness, `blocked-scope`, gate-verdict freshness), wired into `Tools/Vault/cli/write.mjs` and `client.mjs` — there is no second copy anywhere. **No Node, no `node_modules` in this directory itself** — Vault is Node and lives in `Tools/Vault/` |
+| `Tools/zagent/protocol/TICK.md` | The `/tick` protocol — nine steps, seven invariants. **Harness-neutral**: it names no harness, tool or model, only the five control verbs (`DISPATCH`/`AWAIT`/`ABORT`/`SCHEDULE`/`STOP`), the two roles (`WORKER`/`REVIEWER`) and the three tiers (`haiku`/`sonnet`/`opus`). Resolved into concrete mechanism by three per-harness entry points: `.claude/commands/tick.md` (Claude Code, `/tick`), `.opencode/commands/tick.md` (OpenCode, `/tick`), `.codex/skills/tick/SKILL.md` (Codex, invoked `$tick`) — all three GENERATED, never hand-edited; see `Tools/zagent/CLAUDE.md` |
+| `Tools/zagent/` | There is exactly one backend: `zagent.ps1` is a thin PowerShell dispatch shim that execs `node Tools/Vault/cli/client.mjs --vault <repoRoot>` with argv/env passed straight through, and exits — nothing else in this directory runs in a default checkout, and there is no config file to pick a backend because there is nothing left to pick between. It carries: `zagent.ps1` (the dispatch shim above), `ZagentClient.psm1` (pure helpers used by `build_prompt.ps1`), `build_prompt.ps1` (assembles a tick's worker prompt deterministically — invoked directly with `pwsh -File`; see `Tools/zagent/protocol/TICK.md` step 5), `zagent.cmd` shim, and two assert scripts — `Test-ZagentClient.ps1`, `Test-BuildPrompt.ps1` — each prints its own count; do not pin one here, this line has been stale twice. `Tools/Vault/cli/tick-checks.mjs` is the sole implementation of the tick-protocol checks (excursions, commit completeness, `blocked-scope`, gate-verdict freshness), wired into `Tools/Vault/cli/write.mjs` and `client.mjs` — there is no second copy anywhere. It also carries `protocol/`: the canonical role charters (`protocol/roles/{worker,reviewer}.md`) and their per-harness generated copies (`protocol/roles/generated/*.resolved.md`), the three harness profiles as data (`protocol/harnesses.json`), the shared entry-point template (`protocol/entrypoint.md.tmpl`), and `protocol/tier-mentions.allowlist`; the generator that turns all of that into each harness's own entry point and role files (`Build-HarnessArtifacts.ps1`, `-Harness <id>`, `-Check` for staleness); and the gate that checks the three harnesses stay in parity (`Test-HarnessParity.ps1`). **No Node, no `node_modules` in this directory itself** — Vault is Node and lives in `Tools/Vault/` |
 | `.zagent/` | Run scratch (`last.json`, `run/<KEY>/`). **Gitignored**, so the dirty-tree precondition still holds. A `claim`/`next` **through `zagent`** archives an existing `run/<KEY>/` to `run/<KEY>.prev/` (replacing an older `.prev`) before writing the fresh scratch, and reports `archivedPriorRun` on the result. The `npm run vault` entry point does not archive |
 
 The board keeps only POLICY — the agent account, the complexity→model
@@ -464,10 +464,25 @@ copy goes stale, and a stale gate list is exactly how a green run
 ratchets the wrong pinned baseline. The board keeps a mirror purely so
 its web UI and file-time `create` validation can see categories.
 
-`protectedPaths` from both sides are UNIONed, so this repo may add
-protections to itself and can never drop the board's. Both files above
-are protected: the loop may file a Suggestions row about its own gates,
-never commit a change to them.
+★ **CORRECTION, not an update — the sentence this replaces was false as
+implemented.** `protectedPaths` from both sides is **not** a union: `zagent
+guard` calls `checkProtectedPaths(index.config.policy.resolved, changed)`
+(`Tools/Vault/cli/local.mjs`), and `guardrailsOf`
+(`Tools/Vault/cli/compat.mjs`) resolves the list as `project.protectedPaths
+?? boardGuardrails ?? clientFile.protectedPaths` — a **fallback chain**,
+not a union. `boardGuardrails` (`vault.config.json`'s
+`policy.board.guardrails`, mirrored into `policy.resolved.guardrails`) is
+always present, so `zagent.project.json`'s own `protectedPaths` **never
+wins** and enforces nothing on its own; it has only ever survived by
+staying a strict subset of the board's list. So this repo cannot add a
+protection of its own that the board doesn't already have, and dropping
+one of the board's protections from `zagent.project.json` alone would do
+nothing — the fallback would still read `boardGuardrails`. `vault.config.json`
+— the file that actually holds the floor — was **not itself protected**
+until this round (`agent.config*.json` in the old list is a glob that does
+not match `vault.config.json`'s literal name); it is now. Both files are
+still protected in the ordinary sense: the loop may file a Suggestions row
+about its own gates, never commit a change to either.
 
 **A pinned unit baseline has exactly ONE home: `Tools/unit_baselines.json`.**
 Gate lines and workflows name the GAME — `-Game Zenithmon` — and
@@ -544,7 +559,17 @@ instead of quietly narrowing engine coverage.
 
 ### Running the loop
 
-A bare `claude` started in this repo is the whole setup:
+**Three harnesses run `/tick` today**, each against its own generated entry
+point — never hand-edit any of them; regenerate with
+`Tools/zagent/Build-HarnessArtifacts.ps1` (see `Tools/zagent/CLAUDE.md`):
+
+| Harness | Invocation | Entry point | Needs |
+|---|---|---|---|
+| Claude Code | `/tick` (a slash command) | `.claude/commands/tick.md` | just `claude` started in this repo — no `--add-dir`, no second checkout |
+| OpenCode | `/tick` (a repo command) | `.opencode/commands/tick.md` | the OpenCode desktop app pointed at this checkout |
+| Codex | `$tick` (a `$`-prefixed skill mention typed in the composer) | `.codex/skills/tick/SKILL.md` | the Codex desktop app pointed at this checkout — **Codex has no repo-level slash commands**, so a skill is its entry point, not a command |
+
+A bare `claude` started in this repo is the whole setup for the first row:
 
 ```
 /tick                # one tick against the head of whichever board has work
@@ -552,6 +577,16 @@ A bare `claude` started in this repo is the whole setup:
 /tick ZM-22          # run that ticket wherever it sits, once
 /loop /tick          # unattended, until the queues empty
 ```
+
+**Unattended queue-draining (`/loop /tick`, or any external scheduler firing
+`/tick` repeatedly) is Claude-Code-only.** OpenCode and Codex are GUI desktop
+apps with no external driver and no in-app scheduling surface reachable from
+this checkout, so both carry `loopMode: "manual"` in
+`Tools/zagent/protocol/harnesses.json` — a human re-invokes `/tick` /
+`$tick` for each firing there. Between firings on any harness, pacing is
+`.zagent/next.json`: `{disposition: "again"|"wait"|"stop", delaySeconds,
+reason}`, written by the tick that just ran and read by whatever fires the
+next one — a human, on the two manual harnesses.
 
 **No `--add-dir`, no second checkout.** The scratch is local, and the client
 is local. **`zagent` always talks to the local Vault** — this same
@@ -733,7 +768,7 @@ protected path as background without being refused — and reports the
 path AND the pattern, so the fix is obvious: split the protected half
 out as a human task.
 
-Size it deliberately: `--complexity TRIVIAL|SIMPLE|MODERATE|COMPLEX`
+Size it deliberately: `--complexity SIMPLE|MODERATE|COMPLEX`
 picks the model, `--risk LOW|MEDIUM|HIGH` escalates it one tier. Risk
 never blocks a merge — it buys more thinking.
 

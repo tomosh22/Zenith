@@ -19,7 +19,7 @@
     could tell, because the worker has no shell and no board to notice the
     cut against.
 
-  `.claude/commands/tick.md:1274` states the reason this exists as a script
+  `Tools/zagent/protocol/TICK.md#6-verify` states the reason this exists as a script
   rather than as another paragraph of prose: "a rule enforced at a check
   that already fails is a rule, and the same rule in this paragraph is a
   hope." Six remembered rules become: two judgement calls (-Files,
@@ -133,6 +133,23 @@ function Fail {
     Write-StdErr "build_prompt: $Message"
     Write-BuildPromptExit -Code $script:EXIT_ERROR -RepoPath $RepoPath -TicketKey $TicketKey
     exit $script:EXIT_ERROR
+}
+
+function Get-OptionalValue {
+    <#
+      Like Get-OptionalString, but returns the property's own CLR value (or
+      $null) instead of coercing everything through [string]. predispatch.json
+      needs a genuine JSON `null` for a field that is truly absent -- `harness`
+      most commonly, on a claim that predates `--harness` or never passed one
+      -- and Get-OptionalString's [string]$Default parameter cannot carry that:
+      passing $null to a [string]-typed parameter binds it as '', which would
+      make "absent" and "explicitly empty" the same JSON value.
+    #>
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $prop = $Object.PSObject.Properties[$Name]
+    if (-not $prop) { return $null }
+    return $prop.Value
 }
 
 function Get-OptionalString {
@@ -408,6 +425,53 @@ if (Test-Path -LiteralPath $promptPath) {
 $filelistPath = Join-Path $runDir 'filelist.txt'
 $filelistText = ($normalisedFiles -join "`n") + "`n"
 [System.IO.File]::WriteAllText($filelistPath, $filelistText, [System.Text.UTF8Encoding]::new($false))
+
+# ─── predispatch.json -- the WORKER-MOVED-NOTHING baseline ────────────
+#
+# `Tools/Vault/cli/tick-checks.mjs`'s `workerMovedNothing` is I1's
+# compensating control: did the WORKER commit, branch, stage, touch the
+# board, or litter scratch, between this write and `guard` (TICK.md step
+# 6.4)? This is DELIBERATELY THE LAST WRITE in this script, after `claim`
+# (a board write -- every board write is a commit, so a baseline taken at
+# claim time always sees a HEAD that has since moved) and after step 4's
+# `git switch -c` for a `branching: "branch"` category (which runs BETWEEN
+# claim and here) -- taking the baseline any earlier reports a phantom
+# headMoved/branchMoved for something the ORCHESTRATOR did, not the worker.
+function Get-GitLine {
+    param([string[]]$Arguments)
+    $output = & git -C $Repo @Arguments 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Fail "git $($Arguments -join ' ') failed (exit $LASTEXITCODE) -- cannot write predispatch.json without it."
+    }
+    return [string]$output
+}
+
+$predispatchHead = Get-GitLine -Arguments @('rev-parse', 'HEAD')
+$predispatchBranch = Get-GitLine -Arguments @('rev-parse', '--abbrev-ref', 'HEAD')
+$statusLines = @(& git -C $Repo status --porcelain 2>$null)
+if ($LASTEXITCODE -ne 0) {
+    Fail "git status --porcelain failed (exit $LASTEXITCODE) -- cannot write predispatch.json without it."
+}
+# Sorted, deduplicated -- a SET, not a log: `workerMovedNothing` compares this
+# against the porcelain lines it reads later to tell a line that was already
+# staged before dispatch apart from one the worker staged itself.
+$predispatchPorcelain = @($statusLines | Where-Object { $_ -and $_.Trim() -ne '' } | Sort-Object -Unique)
+
+$predispatch = [ordered]@{
+    head      = $predispatchHead
+    branch    = $predispatchBranch
+    porcelain = $predispatchPorcelain
+    boardRow  = [ordered]@{
+        status    = Get-OptionalValue $ticket 'status'
+        assignee  = Get-OptionalValue $ticket 'assignee'
+        updatedAt = Get-OptionalValue $ticket 'updatedAt'
+    }
+    harness   = Get-OptionalValue $ticket 'harness'
+    at        = [DateTime]::UtcNow.ToString('o')
+}
+$predispatchPath = Join-Path $runDir 'predispatch.json'
+$predispatchText = (($predispatch | ConvertTo-Json -Depth 5) + "`n")
+[System.IO.File]::WriteAllText($predispatchPath, $predispatchText, [System.Text.UTF8Encoding]::new($false))
 
 Write-BuildPromptExit -Code $script:EXIT_OK -RepoPath $Repo -TicketKey $Key
 exit $script:EXIT_OK

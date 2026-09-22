@@ -26,9 +26,17 @@
     "work the agent loop could never do, so every test-adding ticket was",
     "unreachable.",
     "",
-    "`protectedPaths` are UNIONed with the board's floor, never swapped",
-    "for it: this repo may add protections to itself and can never drop",
-    "the board's. `$`-prefixed keys are comments and are stripped.",
+    "`protectedPaths` here is DOCUMENTATION, not enforcement, and it is not",
+    "unioned with anything: `guardrailsOf` (Tools/Vault/cli/compat.mjs)",
+    "resolves protected paths as `project.protectedPaths ?? boardGuardrails",
+    "?? clientFile.protectedPaths` -- a FALLBACK CHAIN, not a union --",
+    "and `boardGuardrails` (vault.config.json's `policy.board.guardrails`,",
+    "the one the claim payload reports, mirrored into",
+    "`policy.resolved.guardrails` for `zagent guard`'s own",
+    "`checkProtectedPaths` call) is always present. So this file's list",
+    "never wins and enforces nothing on its own; the two vault.config.json",
+    "copies are the actual floor, and they must be edited by a human, same",
+    "as this file. `$`-prefixed keys are comments and are stripped.",
     "",
     "This file is itself protected: the loop may propose changes to its",
     "own gates as a Suggestions row, never commit them."
@@ -386,6 +394,7 @@
         "pwsh -NoProfile -File Tools\\Test_DocLintKeyCitations.ps1",
         "pwsh -NoProfile -File Tools\\zagent\\Test-ZagentClient.ps1",
         "pwsh -NoProfile -File Tools\\zagent\\Test-BuildPrompt.ps1",
+        "pwsh -NoProfile -File Tools\\zagent\\Test-HarnessParity.ps1",
         "pwsh -NoProfile -Command \"Set-Location Tools/Vault; npm test\"",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game DevilsPlayground",
@@ -503,6 +512,12 @@
   "protectedPaths": [
     ".claude/**",
     "zagent.project.json",
-    ".github/**"
+    ".github/**",
+    "vault.config.json",
+    "Tools/zagent/protocol/**",
+    "Tools/zagent/Build-HarnessArtifacts.ps1",
+    "Tools/zagent/Test-HarnessParity.ps1",
+    ".codex/**",
+    ".opencode/**"
   ]
 }

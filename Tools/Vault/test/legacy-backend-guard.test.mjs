@@ -110,7 +110,15 @@ test('the exception allowlist stays narrow and does not swallow a real hit', () 
   // repo's current content. The documentation follow-up landed, so the
   // former path exceptions are no longer allowed -- only the unrelated
   // vendored ImGui prefix stays exempt.
+  // Stage 1 of the harness-neutral /tick move (2026-09) split this file: the
+  // protocol body now lives at Tools/zagent/protocol/TICK.md, and
+  // .claude/commands/tick.md stays behind as a real, still-tracked file (the
+  // Claude entry point, frontmatter plus a verbatim copy of the body, still
+  // protected by `.claude/**`). Both paths are ordinary tracked files this
+  // guard's `git grep` walk can reach, and neither belongs in the vendor
+  // prefix or the (now-empty) path allowlist, so both must stay disallowed.
   assert.equal(isAllowed('.claude/commands/tick.md'), false);
+  assert.equal(isAllowed('Tools/zagent/protocol/TICK.md'), false);
   assert.equal(isAllowed('CLAUDE.md'), false);
   assert.equal(isAllowed('Games/Foundry/Docs/Board.md'), false);
   assert.equal(isAllowed('Games/Zenithmon/Docs/Board.md'), false);

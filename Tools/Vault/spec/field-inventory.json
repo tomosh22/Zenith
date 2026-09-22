@@ -221,7 +221,7 @@
     "jira.jira_sprint_status": ["PLANNED", "ACTIVE", "COMPLETED"],
     "jira.jira_issue_type": ["EPIC", "STORY", "TASK", "BUG", "SUBTASK"],
     "jira.jira_priority": ["CRITICAL", "HIGH", "MEDIUM", "LOW", "TRIVIAL"],
-    "jira.jira_complexity": ["TRIVIAL", "SIMPLE", "MODERATE", "COMPLEX"],
+    "jira.jira_complexity": ["SIMPLE", "MODERATE", "COMPLEX"],
     "jira.jira_risk": ["LOW", "MEDIUM", "HIGH"],
     "jira.jira_link_type": ["BLOCKS", "RELATES_TO", "DUPLICATES", "CAUSES"],
     "jira.jira_resolution": ["DONE", "WONT_DO", "DUPLICATE", "CANNOT_REPRODUCE", "DECLINED"],

@@ -526,7 +526,7 @@ Assert-That 'a $Code of 0 with ZERO steps is rewritten to exit 8, not reported g
 
 Assert-That 'the zero-steps exit code is PINNED at 8, not 6 -- 6 is zagent''s circuit-breaker-open' {
     # zagent's own exit ladder (root CLAUDE.md; branched on throughout
-    # .claude/commands/tick.md) is 0/1/3/4/5/6/7, and 6 there already means
+    # Tools/zagent/protocol/TICK.md) is 0/1/3/4/5/6/7, and 6 there already means
     # CIRCUIT BREAKER OPEN. A tick reads both ladders in the same step, so
     # this script reusing 6 for "ran no gate lines" would make one number mean
     # two unrelated things depending which command printed it -- exactly what

@@ -76,6 +76,27 @@ function New-FixtureRepo {
     $repo = New-TempDir
     '{ "project": "ZEN", "baseBranch": "master" }' | Set-Content (Join-Path $repo 'zagent.project.json') -Encoding utf8
 
+    # A REAL git repo, not just a directory carrying zagent.project.json --
+    # build_prompt.ps1 now writes predispatch.json (the WORKER-MOVED-NOTHING
+    # baseline), which reads `git rev-parse HEAD`/`--abbrev-ref HEAD`/`status
+    # --porcelain` against `-Repo`. Every real invocation of this script runs
+    # inside an actual checkout; a fixture that is not one would make every
+    # assertion below fail on the git calls rather than on what it means to
+    # test.
+    & git -C $repo init -q 2>$null | Out-Null
+    & git -C $repo config user.name 'Build prompt tests' 2>$null | Out-Null
+    & git -C $repo config user.email 'build-prompt-tests@example.test' 2>$null | Out-Null
+    # `.zagent/` is gitignored in the real checkout (CLAUDE.md: "Run scratch
+    # ... (gitignored)"), which is what keeps `git status --porcelain` clean
+    # while a ticket is in flight -- mirror that here, or the run scratch
+    # this fixture is about to write under it (ticket.json, body.md, and now
+    # predispatch.json itself) shows up as an untracked line and no fixture
+    # ever reports a clean porcelain set.
+    '.zagent/' | Set-Content (Join-Path $repo '.gitignore') -Encoding utf8
+    'seed' | Set-Content (Join-Path $repo 'seed.txt') -Encoding utf8
+    & git -C $repo add -A 2>$null | Out-Null
+    & git -C $repo commit -qm 'seed' 2>$null | Out-Null
+
     $runDir = Join-Path $repo ".zagent/run/$Key"
     New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 
@@ -176,6 +197,40 @@ Assert-That 'carries the rest of the body after the DoD' { $promptText -match 'S
 Assert-That 'the rest-of-body section appears AFTER the Definition of Done heading' {
     $promptText.IndexOf('## Definition of Done') -lt $promptText.IndexOf('Some Other Section')
 }
+
+# ─── predispatch.json -- the WORKER-MOVED-NOTHING baseline ────────────
+#
+# Tools/Vault/cli/tick-checks.mjs's `workerMovedNothing` treats a missing or
+# incomplete baseline as UNVERIFIED, never `clean` -- so every field it reads
+# must actually be present, not merely "the file exists".
+
+Write-Host "`n=== predispatch.json ===" -ForegroundColor Cyan
+$predispatchPath = Join-Path $fx.RunDir 'predispatch.json'
+Assert-That 'writes predispatch.json' { Test-Path -LiteralPath $predispatchPath }
+$predispatch = Get-Content -LiteralPath $predispatchPath -Raw | ConvertFrom-Json
+$expectedHead = (& git -C $fx.Repo rev-parse HEAD 2>$null)
+$expectedBranch = (& git -C $fx.Repo rev-parse --abbrev-ref HEAD 2>$null)
+
+Assert-That 'predispatch.json head matches the repo HEAD at dispatch time' { $predispatch.head -eq $expectedHead }
+Assert-That 'predispatch.json branch matches the current branch' { $predispatch.branch -eq $expectedBranch }
+Assert-That 'predispatch.json carries a porcelain array (empty on a clean tree)' {
+    $null -ne $predispatch.PSObject.Properties['porcelain'] -and @($predispatch.porcelain).Count -eq 0
+}
+Assert-That 'predispatch.json carries a boardRow object' { $null -ne $predispatch.PSObject.Properties['boardRow'] }
+Assert-That 'predispatch.json carries an "at" timestamp' { -not [string]::IsNullOrWhiteSpace($predispatch.at) }
+Assert-That 'predispatch.json harness is JSON null when the ticket carries none' {
+    $prop = $predispatch.PSObject.Properties['harness']
+    ($null -ne $prop) -and ($null -eq $prop.Value)
+}
+
+Write-Host "`n=== predispatch.json carries a claimed harness ===" -ForegroundColor Cyan
+$fxH = New-FixtureRepo -Body $cleanBody -ExtraTicketFields @{ harness = 'claude'; status = 'In Progress'; assignee = 'agent@example.test' }
+$rH = Invoke-BuildPrompt -ScriptArgs @('-Key', $fxH.Key, '-Repo', $fxH.Repo, '-Files', 'Foo.cpp', '-Boundary', 'n/a')
+Assert-That 'exits 0' { $rH.Code -eq 0 }
+$predispatchH = Get-Content -LiteralPath (Join-Path $fxH.RunDir 'predispatch.json') -Raw | ConvertFrom-Json
+Assert-That 'predispatch.json harness is copied from ticket.json' { $predispatchH.harness -eq 'claude' }
+Assert-That 'predispatch.json boardRow.status is copied from ticket.json' { $predispatchH.boardRow.status -eq 'In Progress' }
+Assert-That 'predispatch.json boardRow.assignee is copied from ticket.json' { $predispatchH.boardRow.assignee -eq 'agent@example.test' }
 
 # ─── ★ the incident this script exists to prevent ─────
 

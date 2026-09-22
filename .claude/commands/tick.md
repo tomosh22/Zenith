@@ -4,6 +4,12 @@ allowed-tools: Bash(zagent:*), Bash(timeout *), Bash(pwsh -NoProfile*), Bash(git
 argument-hint: [PROJECT_KEY | TICKET_KEY]
 ---
 
+<!--
+GENERATED — DO NOT EDIT.
+Source: Tools/zagent/protocol/TICK.md (body) + Tools/zagent/protocol/harnesses.json (claude entry point profile, deliveryMode: inline)
+Regenerate: pwsh -NoProfile -File Tools/zagent/Build-HarnessArtifacts.ps1
+-->
+
 Run **exactly ONE** ticket. Never start a second in the same tick.
 
 # Where things live
@@ -14,15 +20,15 @@ and every mutation is a commit. See step 0 for the three rules that follow.
 
 | Thing | Home |
 | --- | --- |
-| This skill | `.claude/commands/tick.md` |
-| The worker and reviewer | `.claude/agents/zagent-worker.md`, `.claude/agents/zagent-reviewer.md` — subagent definitions whose tool lists omit Bash |
+| The canonical protocol | `Tools/zagent/protocol/TICK.md` — the harness-neutral rules; each harness has its own entry point that resolves DISPATCH/AWAIT/ABORT/SCHEDULE/STOP against it |
+| The worker and reviewer | role definitions generated per harness from the canonical charters in `Tools/zagent/protocol/roles/`, whose tool restriction is the enforcement |
 | Gates, pinned baselines, conventions, categories | `zagent.project.json` (committed) |
 | The client | `Tools/zagent/` — a shim that execs the Node CLI below |
 | The board itself | `Tools/Vault/` (the CLI and server), `**/Docs/Board/tickets/` (ticket bodies), `metadata.md` (the knowledge databases) |
 | Run scratch | `.zagent/last.json`, `.zagent/last.exit`, `.zagent/run/<KEY>/` (gitignored) |
 | Model routing, guardrail floors | resolved by the Vault from `zagent.project.json` plus its own policy |
 
-**A bare `claude` started in this repo is the whole setup** — no
+**Starting your harness in this repo is the whole setup** — no
 `--add-dir`, no second checkout. `zagent` needs nothing but this
 checkout and Node on `PATH`: no token, no URL, no board machine to
 reach, because it always talks to the local Vault. `Tools/zagent/README.md`
@@ -33,17 +39,20 @@ covers the setup and `zagent doctor` names whatever piece is missing.
 These are not style preferences. Each one exists because an unattended
 loop without it lies to itself.
 
-- **I1 — You own the gate; the worker only authors.** Subagents never
-  build, test, run, commit, or touch the board. This is enforced
-  structurally — `zagent-worker` grants only `Read, Edit, Write, Grep,
-  Glob`, so the worker has no Bash tool to run a gate with even if the
-  ticket text tells it to — but state it in the prompt anyway, because a
-  rule the worker can read is a rule it can plan around.
+- **I1 — You own the gate; the worker only authors.** The WORKER role never
+  builds, tests, runs, commits, or touches the board. Whether that is
+  *enforced* structurally or only *declared* in the role's own text is
+  `Worker tool denial` in your entry point (`enforced` | `declared`) — but
+  state it in the prompt anyway, because a rule the worker can read is a
+  rule it can plan around.
 
-  **The tool list in those two agent files IS the enforcement.** Add Bash
-  to `zagent-worker.md` and I1 is gone with no other file changing and
-  nothing failing loudly. They are protected by `.claude/**` for that
-  reason.
+  **On a harness where the answer is `declared`, the role's own text is
+  advisory, not a wall, and I1 is carried by WORKER-MOVED-NOTHING at step
+  6.4 instead — that check is not optional there.** On a harness where the
+  answer is `enforced`, the role definition's tool list IS the enforcement:
+  widen it and I1 is gone with no other file changing and nothing failing
+  loudly. Role definitions are protected by the harness's own
+  protected-path mechanism for that reason.
 - **I2 — Never trust "it works", and never trust "it cannot be done"
   either.** A worker's claim that gates pass is worthless by construction:
   it was forbidden from running them. Re-run everything yourself after
@@ -105,47 +114,30 @@ loop without it lies to itself.
 
 **Two standing rules about this file and the config:**
 
-1. **Every gate line must be prefix-matched by an `allowed-tools` entry
-   above.** Gate lines live in this repo's `zagent.project.json`. Adding
-   a gate and not adding its prefix here stalls the unattended loop on a
-   permission prompt. `.claude/settings.json` documents the same trap —
-   its allowlist spells
-   `pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1*`
-   exactly, and dropping `-ExecutionPolicy Bypass` stalls it.
-
-   **★★ AND IT IS NOT ONLY GATE LINES — IT IS EVERY COMMAND AND EVERY TOOL
-   THIS FILE MANDATES.** Two were missing when this rule was audited, both
-   added by a fix that did not think to widen the list it had just moved
-   outside:
-
-   - Step 7 once mandated `timeout 120 zagent docs sync --json`. `Bash(zagent:*)`
-     is anchored on `zagent` as the FIRST token, so it matched nothing —
-     and the stall lands *after* the commit and *before* `finish`, which is
-     the one place this file says the queue must never stop. `Bash(timeout *)`
-     went on the list then and stays there, though **step 7 no longer wraps
-     that command**: the underlying hang was a per-page WebSocket and is fixed
-     (upstream `05408ef`). Kept as the worked example, because the rule it
-     illustrates is untouched — a mandated command whose first token is not
-     prefix-matched stalls the loop on a permission prompt.
-   - Step 5 mandates `TaskStop` for the wedged-worker guardrail, and it was
-     not granted at all: the only enforcement action for a loop that is
-     already stuck needed a tool the skill never listed.
-
-   When you add a mandated command to this file, add its prefix above in the
-   SAME edit. The check is mechanical: every backticked command in the steps
-   below should be prefix-matched by an entry in `allowed-tools`.
+1. **Every gate line must be pre-authorised in your harness's own mechanism.** Gate
+   lines live in `zagent.project.json`; what "pre-authorised" MEANS is your entry
+   point's `Pre-authorisation` section, and it differs per harness. You do not need
+   to know the others'. `Tools/zagent/Test-HarnessParity.ps1` checks all three, so a
+   gate added without its authorisation reds a gate — rather than stalling an
+   unattended loop at 3am on a permission prompt, which is what it used to do.
 2. **You may never edit this file or `zagent.project.json`.** Both are in
-   `protectedPaths` — `.claude/**` covers this one — and the board's
-   floor is UNIONed with this repo's, so a repo cannot unprotect itself
-   by editing the file that lists its protections. Workflow friction
-   becomes a Suggestions row for a human to triage, never a commit. A
-   loop that can rewrite its own gates does not have gates.
+   `protectedPaths`, and that list is not enforced by a union with the
+   board's own floor: `guardrailsOf` (`Tools/Vault/cli/compat.mjs`) resolves
+   protected paths as `project.protectedPaths ?? boardGuardrails ??
+   clientFile.protectedPaths` — a FALLBACK CHAIN, not a union — and
+   `boardGuardrails` (`vault.config.json`'s own list) is always present, so
+   this file's list never wins and enforces nothing on its own; it survives
+   only by staying a strict subset. `vault.config.json` is itself in that
+   enforced list now, which is what makes "may never edit" true rather than
+   aspirational. Workflow friction becomes a Suggestions row for a human to
+   triage, never a commit. A loop that can rewrite its own gates does not
+   have gates.
 
    > **This rule binds the LOOP, and the owner has amended the file three
    > times outside a tick** (2026-08-24 twice, 2026-08-26). `zagent guard`
-   > still refuses any diff touching `.claude/**` under a ticket, which is
-   > the part that matters. Recorded because a file saying "never edited"
-   > beside a git history showing edits is worse than either;
+   > still refuses any diff touching this repo's protected paths under a
+   > ticket, which is the part that matters. Recorded because a file saying
+   > "never edited" beside a git history showing edits is worse than either;
    > `Docs/TickProtocolHistory.md` has the rounds and what each changed.
 
 # Never
@@ -311,11 +303,18 @@ The argument disambiguates itself: ticket keys always end in `-<digits>`,
 and project keys never can. Digits ARE legal inside a project key, so
 match on the suffix, not on "letters".
 
-- `$1` matches `/-\d+$/` → **targeted**: `zagent claim $1 --json`
+- `$1` matches `/-\d+$/` → **targeted**: `zagent claim $1 --harness <id> --json`
 - `$1` is a project key → **queue, THAT project**:
-  `zagent next --project $1 --json`
+  `zagent next --project $1 --harness <id> --json`
 - `$1` absent → **queue, every project this repo declares**, in declaration
-  order: `zagent next --json`
+  order: `zagent next --harness <id> --json`
+
+**`--harness <id>` is the key this entry point is generated for**
+(`harnesses.json`'s own top-level key, e.g. `claude`). The Vault RECORDS it,
+never branches on it — the same opaque treatment `workerTools` gets — and
+refuses a value `harnesses.json` does not declare. `build_prompt.ps1` copies
+it into `predispatch.json` (step 5); `finish`'s routing-line assertion
+(step 8) checks the work log against that same recorded value.
 
 **Pass `--project`. Both branches used to spell the same command**, which made
 `/tick ZM` a lie: with no `--project`, `next` walks all three declared projects
@@ -323,16 +322,34 @@ in order and takes the first claimable ticket anywhere. A `/tick ZM` in a sessio
 where ZEN had work claimed ZEN-1, consuming the one-ticket-per-repo lock on a
 board the caller had just named a different one.
 
-Then read `.zagent/last.json` and branch on the exit code:
+Then read `.zagent/last.json` and branch on the exit code. Each disposition
+below is written to `.zagent/next.json`, not called directly:
+
+```jsonc
+{ "disposition": "again" | "wait" | "stop", "delaySeconds": 60, "reason": "queue empty" }
+```
+
+| `next.json` | `loopMode: in-harness` | `loopMode: manual` |
+|---|---|---|
+| `again` | `SCHEDULE{noop:false, delaySeconds:<n>}` | report; the human re-invokes |
+| `wait` | `SCHEDULE{noop:true, delaySeconds:<n>}` | report the delay; the human waits |
+| `stop` | `SCHEDULE{stop:true}` | report and end |
+
+**The tick itself reads `next.json` and makes the SCHEDULE call** when
+`loopMode` is `in-harness`. An external loop driver reads nothing here, and
+building against a model where it does would leave the in-harness case
+silently un-paced. Behaviour where SCHEDULE exists is unchanged; what
+changes is that the disposition is now durable on disk, where today it is a
+tool call leaving no trace at all — which also satisfies invariant I6.
 
 | Exit | Meaning                   | Do                                                                                                    |
 | ---- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
 | 0    | Claimed, contract valid   | → step 2                                                                                              |
-| 3    | Queue empty               | `ScheduleWakeup{noop:true, delaySeconds:900}`, stop                                                   |
+| 3    | Queue empty               | Disposition `wait` (delaySeconds 900), stop                                                          |
 | 4    | Claimed, contract invalid | → step 2                                                                                              |
-| 5    | Repo busy, or would steal | Report which key holds it. Queue mode: `ScheduleWakeup{noop:true, delaySeconds:300}`. Targeted: stop. |
-| 6    | Circuit breaker open      | Report, `ScheduleWakeup{stop:true}`. A loop that keeps failing should stop, not spin.                 |
-| 7    | Board unreachable         | Nothing was claimed. Change no status, comment nothing. `ScheduleWakeup{noop:true, delaySeconds:300}`. |
+| 5    | Repo busy, or would steal | Report which key holds it. Queue mode: disposition `wait` (delaySeconds 300). Targeted: disposition `stop`. |
+| 6    | Circuit breaker open      | Report, disposition `stop`. A loop that keeps failing should stop, not spin.                         |
+| 7    | Board unreachable         | Nothing was claimed. Change no status, comment nothing. Disposition `wait` (delaySeconds 300).        |
 
 ## 2. Contract and label checks
 
@@ -757,6 +774,17 @@ pwsh -NoProfile -File Tools\zagent\build_prompt.ps1 -Key <KEY> `
   [-Rulings <path1>,<path2>,...]
 ```
 
+**This run also writes `.zagent/run/<KEY>/predispatch.json`** — the
+WORKER-MOVED-NOTHING baseline I1 relies on at step 6.4: `head`, `branch`,
+the sorted `git status --porcelain` line set, the board row's
+`status`/`assignee`/`updatedAt`, the claimed `harness`, and `at`.
+**Deliberately the LAST write before dispatch, never `claim`'s own** — a
+claim is itself a board commit, so a claim-time baseline always sees a HEAD
+that has since moved; step 4's `git switch -c` runs between claim and here
+too, so a claim-time baseline would report a phantom `branchMoved` on
+every `branching: "branch"` ticket. Taken last, the only moves it can
+attribute to the worker are ones the worker itself made.
+
 **Six remembered rules for hand-assembling this prompt are now two
 judgement calls plus a deterministic slice of two files already on disk.**
 The script reads `.zagent/run/<KEY>/ticket.json` and `body.md` — written by
@@ -1044,7 +1072,7 @@ refuses. Going outside the list is not forbidden — the survey above is done
 before you have read the code the ticket is about, and a worker with task
 context may correctly find it needs a file the survey missed — only doing so
 *silently* is. So when the worker's report says it reached outside the list
-(see `.claude/agents/zagent-worker.md`), carry that explanation into the
+(see the WORKER role definition), carry that explanation into the
 work log verbatim — that is what satisfies the check. **Do not revert the
 work to dodge this**; a reverted, hidden excursion is worse than an explained
 one. A missing `filelist.txt` (an older run, a hand-run tick) WARNS instead
@@ -1086,33 +1114,37 @@ Three practical consequences, all measured:
 - **Look at the pixels.** Structural checks — the file landed, it re-loads, the
   subject's patch is in bounds — are all true of a photograph of the wrong thing.
 
-Dispatch shape — **the `Agent` tool, never a shelled-out CLI**:
+Dispatch shape — **your harness's own subagent mechanism, never a shelled-out CLI**:
 
 ```
-Agent{
-  subagent_type: 'zagent-worker',
-  model:         <routing.model>,      # 'haiku' | 'sonnet' | 'opus'
-  description:   '<KEY> — <short title>',
-  prompt:        <the full text of .zagent/run/<KEY>/prompt.md>,
-  run_in_background: true,
-}
+DISPATCH{ role: WORKER, tier: <routing.model>,   # a TIER, never a model name
+          title: '<KEY> — <short title>',
+          prompt: <the full text of .zagent/run/<KEY>/prompt.md>,
+          mode: background }
 ```
 
-- **`zagent-worker` has no Bash tool**, so I1 holds no matter what the
-  ticket text tells the worker. That is the whole reason the dispatch
-  names an agent type rather than passing a tool list here: a tool list
-  written at the call site can be edited by whoever writes the call.
+What each verb IS on the harness you are running under is the `Controls` table of
+your entry point. A verb your entry point does not name is absent here, and each
+clause below says what to do when it is.
+
+- **DISPATCH names a ROLE and a TIER, never a tool list.** A tool list written at
+  the call site can be edited by whoever writes the call; a role definition cannot.
+- **The WORKER cannot run a gate, and cannot dispatch anything of its own.**
+  Whether those absences are *enforced* by your harness or only *declared* in the
+  role's text is `Worker tool denial` in your entry point. When it reads
+  **declared**, I1 is carried by WORKER-MOVED-NOTHING at step 6.4 instead, and that
+  check is not optional on such a harness.
 - **Pass the prompt text, not a path.** `prompt.md` on disk is the
   durable copy that makes a crashed firing reconstructible (I6); the
-  Agent call still carries the whole thing inline (I3).
+  dispatch call still carries the whole thing inline (I3).
 - **Write the returned report to `.zagent/run/<KEY>/report.json`**
   yourself when it lands. Nothing else does, and step 8 reads it.
-- **`run_in_background: true`**, then wait for the completion
-  notification. Subagents outlive any single foreground call, and a
-  COMPLEX worker routinely runs for many minutes.
-- If elapsed wall-clock exceeds `guardrails.ticketTimeoutMinutes`, stop
-  the agent (`TaskStop`) and treat it as a failed attempt (→ Blocked,
-  with a timeout note).
+- **mode: background**, then AWAIT. If your entry point names no background mode,
+  run it in the foreground and say so in the work log.
+- If elapsed wall-clock exceeds `guardrails.ticketTimeoutMinutes`, ABORT and treat
+  it as a failed attempt. **If your entry point names no ABORT, the cap is advisory
+  here** — record that it was exceeded and not enforced, rather than pretending it
+  was. A guardrail overridden without a record is the state this replaced.
 
   **That number is already resolved for THIS ticket's complexity** —
   read it, do not re-derive it and do not substitute your own. It was
@@ -1128,24 +1160,21 @@ Agent{
   minutes was opus on a COMPLEX ticket, and every sonnet/haiku run
   finished well inside 30.
 
-  It is still a wall-clock cap, which is the wrong SHAPE for "wedged" —
-  what that means is "has produced no tool call for N minutes", and a
-  COMPLEX ticket working steadily for 40 minutes is not wedged while a
-  TRIVIAL one silent for 10 is. The `Agent` tool exposes no such signal,
-  so this is the closest enforceable approximation. If you can see the
-  worker still producing tool calls as the cap approaches, say so in the
-  work log rather than quietly extending it — a guardrail overridden
-  without a record is the state this replaced.
-- **Effort is not settable per dispatch.** The `Agent` tool takes a model
-  but no effort parameter; reasoning effort comes from the agent
-  definition. `routing.effort` is therefore advisory — record it in the
-  routing line (step 8) so a mis-sized ticket is still visible, but do
-  not pretend it was applied.
+  It is still a wall-clock cap, which is the wrong SHAPE for "wedged" — a
+  COMPLEX ticket working steadily for 40 minutes is not wedged, while a SIMPLE
+  one silent for 10 is. **No harness's dispatch mechanism exposes that
+  signal**, so this is the closest enforceable approximation on all three.
+- **`routing.effort` is ADVISORY, on every harness.** Effort comes from the role
+  definition; it cannot come from the dispatch, because effort and model escalate
+  independently (effort from complexity, model from complexity *and* risk), so no
+  per-tier role can carry the right effort for every ticket routed to it. Record it
+  in the routing line so a mis-sized ticket stays visible, and do not pretend it was
+  applied.
 - `workerTools` in the payload is a **cross-check, not a control**. If it
-  names a tool `zagent-worker` does not grant, that is a contract
-  mismatch worth a Suggestions row — not a reason to widen the agent.
+  names a tool the WORKER role does not grant, that is a contract
+  mismatch worth a Suggestions row — not a reason to widen the role.
 
-**A dead subagent is infrastructure, not a verdict.** `Agent` returns
+**A dead dispatch is infrastructure, not a verdict.** A DISPATCH returns
 null if the worker dies on a terminal API error or is skipped mid-run.
 That is the worker-side twin of a `zagent` infrastructure failure — a
 transport or environment problem, not a gate disagreement — and it gets
@@ -1285,9 +1314,27 @@ owns → measure → your edits → reviewer → apply findings → verify → g
 
 3. **Reviewer pass** when `review.required` is true in the payload.
 
+   ```
+   DISPATCH{ role: REVIEWER, risk: <the ticket's risk>,   # LOW | MEDIUM | HIGH
+             title: '<KEY> — review',
+             prompt: <names .zagent/run/<KEY>/diff.patch BY PATH>,
+             mode: background }
+   ```
+
+   Run the REVIEWER when `review.required` is true in the payload, **OR** when your
+   entry point's `Review policy` reads `always`. The two are ORed and a profile can
+   only ADD review, never remove it.
+
+   **The REVIEWER is selected by RISK, not by tier** — your entry point's
+   `Reviewer by risk` table. Risk is a sizing field and a poor predictor of *whether* a
+   ticket needs scrutiny (which is why `review.required` does not use it), but once a
+   review is happening it is a reasonable predictor of *how much reviewer* it deserves.
+   **A LOW-risk ticket can still require a review**, via the DoD-assertion scan, so the
+   table has a LOW row.
+
    **★★ DISPATCH IT ONLY AFTER EVERY EDIT OF YOURS IS DONE** — the pin, the
    `Status.md` narration, the hash table, everything. Not in parallel with
-   them, however tempting the wall-clock saving is. **`zagent-reviewer` reads
+   them, however tempting the wall-clock saving is. **The REVIEWER reads
    a LIVE working tree and cannot know which commit it is on.** Dispatched
    alongside orchestrator edits it will read a file mid-write and report
    correct values as stale — measured: a reviewer opened with a blocking
@@ -1331,14 +1378,14 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    **Write the diff to `.zagent/run/<KEY>/diff.patch` and give the reviewer
    THAT PATH.** Do not paste the diff into the prompt: it exceeds a single
    read for any COMPLEX ticket (2,260 lines on one) and costs the relay
-   twice, once to read and once to send. The reviewer has `Read`, so it
-   consumes the diff on its own budget — and the step's actual reason for
-   "inline it" (the reviewer has no Bash and cannot *produce* a diff) is
+   twice, once to read and once to send. The reviewer can read files itself,
+   so it consumes the diff on its own budget — and the step's actual reason for
+   "inline it" (the REVIEWER cannot run commands and cannot *produce* a diff) is
    fully satisfied by handing it a pre-computed one. Say in the prompt that
    the patch file is immutable and the working tree is not.
 
    Inline `review.reasons` — they name the CLAIM to check.
-   `zagent-reviewer` is read-only by definition (`Read, Grep, Glob`), so
+   The REVIEWER role is read-only by definition, so
    it cannot quietly "fix" what it finds and hand you back a diff you
    did not gate. Findings go in the work log; a finding that contradicts
    a gate result blocks. A null return here is infrastructure, same as
@@ -1427,6 +1474,26 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    docs-mirror check and for the work log. A **clean tree here means the
    worker changed nothing** — a failed attempt, which `guard` now reports
    in those words rather than as a guard failure.
+
+   **★★ `guard` IS ALSO WHERE WORKER-MOVED-NOTHING FIRES** — the
+   compensating control I1 promises on a `declared` harness. It compares
+   `predispatch.json` (step 5's baseline) against the tree now and returns
+   `{ok, state, violations}`, `state` one of `clean` / `violated` /
+   `unverified` (a missing baseline is never read as clean). A `violated`
+   result — commit (`headMoved`), branch/switch (`branchMoved`), stage
+   (`indexStaged`), a board call (`boardMoved`), or scratch litter
+   (`scratchMutated`) — turns a would-be PASS into a failure, the same
+   one-directional override `gateVerdictFresh` uses. `unverified` (no
+   baseline) is **tolerated at `guard`**; what it means is decided at
+   `finish` instead (step 8), by harness.
+
+   **NARROWER than I1, deliberately.** It cannot see a worker that ran a
+   BUILD — build output is gitignored, invisible to `git status` — so on a
+   `declared` harness a green result is evidence the worker did not commit,
+   branch, stage or touch the board, never proof it had no shell at all.
+   That is a real exposure, not a theoretical one: this repo has already
+   measured a worker build running concurrently with anything else and
+   producing **zero-byte saved assets**.
 
 5. **Answer the coverage question, in writing.** For every source file
    the diff touches: *does anything that just ran actually EXECUTE the
@@ -1735,16 +1802,27 @@ data you already have — `git rev-parse HEAD`, `git diff --stat`,
 routing line:
 
 ```
-ran on <model>/<effort> via <COMPLEXITY>+<RISK> · category <name>
+ran on <harness>:<model>/<effort> via <COMPLEXITY>+<RISK> · category <name>
 ```
 
-so a mis-sized or mis-categorized ticket is visible on the board after
-the fact. The work log's shape:
+so a mis-sized, mis-categorized, or mis-harnessed ticket is visible on the
+board after the fact. `<harness>` is your entry point's own id, the same
+one passed to `claim --harness` at step 1.
+
+**`finish` checks `<harness>` against `predispatch.json.harness`, three-
+valued, not throw-or-pass.** A mismatch refuses — a routing line claiming
+`codex` on a ticket `predispatch.json` recorded as claimed under `claude`
+is exactly what nothing else here would catch, because the work log is
+free text nobody else re-derives. A missing `harness` field (or
+no `predispatch.json` at all) reports **`unverified`**, the same shape
+`workerMovedNothing` uses and for the same reason: on an `enforced`
+harness an absent baseline is tolerated, so `unverified` must never itself
+become a refusal. The work log's shape:
 
 ```markdown
 ## Work Log — <date>
 
-**Outcome**: merged to `<base>` as `<sha>` · ran on <model>/<effort> via <C>+<R>
+**Outcome**: merged to `<base>` as `<sha>` · ran on <harness>:<model>/<effort> via <C>+<R>
 
 **What changed**
 
@@ -1861,14 +1939,14 @@ run (a windowed authoring boot on a `needs-gpu` ticket, say). This step used
 to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
 -off gate failed the NEXT build, for a reason naming a file nobody touched.
 
-- **Queue mode** → `ScheduleWakeup{noop:false, delaySeconds:60}`.
-- **Targeted mode** → `ScheduleWakeup{stop:true}` and report. You were
+- **Queue mode** → write disposition `again` (delaySeconds 60) to `.zagent/next.json`.
+- **Targeted mode** → write disposition `stop` and report. You were
   asked for one specific ticket, not for a loop; rescheduling would
   re-run the same key forever.
 - **Abandon path** (ownership lost at any checkpoint): write the work log
   as far as it got, then
   `zagent abandon <KEY> --comment .zagent/run/<KEY>/worklog.md`, sweep, then
-  `ScheduleWakeup{noop:false}`.
+  write disposition `again` to `.zagent/next.json`.
 
   `abandon` is client-composed and has no `--status`, `--assignee` or
   `--label` flag at all — it posts the text through the ordinary `comment`
@@ -1879,5 +1957,8 @@ to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
   deliberately, only if you actually mean to reassign or reopen it — that is
   the one release where "deliberate" matters more than "fast".
 
-`ScheduleWakeup` only exists when the session is driven by `/loop`; a
-bare `/tick` invocation simply ends instead of scheduling.
+`.zagent/next.json`'s `disposition` is read by the tick itself. On a harness
+whose entry point declares `loopMode: in-harness`, the tick turns it into the
+matching SCHEDULE call from the table in step 1; on `loopMode: manual` there
+is no SCHEDULE at all, and a bare invocation simply ends after reporting the
+disposition instead of scheduling anything.

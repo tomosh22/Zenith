@@ -19,6 +19,7 @@ import {
   needsGpuCompanion,
   unexplainedExcursions,
   unmetDoneCriteria,
+  workerMovedNothing,
 } from '../cli/tick-checks.mjs';
 
 // ─── pure-function unit tests ─────────────────────────────────────────────
@@ -641,4 +642,207 @@ test('runClient: a non-1 refusal code from the dispatcher is recorded verbatim, 
   });
   assert.equal(refused.exitCode, 5, JSON.stringify(refused.payload));
   assert.equal(await lastExit(root), '5');
+});
+
+// ─── WORKER-MOVED-NOTHING — the I1 compensating control (Stage 4b) ────────
+
+function isoNow() {
+  return new Date().toISOString();
+}
+
+async function seedCommit(root) {
+  await fs.writeFile(path.join(root, 'f.txt'), '1\n');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-qm', 'one']);
+  return {
+    head: await git(root, ['rev-parse', 'HEAD']),
+    branch: await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']),
+  };
+}
+
+async function writePredispatch(root, key, overrides = {}) {
+  const base = { head: null, branch: null, porcelain: [], harness: 'claude', at: isoNow() };
+  await writeRun(root, key, 'predispatch.json', JSON.stringify({ ...base, ...overrides }));
+}
+
+// 23.
+test('workerMovedNothing: absent predispatch.json is UNVERIFIED, not clean', async t => {
+  const root = await tempRepo(t);
+  const result = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(result.state, 'unverified');
+  assert.equal(result.ok, true, 'an unverified result is not itself a refusal — it abstains');
+  assert.deepEqual(result.violations, []);
+});
+
+// 24.
+test('workerMovedNothing: each violation kind is detected', async t => {
+  // headMoved — the worker committed.
+  const headRoot = await tempRepo(t);
+  const headBaseline = await seedCommit(headRoot);
+  await writePredispatch(headRoot, 'FD-1', headBaseline);
+  await fs.writeFile(path.join(headRoot, 'f.txt'), '2\n');
+  await git(headRoot, ['commit', '-qam', 'the worker committed']);
+  const headResult = await workerMovedNothing({ repoRoot: headRoot, key: 'FD-1' });
+  assert.equal(headResult.state, 'violated', JSON.stringify(headResult));
+  assert.ok(headResult.violations.some(v => v.kind === 'headMoved'));
+
+  // branchMoved — the worker switched.
+  const branchRoot = await tempRepo(t);
+  const branchBaseline = await seedCommit(branchRoot);
+  await writePredispatch(branchRoot, 'FD-1', branchBaseline);
+  await git(branchRoot, ['switch', '-c', 'worker-side-branch']);
+  const branchResult = await workerMovedNothing({ repoRoot: branchRoot, key: 'FD-1' });
+  assert.equal(branchResult.state, 'violated', JSON.stringify(branchResult));
+  assert.ok(branchResult.violations.some(v => v.kind === 'branchMoved'));
+
+  // indexStaged — the worker ran `git add`.
+  const stageRoot = await tempRepo(t);
+  const stageBaseline = await seedCommit(stageRoot);
+  await writePredispatch(stageRoot, 'FD-1', stageBaseline);
+  await fs.writeFile(path.join(stageRoot, 'new.txt'), 'staged\n');
+  await git(stageRoot, ['add', 'new.txt']);
+  const stageResult = await workerMovedNothing({ repoRoot: stageRoot, key: 'FD-1' });
+  assert.equal(stageResult.state, 'violated', JSON.stringify(stageResult));
+  assert.ok(stageResult.violations.some(v => v.kind === 'indexStaged'));
+
+  // boardMoved — the worker called `zagent`.
+  const boardRoot = await tempRepo(t);
+  const boardBaseline = await seedCommit(boardRoot);
+  await writePredispatch(boardRoot, 'FD-1', {
+    ...boardBaseline,
+    boardRow: { status: 'In Progress', assignee: 'agent@example.test', updatedAt: '2026-01-01T00:00:00.000Z' },
+  });
+  const boardResult = await workerMovedNothing({
+    repoRoot: boardRoot, key: 'FD-1',
+    currentBoardRow: { status: 'Blocked', assignee: 'agent@example.test', updatedAt: '2026-01-02T00:00:00.000Z' },
+  });
+  assert.equal(boardResult.state, 'violated', JSON.stringify(boardResult));
+  assert.ok(boardResult.violations.some(v => v.kind === 'boardMoved'));
+
+  // scratchMutated — a file `.zagent/run/<KEY>/` has no reason to hold.
+  const scratchRoot = await tempRepo(t);
+  const scratchBaseline = await seedCommit(scratchRoot);
+  await writePredispatch(scratchRoot, 'FD-1', scratchBaseline);
+  await writeRun(scratchRoot, 'FD-1', 'workers-own-notes.txt', 'not one of the orchestrator\'s own writes');
+  const scratchResult = await workerMovedNothing({ repoRoot: scratchRoot, key: 'FD-1' });
+  assert.equal(scratchResult.state, 'violated', JSON.stringify(scratchResult));
+  assert.ok(scratchResult.violations.some(v => v.kind === 'scratchMutated'));
+});
+
+// 25.
+test('workerMovedNothing: an authorised file edited in place, or newly created, is CLEAN — the worker is SUPPOSED to do this', async t => {
+  const root = await tempRepo(t);
+  await fs.writeFile(path.join(root, 'tracked.cpp'), 'seed\n');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-qm', 'seed']);
+  const baseline = { head: await git(root, ['rev-parse', 'HEAD']), branch: await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) };
+  await writePredispatch(root, 'FD-1', baseline);
+  await writeRun(root, 'FD-1', 'filelist.txt', 'tracked.cpp\nnew.cpp\n');
+
+  // Changed in place — a worktree-column `M`, never staged.
+  await fs.writeFile(path.join(root, 'tracked.cpp'), 'edited by the worker\n');
+  const edited = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(edited.state, 'clean', JSON.stringify(edited));
+
+  // Newly created — an untracked `??` line, never staged. A set-difference
+  // implementation over the whole of `git status --porcelain` breaks here.
+  await fs.writeFile(path.join(root, 'new.cpp'), 'brand new\n');
+  const created = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(created.state, 'clean', JSON.stringify(created));
+});
+
+// 26.
+test('workerMovedNothing: a STAGED file-list file still reports indexStaged — authorisation to edit is not authorisation to stage', async t => {
+  const root = await tempRepo(t);
+  await fs.writeFile(path.join(root, 'tracked.cpp'), 'seed\n');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-qm', 'seed']);
+  const baseline = { head: await git(root, ['rev-parse', 'HEAD']), branch: await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) };
+  await writePredispatch(root, 'FD-1', baseline);
+  await writeRun(root, 'FD-1', 'filelist.txt', 'tracked.cpp\n');
+
+  await fs.writeFile(path.join(root, 'tracked.cpp'), 'edited then staged\n');
+  await git(root, ['add', 'tracked.cpp']);
+  const result = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(result.state, 'violated', JSON.stringify(result));
+  assert.ok(result.violations.some(v => v.kind === 'indexStaged'), 'staging an authorised file is still staging');
+});
+
+// 27.
+test('workerMovedNothing: CLEAN across a git switch -c when the baseline was taken AFTER it — the fixed claim-time baseline defect', async t => {
+  const root = await tempRepo(t);
+  await fs.writeFile(path.join(root, 'f.txt'), 'seed\n');
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-qm', 'seed']);
+  // Step 4 (branching: "branch") runs BEFORE build_prompt.ps1 (step 5).
+  await git(root, ['switch', '-c', 'agent/FD-1']);
+  const head = await git(root, ['rev-parse', 'HEAD']);
+  const branch = await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  assert.equal(branch, 'agent/FD-1');
+  // The baseline is taken AFTER the switch — the fix under test.
+  await writePredispatch(root, 'FD-1', { head, branch });
+  const result = await workerMovedNothing({ repoRoot: root, key: 'FD-1' });
+  assert.equal(result.state, 'clean', JSON.stringify(result));
+});
+
+// ─── claim --harness / finish's routing-line assertion ────────────────────
+
+async function makeVaultWithHarnesses(t, profiles) {
+  const root = await makeVault(t);
+  await fs.mkdir(path.join(root, 'Tools', 'zagent', 'protocol'), { recursive: true });
+  await fs.writeFile(path.join(root, 'Tools', 'zagent', 'protocol', 'harnesses.json'), JSON.stringify({ harnesses: profiles }));
+  await git(root, ['add', '.']);
+  await git(root, ['commit', '-qm', 'add harnesses.json']);
+  return root;
+}
+
+// 28.
+test('claim --harness refuses a value harnesses.json does not declare, and records a known one', async t => {
+  const root = await makeVaultWithHarnesses(t, { claude: { workerToolDenial: 'enforced' }, codex: { workerToolDenial: 'declared' } });
+
+  const bad = await dispatchWrite(await loadVault(root), ['claim', 'FD-1', '--harness', 'bogus']);
+  assert.equal(bad.exitCode, 4, JSON.stringify(bad.payload));
+  assert.match(bad.payload.error, /not a key Tools\/zagent\/protocol\/harnesses\.json declares/);
+
+  const good = await dispatchWrite(await loadVault(root), ['claim', 'FD-1', '--harness', 'claude']);
+  assert.equal(good.exitCode, 0, JSON.stringify(good.payload));
+  assert.equal(good.payload.harness, 'claude');
+});
+
+// 29.
+test("finish: the work log's routing-line harness must agree with predispatch.json — mismatch refuses, a missing field is UNVERIFIED (no throw, no silent pass)", async t => {
+  const claudeLine = 'ran on claude:sonnet/medium via SIMPLE+LOW · category Local\n\n**Durable findings**: none.';
+  const codexLine = 'ran on codex:sonnet/medium via SIMPLE+LOW · category Local\n\n**Durable findings**: none.';
+
+  // No harness recorded on predispatch.json at all: unverified, and finish
+  // proceeds — an absent field must not throw and must not silently refuse.
+  {
+    const root = await makeVault(t);
+    const attempt = await claimFd1(root);
+    const baseline = { head: await git(root, ['rev-parse', 'HEAD']), branch: await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) };
+    await writeRun(root, 'FD-1', 'predispatch.json', JSON.stringify({ ...baseline, porcelain: [] }));
+    const result = await dispatchWrite(await loadVault(root), ['finish', 'FD-1', '--status', 'Blocked', '--attempt', attempt], { comment: 'x', worklog: claudeLine });
+    assert.equal(result.exitCode, 0, JSON.stringify(result.payload));
+  }
+
+  // A recorded harness that disagrees with the work log's own routing line refuses.
+  {
+    const root = await makeVault(t);
+    const attempt = await claimFd1(root);
+    const baseline = { head: await git(root, ['rev-parse', 'HEAD']), branch: await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) };
+    await writeRun(root, 'FD-1', 'predispatch.json', JSON.stringify({ ...baseline, porcelain: [], harness: 'codex' }));
+    const result = await dispatchWrite(await loadVault(root), ['finish', 'FD-1', '--status', 'Blocked', '--attempt', attempt], { comment: 'x', worklog: claudeLine });
+    assert.equal(result.exitCode, 4, JSON.stringify(result.payload));
+    assert.match(result.payload.error, /the two must agree/);
+  }
+
+  // Agreement passes.
+  {
+    const root = await makeVault(t);
+    const attempt = await claimFd1(root);
+    const baseline = { head: await git(root, ['rev-parse', 'HEAD']), branch: await git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) };
+    await writeRun(root, 'FD-1', 'predispatch.json', JSON.stringify({ ...baseline, porcelain: [], harness: 'codex' }));
+    const result = await dispatchWrite(await loadVault(root), ['finish', 'FD-1', '--status', 'Blocked', '--attempt', attempt], { comment: 'x', worklog: codexLine });
+    assert.equal(result.exitCode, 0, JSON.stringify(result.payload));
+  }
 });

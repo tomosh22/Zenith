@@ -263,6 +263,39 @@ Assert-That 'Engine paths include Build/** as well as Zenith/**' {
     ($paths -contains 'Zenith/**') -and ($paths -contains 'Build/**')
 }
 
+Write-Host "`n=== harness artifacts are not stale (Build-HarnessArtifacts.ps1 -Check) ===" -ForegroundColor Cyan
+# Was: a hand-rolled byte-identity check between .claude/commands/tick.md
+# and Tools/zagent/protocol/TICK.md, marked TEMPORARY pending Stage 3's
+# stub-vs-inline decision. Stage 3 answered that (deliveryMode: "inline"
+# for claude -- see Build-HarnessArtifacts.ps1's own header) and replaced
+# the whole hand-maintained-pair shape: .claude/commands/tick.md is now
+# ONE of several generated files (alongside the five per-tier
+# .claude/agents/zagent-{worker,reviewer}-*.md role files and the two
+# resolved charters under Tools/zagent/protocol/roles/generated/), and
+# a bespoke assertion here would have to grow a special case per new
+# generated file. Delegating to the generator's OWN -Check is what
+# `zenith regen --check` does for Sharpmake output, for the same reason:
+# the generator is the one place that knows the full, current set of
+# artifacts it owns.
+#
+# Tools/zagent/Test-HarnessParity.ps1 is NOT on the Tooling gate list
+# (adding it needs a human edit to a protected zagent.project.json), so
+# this assertion is what actually catches staleness on a gate that runs
+# today -- Test-ZagentClient.ps1 already is one.
+Assert-That 'Build-HarnessArtifacts.ps1 -Check reports no stale harness artifacts' {
+    $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $scriptPath = Join-Path $PSScriptRoot 'Build-HarnessArtifacts.ps1'
+
+    $output = & pwsh -NoProfile -File $scriptPath -Check 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        Write-Host "       Build-HarnessArtifacts.ps1 -Check exited $exitCode -- stdout/stderr follows:"
+        foreach ($line in $output) { Write-Host "       $line" }
+    }
+    $exitCode -eq 0
+}
+
 Write-Host ""
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) { Write-Host 'PASS' -ForegroundColor Green; exit 0 }

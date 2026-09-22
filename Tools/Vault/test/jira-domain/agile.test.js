@@ -23,7 +23,7 @@ describe("JIRA_SEVERITIES", () => {
 describe("shared Jira vocabularies", () => {
   it("owns the status, routing, and issue-default values", () => {
     expect(JIRA_STATUS_CATEGORIES).toEqual(["TODO", "IN_PROGRESS", "DONE"]);
-    expect(JIRA_COMPLEXITIES).toEqual(["TRIVIAL", "SIMPLE", "MODERATE", "COMPLEX"]);
+    expect(JIRA_COMPLEXITIES).toEqual(["SIMPLE", "MODERATE", "COMPLEX"]);
     expect(JIRA_RISKS).toEqual(["LOW", "MEDIUM", "HIGH"]);
     expect(DEFAULT_JIRA_ISSUE_VALUES).toEqual({
       type: "TASK",

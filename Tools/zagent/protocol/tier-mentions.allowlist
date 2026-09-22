@@ -1,0 +1,30 @@
+# tier-mentions.allowlist -- Tools/zagent/protocol/TICK.md model-tier ratchet allowlist.
+#
+# TICK.md is harness-neutral prose: it names no harness, no tool and no
+# model. The three MODEL_LADDER tiers (Tools/Vault/cli/legacy-pure/routing.mjs)
+# are kept as vocabulary -- `haiku`/`sonnet`/`opus` appear inside DISPATCH's
+# `tier:` field and the Vault's own routing data -- but a BARE tier name in
+# narrative prose is measured history (a ticket's own routing line, a cost
+# note), never an instruction, and each one is listed here deliberately so a
+# NEW bare mention does not slip in unnoticed.
+#
+# One wire key per line; '#'/blank lines ignored. A NEW key not listed here
+# fails the gate; a removed mention leaves a stale line (INFO only). Shrink,
+# don't grow -- a shrinking mention is prose that stopped citing a tier, not
+# a reason to keep the stale line.
+#
+# Format (one mention per line): narrative:<repo-relative-path>:<line> => <tier>
+#
+# Regenerate (only when deliberately accepting the current set):
+#   Tools/zagent/protocol/tier-mentions.allowlist is hand-maintained -- there
+#   is no analyze_code_complexity.py profile for prose. Re-derive with:
+#   grep -noiE '\bhaiku\b|\bsonnet\b|\bopus\b' Tools/zagent/protocol/TICK.md
+#   and confirm each hit is inside a measured-history sentence, not an
+#   instruction, before adding its line here.
+narrative:Tools/zagent/protocol/TICK.md:412 => opus
+narrative:Tools/zagent/protocol/TICK.md:450 => sonnet
+narrative:Tools/zagent/protocol/TICK.md:1036 => opus
+narrative:Tools/zagent/protocol/TICK.md:1140 => opus
+narrative:Tools/zagent/protocol/TICK.md:1148 => opus
+narrative:Tools/zagent/protocol/TICK.md:1148 => sonnet
+narrative:Tools/zagent/protocol/TICK.md:1148 => haiku

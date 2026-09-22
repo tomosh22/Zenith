@@ -1,0 +1,78 @@
+// GENERATED — DO NOT EDIT.
+// Source: Tools/zagent/protocol/harnesses.json (opencode.roles, permissionByRole, subagentDepth) + Tools/zagent/protocol/roles/generated/{worker,reviewer}.resolved.md
+// Regenerate: pwsh -NoProfile -File Tools/zagent/Build-HarnessArtifacts.ps1
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // subagent_depth: 1 is already the smallest value that lets a depth-0
+  // orchestrator (this session, driving /tick) dispatch a depth-1 WORKER
+  // or REVIEWER subagent -- Stage 0 probe 10 measured the default IS
+  // enforced (walks parentID) and that a spawned child gets an
+  // auto-added task:deny permission, so raising it would only widen what
+  // a worker or reviewer could itself go on to spawn. Ship the default;
+  // do not raise it (harnesses.json opencode.$comment_subagentDepth).
+  "subagent_depth": 1,
+
+  "agent": {
+    "zagent-worker-sonnet": {
+      "description": "The AUTHORING half of a /tick, routed at the sonnet tier. Implements one ticket's file edits from a spec inlined into its prompt. It cannot build, test, run gates, commit, or touch the board by construction (permission.bash/task = deny).",
+      "mode": "subagent",
+      "model": "opencode-go/deepseek-v4.1-flash",
+      "permission": {
+        "edit": "allow",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny"
+      },
+      "prompt": "{file:../Tools/zagent/protocol/roles/generated/worker.resolved.md}"
+    },
+    "zagent-worker-opus": {
+      "description": "The AUTHORING half of a /tick, routed at the opus tier. Implements one ticket's file edits from a spec inlined into its prompt. It cannot build, test, run gates, commit, or touch the board by construction (permission.bash/task = deny).",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.3",
+      "permission": {
+        "edit": "allow",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny"
+      },
+      "prompt": "{file:../Tools/zagent/protocol/roles/generated/worker.resolved.md}"
+    },
+    "zagent-reviewer-low": {
+      "description": "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the LOW-risk tier. Reads an inlined diff and reports findings. Read-only by construction (permission.edit/bash/task = deny), so it cannot edit, build, or run anything.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.3-flash",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny"
+      },
+      "prompt": "{file:../Tools/zagent/protocol/roles/generated/reviewer.resolved.md}"
+    },
+    "zagent-reviewer-medium": {
+      "description": "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the MEDIUM-risk tier. Reads an inlined diff and reports findings. Read-only by construction (permission.edit/bash/task = deny), so it cannot edit, build, or run anything.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.3-flash",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny"
+      },
+      "prompt": "{file:../Tools/zagent/protocol/roles/generated/reviewer.resolved.md}"
+    },
+    "zagent-reviewer-high": {
+      "description": "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the HIGH-risk tier. Reads an inlined diff and reports findings. Read-only by construction (permission.edit/bash/task = deny), so it cannot edit, build, or run anything.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.3",
+      "permission": {
+        "edit": "deny",
+        "bash": "deny",
+        "task": "deny",
+        "webfetch": "deny"
+      },
+      "prompt": "{file:../Tools/zagent/protocol/roles/generated/reviewer.resolved.md}"
+    }
+  }
+}

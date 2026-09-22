@@ -116,7 +116,7 @@ function reviewDecision(input) {
     reasons.push(`"${hit.item}" ${hit.reason}`);
   }
   // ★ THIRD OR TERM: the ticket's subject matter is governed by a recorded
-  // decision. `.claude/commands/tick.md` used to carry this as prose in
+  // decision. `Tools/zagent/protocol/TICK.md` used to carry this as prose in
   // front of the review-dispatch step ("if a ruling governs the subject
   // matter, review it whatever review.required says") rather than as
   // something computed — ZM-23 shipped a trainer row contradicting

@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { inspectArguments } from './arguments.mjs';
 import { dispatchWrite } from './write.mjs';
 import { matchGoverningRulings, RULINGS_FILE_MIN_SCORE } from './legacy-pure/ticket.mjs';
-import { forbiddenAbandonFlags, gateVerdictFresh, guardNeedsFreshnessOverride } from './tick-checks.mjs';
+import { forbiddenAbandonFlags, gateVerdictFresh, guardNeedsFreshnessOverride, workerMovedNothing } from './tick-checks.mjs';
 import { workingTreeChanges } from './working-tree.mjs';
 
 export const PROTOCOL_VERSION = 1;
@@ -381,7 +381,7 @@ async function applyScratchWrites(root, writes) {
 }
 
 // ★ I3 now requires "every recorded RULING that governs the ticket's subject
-// matter" pasted into the worker prompt (tick.md:66-70) — but finding those
+// matter" pasted into the worker prompt (Tools/zagent/protocol/TICK.md#operating-invariants) — but finding those
 // was entirely manual, and a loop worker has no shell and no network, so a
 // ruling it is never handed does not exist for it. ZM-23 shipped a trainer
 // row contradicting ZM-D-196 Ruling 3 (not ZM-D-203, a different entry — see
@@ -586,8 +586,8 @@ async function dynamicDispatcher(context) {
     }
   }
   // ★★ STEP 6.4's FRESHNESS QUESTION FOLDS INTO `guard`, BECAUSE GUARD IS
-  // ALREADY THE MANDATORY MERGE-BLOCKING STEP (tick.md:1107-1136,
-  // tick.md:1274 — "a rule enforced at a check that already fails is a rule,
+  // ALREADY THE MANDATORY MERGE-BLOCKING STEP (Tools/zagent/protocol/TICK.md#5-dispatch-the-worker,
+  // Tools/zagent/protocol/TICK.md#6-verify — "a rule enforced at a check that already fails is a rule,
   // and the same rule in this paragraph is a hope").
   //
   // `guard`'s own logic (dispatchLocal, via dispatchRead) answers "does the
@@ -619,19 +619,54 @@ async function dynamicDispatcher(context) {
           },
         };
       }
-      // A genuine fresh PASS used to leave the payload silent about the fold
-      // ever having run: the branch above only ever ADDS `gateVerdictFresh`
-      // on the override path, so a caller reading a successful guard's
-      // payload had no positive evidence the freshness check happened at
-      // all — only the absence of a refusal, indistinguishable from a guard
-      // that never consulted `tick_gates.json` in the first place. Make the
-      // success path self-describing too.
       if (read.exitCode === 0) {
+        // ★★ WORKER-MOVED-NOTHING — I1's compensating control, and the
+        // PRIMARY site it fires at (Tools/zagent/protocol/TICK.md step 6.4):
+        // `guard` already reads the working tree and already owns
+        // protected-path refusal, and it runs BEFORE step 7's commit, while
+        // `finish`'s own copy of this check (checkFinishContent in
+        // write.mjs) is only the second site, for a ticket that somehow
+        // reaches `finish` without a `guard` run. Folded the same
+        // one-directional way freshness is: only ever turns a WOULD-BE PASS
+        // into a failure. `unverified` is TOLERATED here, unconditionally —
+        // guard has no harness context to decide whether an absent baseline
+        // matters; that decision belongs to `finish`, which does.
+        const record = [...index.tickets.values()].find(item => String(item.metadata?.key ?? '').toUpperCase() === key.toUpperCase());
+        const fields = record?.metadata ?? {};
+        const moved = await workerMovedNothing({
+          repoRoot,
+          key,
+          currentBoardRow: { status: fields.status ?? null, assignee: fields.assignee ?? null, updatedAt: fields.updatedAt ?? null },
+        });
+        if (moved.state === 'violated') {
+          process.stderr.write(`zagent: guard ${key} — guard passed, but WORKER-MOVED-NOTHING found the worker itself touched the repository: ${moved.reason}. Treating this as a guard failure — I1 says the worker only authors.\n`);
+          return {
+            ...read,
+            exitCode: 1,
+            payload: {
+              ...(read.payload && typeof read.payload === 'object' && !Array.isArray(read.payload) ? read.payload : {}),
+              error: true,
+              gateVerdictFresh: true,
+              workerMovedNothing: false,
+              workerMovedNothingViolations: moved.violations,
+            },
+          };
+        }
+        // A genuine fresh PASS used to leave the payload silent about the
+        // fold ever having run: the branch above only ever ADDS
+        // `gateVerdictFresh`/`workerMovedNothing` on the override path, so a
+        // caller reading a successful guard's payload had no positive
+        // evidence either check happened at all — only the absence of a
+        // refusal, indistinguishable from a guard that never consulted
+        // either source in the first place. Make the success path
+        // self-describing too.
         return {
           ...read,
           payload: {
             ...(read.payload && typeof read.payload === 'object' && !Array.isArray(read.payload) ? read.payload : {}),
             gateVerdictFresh: true,
+            workerMovedNothing: moved.state !== 'violated',
+            workerMovedNothingState: moved.state,
           },
         };
       }

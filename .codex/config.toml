@@ -1,0 +1,27 @@
+# GENERATED — DO NOT EDIT.
+# Source: Tools/zagent/protocol/harnesses.json (codex.preauth)
+# Regenerate: pwsh -NoProfile -File Tools/zagent/Build-HarnessArtifacts.ps1 -Harness codex
+#
+# The pre-authorisation layer for an unattended /tick on Codex. What is and
+# is not confirmed about it (stage0-verdicts.md, probes 1 and 6):
+#
+#   - A repo-level .codex/config.toml as a real project config layer is
+#     STRONGLY EVIDENCED (the app's own UI offers to edit "the project's
+#     .codex/config.toml", and a TOML parse + layered config resolver
+#     follow immediately) but was NOT behaviourally confirmed end to end --
+#     the confirming run was blocked by a usage cap. A parity test can
+#     assert this file exists and parses; it cannot assert Codex actually
+#     loads and applies it without a live, unmetered run.
+#   - trust_level -- the setting that actually relaxes approvals for a
+#     project -- lives ONLY in the machine-local ~/.codex/config.toml under
+#     [projects.'<path>'] and is NOT repo-committable. A human sets it on
+#     every machine that runs this harness (codex.humanPrerequisites).
+#   - [windows] sandbox = "elevated" parses to a real config enum, but its
+#     backing feature is disabled in this build, so it enforces NOTHING
+#     today -- recorded here rather than left as a silent no-op a reader
+#     could mistake for real protection.
+
+approval_policy = "never"
+
+[windows]
+sandbox = "elevated"

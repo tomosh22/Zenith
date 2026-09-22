@@ -1,6 +1,6 @@
 # The `/tick` protocol — how its own wording changed
 
-`.claude/commands/tick.md` is loaded in full on **every** tick. It carries the
+`Tools/zagent/protocol/TICK.md` is loaded in full on **every** tick. It carries the
 rules and the evidence for them; this file carries the third thing it had
 accumulated — **the history of its own text.**
 
@@ -197,6 +197,138 @@ before the editor-automation queue drains, emits no `[ScenePublish]` line and le
 a clean tree — so a clean tree is not evidence that a re-author reproduced the
 bytes. That trap nearly fooled the tick that landed ZEN-6, and it is now stated at
 the same place.
+
+## Three harnesses, one protocol (2026-09-21/22)
+
+`Tools/zagent/protocol/TICK.md` stopped being Claude-Code-only prose and
+became the harness-neutral canonical source for three harnesses — Claude
+Code, OpenCode, Codex — each with its own generated entry point
+(`Tools/zagent/Build-HarnessArtifacts.ps1`, profiles in
+`Tools/zagent/protocol/harnesses.json`). `Tools/zagent/CLAUDE.md` is the
+standing reference for the mechanism; this entry is the measured record
+that justified the choices baked into it.
+
+### The eleven Stage 0 probe results
+
+Measured 2026-09-21, against Codex desktop build `26.915.31945` / bundled
+CLI `codex-cli 0.155.0-alpha.9.2`, and the OpenCode desktop Electron app
+`1.18.31` (**not** the separate standalone `opencode-cli.exe 1.14.33`,
+an older, different binary). Full evidence trail: the probe transcript this
+table summarises. Confidence is stated per the same three labels this
+file's own header uses for the rest of its content:
+`measured` / `inferred` / `unanswerable-without-human`.
+
+| # | Question | Verdict | Confidence |
+|---|---|---|---|
+| 1 | Codex shell + spawn denial via an agent `config_file` | Mechanism is real (`codex_agent_roles` crate; `shell_tool`/`multi_agent`/`multi_agent_v2` are genuine toggleable features). The live behavioural run hit the account's usage cap before a model turn completed. Conservative reading kept: `workerToolDenial: "declared"`. | inferred |
+| 2 | Codex per-agent `model_reasoning_effort` | A normal `Config` field a role's `config_file` layer inherits, same as any other harness-side model knob. Informational — gates nothing, because no per-role effort value is correct in the first place (see `Tools/zagent/CLAUDE.md` → "`effortSettable` does not exist"). | inferred |
+| 3 | OpenCode repo-level `permission: {bash: deny, task: deny}` | Works: a top-level `Config` field, deep-merged project-over-global, enforced by a real allow/deny/ask ruleset at tool-execution time. | measured |
+| 4 | OpenCode `{file:}` resolution from a repo-level config | Resolves against **the declaring config file's own directory**, applied to the raw text before JSONC parsing — so `.opencode/opencode.json`'s `{file:../Tools/...}` lands on the real repo path. → `bodyDelivery: "reference"`. | measured |
+| 5 | Directory spelling (agent/agents, command/commands) | OpenCode accepts singular OR plural for all three. Codex accepts **plural only** (`.codex/agents`). Plural pinned everywhere, matching `.claude/agents/`. | measured (OpenCode); measured+inferred (Codex) |
+| 6 | Codex pre-authorisation | `approval_policy` is a real, `-c`/TOML-settable config key. `trust_level` (the setting that actually relaxes approvals per project) is **machine-local**, under `~/.codex/config.toml`'s `[projects.'<path>']`, and is **not repo-committable**. `[windows] sandbox = "elevated"` parses but its backing feature is disabled in this build — it enforces nothing today. | measured (flags); inferred (repo-level `.codex/config.toml` layering, at the time of this probe — see correction below) |
+| 7 | Codex Automations (scheduled repeat invocation) | Feature exists and is enabled, but no CLI or config-file surface was found to author one — GUI-only. → `loopMode: "manual"`, `controls.SCHEDULE: null`. | inferred |
+| 8 | OpenCode `opencode-go` model ids | `opencode-go/glm-5.3`, `opencode-go/glm-5.3-flash`, `opencode-go/deepseek-v4.1-flash` all confirmed present in `~/.cache/opencode/models.json`. | measured |
+| 9 | Does OpenCode read a project-level `.opencode/opencode.jsonc`? | Half right: the project-config candidates are exactly `./opencode.json`, `./opencode.jsonc`, and `.opencode/opencode.json` — the `.jsonc` spelling **inside** `.opencode/` is not a candidate. All three go through the same JSONC-tolerant parser regardless of extension, so comments are legal in `.opencode/opencode.json` despite the `.json` name. | measured |
+| 10 | `subagent_depth` | **Present and enforced**, contradicting the plan's premise that it was absent. Default `1`; enforcement walks `parentID`. At the default, a depth-0 orchestrator may spawn a depth-1 subagent, which may not itself spawn further — plus a second layer, an auto-added `task: deny` permission on the spawned child. `1` is already the smallest value that still lets an orchestrator dispatch — shipped as-is, not raised. | measured |
+| 11 | Codex's repo-level entry point | `.codex/skills/tick/SKILL.md`, invoked `$tick` — **not** `.agents/skills/`, which an earlier plan had assumed. Two independent code paths in the bundled app agree: the "loaded skill" activity literally shells `cat .codex/skills/${id}/SKILL.md`, and the install helper joins the project root with `.codex/skills` when installing into a project. `AGENTS.md` and `.codex/config.toml` are real, always-scanned per-project artifacts, but `AGENTS.md` is always-on context, not an on-demand runner the way a skill is. | measured (directory + discovery); inferred, strongly (the exact `$name` invocation grammar — seen in UI mention-classification code, not a written spec) |
+
+Also measured, standalone: Codex model ids `gpt-5.6-luna` / `gpt-5.6-terra`
+/ `gpt-5.6-sol` all present in `~/.codex/models_cache.json`; Codex's
+`features.multi_agent` is not explicitly set in the user's own config but
+defaults to `true` (stable).
+
+### Four places the design's premises were wrong, and measurement corrected them
+
+1. **OpenCode's project config file is `.opencode/opencode.json`, not
+   `.jsonc`.** The design assumed the `.jsonc` spelling; probe 9 found the
+   `.opencode/`-scoped candidate is `.json` only (root-level `opencode.jsonc`
+   is separately valid, but that is not the same path).
+2. **`{file:}` DOES resolve from a repo-level config** — against the
+   *declaring file's own directory*, not against the process cwd or the
+   repo root. The design had not confirmed this resolved at all from a
+   project-scoped config; probe 4 confirmed it does, and pinned exactly
+   which directory it resolves against.
+3. **`subagent_depth` is present and enforced**, with a default of `1`
+   already being the smallest value that lets an orchestrator dispatch —
+   the design's premise was that this setting was absent from the OpenCode
+   versions in play (1.14.x/1.18.x). It is not, on either.
+4. **Codex's repo entry point is `.codex/skills/tick/SKILL.md`, invoked
+   `$tick`** — not `.agents/skills/`, which the design had assumed as the
+   directory. Probe 11 found two independent code paths agreeing on
+   `.codex/skills/`.
+
+### The stub-vs-inline decision, and why it is provisional
+
+The design wanted a real measurement — two or three ticks run each way —
+of whether a worker follows a **stub** entry point (a pointer telling it to
+go read `TICK.md` itself) as reliably as an **inline** one (the full body
+copied in). **That measurement has not been run**, and until it is, every
+harness ships `deliveryMode: "inline"` — the form ALREADY PROVEN IN
+PRODUCTION, since `.claude/commands/tick.md` was a full inline copy before
+this work started. Both forms are a one-line branch in
+`Build-HarnessArtifacts.ps1`, so running the deferred measurement later and
+flipping a harness is cheap.
+
+**OpenCode shipped as `"stub"` for part of this pass, and was changed back.**
+It looked like the one harness where a pointer was safe, because it has a real
+`{file:...}` reference mechanism (probe 4). Two things made that wrong:
+
+- **Its stub entry point did not use `{file:...}` at all.** The emitted file
+  told the session to go *read* `TICK.md` in full. `{file:...}` is what
+  delivers the ROLE bodies (`bodyDelivery: "reference"`, which is correct and
+  stays) — a different axis entirely from how the ENTRY POINT is delivered.
+  Conflating the two is what made a pointer look measured when it was not.
+- **The limit it was being judged against is the wrong tool’s.** The 2000-line
+  window is **Claude Code’s** `Read` default. Nobody has measured OpenCode’s.
+  So the one harness using stub was depending on an unmeasured read limit,
+  bounded by a number borrowed from a harness that does not use stub at all.
+
+**Read-window headroom — a measurement with an expiry date, not a property.**
+117 lines when first checked; **98** after the protocol was neutralised (1902
+lines); **48** now, at 1952 lines, having moved twice during this pass alone.
+The trend is the finding: the protocol grows, because nearly every addition to
+it is a recorded failure someone paid for.
+
+**`Test-HarnessParity.ps1` binds that assertion only while some harness is
+`"stub"`.** With all three `"inline"` it prints the margin as INFORMATIONAL and
+passes; flip any harness to `"stub"` and it fails immediately, naming the
+harness and the margin. That round-trip was verified in both directions on this
+pass. **The gate is deliberately shaped so the cheap way out is not available:**
+it went red once here and the wrong fix — trimming `TICK.md` to make it green —
+was attempted and reverted. Shrinking the protocol to silence the tripwire
+destroys the history the tripwire exists to protect. If it reds, either measure
+the harness’s real read window and justify the number, or go back to `"inline"`.
+
+### Still open — needs a human
+
+| Item | Exact step |
+|---|---|
+| Codex probe 1's behavioural confirmation | The account hit its usage cap mid-probe. After it resets, from a scratch (non-project) directory: `codex exec -c features.shell_tool=false -c approval_policy="never" -s read-only -C <scratch> "try to run 'dir' via a shell tool and report exactly what happened"`, then again with `-c features.multi_agent=false -c features.multi_agent_v2=false` and a prompt asking it to spawn a sub-agent. If BOTH refuse, `codex.workerToolDenial` upgrades to `"enforced"` in `harnesses.json`. |
+| Whether a repo-level `.codex/config.toml` is truly loaded as a config layer | Strongly evidenced (the app's own UI text offers to edit "the project's `.codex/config.toml`", immediately followed by a TOML parse and a layered config resolver call) but not behaviourally confirmed end to end. Create `.codex/config.toml` with `approval_policy = "never"` in a **throwaway repo, never Zenith**, and check whether `codex exec` there picks up the override with no `-c` flag. |
+| Whether Codex Automations can target a repo skill | GUI-only surface, no CLI or config-file authoring path was found. Open the Codex desktop app, Settings → Automations (or wherever the current build puts it), and check whether an automation can point at `.codex/skills/tick/SKILL.md` rather than only an ad-hoc prompt. If it can, `codex.loopMode` flips from `"manual"` to `"in-harness"`. |
+
+None of the three blocks anything downstream: `workerToolDenial: "declared"`
+and `loopMode: "manual"` are the conservative defaults that hold until one
+of these is re-run and comes back the other way.
+
+### The conditional on Codex's LOW-risk reviewer
+
+`harnesses.json` sends Codex's LOW-risk reviews to its **cheapest** model
+(`gpt-5.6-luna`), which is defensible only because Codex is also the
+harness most likely to run `review.mode: "always"` — if every dispatch is
+reviewed, LOW-risk reviews are the highest-volume, most-routine band, and a
+cheaper model there is a deliberate cost trade. That argument is
+**conditional on probe 1 staying open**: if probe 1 is re-run and Codex
+turns out to *enforce* shell/spawn denial, `review.mode` drops from
+`"always"` to `"payload"`, LOW-risk reviews become as rare as on the other
+two harnesses, and the volume premise evaporates — leaving only "the
+smallest model reviews the band the DoD-assertion scan targets", which the
+protocol argues *against* (a LOW-risk ticket's `review.required` is set
+precisely because its DoD asserts something a gate cannot settle — exactly
+the finding a small model is least equipped to catch). The fix, when that
+day comes, is one line: `harnesses.json`'s
+`harnesses.codex.roles.reviewerByRisk.LOW.model` → `gpt-5.6-terra`. Written
+down here, beside the roster, rather than in a stage report nobody re-reads.
 
 ## Amendments to the "never edit this file" rule
 
