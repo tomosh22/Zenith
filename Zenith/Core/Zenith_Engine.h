@@ -101,6 +101,47 @@ public:
 	void Initialise();
 	void Shutdown();
 
+	// --- Tool mode: runtime services without the boot -------------------------
+	// A standalone tool that links zenith.lib (an asset validator, an importer,
+	// any CLI) cannot call Initialise(): that is the FULL boot — renderer,
+	// physics, ECS, GPU assets, editor, project — and a console tool has no
+	// window and no game project. It still needs the three engine-owned RUNTIME
+	// SERVICES the moment it wants task parallelism or a profile report:
+	// Threading(), Profiling(), Tasks(). Before de-globalisation those were
+	// statics that needed no owner at all; afterwards they became members that
+	// only the private InitialiseRuntimeServices() allocated, so every non-game
+	// caller inherited a precondition it had no way to satisfy and faulted on
+	// its first engine call.
+	//
+	// InitialiseToolRuntimeServices() brings up EXACTLY those three, in
+	// InitialiseRuntimeServices()'s order — both go through the same two private
+	// helpers below, so the order cannot drift apart — and nothing else.
+	// Specifically it does NOT:
+	//   - call Project_SetGraphicsOptions(): a CLI has no graphics options, and
+	//     every standalone tool stubs that hook out to satisfy the linker;
+	//   - call Zenith_MemoryManagement::Initialise(): the CALLER owns the
+	//     allocator and must already have initialised it (it overloads global
+	//     new/delete, and re-running Initialise would re-seed the tracker
+	//     underneath live allocations);
+	//   - register the unified memory-accounting poll sources, whose callbacks
+	//     read Physics() / FluxMemory() — subsystems tool mode never allocates.
+	//
+	// Prefer the Zenith_ToolRuntimeServices RAII guard at the bottom of this
+	// header: it pairs the shutdown onto every exit path a main() has.
+	void InitialiseToolRuntimeServices();
+	void ShutdownToolRuntimeServices();
+
+	// True once Threading() / Tasks() / Profiling() are safe to call — i.e.
+	// after Initialise() or after InitialiseToolRuntimeServices(). Those three
+	// accessors are deliberately assert-free (the hot-path policy documented in
+	// Zenith_Engine.cpp), so this predicate is how a caller OUTSIDE the game
+	// loop turns "used before init" into a message instead of an access
+	// violation. Free: a pointer compare, on no hot path.
+	bool HasRuntimeServices() const
+	{
+		return m_pxThreading != nullptr && m_pxTasks != nullptr && m_pxProfiling != nullptr;
+	}
+
 	// Subsystem accessors. Bodies live in Zenith_Engine.cpp where the
 	// full subsystem headers are visible; this header only forward-
 	// declares the return types.
@@ -113,6 +154,10 @@ public:
 	//     accessor, not a blanket rule.
 	//   - Calling any accessor before its Initialise phase is undefined;
 	//     see Initialise() for the ordering.
+	//   - Threading() / Tasks() / Profiling() are three of the assert-free ones,
+	//     so a caller outside the game loop that gets the ordering wrong sees an
+	//     access violation rather than a message. HasRuntimeServices() above is
+	//     the cheap check for exactly that case.
 	FrameContext& Frame();
 	Zenith_Multithreading& Threading();
 	Zenith_TaskSystem& Tasks();
@@ -208,6 +253,14 @@ private:
 	void AllocateRenderer();
 	void AllocateFluxSubsystems();
 	void AllocateEditorSubsystems();
+	// InitialiseRuntimeServices()'s two halves, split out so tool mode can run
+	// the engine-owned services without the game-only work that sits between
+	// them (graphics options, memory tracking, memory accounting). The split is
+	// a PURE extraction: InitialiseRuntimeServices() calls these where its own
+	// statements used to sit, so the boot order is statement-for-statement what
+	// it was, and neither is a new phase of Initialise().
+	void AllocateThreadRegistry();
+	void InitialiseProfilingAndTaskWorkers();
 	void InitialiseRuntimeServices();
 	void InitialiseAssets();
 	void InitialiseRendererAndPhysics();
@@ -309,6 +362,37 @@ static_assert(std::is_trivially_destructible_v<Zenith_Engine>,
 	"run at static-destruction time.");
 
 extern Zenith_Engine g_xEngine;
+
+// RAII bring-up of the engine's runtime services for a STANDALONE TOOL — the
+// supported answer to "my tool links zenith.lib but cannot run the engine's
+// Initialise()". Construct ONE as a local in main(), after
+// Zenith_MemoryManagement::Initialise() (the allocator is the caller's, and it
+// overloads global new/delete so it has to come first) and before the first
+// g_xEngine.Threading() / Profiling() / Tasks() call. The destructor tears the
+// three services down again — on every exit path main() has, including the
+// early `return 1`s a CLI is full of, which is the whole reason this is a
+// guard and not a pair of calls:
+//
+//   int main()
+//   {
+//       Zenith_MemoryManagement::Initialise();
+//       Zenith_ToolRuntimeServices xRuntimeServices;   // Threading/Profiling/Tasks
+//       ...
+//   }
+//
+// NEVER construct one in a process that runs Zenith_Engine::Initialise(): the
+// engine owns the same three members there, and the ctor asserts on it.
+class Zenith_ToolRuntimeServices
+{
+public:
+	Zenith_ToolRuntimeServices() { g_xEngine.InitialiseToolRuntimeServices(); }
+	~Zenith_ToolRuntimeServices() { g_xEngine.ShutdownToolRuntimeServices(); }
+
+	Zenith_ToolRuntimeServices(const Zenith_ToolRuntimeServices&) = delete;
+	Zenith_ToolRuntimeServices& operator=(const Zenith_ToolRuntimeServices&) = delete;
+	Zenith_ToolRuntimeServices(Zenith_ToolRuntimeServices&&) = delete;
+	Zenith_ToolRuntimeServices& operator=(Zenith_ToolRuntimeServices&&) = delete;
+};
 
 // Runtime service accessors are the narrow composition-root boundary for leaf
 // modules which need an engine-owned service.  Keeping the singleton reach in

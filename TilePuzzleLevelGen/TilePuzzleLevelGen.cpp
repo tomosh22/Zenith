@@ -7,6 +7,7 @@
 #include "TilePuzzleLevelData_Image.h"
 #include "TilePuzzleLevelGen_Analytics.h"
 #include "Components/TilePuzzle_ConditionalValidator.h"
+#include "Core/Zenith_Engine.h"          // g_xEngine + Zenith_ToolRuntimeServices (g_xEngine is not in the PCH)
 #include "Core/Zenith_GraphicsOptions.h" // Project_SetGraphicsOptions stub signature
 
 #include <filesystem>
@@ -1576,15 +1577,21 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	// Minimal engine init, in Zenith_Engine::InitialiseRuntimeServices's order.
-	// RegisterThread MUST precede Profiling().Initialise(): Initialise ends with
-	// m_uMainThreadID = xThreading.GetMainThreadID() (Zenith_Profiling.cpp:666),
-	// and that ID is ~0u until RegisterThread(true) sets it. Initialise is also
-	// guarded by `if (m_bInitialised) return;`, so a later call cannot repair it.
+	// Engine bring-up for a standalone tool. The allocator is ours to initialise
+	// (it overloads global new/delete, so it comes first); the three runtime
+	// services — thread registry, profiler, task workers — belong to the engine,
+	// and Zenith_ToolRuntimeServices is the supported way to get them without
+	// running Zenith_Engine::Initialise(), which a CLI with no window cannot.
+	//
+	// This replaces a hand-rolled copy of InitialiseRuntimeServices's CALL order.
+	// The order was right; there was no public way to ALLOCATE the three members
+	// it called through, so the first line of it faulted with 0xC0000005 on a
+	// null g_xEngine.m_pxThreading. The guard allocates them, keeps the ordering
+	// constraints in one engine-side place (a profiler initialised before the
+	// main thread has an ID records no main thread, silently), and tears the
+	// three down on every exit path below — including the early `return 1`s.
 	Zenith_MemoryManagement::Initialise();
-	g_xEngine.Threading().RegisterThread(true);
-	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
-	g_xEngine.Tasks().Initialise();
+	Zenith_ToolRuntimeServices xRuntimeServices;
 
 	// Set up Ctrl+C handler
 	signal(SIGINT, SignalHandler);
@@ -2042,8 +2049,10 @@ int main(int argc, char* argv[])
 	printf("Registry: %u cache hits, %u cache misses, %u total entries\n",
 		xRegistry.uCacheHits, xRegistry.uCacheMisses, xRegistry.uTotalEntries);
 
-	// Shutdown
-	g_xEngine.Tasks().Shutdown();
+	// No explicit engine shutdown here any more: xRuntimeServices (declared at the
+	// top of main) shuts the task system, the profiler and the thread registry
+	// down in its destructor, on this path and on every early return above. The
+	// profiling report written just above still runs while the profiler is alive.
 
 	printf("Done.\n");
 	return 0;

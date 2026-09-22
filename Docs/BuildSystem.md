@@ -1228,7 +1228,7 @@ Notes:
 | MSBuild not found | Install VS2022 C++ workload or run from a Developer PowerShell; the CLI resolves via PATH then vswhere. |
 | Exe dies at launch, `STATUS_DLL_NOT_FOUND` (0xC0000135) | Slang dependency tree / assimp missing next to the exe → `zenith test`/`zenith package` self-heal via `Repair-ZenithRuntimeDlls`; for a bare `zenith run`, build once via a game that has them or run `zenith test <Name> --filter <anything>` to trigger the heal. |
 | Game hangs at shutdown (headless) | Known; harness/gates tally results from JSON and watchdog-kill. Don't wait on process exit for correctness. |
-| ~~Whole-solution build red (TilePuzzle only)~~ — FIXED (ZEN-103, 2026-09-21) | `Games\TilePuzzle\tilepuzzle_win64.sln` used to be the one solution that failed whole: `TilePuzzleLevelGen` called removed/changed engine APIs and `TilePuzzleRegistryViewer` failed to link (missing `Project_*` composition-root symbols). Both were repaired against the current engine API (see "Whole-solution build status (ZEN-85, 2026-09-21)" below, and its ZEN-103 update) — the solution now builds whole with zero errors, same as every other measured solution. **Both tools still crash at launch (`0xC0000005`) — building is not running;** see the section below. |
+| ~~Whole-solution build red (TilePuzzle only)~~ — FIXED (ZEN-103, 2026-09-21) | `Games\TilePuzzle\tilepuzzle_win64.sln` used to be the one solution that failed whole: `TilePuzzleLevelGen` called removed/changed engine APIs and `TilePuzzleRegistryViewer` failed to link (missing `Project_*` composition-root symbols). Both were repaired against the current engine API (see "Whole-solution build status (ZEN-85, 2026-09-21)" below, and its ZEN-103 update) — the solution now builds whole with zero errors, same as every other measured solution. Both tools then crashed at launch (`0xC0000005`) — building is not running — until ZEN-107 gave a standalone tool a supported way to allocate the engine's runtime services (`Zenith_ToolRuntimeServices`); see the section below. |
 | Regen refuses to run | You're in a linked git worktree — run from the main checkout (§3). |
 | Sentinel link error | A leaf lib grew an engine/platform reference. If it's a sanctioned L0 seam, add the shim to `Tests/Sentinel*/sentinel_platform.cpp`; otherwise fix the leak (that's the point of the proof). |
 
@@ -1254,25 +1254,73 @@ repaired against the current engine API (below) rather than retired —
 now builds with the same "exit 0, zero errors" result as every other row in
 the table above, closing the one exception this section used to document.
 
-**★ BUILDING IS NOT RUNNING, and this fix delivers only the first.** Both tools
-now compile, link and produce an exe; both then **crash with an access
-violation (`0xC0000005`) on their first engine call**, measured on 2026-09-21
-immediately after this fix:
+### How a standalone tool obtains runtime services (ZEN-107, 2026-09-22)
 
-| Tool | Invocation | Result |
+**★ BUILDING WAS NOT RUNNING, and ZEN-103 delivered only the first.** Both tools
+compiled, linked and produced an exe; both then **crashed with an access
+violation (`0xC0000005`) on their first engine call**, measured on 2026-09-21
+immediately after that fix:
+
+| Tool | Invocation | Result (2026-09-21, BEFORE ZEN-107) |
 |---|---|---|
 | `tilepuzzlelevelgen.exe` | `--validate-registry --validate-max-states 2000` | exit `0xC0000005`, right after `Zenith_MemoryManagement::Initialise()` |
 | `tilepuzzleregistryviewer.exe` | (no args) | exit `0xC0000005`, same point |
 
-The cause is the same for both and is **not** API bit-rot: a standalone tool
-has no way to allocate the engine's runtime services. `Zenith_Engine`'s
+The cause was the same for both and was **not** API bit-rot: a standalone tool
+had no way to allocate the engine's runtime services. `Zenith_Engine`'s
 `m_pxThreading` / `m_pxTasks` / `m_pxProfiling` are private members `new`'d
 only in `InitialiseRuntimeServices()`, which is **private** — the sole public
-entry is `Initialise()`, the full boot (renderer, physics, ECS, editor) that a
-CLI tool cannot run. So `g_xEngine.Threading()` in a tool dereferences a null
+entry was `Initialise()`, the full boot (renderer, physics, ECS, editor) that a
+CLI tool cannot run. So `g_xEngine.Threading()` in a tool dereferenced a null
 pointer, and because `Threading`/`Tasks`/`Profiling` are declared with
 `ZENITH_ENGINE_ACCESSOR_HOTPATH` — **no null assert**, deliberately, as a
-hot-path choice — it faults instead of reporting a clear message.
+hot-path choice — it faulted instead of reporting a clear message.
+
+**The answer is a scoped guard, `Zenith_ToolRuntimeServices`**
+(`Zenith/Core/Zenith_Engine.h`), over two new public entry points
+(`Zenith_Engine::InitialiseToolRuntimeServices` /
+`ShutdownToolRuntimeServices`). A tool's `main()` reads:
+
+```cpp
+Zenith_MemoryManagement::Initialise();        // the allocator stays the CALLER's
+Zenith_ToolRuntimeServices xRuntimeServices;  // Threading + Profiling + Tasks
+```
+
+and the destructor tears the three down on every exit path — including the
+early `return 1`s a CLI is full of. Both TilePuzzle tools now boot that way.
+
+What makes this more than a visibility change: **`InitialiseRuntimeServices()`
+is not purely runtime services.** Its first fifteen lines also call
+`Project_SetGraphicsOptions()` (a game-project hook every tool stubs out) and
+`Zenith_MemoryManagement::Initialise()` (which the tool has already called, on
+the line above), and register memory-accounting poll callbacks that read
+`Physics()` and `FluxMemory()` — subsystems a tool never allocates. Making it
+public as-is would have dragged all of that into a CLI. Instead it was split
+into two private halves, `AllocateThreadRegistry()` and
+`InitialiseProfilingAndTaskWorkers()`, that the engine boot and tool mode both
+call; the game-only work stays between them, in the engine path only. The
+split is a pure extraction — `Zenith_Engine::Initialise()`'s phase order is
+untouched and the statements run in the same sequence they always did.
+
+Tool mode also allocates the **debug-variable tree**, which is not obvious and
+is not optional: `Zenith_TaskSystem::Initialise()` registers its
+`Multithreaded` toggle under `ZENITH_DEBUG_VARIABLES`, which `Zenith.h` defines
+whenever `ZENITH_TOOLS` is — and a tool exe is a `ToolsEnabled=True` build. The
+engine gets the tree from `AllocateEditorSubsystems()` two phases earlier; tool
+mode runs no phases, so it allocates that one piece itself. It does **not**
+allocate anything else, and `Zenith_MemoryManagement::Shutdown()` (the
+whole-engine leak checkpoint) is deliberately not called on the tool path.
+
+**The three accessors were left assert-free**, and that was a decision, not an
+omission. `Zenith.h` defines `ZENITH_ASSERT` unconditionally — there is no
+configuration where `Zenith_Assert` compiles away — so moving
+`Threading`/`Tasks`/`Profiling` onto the asserting macro would add a branch to
+every per-frame, per-worker-thread call in every shipping configuration, which
+is exactly what the hot-path policy refuses. And there is no compile-time axis
+that separates a tool exe from a game exe: both link the same `zenith.lib`,
+built once per configuration. The diagnostic went where it costs the game loop
+nothing instead — `Zenith_Engine::HasRuntimeServices()`, a public pointer
+predicate, plus asserts inside the two tool-mode entry points.
 
 Neither tool REGRESSED, and the two need separate arguments.
 `TilePuzzleRegistryViewer` was already broken this way BEFORE ZEN-103: its boot
@@ -1290,9 +1338,13 @@ silently the moment runtime services became obtainable.)
 produced an exe to run beforehand, and its pre-diff
 `g_xEngine.Profiling().Initialise()` would have null-dereferenced identically
 had it compiled. The exception this section documents is a WHOLE-SOLUTION BUILD
-exception, and that one is closed. Making these two tools actually run needs an
-engine decision about how a standalone tool obtains runtime services, tracked
-separately.
+exception, and that one is closed. The engine decision about how a standalone
+tool obtains runtime services — the thing that was still missing when the
+paragraphs above were written — is ZEN-107, recorded in the subsection above.
+(The viewer's latent profiler-ordering bug is no longer latent-and-hand-fixed:
+that ordering now lives inside
+`Zenith_Engine::InitialiseProfilingAndTaskWorkers`, which both the engine boot
+and every tool go through, so a tool cannot spell it wrong to begin with.)
 
 **FluxCompiler and all three font-dependency projects build green.**
 `FluxCompiler`, `FreeType`, `msdfgen` and `msdf-atlas-gen` all compiled with

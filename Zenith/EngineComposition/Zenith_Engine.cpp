@@ -206,6 +206,19 @@ namespace
 //        any caller runs — the null branch isn't worth paying there.
 // Per-accessor assert status is UNCHANGED from the hand-written originals; this
 // only makes the existing policy explicit and uniform.
+//
+// ★ Why Threading/Tasks/Profiling still carry NO assert, even though a
+// standalone tool reaching them before init is exactly the case an assert would
+// diagnose. Zenith.h defines ZENITH_ASSERT UNCONDITIONALLY — there is no
+// configuration in which Zenith_Assert compiles away — so moving these three to
+// the asserting macro would add a branch to every per-frame, per-worker-thread
+// call in every SHIPPING configuration, which is the precise cost the hot-path
+// policy exists to refuse. Nor is there a compile-time axis to exempt the game
+// from: a tool exe and a game exe link the SAME zenith.lib, built once per
+// configuration, so "assert in tools only" is not expressible here.
+// The diagnosis therefore lives where it costs the game loop nothing: the
+// Zenith_Engine::HasRuntimeServices() predicate and the tool-mode entry points
+// below, whose asserts fire once, off any hot path. See Zenith_Engine.h.
 // -----------------------------------------------------------------------------
 #define ZENITH_ENGINE_ACCESSOR(Type, Name, Member) \
 	Type& Zenith_Engine::Name() \
@@ -480,7 +493,9 @@ void Zenith_Engine::AllocateEditorSubsystems()
 #endif
 }
 
-// Thread registry, graphics options, memory tracking, profiling, task workers.
+// Boot phase E — thread registry, graphics options, memory tracking, profiling,
+// task workers — plus the two halves it is split into and the tool-mode entry
+// points that reuse them. Definitions start after this accounting block.
 #if ZENITH_MEMORY_TRACKING_ANY
 #include "Memory/Zenith_MemoryAccounting.h"
 #include "Memory/Zenith_MemoryFrameSample.h"
@@ -512,7 +527,8 @@ namespace
 }
 #endif
 
-void Zenith_Engine::InitialiseRuntimeServices()
+// First half of InitialiseRuntimeServices, and the first thing tool mode does.
+void Zenith_Engine::AllocateThreadRegistry()
 {
 	// multithreading registry (thread-ID allocator +
 	// main-thread ID) lives on the engine now. Allocate BEFORE
@@ -520,24 +536,16 @@ void Zenith_Engine::InitialiseRuntimeServices()
 	// from g_xEngine.Threading() to issue the main thread's ID.
 	Zenith_Assert(m_pxThreading == nullptr, "Zenith_Engine::Initialise called twice without Shutdown");
 	m_pxThreading = new Zenith_Multithreading();
+}
 
-	// Populate graphics options from the game project FIRST
-	// Must happen before any Flux initialisation reads from Zenith_GraphicsOptions::Get()
-	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
-
-	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
-	Zenith_MemoryManagement::Initialise();
-
-#if ZENITH_MEMORY_TRACKING_ANY
-	// Register the unified-accounting sources (polled once per frame from EndFrame).
-	// m_bIsVRAM keeps GPU memory out of process-RAM sums. The Null backend's memory
-	// manager reports zeros, so the VRAM source is inert there.
-	Zenith_MemoryAccounting::Initialise();
-	Zenith_MemoryAccounting::RegisterSource("Engine CPU", &PollEngineCPU, 0, false);
-	Zenith_MemoryAccounting::RegisterSource("Jolt Physics", &PollJolt, 0, false);
-	Zenith_MemoryAccounting::RegisterSource("VMA VRAM", &PollVMA, 0, true);
-#endif
-
+// Second half of InitialiseRuntimeServices: the profiler, the main thread's
+// registration, and the task workers — the part tool mode needs verbatim. The
+// interleaving here is load-bearing in three places (see the comments); keeping
+// it in ONE function is what stops a tool's hand-rolled copy from drifting out
+// of order, which is exactly how TilePuzzleRegistryViewer came to initialise the
+// profiler before the main thread had an ID.
+void Zenith_Engine::InitialiseProfilingAndTaskWorkers()
+{
 	// per-Engine Profiling state. Allocate BEFORE
 	// g_xEngine.Threading().RegisterThread(true) below --
 	// RegisterThread transitively calls Zenith_Profiling::RegisterThread
@@ -557,6 +565,100 @@ void Zenith_Engine::InitialiseRuntimeServices()
 	m_pxTasks = new Zenith_TaskSystem();
 
 	g_xEngine.Tasks().Initialise();
+}
+
+void Zenith_Engine::InitialiseRuntimeServices()
+{
+	AllocateThreadRegistry();
+
+	// Populate graphics options from the game project FIRST
+	// Must happen before any Flux initialisation reads from Zenith_GraphicsOptions::Get()
+	Project_SetGraphicsOptions(Zenith_GraphicsOptions::Get());
+
+	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
+	Zenith_MemoryManagement::Initialise();
+
+#if ZENITH_MEMORY_TRACKING_ANY
+	// Register the unified-accounting sources (polled once per frame from EndFrame).
+	// m_bIsVRAM keeps GPU memory out of process-RAM sums. The Null backend's memory
+	// manager reports zeros, so the VRAM source is inert there.
+	Zenith_MemoryAccounting::Initialise();
+	Zenith_MemoryAccounting::RegisterSource("Engine CPU", &PollEngineCPU, 0, false);
+	Zenith_MemoryAccounting::RegisterSource("Jolt Physics", &PollJolt, 0, false);
+	Zenith_MemoryAccounting::RegisterSource("VMA VRAM", &PollVMA, 0, true);
+#endif
+
+	InitialiseProfilingAndTaskWorkers();
+}
+
+// ---------------------------------------------------------------------------
+// Tool mode. The contract, the rationale and the "do NOT do this" list live on
+// the declarations in Zenith_Engine.h; this is the wiring.
+// ---------------------------------------------------------------------------
+void Zenith_Engine::InitialiseToolRuntimeServices()
+{
+	Zenith_Assert(!HasRuntimeServices(),
+		"Zenith_Engine::InitialiseToolRuntimeServices() called twice, or in a process that already ran Initialise().");
+
+	AllocateThreadRegistry();
+
+#ifdef ZENITH_TOOLS
+	// The debug-variable tree has to exist before the task system comes up:
+	// Zenith_TaskSystem::Initialise() registers its "Multithreaded" toggle on it
+	// under ZENITH_DEBUG_VARIABLES, which Zenith.h defines whenever ZENITH_TOOLS
+	// is defined — and a tool exe is a ToolsEnabled=True build. The engine gets
+	// this for free one phase earlier, in AllocateEditorSubsystems(); tool mode
+	// runs neither that phase nor anything else in it, so it allocates the one
+	// piece the services below actually reach.
+	Zenith_Assert(m_pxDebugVariables == nullptr,
+		"Zenith_Engine::InitialiseToolRuntimeServices: the debug-variable tree is already allocated");
+	m_pxDebugVariables = new Zenith_DebugVariables();
+#endif
+
+	InitialiseProfilingAndTaskWorkers();
+
+	Zenith_Log(LOG_CATEGORY_CORE,
+		"Tool runtime services online: thread registry, profiler, %u task worker(s). "
+		"The renderer, physics, ECS, asset registry and editor are NOT initialised.",
+		m_pxTasks->GetNumWorkerThreads());
+}
+
+void Zenith_Engine::ShutdownToolRuntimeServices()
+{
+	Zenith_Assert(HasRuntimeServices(),
+		"Zenith_Engine::ShutdownToolRuntimeServices() without a matching InitialiseToolRuntimeServices().");
+
+	// Mirrors ShutdownRuntimeServices()'s order, minus two things tool mode never
+	// owned: the FrameContext (allocated in AllocateCoreState, which tool mode
+	// does not run) and Zenith_MemoryManagement::Shutdown() (the allocator is the
+	// caller's, and its leak checkpoint is a whole-engine claim a tool cannot
+	// honestly make — a CLI exits with plenty deliberately unfreed).
+	//
+	// Every step is null-guarded rather than assumed: the assert above is a
+	// diagnostic, and a half-initialised engine must still tear down what exists
+	// instead of adding a second fault on top of the first.
+	if (m_pxTasks != nullptr)
+	{
+		g_xEngine.Tasks().Shutdown();   // joins the workers; they unregister their profiling rings on exit
+		delete m_pxTasks;
+		m_pxTasks = nullptr;
+	}
+
+	if (m_pxProfiling != nullptr)
+	{
+		m_pxProfiling->Shutdown();
+		delete m_pxProfiling;
+		m_pxProfiling = nullptr;
+	}
+
+#ifdef ZENITH_TOOLS
+	// After the task system, whose "Multithreaded" toggle is bound into the tree.
+	delete m_pxDebugVariables;
+	m_pxDebugVariables = nullptr;
+#endif
+
+	delete m_pxThreading;
+	m_pxThreading = nullptr;
 }
 
 // Asset directories + registry, then tools-only asset exports.

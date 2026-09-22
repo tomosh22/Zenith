@@ -438,14 +438,22 @@ int main(int argc, char** argv)
 	printf("TilePuzzle Registry Viewer\n");
 	printf("Registry: %s\n", szRegistryDir);
 
-	// Minimal engine init (required for solver profiling in conditional validation).
-	// ZEN-103: RegisterThread MUST precede Profiling().Initialise() -- Initialise
-	// ends with m_uMainThreadID = xThreading.GetMainThreadID(), which is ~0u until
-	// RegisterThread(true) sets it, and Initialise self-guards on m_bInitialised so
-	// a later call cannot repair it. This file had the two the other way round.
+	// Engine bring-up for a standalone tool (required for solver profiling in
+	// conditional validation). The allocator is ours; the thread registry, the
+	// profiler and the task workers belong to the engine, and
+	// Zenith_ToolRuntimeServices is the supported way to obtain them without
+	// running Zenith_Engine::Initialise() -- the full boot, which this viewer (its
+	// own Win32 window, its own D3D11 device, its own ImGui context) must not run.
+	//
+	// It replaces two hand-written lines that dereferenced null members and faulted
+	// with 0xC0000005. The ordering constraint ZEN-103 fixed here by hand --
+	// RegisterThread(true) BEFORE Profiling().Initialise(), or the profiler latches
+	// m_uMainThreadID = ~0u and silently records no main thread -- now lives once,
+	// in Zenith_Engine::InitialiseProfilingAndTaskWorkers, where the engine's own
+	// boot reads it too. The guard also brings up the task workers, which this tool
+	// did not have before; they block on a semaphore until something is submitted.
 	Zenith_MemoryManagement::Initialise();
-	g_xEngine.Threading().RegisterThread(true);
-	g_xEngine.Profiling().Initialise(g_xEngine.Threading());
+	Zenith_ToolRuntimeServices xRuntimeServices;
 
 	// Create application window
 	ImGui_ImplWin32_EnableDpiAwareness();
