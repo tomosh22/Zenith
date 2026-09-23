@@ -299,7 +299,7 @@ public:
 	// Arm the EXISTING yes/no dialogue over a READY/DAMAGED MANUAL slot (ZM-D-121: the choice
 	// mode IS the yes/no primitive -- no new screen, no new ECS order). Auto, NONE and every
 	// out-of-range slot are rejected before mutation. The box is SINGLE-TENANT
-	// (Shortfalls.md:72), so this returns FALSE while it is busy and the caller MUST handle
+	// (Shortfalls.md 1.6), so this returns FALSE while it is busy and the caller MUST handle
 	// the refusal rather than half-arm.
 	bool OpenSaveConfirmPrompt(ZM_SAVE_SLOT eSlot);
 	// The quit-to-title yes/no confirm, armed the same way; also FALSE when the box is busy.

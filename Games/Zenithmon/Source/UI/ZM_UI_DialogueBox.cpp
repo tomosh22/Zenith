@@ -19,6 +19,17 @@
 // best-effort presentation onto the persistent ZM_MenuRoot canvas. The reveal
 // math (and its 45 glyphs/sec rate) is NOT duplicated here -- both the headless
 // proxy and the on-screen reveal call ZM_UI_BattleHUD::ComputeVisibleGlyphCount.
+//
+// ZM-89: uMAX_QUEUED_LINES bounds PENDING (unread) lines, not the conversation.
+// m_astrLines is a fixed uMAX_QUEUED_LINES-slot RING BUFFER keyed by the
+// cumulative line index modulo its size; m_uLineCount / m_uCurrentLine are
+// cumulative counters that are NEVER bounded by uMAX_QUEUED_LINES (only their
+// difference -- the pending count, i.e. GetRemainingLineCount() -- is). This
+// keeps GetQueuedLineCount() / GetCurrentLineIndex() reading the same cumulative
+// values they always have (callers outside this file depend on that), while
+// QueueLine/QueueLines admit a new line the moment a read one frees its slot --
+// so a caller can chunk a conversation past uMAX_QUEUED_LINES total lines by
+// calling QueueLine again as the player advances.
 // ============================================================================
 
 namespace
@@ -52,11 +63,19 @@ void ZM_UI_DialogueBox::Reset()
 
 bool ZM_UI_DialogueBox::QueueLine(const char* szLine)
 {
-	if (szLine == nullptr || szLine[0] == '\0' || m_uLineCount == uMAX_QUEUED_LINES)
+	// The cap bounds PENDING lines (GetRemainingLineCount()), not the cumulative
+	// conversation (GetQueuedLineCount()) -- a line already read and advanced past has
+	// freed its ring slot, so a long conversation can exceed uMAX_QUEUED_LINES lines in
+	// total as long as no more than uMAX_QUEUED_LINES are unread at once.
+	if (szLine == nullptr || szLine[0] == '\0'
+		|| (m_uLineCount - m_uCurrentLine) == uMAX_QUEUED_LINES)
 	{
 		return false;
 	}
-	m_astrLines[m_uLineCount] = szLine;
+	// m_astrLines is a RING BUFFER of uMAX_QUEUED_LINES slots keyed by the cumulative
+	// index modulo its size -- never a flat array indexed by m_uLineCount directly, since
+	// m_uLineCount itself is no longer bounded by uMAX_QUEUED_LINES.
+	m_astrLines[m_uLineCount % uMAX_QUEUED_LINES] = szLine;
 	++m_uLineCount;
 	return true;
 }
@@ -64,8 +83,11 @@ bool ZM_UI_DialogueBox::QueueLine(const char* szLine)
 bool ZM_UI_DialogueBox::QueueLines(const char* const* paszLines, u_int uCount)
 {
 	// Validate the WHOLE batch first -- a half-queued conversation would show lines
-	// the caller never got told were accepted.
-	if (paszLines == nullptr || uCount == 0u || uCount > (uMAX_QUEUED_LINES - m_uLineCount))
+	// the caller never got told were accepted. The available room is the PENDING
+	// capacity (uMAX_QUEUED_LINES minus what is still unread), not uMAX_QUEUED_LINES
+	// minus the cumulative total ever queued.
+	const u_int uPending = m_uLineCount - m_uCurrentLine;
+	if (paszLines == nullptr || uCount == 0u || uCount > (uMAX_QUEUED_LINES - uPending))
 	{
 		return false;
 	}
@@ -78,7 +100,7 @@ bool ZM_UI_DialogueBox::QueueLines(const char* const* paszLines, u_int uCount)
 	}
 	for (u_int i = 0u; i < uCount; ++i)
 	{
-		m_astrLines[m_uLineCount] = paszLines[i];
+		m_astrLines[m_uLineCount % uMAX_QUEUED_LINES] = paszLines[i];
 		++m_uLineCount;
 	}
 	return true;
@@ -220,19 +242,21 @@ u_int ZM_UI_DialogueBox::GetRemainingLineCount() const
 
 const std::string& ZM_UI_DialogueBox::GetCurrentLine() const
 {
-	return IsActive() ? m_astrLines[m_uCurrentLine] : ZM_EmptyDialogueLine();
+	return IsActive() ? m_astrLines[m_uCurrentLine % uMAX_QUEUED_LINES] : ZM_EmptyDialogueLine();
 }
 
 const std::string& ZM_UI_DialogueBox::DisplayLine() const
 {
 	if (IsActive())
 	{
-		return m_astrLines[m_uCurrentLine];
+		return m_astrLines[m_uCurrentLine % uMAX_QUEUED_LINES];
 	}
 	if (IsAwaitingChoice())
 	{
-		// Awaiting implies m_uLineCount > 0, so the last read line is always in range.
-		return m_astrLines[m_uLineCount - 1u];
+		// Awaiting implies m_uLineCount > 0, so the last read line is always in range
+		// (already READ, yet its ring slot survives: while awaiting, nothing is pending, so the
+		// next QueueLine writes slot m_uLineCount % uMAX_QUEUED_LINES, never this one).
+		return m_astrLines[(m_uLineCount - 1u) % uMAX_QUEUED_LINES];
 	}
 	return ZM_EmptyDialogueLine();
 }

@@ -1,6 +1,6 @@
 # Zenithmon Status
 
-**Last updated:** 2026-09-22
+**Last updated:** 2026-09-23
 
 **Board:** `ZM` on the agent board. **The work items live there** — epics, stories,
 tasks, bugs, blockers, sprints and releases — and [Board.md](Board.md) explains the
@@ -17,11 +17,16 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 [History.md](History.md) on 2026-08-18, so this file can hold to the ~25-line budget
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
-**★ LIVE PIN (UPDATED 2026-09-22):
-ZM boot `4584`; engine boot (Null Combat) `2731`; Null RenderTest `2834`; registry **116**.**
+**★ LIVE PIN (UPDATED 2026-09-23):
+ZM boot `4588`; engine boot (Null Combat) `2731`; Null RenderTest `2834`; registry **116**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **+4 ZM BOOT (2026-09-23) — ZM-89 dialogue compaction.** `ZM_UI_DialogueBox`'s
+> 8-slot queue became a ring buffer capped on PENDING lines; +4 headless
+> `ZM_DialogueBox` units. Null Zenithmon OBSERVED 4,588 ran, 4,586 passed, zero
+> failed and two skipped. Game-only: the Combat and RenderTest pins are unchanged.
 
 > **+4 REGISTRY (2026-09-22) — lark sources; user-requested stop.** Pipwit,
 > Trillark and Stratavis have normal/shiny GLBs and editable Blender sources.
