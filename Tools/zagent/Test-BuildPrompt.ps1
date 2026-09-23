@@ -358,6 +358,33 @@ Assert-That 'carries the Rulings heading' { $prompt7 -match '## Rulings that gov
 Assert-That 'carries the ruling text verbatim' { $prompt7.Contains($rulingText) }
 Assert-That 'no Rulings heading when none were passed' { -not $promptText.Contains('## Rulings that govern this work') }
 
+# ─── E1: -Rulings a,b fails under `pwsh -File` unless split like -Files ──
+#
+# Mirrors the '-Files' comma-joined case above: a nested
+# `pwsh -File build_prompt.ps1 -Rulings a.md,b.md` arrives as ONE argv
+# token with the comma still embedded, so a naive `[string[]]$Rulings`
+# binds a single element holding the literal text "a.md,b.md" -- which
+# then fails Test-Path outright ('-Rulings path ... does not exist').
+Write-Host "`n=== rulings: comma-joined -Rulings a,b (E1) ===" -ForegroundColor Cyan
+$fx7b = New-FixtureRepo -Body $cleanBody
+$rulingPathA = Join-Path $fx7b.Repo 'rulingA.md'
+$rulingPathB = Join-Path $fx7b.Repo 'rulingB.md'
+$rulingTextA = 'Ruling A: prefer the by-row seam.'
+$rulingTextB = 'Ruling B: never bake a pose change.'
+Set-Content -LiteralPath $rulingPathA -Value $rulingTextA -Encoding utf8 -NoNewline
+Set-Content -LiteralPath $rulingPathB -Value $rulingTextB -Encoding utf8 -NoNewline
+$rulingPaths = @($rulingPathA, $rulingPathB)
+# Passed as ONE comma-joined argv token -- the shape a real
+# `-Rulings a.md,b.md` invocation actually arrives in once it has crossed
+# the `pwsh -File` process boundary, same reasoning as the -Files case.
+$r7b = Invoke-BuildPrompt -ScriptArgs @('-Key', $fx7b.Key, '-Repo', $fx7b.Repo, '-Files', 'Foo.cpp', '-Boundary', 'n/a', '-Rulings', ($rulingPaths -join ','))
+$prompt7b = Get-Content -LiteralPath (Join-Path $fx7b.RunDir 'prompt.md') -Raw
+
+Assert-That 'exits 0 with a comma-joined -Rulings value' { $r7b.Code -eq 0 }
+Assert-That 'carries the Rulings heading' { $prompt7b -match '## Rulings that govern this work' }
+Assert-That 'both ruling files are inlined' { $prompt7b.Contains($rulingTextA) -and $prompt7b.Contains($rulingTextB) }
+Assert-That 'ruling A appears before ruling B, in order' { $prompt7b.IndexOf($rulingTextA) -lt $prompt7b.IndexOf($rulingTextB) }
+
 # ─── missing scratch files fail loudly rather than creating them ─────
 
 Write-Host "`n=== missing claim scratch ===" -ForegroundColor Cyan

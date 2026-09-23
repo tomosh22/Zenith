@@ -236,10 +236,11 @@ $Repo = (Resolve-Path -LiteralPath $Repo).Path
 
 # ─── Judgement-call inputs: validate them before touching disk ───────
 #
-# `-Files <string[]>` cannot mean "space-separated CLI values" the way it
-# would for an in-session function call, because this script is invoked as
-# `pwsh -File ...` -- a REAL process boundary. Measured while building
-# this script: PowerShell's own native-argument marshalling for a nested
+# `-Files <string[]>` (and `-Rulings <string[]>` below) cannot mean
+# "space-separated CLI values" the way it would for an in-session function
+# call, because this script is invoked as `pwsh -File ...` -- a REAL
+# process boundary. Measured while building this script: PowerShell's own
+# native-argument marshalling for a nested
 # `pwsh -File child.ps1 -Files a.cpp,b.cpp` collapses the comma-array
 # literal into ONE argv token with the commas still embedded
 # ("a.cpp,b.cpp"), rather than exploding it into separate elements the way
@@ -249,15 +250,22 @@ $Repo = (Resolve-Path -LiteralPath $Repo).Path
 # does not exist. Splitting every bound value on commas here is what makes
 # the documented interface actually work when invoked exactly as
 # specified -- and is a no-op for a value that never had a comma in it
-# (repo paths in this tree do not contain one).
-$Files = @(
-    foreach ($raw in $Files) {
-        foreach ($piece in ($raw -split ',')) {
-            $trimmed = $piece.Trim()
-            if ($trimmed) { $trimmed }
+# (repo paths in this tree do not contain one -- same accepted assumption
+# for both parameters).
+function Split-CommaJoinedValues {
+    param([string[]]$Values)
+    return @(
+        foreach ($raw in $Values) {
+            foreach ($piece in ($raw -split ',')) {
+                $trimmed = $piece.Trim()
+                if ($trimmed) { $trimmed }
+            }
         }
-    }
-)
+    )
+}
+
+$Files = @(Split-CommaJoinedValues -Values $Files)
+$Rulings = @(Split-CommaJoinedValues -Values $Rulings)
 
 if ($Files.Count -eq 0) {
     Fail "-Files was empty. The file list is load-bearing in both directions (tick.md step 5) -- an empty list is never a valid dispatch."
