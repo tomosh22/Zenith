@@ -158,6 +158,15 @@ public class ZenithToolsProject : ZenithBaseProject
 		// before a dependency package can contribute native-looking sources.
 		SourceFilesExcludeRegex.Add(@".*[\\/]Vault[\\/].*");
 
+			// libgraph is a Python tool (engine-library-boundary visualiser), not
+			// engine C++ — exclude its whole tree the same way. Its
+			// tests/fixtures/repo/** subtree is fake C++ TEXT used only to exercise
+			// libgraph's own parser (see Tools/libgraph/tests/fixtures/repo/README.md)
+			// and is never meant to compile; libgraph's own test suite asserts that
+			// fixture tree is never modified, so excluding it here (rather than
+			// editing it) is the only correct fix.
+			SourceFilesExcludeRegex.Add(@".*Tools\\libgraph\\.*");
+
 		// Tools are Windows-only, and (this phase) Tools-enabled-only — see
 		// the file header comment's "WIN64 x TOOLS=TRUE ONLY" paragraph.
 		AddTargets(new ZenithTarget

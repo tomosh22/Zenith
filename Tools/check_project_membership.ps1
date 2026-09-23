@@ -129,7 +129,20 @@ function Get-CandidateVcxprojFiles
 	#                                      names, and are never referenced by
 	#                                      any Zenith solution — including them
 	#                                      would corrupt the graph, not extend it.
-	$excludeSegmentRegex = '(?i)[\\/](obj|output|\.vs|dist|Middleware)[\\/]'
+	#   tests\fixtures (anywhere in path) — Tools\libgraph's committed fake-repo
+	#                                      fixture (Tools\libgraph\tests\fixtures\repo\**)
+	#                                      ships hand-authored .vcxproj TEXT that
+	#                                      exists only to exercise libgraph's own
+	#                                      vcxproj.py parser (see that tree's
+	#                                      README.md) — never Sharpmake output, never
+	#                                      part of any real Zenith solution, and never
+	#                                      meant to be walked by this checker. This is
+	#                                      the only tree in the repo under a
+	#                                      tests\fixtures segment (verified: 8 fake
+	#                                      .vcxproj, all under
+	#                                      Tools\libgraph\tests\fixtures\repo\), so this
+	#                                      cannot hide a real project.
+	$excludeSegmentRegex = '(?i)[\\/](obj|output|\.vs|dist|Middleware|tests[\\/]fixtures)[\\/]'
 	$excludeArtifactsRegex = '(?i)[\\/]Build[\\/]artifacts[\\/]'
 
 	$result = New-Object System.Collections.Generic.List[System.IO.FileInfo]
