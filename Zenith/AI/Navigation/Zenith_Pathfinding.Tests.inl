@@ -423,3 +423,214 @@ void Zenith_UnitTests::TestPathfindingSmootherAcceptsValidShortcut(){
 	ZENITH_ASSERT_EQ(axPath.GetSize(), 2,
 		"SmoothPath must collapse a redundant intermediate when the line is clear");
 }
+
+// ============================================================================
+// Equal-cost route pin (ZEN-112, filed from ZEN-44's review). A* open-list
+// ties are a REAL reachable state: AStarNode::operator> compares m_fFCost
+// only, so two competing routes that reach the goal at the exact same total
+// cost are ordered purely by Zenith_PriorityQueue's internal sift order plus
+// ExpandNeighbor's tie-break rule (`fNewGCost >= *pfOpen` discards a later,
+// equal-cost arrival at an already-open node, so the FIRST-found route
+// wins). Nothing in this file asserted an exact route before this pair of
+// tests -- every other assertion here checks status, waypoint-count bounds,
+// or absence of duplicates, so which of two equal-cost routes FindPath
+// returns could change with every gate green and nobody would notice.
+//
+// Shared navmesh (built independently in each test below, matching this
+// file's existing no-shared-helper convention): a start polygon S (poly 0)
+// with two branch polygons N (poly 1, "north") and So (poly 2, "south")
+// that are EXACT mirror images of each other across z=0, both leading to a
+// common end polygon E (poly 3). All four polygons are quads with
+// integer-valued vertices, so every polygon centre (the average of its
+// vertices, a division by 4 -- exact in IEEE-754) is an exact float value
+// with no rounding: S=(0,0,0), N=(5,0,5), So=(5,0,-5), E=(10,0,0).
+// Adjacency is wired by hand with SetNeighbor (S.edge0->N, S.edge1->So,
+// N.edge0->E, So.edge0->E) rather than ComputeAdjacency -- the same
+// manual-wiring pattern TestPathfindingSmootherRejectsCarvedShortcut
+// already uses. The four polygons are spatially disjoint islands (several
+// units of gap between every pair), so no shortcut collapses the route
+// down to just start/end during smoothing: SegmentExitsNavMesh's samples
+// fall in the empty space between islands for every candidate shortcut,
+// and TestPathfindingEqualCostRoutePinsCurrentTieBreak below asserts all 4
+// waypoints survive.
+//
+// EXACT equality, not near-equality: N's centre is (5,0,5) and So's is
+// (5,0,-5) -- literal mirror images with the SAME x, opposite z, and the
+// query end point sits exactly on the symmetry axis at E's centre
+// (10,0,0). Every A* cost term the algorithm computes for the two branches
+// is therefore a function of (dx,dz) pairs that differ only in the SIGN of
+// dz -- e.g. S->N is (5,0,5) and S->So is (5,0,-5) -- and
+// 5.0f*5.0f == (-5.0f)*(-5.0f) bit-for-bit under IEEE-754, so the sum of
+// squares, and therefore the sqrt, is bit-IDENTICAL between the two
+// branches, not merely numerically close. A near-equal (rather than exact)
+// tie would make TestPathfindingEqualCostRoutePinsCurrentTieBreak vacuous:
+// A* would simply take the cheaper route every time and there would be no
+// tie for the open-list order to break.
+// ============================================================================
+
+ZENITH_TEST(AI, PathfindingEqualCostRouteIsDeterministic)
+{
+	Zenith_NavMesh xNavMesh;
+
+	// S (start): centre (0,0,0).
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(-1.0f, 0.0f, -1.0f));  // 0
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, -1.0f));   // 1
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));    // 2
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(-1.0f, 0.0f, 1.0f));   // 3
+
+	// N (north branch): centre (5,0,5).
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, 4.0f));    // 4
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, 4.0f));    // 5
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, 6.0f));    // 6
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, 6.0f));    // 7
+
+	// So (south branch): centre (5,0,-5) -- exact mirror of N across z=0.
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, -6.0f));   // 8
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, -6.0f));   // 9
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, -4.0f));   // 10
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, -4.0f));   // 11
+
+	// E (end): centre (10,0,0), on the S/E symmetry axis.
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(9.0f, 0.0f, -1.0f));   // 12
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(11.0f, 0.0f, -1.0f));  // 13
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(11.0f, 0.0f, 1.0f));   // 14
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(9.0f, 0.0f, 1.0f));    // 15
+
+	Zenith_Vector<uint32_t> axPolyS, axPolyN, axPolySo, axPolyE;
+	axPolyS.PushBack(0); axPolyS.PushBack(1); axPolyS.PushBack(2); axPolyS.PushBack(3);
+	axPolyN.PushBack(4); axPolyN.PushBack(5); axPolyN.PushBack(6); axPolyN.PushBack(7);
+	axPolySo.PushBack(8); axPolySo.PushBack(9); axPolySo.PushBack(10); axPolySo.PushBack(11);
+	axPolyE.PushBack(12); axPolyE.PushBack(13); axPolyE.PushBack(14); axPolyE.PushBack(15);
+
+	uint32_t uPolyS = xNavMesh.AddPolygon(axPolyS);
+	uint32_t uPolyN = xNavMesh.AddPolygon(axPolyN);
+	uint32_t uPolySo = xNavMesh.AddPolygon(axPolySo);
+	uint32_t uPolyE = xNavMesh.AddPolygon(axPolyE);
+
+	// Manual adjacency (like TestPathfindingSmootherRejectsCarvedShortcut) --
+	// these four polygons are spatially disjoint islands; SetNeighbor is the
+	// only thing connecting them into a graph.
+	xNavMesh.SetNeighbor(uPolyS, /*edge=*/0, uPolyN);
+	xNavMesh.SetNeighbor(uPolyS, /*edge=*/1, uPolySo);
+	xNavMesh.SetNeighbor(uPolyN, /*edge=*/0, uPolyE);
+	xNavMesh.SetNeighbor(uPolySo, /*edge=*/0, uPolyE);
+
+	xNavMesh.BuildSpatialGrid();
+
+	const Zenith_Maths::Vector3 xStart(0.0f, 0.0f, 0.0f);  // S's centre exactly.
+	const Zenith_Maths::Vector3 xEnd(10.0f, 0.0f, 0.0f);   // E's centre exactly.
+
+	Zenith_PathResult xFirst  = Zenith_Pathfinding::FindPath(xNavMesh, xStart, xEnd);
+	Zenith_PathResult xSecond = Zenith_Pathfinding::FindPath(xNavMesh, xStart, xEnd);
+	Zenith_PathResult xThird  = Zenith_Pathfinding::FindPath(xNavMesh, xStart, xEnd);
+
+	ZENITH_ASSERT_EQ(xFirst.m_eStatus, Zenith_PathResult::Status::SUCCESS,
+		"Equal-cost navmesh should still find a path");
+	ZENITH_ASSERT_EQ(xFirst.m_axWaypoints.GetSize(), xSecond.m_axWaypoints.GetSize(),
+		"Repeated FindPath calls over an equal-cost tie must agree on waypoint count");
+	ZENITH_ASSERT_EQ(xFirst.m_axWaypoints.GetSize(), xThird.m_axWaypoints.GetSize(),
+		"Repeated FindPath calls over an equal-cost tie must agree on waypoint count");
+
+	for (uint32_t u = 0; u < xFirst.m_axWaypoints.GetSize(); ++u)
+	{
+		ZENITH_ASSERT_NEAR_VEC3(xFirst.m_axWaypoints.Get(u), xSecond.m_axWaypoints.Get(u), 0.0001f,
+			"Repeated FindPath calls over an equal-cost tie must return the identical route (waypoint %u)", u);
+		ZENITH_ASSERT_NEAR_VEC3(xFirst.m_axWaypoints.Get(u), xThird.m_axWaypoints.Get(u), 0.0001f,
+			"Repeated FindPath calls over an equal-cost tie must return the identical route (waypoint %u)", u);
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Pins WHICH of the two equal-cost routes FindPath returns TODAY (the
+// "north" branch, via poly 1) -- see the comment block above for why the tie
+// between it and the "south" branch (poly 2) is exact rather than
+// approximate. This is a snapshot of CURRENT behaviour, not a correctness
+// claim about which route is "right" to prefer when two cost the same.
+//
+// What would flip this pin (and require it to be re-derived and
+// re-recorded, not silently patched to pass):
+//   - Reordering the neighbour list this test wires (SetNeighbor's edge
+//     argument below), which changes which branch S visits first.
+//   - Any change to Zenith_PriorityQueue's SiftUp/SiftDown that stops
+//     breaking WITHOUT a swap on an exact tie
+//     (Zenith/Collections/Zenith_PriorityQueue.h) -- e.g. loosening the
+//     comparator from a strict `>` to `>=`.
+//   - Any change to ExpandNeighbor's tie rule in Zenith_Pathfinding.cpp
+//     (`fNewGCost >= *pfOpen`), which currently keeps the first-found
+//     equal-cost arrival at a node over a later one.
+// A future change to any of the three is free to flip which route wins --
+// this test just makes that a deliberate, visible diff instead of a silent
+// behaviour change nobody asserted on. (Had the "south" branch won instead,
+// its raw portal waypoints would be (1,0,0) -- S's edge-1 midpoint -- and
+// (5,0,-6) -- So's edge-0 midpoint -- in place of waypoints 1 and 2 below.)
+// ----------------------------------------------------------------------------
+ZENITH_TEST(AI, PathfindingEqualCostRoutePinsCurrentTieBreak)
+{
+	Zenith_NavMesh xNavMesh;
+
+	// Identical construction to TestPathfindingEqualCostRouteIsDeterministic
+	// above -- see that test's header comment for the exact-tie geometry.
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(-1.0f, 0.0f, -1.0f));  // 0
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, -1.0f));   // 1
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));    // 2
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(-1.0f, 0.0f, 1.0f));   // 3
+
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, 4.0f));    // 4
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, 4.0f));    // 5
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, 6.0f));    // 6
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, 6.0f));    // 7
+
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, -6.0f));   // 8
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, -6.0f));   // 9
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(6.0f, 0.0f, -4.0f));   // 10
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(4.0f, 0.0f, -4.0f));   // 11
+
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(9.0f, 0.0f, -1.0f));   // 12
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(11.0f, 0.0f, -1.0f));  // 13
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(11.0f, 0.0f, 1.0f));   // 14
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(9.0f, 0.0f, 1.0f));    // 15
+
+	Zenith_Vector<uint32_t> axPolyS, axPolyN, axPolySo, axPolyE;
+	axPolyS.PushBack(0); axPolyS.PushBack(1); axPolyS.PushBack(2); axPolyS.PushBack(3);
+	axPolyN.PushBack(4); axPolyN.PushBack(5); axPolyN.PushBack(6); axPolyN.PushBack(7);
+	axPolySo.PushBack(8); axPolySo.PushBack(9); axPolySo.PushBack(10); axPolySo.PushBack(11);
+	axPolyE.PushBack(12); axPolyE.PushBack(13); axPolyE.PushBack(14); axPolyE.PushBack(15);
+
+	uint32_t uPolyS = xNavMesh.AddPolygon(axPolyS);
+	uint32_t uPolyN = xNavMesh.AddPolygon(axPolyN);
+	uint32_t uPolySo = xNavMesh.AddPolygon(axPolySo);
+	uint32_t uPolyE = xNavMesh.AddPolygon(axPolyE);
+
+	xNavMesh.SetNeighbor(uPolyS, /*edge=*/0, uPolyN);
+	xNavMesh.SetNeighbor(uPolyS, /*edge=*/1, uPolySo);
+	xNavMesh.SetNeighbor(uPolyN, /*edge=*/0, uPolyE);
+	xNavMesh.SetNeighbor(uPolySo, /*edge=*/0, uPolyE);
+
+	xNavMesh.BuildSpatialGrid();
+
+	Zenith_PathResult xResult = Zenith_Pathfinding::FindPath(
+		xNavMesh,
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+
+	ZENITH_ASSERT_EQ(xResult.m_eStatus, Zenith_PathResult::Status::SUCCESS,
+		"Equal-cost navmesh should still find a path");
+	ZENITH_ASSERT_EQ(xResult.m_axWaypoints.GetSize(), 4u,
+		"CURRENT behaviour: the pinned route keeps all 4 waypoints (start, "
+		"S->N portal, N->E portal, end) -- every shortcut candidate crosses "
+		"the gap between these disjoint polygon islands, so SmoothPath "
+		"cannot have collapsed a different route down to this same count");
+
+	// CURRENT behaviour: S visits its edge-0 neighbour (N, the "north"
+	// branch) first, and ExpandNeighbor's `>=` tie rule keeps that
+	// first-found arrival at E over So's later, equal-cost one. See the
+	// comment above this test for what would cause this pin to flip.
+	ZENITH_ASSERT_NEAR_VEC3(xResult.m_axWaypoints.Get(0), Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 0.0001f,
+		"Pinned route waypoint 0 (start)");
+	ZENITH_ASSERT_NEAR_VEC3(xResult.m_axWaypoints.Get(1), Zenith_Maths::Vector3(0.0f, 0.0f, -1.0f), 0.0001f,
+		"Pinned route waypoint 1 (S->N portal midpoint)");
+	ZENITH_ASSERT_NEAR_VEC3(xResult.m_axWaypoints.Get(2), Zenith_Maths::Vector3(5.0f, 0.0f, 4.0f), 0.0001f,
+		"Pinned route waypoint 2 (N->E portal midpoint)");
+	ZENITH_ASSERT_NEAR_VEC3(xResult.m_axWaypoints.Get(3), Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 0.0001f,
+		"Pinned route waypoint 3 (end)");
+}
