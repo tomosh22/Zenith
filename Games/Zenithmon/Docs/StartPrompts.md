@@ -11,6 +11,11 @@ requests, NO git worktrees are ever created.** The authoritative gate is the
 LOCAL verification (build + boot unit gate + headless) run BEFORE each push; the
 `zm-tests` CI workflow runs post-push on master as a backstop only. If a
 post-push CI run goes red, FIX FORWARD with another direct commit to master.
+The one exception (ZM-D-224, lane mode only): in a registered
+[parallel `/tick` lane](../../../Tools/zagent/README.md#lanes), the tick itself
+-- never a worker, and never these session-start prompts -- cuts `agent/<KEY>`
+per ticket and lands it with `zagent integrate`. These prompts are for the
+main checkout and are unaffected.
 
 Every prompt anchors on the same reading order: `Docs/Status.md` (current
 state) -> `Docs/Roadmap.md` (what's next) -> `Docs/AgentBriefing.md` (how to
@@ -156,7 +161,11 @@ Begin.
   green. The `zm-tests` CI workflow runs post-push on master as a backstop only;
   never idle-watch it. If a post-push run goes red, FIX FORWARD with another
   direct commit to master (never revert shipped history, never force-push master,
-  never `gh run rerun`).
+  never `gh run rerun`). **Lane exception (ZM-D-224):** this policy is
+  unchanged for the main checkout and for a worker in any mode; only inside a
+  registered `/tick` lane does the tick itself cut a per-ticket `agent/<KEY>`
+  branch and land it via `zagent integrate` -- see
+  `Tools/zagent/protocol/TICK.md#lane-mode`.
 - **Unattended runs:** the checked-in `.claude/settings.json` allowlists the
   loop's build/test/git commands so iterations never stall on permission
   prompts; the authorization to land is carried by prompt 0 itself (you issue it

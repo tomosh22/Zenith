@@ -85,7 +85,7 @@
     "`languageConventions` back in here -- that reintroduces the exact",
     "always-concatenated bug the split fixed."
   ],
-  "conventions": "Root CLAUDE.md is binding. Never run Sharpmake in a linked worktree unless it is a registered lane (ZEN-D-LANES).",
+  "conventions": "Root CLAUDE.md is binding. Never run Sharpmake in a linked worktree unless it is a registered lane (ZEN-D-043).",
   "$languageConventions": [
     "The C++-only half, split out from `conventions` above (2026-09-20).",
     "Suppressed for a category via `suppressLanguageConventions: true`",
@@ -127,7 +127,7 @@
         "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
       ],
-      "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031); in lane mode only the tick itself cuts agent/<KEY> (ZM-D-LANES).",
+      "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031); in lane mode only the tick itself cuts agent/<KEY> (ZM-D-224).",
       "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
       "decisionIdPrefix": "ZM-D-",
       "docs": {
@@ -455,7 +455,7 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
       ],
-      "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct; never a branch/PR/worktree (in lane mode only the tick itself cuts agent/<KEY>, ZEN-D-LANES).",
+      "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct; never a branch/PR/worktree (in lane mode only the tick itself cuts agent/<KEY>, ZEN-D-043).",
       "docs": {
         "dir": "Games/Undervault/Docs",
         "title": "Undervault",

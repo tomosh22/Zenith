@@ -42,11 +42,15 @@ Plus, always:
   `master` and pushed (user policy ZM-D-031); `git checkout -b`, `gh pr create`,
   and git worktrees are forbidden. The LOCAL gate (build + boot unit gate +
   headless) is the authority -- run it green before every `git push origin
-  master`. `zm-tests` runs post-push as a backstop; fix forward on red.
+  master`. `zm-tests` runs post-push as a backstop; fix forward on red. One
+  exception (ZM-D-224, lane mode only): in a registered `/tick` lane, the
+  tick itself -- never a worker -- cuts a per-ticket `agent/<KEY>` and lands
+  it with `zagent integrate`; see `Tools/zagent/protocol/TICK.md#lane-mode`.
 - **Build the whole solution.** Always `/t:Zenithmon` (or `zenith build Zenithmon`).
   The aux tools in the sln are pre-existing-red in ToolsEnabled configs.
 - **Run Sharpmake / `zenith regen` in a git worktree.** Generated vcxprojs bake
-  the cwd's absolute path.
+  the cwd's absolute path. The same lane exception applies: a registered
+  lane is an explicitly authorized worktree where regen is expected to run.
 - **Commit baked assets.** Everything under `Assets/` that tools builds generate
   is git-ignored, with EIGHT deliberate exceptions that ARE tracked
   (ZM-D-147/148/174/199): `Assets/Navmesh/Dawnmere.znavmesh` and all SEVEN
@@ -626,7 +630,14 @@ Sharpmake bakes the cwd's absolute path into generated vcxprojs
 (`GAME_ASSETS_DIR`, `SHADER_SOURCE_ROOT`, post-build copies). All work happens
 on the main checkout at `C:\dev\Zenith`, directly on `master`. If the harness
 drops you in `.claude/worktrees/<name>/`, treat it as a transient sandbox and
-never regen or commit generated output from there.
+never regen or commit generated output from there. **Registered-lane
+exception (ZM-D-224, see ZEN-D-043):** a [parallel `/tick`
+lane](../../../Tools/zagent/README.md#lanes) is a *persistent, explicitly
+registered* worktree provisioned once by `zagent lane add`, and Sharpmake runs
+there deliberately -- `Build\regen.ps1` allows it precisely because it is
+registered. This is still not a worker's decision to make: only the tick
+itself, never a worker, cuts a lane's per-ticket `agent/<KEY>` branch and
+regens/builds in it; see `Tools/zagent/protocol/TICK.md#lane-mode`.
 
 ### 6.4 Engine changes
 

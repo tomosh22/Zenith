@@ -19,8 +19,8 @@ Current stage, verified test baseline, and in-flight work live in
 policy is ZM-D-031: work directly on `master`, never create a branch, PR, or
 worktree, and treat the full local gate as the authority before commit/push.
 `zm-tests` runs after the push as a backstop. The one exception is a
-registered [lane](../../Tools/zagent/README.md#lanes) (ZM-D-LANES, to be
-recorded): there, every ticket gets its own `agent/<KEY>` branch cut in
+registered [lane](../../Tools/zagent/README.md#lanes) (ZM-D-224): there,
+every ticket gets its own `agent/<KEY>` branch cut in
 the lane's own worktree, never the main checkout — see
 `Tools/zagent/protocol/TICK.md#lane-mode`.
 
@@ -384,7 +384,7 @@ loop commits straight to `master` and hard-refuses `git switch -c`,
 `git worktree` and `gh pr` — DevilsPlayground no longer overrides this to
 `"branch"`. Nothing is pushed — `push: false` everywhere. The one
 exception is a registered [lane](../../Tools/zagent/README.md#lanes)
-(ZM-D-LANES, to be recorded): every lane ticket gets its own `agent/<KEY>`
+(ZM-D-224): every lane ticket gets its own `agent/<KEY>`
 branch regardless of `branching`, cut in the lane's own worktree — see
 `Tools/zagent/protocol/TICK.md#lane-mode`.
 

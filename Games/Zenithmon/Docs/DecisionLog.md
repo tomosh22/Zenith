@@ -16,6 +16,20 @@ Tuning-value changes go in git history, not here.
 ---
 
 ## 2026-08-24 -- ZM-D-208 -- USER RULINGS unblocking R1-5 (ZM-23): the appearance palette gains a slot, and the flagless-arm coverage moves to a by-ROW seam
+### ZM-D-224 — 2026-09-23
+
+**Decision:** ZM-D-031 is **partially superseded, for lane mode only**: in a registered [parallel `/tick` lane](../../../Tools/zagent/README.md#lanes) (see ZEN-D-043), the TICK ITSELF — never a worker — cuts `agent/<KEY>` per ticket and lands it on `master` with `zagent integrate`. Workers still never create a branch, PR or worktree, in a lane or otherwise. In the main checkout, work stays direct-on-master exactly as ZM-D-031 states. Protocol of record: `Tools/zagent/protocol/TICK.md#lane-mode`.
+
+**★★ THE ACTOR THAT BRANCHES CHANGED; THE ACTOR THAT NEVER DOES DID NOT.** ZM-D-031's ban reads as one rule — "no branches, no PRs, no worktrees" — but it was always binding two different actors the same way: the worker that authors a ticket's diff, and the orchestrating loop around it. A lane splits them. `zagent lane add` provisions a *persistent, registered* worktree for a whole board project, once, by a human running the command outside any ticket; from there the tick's own step 4 cuts `agent/<KEY>` fresh per ticket and lands it at step 7/8 via `zagent integrate`, a merge commit under the Vault's own operation lock. **A worker still has no tool that touches git state** — `roles/worker.md` is unchanged, and the TICK.md "Never" list still forbids `git worktree` inside a tick outright, lane or not. What moved is which layer of the loop is allowed to hold a branch open across a ticket, not whether the code-writing step may.
+
+**★ WHY NOW: PARALLEL LANES NEED SOMEWHERE FOR CONCURRENT WORK TO LIVE.** ZEN-D-043 lets each board project (ZEN, ZM, DP, UV, HE, FD) run its own `/tick` at the same time, each in its own worktree, because I5 ("one in-flight ticket per repo") used to mean a ZM claim was refused whenever a ZEN ticket was in-flight anywhere. Direct-to-master from a *shared* checkout cannot do that safely — two lanes committing straight to the same working tree would stomp each other's edits mid-build. A short-lived per-ticket branch, landed by the tick and never by a human or a worker, is what lets a lane's gates run against a stable tip while `master` keeps moving under it from board writes and other lanes' landings.
+
+**What survives of ZM-D-031, unconditionally.** The main checkout (`C:\dev\Zenith`) is still the one place all humans and every non-lane ticket work: direct commits to `master`, no `git checkout -b`, no PR, no worktree, exactly as ZM-D-031 states — lane mode changes nothing there. The local gate (`zenith build` + `run_unit_gate.ps1` at the pinned baseline + `zenith test --headless`) is still the sole pre-push authority; `zm-tests` is still a backstop, not a merge gate. And a worker — the model authoring a ticket's diff, in any mode — still never issues a git command that creates a branch, a PR or a worktree; `zagent integrate`'s merge commit and the tick's own `git switch -c agent/<KEY>` are calls the **tick harness** makes, never something inlined into a worker's prompt.
+
+**Scope:** documentation only. No Zenithmon source, scene or asset changed; the mechanism (`zagent lane`, `integrate`, `Tools/lane_pins.ps1`, the build slot) lives entirely in `Tools/Vault/` and `Tools/` and is Vault-tested there, not by this game's `ZM_` suite. `lanes.enabled` defaults to `false`, so this decision has no effect on Zenithmon's tick behaviour until a human runs `zagent lane add ZM`.
+
+---
+
 ### ZM-D-223 — 2026-09-04
 
 **Decision:** Zenithmon's humans bind the **ENGINE-SHARED StickFigure rig** — the same
@@ -10708,6 +10722,12 @@ Two things writing them corrected:
 - **Reversibility:** trivial to revert the policy (re-enable branches/PRs by
   editing StartPrompts.md + AgentBriefing.md), but commits already landed on
   master stay on master.
+- **[SUPERSEDED] (partial, lane mode only):** ZM-D-224 (2026-09-23) carves out
+  the one exception described in `Tools/zagent/protocol/TICK.md#lane-mode` --
+  in a registered lane, the TICK ITSELF (never a worker) cuts `agent/<KEY>`
+  per ticket and lands it on master with `zagent integrate`. Direct-to-master
+  in the main checkout, and the ban on a worker ever creating a branch, PR or
+  worktree, are UNCHANGED.
 
 ## 2026-07-10 -- ZM-D-030 -- ZM_DataRegistry (name->ID lookups + cross-table enforcer) closes S1
 
