@@ -1140,31 +1140,165 @@ function Get-ZenithUntrackedProjectShapingFiles {
     return $sorted
 }
 
+function ConvertFrom-ZenithGitNameStatus {
+    # Parses the tab-separated lines of a `git diff --name-status` stream into
+    # [pscustomobject]@{ StatusLetter; StatusToken; Path } entries (one per
+    # non-blank line). $Path is the NEW path for a rename line (field 2 of a
+    # 3-field 'R100<TAB>old<TAB>new' line), else field 1. Factored out of
+    # Test-ZenithRegenStale's original committed-diff loop so it can be reused,
+    # unchanged, against a second `git diff --name-status` stream (the
+    # working-tree-vs-HEAD scan below) -- the two callers must never disagree
+    # about how an 'R' line's path is read.
+    [CmdletBinding()]
+    param([string[]]$Lines)
+
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($rawLine in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+        $fields = $rawLine -split "`t"
+        if ($fields.Count -lt 2) { continue }
+        $statusToken = $fields[0]
+        $statusLetter = $statusToken.Substring(0, 1)
+        # A rename's NEW path is the one that answers "does this exist at
+        # HEAD"; git diff gives old-path/new-path for an 'R' line.
+        $path = if ($statusLetter -eq 'R' -and $fields.Count -ge 3) { $fields[2] } else { $fields[1] }
+        [void]$result.Add([pscustomobject]@{ StatusLetter = $statusLetter; StatusToken = $statusToken; Path = $path })
+    }
+    # See the no-double-wrap gotcha documented on Get-ZenithUntrackedProjectShapingFiles
+    # above: plain `return`, with the list already forced into an array. NOTE:
+    # `@($result)` (array-subexpression around a List[object] directly, with
+    # no pipe) throws "Argument types do not match" from PSEnumerableBinder on
+    # this PowerShell version -- ToArray() is the safe conversion here; every
+    # OTHER list-returning helper in this module instead pipes through
+    # Sort-Object first (e.g. Get-ZenithUntrackedProjectShapingFiles), which
+    # sidesteps the same binder path and never hits it.
+    $out = $result.ToArray()
+    return $out
+}
+
+function Get-ZenithDirtyProjectShapingState {
+    # The CURRENT working-tree-vs-HEAD project-shaping "dirty" fingerprint --
+    # staged AND unstaged changes, in one `git diff --name-status HEAD` scan
+    # (deliberately NOT `git status --porcelain`: a staged rename there prints
+    # as 'R  old -> new', one field, which would fail
+    # Test-ZenithProjectShapingPath's anchored regexes and silently miss a
+    # staged Sharpmake rename -- a pure unstaged filesystem rename shows as a
+    # bare 'D <old>' and is left to the untracked mechanism below to catch the
+    # new path). Called from BOTH Write-ZenithRegenStateFile (recording the
+    # fingerprint at regen time) and Test-ZenithRegenStale (comparing the
+    # CURRENT fingerprint against the recorded one) so the writer and reader
+    # can never disagree about what a "dirty project-shaping entry" is -- same
+    # reasoning as Get-ZenithUntrackedProjectShapingFiles above.
+    #
+    # Two entry shapes, one per line, sorted:
+    #   * Build/Sharpmake_*.cs or Games/*/*.zproj, ANY status (M/A/D/R):
+    #     "<StatusLetter> <Path> <hash>" -- content matters here (Sharpmake
+    #     reads it), so the entry is fingerprinted with the file's CURRENT
+    #     `git hash-object` blob hash (CRLF-safe under this repo's
+    #     core.autocrlf=true / .gitattributes text=auto -- it hashes the
+    #     blob's normalised content, never a raw byte-for-byte file read). A
+    #     Deleted (D) entry has no working-tree content to hash; its hash
+    #     field is the literal "-".
+    #   * any other project-shaping source (.cpp/.c/.h/.inl/.slang, not under
+    #     Middleware/), status A/D/R ONLY -- a plain M never appears here,
+    #     same "Sharpmake already knows the file, only contents changed" rule
+    #     Test-ZenithRegenStale's committed-diff loop uses: "<StatusLetter>
+    #     <Path>" (no hash field; Sharpmake globs these by NAME, not content).
+    #
+    # Returns [pscustomobject]@{ Ok = <bool>; Entries = <string[]> }. Ok is
+    # $false iff a needed git call (the diff, or a hash-object lookup) failed
+    # -- callers must treat that as "cannot compute right now", never as an
+    # empty (clean) result.
+    [CmdletBinding()]
+    param([string]$RepoRoot)
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+
+    $diffLines = & git -C $RepoRoot diff --name-status HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ Ok = $false; Entries = @() }
+    }
+    $parsed = @(ConvertFrom-ZenithGitNameStatus -Lines @($diffLines))
+
+    $entries = New-Object System.Collections.Generic.List[string]
+    foreach ($item in $parsed) {
+        if (-not (Test-ZenithProjectShapingPath -RelativePath $item.Path)) { continue }
+
+        $isSharpmakeOrZproj = ($item.Path -imatch '^Build/Sharpmake_[^/]+\.cs$') -or ($item.Path -imatch '^Games/[^/]+/[^/]+\.zproj$')
+        if ($isSharpmakeOrZproj) {
+            if ($item.StatusLetter -eq 'D') {
+                [void]$entries.Add("$($item.StatusLetter) $($item.Path) -")
+            }
+            else {
+                $hash = & git -C $RepoRoot hash-object -- $item.Path 2>$null
+                if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($hash)) {
+                    return [pscustomobject]@{ Ok = $false; Entries = @() }
+                }
+                [void]$entries.Add("$($item.StatusLetter) $($item.Path) $(([string]$hash).Trim())")
+            }
+        }
+        elseif ($item.StatusLetter -in @('A', 'D', 'R')) {
+            [void]$entries.Add("$($item.StatusLetter) $($item.Path)")
+        }
+        # else: a plain 'M' on a non-Sharpmake/.zproj project-shaping source --
+        # not fingerprinted here (mirrors the committed-diff rule).
+    }
+    $sorted = @($entries | Sort-Object)
+    return [pscustomobject]@{ Ok = $true; Entries = $sorted }
+}
+
 function Test-ZenithRegenStale {
     # Whether Build/artifacts/regen_sha (written by regen.ps1 ONLY on success --
     # Build/artifacts/ is gitignored, .gitignore:212; this is the ONE sanctioned
     # file, never Build/.regen_sha, which every checkout writing it would turn
     # into a tracked-file conflict) says the on-disk generated projects are
-    # stale relative to HEAD. Read-only; never writes.
+    # stale relative to HEAD -- OR relative to the current working tree.
+    # Read-only; never writes.
     #
     # Distinct from Test-ZenithRegenDrift (descriptor vs. generated .cs content)
     # and Get-ZenithProjectSourceDrift (a source file present on disk but never
     # in ANY vcxproj): this answers "has a project-SHAPING file been added,
     # deleted or renamed, or a Sharpmake/.zproj file changed at all, since the
-    # last regen" -- called from Invoke-ZenithBuild (ZenithCli.psm1) before
-    # every build.
+    # last regen -- committed OR still sitting uncommitted in the working
+    # tree" -- called from Invoke-ZenithBuild (ZenithCli.psm1) before every
+    # build. A `/tick` gates BEFORE it commits, so the working-tree half below
+    # is what catches a ticket that edits a Sharpmake file or adds/deletes a
+    # source without having committed yet.
+    #
+    # FILE FORMAT (Build/artifacts/regen_sha): line 1 is the bare HEAD sha at
+    # the last successful regen. Every following line is prefixed:
+    #   "untracked <path>"  -- one recorded untracked project-shaping file
+    #                          (Get-ZenithUntrackedProjectShapingFiles).
+    #   "dirty <entry>"     -- one recorded working-tree dirty entry, exactly
+    #                          as produced by Get-ZenithDirtyProjectShapingState
+    #                          (see its header for the two entry shapes).
+    # A line with neither prefix means the file predates this format (the old
+    # format was a bare untracked path per line, no prefix at all) -- read as
+    # STALE with no attempt to interpret it; one regen re-writes it in the
+    # current format. There is no legacy reader path.
     #
     # Stale when ANY of:
-    #   * regen_sha missing or empty;
+    #   * regen_sha missing, empty, or in the old (pre-prefix) format;
     #   * its recorded commit does not resolve (a deleted agent/* commit, a
     #     rebase);
-    #   * `git diff --name-status <sha> HEAD` lists a project-shaping file with
-    #     status A, D or R, or ANY status on a Sharpmake/.zproj file (a newly
-    #     ADDED Sharpmake_X.cs needs a regen too -- 'M' alone is not enough);
+    #   * `git diff --name-status <sha> HEAD` (COMMITTED history since the
+    #     last regen) lists a project-shaping file with status A, D or R, or
+    #     ANY status on a Sharpmake/.zproj file (a newly ADDED Sharpmake_X.cs
+    #     needs a regen too -- 'M' alone is not enough);
+    #   * the CURRENT working-tree dirty fingerprint (Get-ZenithDirtyProjectShapingState:
+    #     staged + unstaged vs HEAD) differs from the one recorded at the last
+    #     regen, in EITHER direction -- a new/changed entry (an uncommitted
+    #     edit the last regen never saw) OR a recorded entry that is now
+    #     ABSENT (the file was reverted back to its HEAD content/path since
+    #     the last regen, so the generated projects reflect a dirty state that
+    #     no longer exists). This is full SET EQUALITY, unlike the untracked
+    #     check below -- it is what stops a regen from re-tripping on the same
+    #     uncommitted edit on every subsequent build (no loop) while still
+    #     catching a revert.
     #   * the CURRENT untracked project-shaping set has grown since regen_sha
-    #     was written (a new uncommitted .cpp).
-    # A plain modification (M) of a .cpp/.c/.h/.inl/.slang is NOT stale --
-    # Sharpmake already knows the file; only its contents changed.
+    #     was written (a new uncommitted .cpp) -- growth-only, unchanged.
+    # A plain modification (M) of a .cpp/.c/.h/.inl/.slang, committed or not,
+    # is NOT stale -- Sharpmake already knows the file; only its contents
+    # changed.
     #
     # Returns [pscustomobject]@{ Stale = <bool>; Reason = <string> }.
     [CmdletBinding()]
@@ -1186,36 +1320,70 @@ function Test-ZenithRegenStale {
         return [pscustomobject]@{ Stale = $true; Reason = "regen_sha commit $sha is unresolvable (rebase, or a deleted branch?) -- run 'zenith regen'" }
     }
 
+    # Parse the recorded state lines (2+): "untracked <path>" / "dirty <entry>".
+    # Any other non-blank line means the old (pre-prefix) format.
+    $recordedUntrackedSet = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    $recordedDirtySet = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    $oldFormat = $false
+    if ($lines.Count -gt 1) {
+        foreach ($rawLine in $lines[1..($lines.Count - 1)]) {
+            $line = ([string]$rawLine).Trim()
+            if ($line -eq '') { continue }
+            if ($line.StartsWith('untracked ')) {
+                [void]$recordedUntrackedSet.Add($line.Substring('untracked '.Length))
+            }
+            elseif ($line.StartsWith('dirty ')) {
+                [void]$recordedDirtySet.Add($line.Substring('dirty '.Length))
+            }
+            else {
+                $oldFormat = $true
+            }
+        }
+    }
+    if ($oldFormat) {
+        return [pscustomobject]@{ Stale = $true; Reason = "Build/artifacts/regen_sha is in an old format -- run 'zenith regen'" }
+    }
+
     $diff = & git -C $RepoRoot diff --name-status "$sha" HEAD 2>$null
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject]@{ Stale = $true; Reason = "'git diff --name-status $sha HEAD' failed -- run 'zenith regen'" }
     }
-    foreach ($rawLine in @($diff)) {
-        if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
-        $fields = $rawLine -split "`t"
-        if ($fields.Count -lt 2) { continue }
-        $statusToken = $fields[0]
-        $statusLetter = $statusToken.Substring(0, 1)
-        # A rename's NEW path is the one that answers "does this exist at
-        # HEAD"; git diff gives old-path/new-path for an 'R' line.
-        $path = if ($statusLetter -eq 'R' -and $fields.Count -ge 3) { $fields[2] } else { $fields[1] }
-        if (-not (Test-ZenithProjectShapingPath -RelativePath $path)) { continue }
+    foreach ($item in @(ConvertFrom-ZenithGitNameStatus -Lines @($diff))) {
+        if (-not (Test-ZenithProjectShapingPath -RelativePath $item.Path)) { continue }
 
-        $isSharpmakeOrZproj = ($path -imatch '^Build/Sharpmake_[^/]+\.cs$') -or ($path -imatch '^Games/[^/]+/[^/]+\.zproj$')
-        if ($isSharpmakeOrZproj -or $statusLetter -in @('A', 'D', 'R')) {
-            return [pscustomobject]@{ Stale = $true; Reason = "$path changed ($statusToken) since the last regen -- run 'zenith regen'" }
+        $isSharpmakeOrZproj = ($item.Path -imatch '^Build/Sharpmake_[^/]+\.cs$') -or ($item.Path -imatch '^Games/[^/]+/[^/]+\.zproj$')
+        if ($isSharpmakeOrZproj -or $item.StatusLetter -in @('A', 'D', 'R')) {
+            return [pscustomobject]@{ Stale = $true; Reason = "$($item.Path) changed ($($item.StatusToken)) since the last regen -- run 'zenith regen'" }
         }
         # else: a plain 'M' on a .cpp/.c/.h/.inl/.slang -- not stale.
     }
 
-    $recordedUntracked = @()
-    if ($lines.Count -gt 1) {
-        $recordedUntracked = @($lines[1..($lines.Count - 1)] | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
+    # Working-tree dirty fingerprint: staged + unstaged vs HEAD, full set
+    # equality against what was recorded at the last regen (see header).
+    $currentDirty = Get-ZenithDirtyProjectShapingState -RepoRoot $RepoRoot
+    if (-not $currentDirty.Ok) {
+        return [pscustomobject]@{ Stale = $true; Reason = "could not compute the uncommitted-change fingerprint ('git diff'/'git hash-object' failed) -- run 'zenith regen'" }
     }
-    $recordedSet = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
-    foreach ($p in $recordedUntracked) { [void]$recordedSet.Add($p) }
+    $currentDirtySet = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    foreach ($e in $currentDirty.Entries) { [void]$currentDirtySet.Add($e) }
+
+    $addedDirty = @($currentDirty.Entries | Where-Object { -not $recordedDirtySet.Contains($_) })
+    if ($addedDirty.Count -gt 0) {
+        $fields = $addedDirty[0] -split ' '
+        $statusLetter = $fields[0]
+        $path = if ($fields.Count -gt 1) { $fields[1] } else { $addedDirty[0] }
+        return [pscustomobject]@{ Stale = $true; Reason = "$path has an uncommitted change ($statusLetter) the last regen did not see -- run 'zenith regen'" }
+    }
+    $removedDirty = @($recordedDirtySet | Where-Object { -not $currentDirtySet.Contains($_) })
+    if ($removedDirty.Count -gt 0) {
+        $fields = $removedDirty[0] -split ' '
+        $statusLetter = $fields[0]
+        $path = if ($fields.Count -gt 1) { $fields[1] } else { $removedDirty[0] }
+        return [pscustomobject]@{ Stale = $true; Reason = "$path's uncommitted change ($statusLetter) recorded at the last regen is no longer present (reverted?) -- run 'zenith regen'" }
+    }
+
     $currentUntracked = @(Get-ZenithUntrackedProjectShapingFiles -RepoRoot $RepoRoot)
-    $newUntracked = @($currentUntracked | Where-Object { -not $recordedSet.Contains($_) })
+    $newUntracked = @($currentUntracked | Where-Object { -not $recordedUntrackedSet.Contains($_) })
     if ($newUntracked.Count -gt 0) {
         return [pscustomobject]@{ Stale = $true; Reason = "$($newUntracked.Count) new untracked project-shaping file(s) since the last regen: $($newUntracked -join ', ') -- run 'zenith regen'" }
     }
@@ -1224,20 +1392,25 @@ function Test-ZenithRegenStale {
 }
 
 function Write-ZenithRegenStateFile {
-    # Writes Build/artifacts/regen_sha: line 1 is the current HEAD, the rest are
-    # the sorted current untracked project-shaping files (Get-ZenithUntrackedProjectShapingFiles).
-    # Factored out of regen.ps1 (which calls this as its LAST step, only after
-    # every prior step exited 0) so the write itself -- and its "only on
-    # success" contract -- can be tested in isolation, without invoking
-    # Sharpmake. Build/artifacts/ is gitignored (.gitignore:212); this is the
-    # ONE sanctioned home, never Build/.regen_sha.
+    # Writes Build/artifacts/regen_sha: line 1 is the current HEAD; every
+    # following line is prefixed "untracked <path>" (the sorted current
+    # untracked project-shaping files, Get-ZenithUntrackedProjectShapingFiles)
+    # or "dirty <entry>" (the sorted current working-tree dirty fingerprint,
+    # Get-ZenithDirtyProjectShapingState) -- see Test-ZenithRegenStale's
+    # header for the exact format and how each half is read back. Factored
+    # out of regen.ps1 (which calls this as its LAST step, only after every
+    # prior step exited 0) so the write itself -- and its "only on success"
+    # contract -- can be tested in isolation, without invoking Sharpmake.
+    # Build/artifacts/ is gitignored (.gitignore:212); this is the ONE
+    # sanctioned home, never Build/.regen_sha.
     #
     # Returns $true on success. Returns $false, and writes NOTHING, if HEAD
-    # cannot be resolved (e.g. not a git repo, or a detached/unborn HEAD) --
-    # the caller is expected to log that and move on; a partially-written
-    # state file would be worse than none (Test-ZenithRegenStale would see an
-    # empty/garbage sha and correctly call it stale either way, but this keeps
-    # the file itself always well-formed when it exists at all).
+    # cannot be resolved (e.g. not a git repo, or a detached/unborn HEAD), OR
+    # if the working-tree dirty fingerprint could not be computed (a git
+    # call failed) -- the caller is expected to log that and move on; a
+    # partially-written state file would be worse than none (Test-ZenithRegenStale
+    # would see an empty/garbage sha and correctly call it stale either way,
+    # but this keeps the file itself always well-formed when it exists at all).
     [CmdletBinding()]
     param([string]$RepoRoot)
     if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
@@ -1246,11 +1419,19 @@ function Write-ZenithRegenStateFile {
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headSha)) { return $false }
     $headSha = ([string]$headSha).Trim()
 
+    $dirty = Get-ZenithDirtyProjectShapingState -RepoRoot $RepoRoot
+    if (-not $dirty.Ok) { return $false }
+
     $untracked = @(Get-ZenithUntrackedProjectShapingFiles -RepoRoot $RepoRoot)
+
     $artifactsDir = Join-Path $RepoRoot 'Build/artifacts'
     New-Item -ItemType Directory -Force -Path $artifactsDir | Out-Null
-    $stateLines = @($headSha) + $untracked
-    Set-Content -LiteralPath (Join-Path $artifactsDir 'regen_sha') -Value $stateLines -Encoding utf8
+
+    $stateLines = New-Object System.Collections.Generic.List[string]
+    [void]$stateLines.Add($headSha)
+    foreach ($p in $untracked) { [void]$stateLines.Add("untracked $p") }
+    foreach ($d in $dirty.Entries) { [void]$stateLines.Add("dirty $d") }
+    Set-Content -LiteralPath (Join-Path $artifactsDir 'regen_sha') -Value @($stateLines) -Encoding utf8
     return $true
 }
 
@@ -1356,6 +1537,8 @@ Export-ModuleMember -Function @(
     'Remove-ZenithOrphanEngineArtifacts',
     'Test-ZenithProjectShapingPath',
     'Get-ZenithUntrackedProjectShapingFiles',
+    'ConvertFrom-ZenithGitNameStatus',
+    'Get-ZenithDirtyProjectShapingState',
     'Write-ZenithRegenStateFile',
     'Test-ZenithRegenStale',
     'Test-ZenithRegisteredLane'

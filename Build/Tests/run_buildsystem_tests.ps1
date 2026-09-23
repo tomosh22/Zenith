@@ -878,6 +878,175 @@ try {
         Assert-False $r.Stale "clean: $($r.Reason)"
     }
 
+    # ------------------------------------------------------------------------
+    # WP5 follow-up (ZEN-111): the working-tree dirty fingerprint. A `/tick`
+    # gates BEFORE it commits, so these exercise UNCOMMITTED (staged and
+    # unstaged) project-shaping edits -- the gap the committed-diff loop above
+    # cannot see.
+    Write-Host "`n[15b] WP5 follow-up: uncommitted project-shaping edits (ZEN-111)" -ForegroundColor Cyan
+
+    Invoke-Test "uncommitted M on a Build/Sharpmake_X.cs (regen state written WITHOUT it) -> stale, reason names the file + 'uncommitted'" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// x'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add sharpmake', '--quiet')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// uncommitted tweak'
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "uncommitted M on a Sharpmake file the last regen did not see"
+        Assert-AnyLike @($r.Reason) "*Sharpmake_X.cs*" "reason names the file"
+        Assert-AnyLike @($r.Reason) "*uncommitted*" "reason says uncommitted"
+    }
+
+    Invoke-Test "no-regen-loop cycle for an uncommitted M on a Sharpmake file: record it -> NOT stale; edit again -> stale; revert to HEAD -> stale" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// x'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add sharpmake', '--quiet')
+
+        Add-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// uncommitted tweak 1'
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r1.Stale "the dirty edit was recorded at regen time: $($r1.Reason)"
+
+        Add-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// uncommitted tweak 2'
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r2.Stale "content hash changed again since the recorded fingerprint"
+
+        Invoke-Wp5Git -Dir $repo -GitArgs @('checkout', '--', 'Build/Sharpmake_X.cs')
+        $r3 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r3.Stale "reverted to HEAD -- the recorded dirty entry is now absent (full set equality, both directions)"
+    }
+
+    Invoke-Test "uncommitted M on a Games/G/G.zproj -> stale" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Games/G') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Games/G/G.zproj') -Value '{ }'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add zproj', '--quiet')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Games/G/G.zproj') -Value ' '
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "uncommitted descriptor edit"
+    }
+
+    Invoke-Test "working-tree deletion (unstaged) of a tracked source -> stale; git mv rename of one -> stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Remove-Item -LiteralPath (Join-Path $repo 'Games/Probe/Existing.cpp') -Force
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r1.Stale "unstaged deletion of a tracked source"
+
+        $repo2 = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo2 | Out-Null
+        Invoke-Wp5Git -Dir $repo2 -GitArgs @('mv', 'Games/Probe/Existing.cpp', 'Games/Probe/Renamed.cpp')
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo2
+        Assert-True $r2.Stale "staged git mv rename of a tracked source"
+    }
+
+    Invoke-Test "uncommitted M on a tracked .cpp only -> NOT stale (same rule as the committed path)" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Games/Probe/Existing.cpp') -Value '// uncommitted edit'
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r.Stale "a plain uncommitted M on a .cpp is not stale: $($r.Reason)"
+    }
+
+    Invoke-Test "an old-format regen_sha (HEAD line + a bare untracked path, no 'untracked '/'dirty ' prefix) -> stale" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build/artifacts') | Out-Null
+        $headSha = ([string](& git -C $repo rev-parse HEAD)).Trim()
+        Set-Content -LiteralPath (Join-Path $repo 'Build/artifacts/regen_sha') -Value @($headSha, 'Games/Probe/SomeUntracked.cpp')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "old bare-path format must be treated as stale, no legacy reader path"
+        Assert-AnyLike @($r.Reason) "*old format*" "reason names the format problem"
+    }
+
+    Invoke-Test "no-regen-loop cycle for a working-tree deletion: record -> NOT stale; delete a second file -> stale; restore the first -> stale" {
+        $repo = New-Wp5GitFixture
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Second.cpp') -Value '// second tracked'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add second', '--quiet')
+
+        Remove-Item -LiteralPath (Join-Path $repo 'Games/Probe/Existing.cpp') -Force
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r1.Stale "the deletion was recorded at regen time: $($r1.Reason)"
+
+        Remove-Item -LiteralPath (Join-Path $repo 'Games/Probe/Second.cpp') -Force
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r2.Stale "a second deletion, not yet recorded"
+
+        Invoke-Wp5Git -Dir $repo -GitArgs @('checkout', '--', 'Games/Probe/Existing.cpp')
+        $r3 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r3.Stale "the first file was restored -- its recorded deletion entry is now absent"
+    }
+
+    Invoke-Test "no-regen-loop cycle for a git mv rename: record -> NOT stale; rename again -> stale; rename back to the original path -> stale" {
+        $repo = New-Wp5GitFixture
+        Invoke-Wp5Git -Dir $repo -GitArgs @('mv', 'Games/Probe/Existing.cpp', 'Games/Probe/Renamed.cpp')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r1.Stale "the rename was recorded at regen time: $($r1.Reason)"
+
+        Invoke-Wp5Git -Dir $repo -GitArgs @('mv', 'Games/Probe/Renamed.cpp', 'Games/Probe/RenamedAgain.cpp')
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r2.Stale "renamed again -- a different new-path entry than what was recorded"
+
+        Invoke-Wp5Git -Dir $repo -GitArgs @('mv', 'Games/Probe/RenamedAgain.cpp', 'Games/Probe/Existing.cpp')
+        $r3 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r3.Stale "renamed back to the original path -- fully reverted, the recorded rename entry is now absent"
+    }
+
+    Invoke-Test "a STAGED git mv of Build/Sharpmake_Old.cs -> Build/Sharpmake_New.cs -> stale (the porcelain-arrow trap)" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_Old.cs') -Value '// old'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add sharpmake', '--quiet')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Invoke-Wp5Git -Dir $repo -GitArgs @('mv', 'Build/Sharpmake_Old.cs', 'Build/Sharpmake_New.cs')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "a staged Sharpmake rename must trip even though 'git status --porcelain' would print it as one 'old -> new' field"
+    }
+
+    Invoke-Test "a Sharpmake/.zproj change STAGED (git add, not committed) -> stale; staged + further unstaged edit -> stale" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_Staged.cs') -Value '// x'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add sharpmake', '--quiet')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+
+        Add-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_Staged.cs') -Value '// staged edit'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', 'Build/Sharpmake_Staged.cs')
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r1.Stale "staged (not committed) Sharpmake edit"
+
+        Add-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_Staged.cs') -Value '// further unstaged edit'
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r2.Stale "staged AND further unstaged edit, still stale"
+    }
+
+    Invoke-Test "a STAGED-NEW Build/Sharpmake_Y.cs -> stale; a STAGED-NEW Src/new.cpp -> stale (A)" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_Y.cs') -Value '// y'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', 'Build/Sharpmake_Y.cs')
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r1.Stale "a staged-new Sharpmake file"
+
+        $repo2 = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo2 | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo2 'Games/Probe/New.cpp') -Value '// new'
+        Invoke-Wp5Git -Dir $repo2 -GitArgs @('add', 'Games/Probe/New.cpp')
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo2
+        Assert-True $r2.Stale "a staged-new (A) tracked source"
+    }
+
     # ========================================================================
     Write-Host "`n[16] WP5: Test-ZenithRegisteredLane" -ForegroundColor Cyan
 
