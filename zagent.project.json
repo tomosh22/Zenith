@@ -49,10 +49,11 @@
   },
   "$lanes": [
     "Parallel /tick lanes (Docs plan: parallel `/tick` lanes; Tools/zagent/protocol/TICK.md's own",
-    "'Lane mode' section). Off by default -- `enabled: false` means every /tick",
-    "in this checkout runs the serial protocol above, unchanged, and turning",
-    "lanes on is a deliberate human commit to this file, never something a",
-    "tick does to itself.",
+    "'Lane mode' section). Enabled 2026-09-23 so the ZEN and ZM lanes can be",
+    "registered (`zagent lane add`); a /tick from the main checkout still runs",
+    "the serial protocol, and only a /tick started inside a registered lane",
+    "(`zagent lane which` -> mode lane) runs lane mode. Turning lanes on was a",
+    "deliberate human commit to this file, never something a tick does to itself.",
     "",
     "`root`: where `zagent lane add <PROJECT>` creates a lane's persistent",
     "worktree (one per board project, never per ticket) when no `--path` is",
@@ -65,7 +66,7 @@
     "config."
   ],
   "lanes": {
-    "enabled": false,
+    "enabled": true,
     "root": "C:/dev/Zenith-lanes",
     "integrateWaitMinutes": 240,
     "buildSlotWaitMinutes": 90
