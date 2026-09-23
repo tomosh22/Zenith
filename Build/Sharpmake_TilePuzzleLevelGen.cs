@@ -49,6 +49,14 @@ public class TilePuzzleLevelGenProject : ZenithBaseProject
 		{
 			conf.Defines.Add("ZENITH_DEBUG");
 		}
+		if (target.ToolsEnabled == ToolsEnabled.True)
+		{
+			// zenith.lib is compiled WITH this define in a _True config —
+			// without it here the two TUs disagree about Zenith_Engine's
+			// layout (ODR violation). Mirrors
+			// Sharpmake_TilePuzzleRegistryViewer.cs and Sharpmake_Games.cs.
+			conf.Defines.Add("ZENITH_TOOLS");
+		}
 
 		// Include paths
 		conf.IncludePaths.Add(RootPath + "/Zenith");

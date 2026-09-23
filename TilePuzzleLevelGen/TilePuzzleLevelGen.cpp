@@ -36,9 +36,12 @@ void Project_InitializeResources() {}
 void Project_RegisterEditorAutomationSteps() {}
 void Project_LoadInitialScene() {} // referenced by the non-tools InitialiseProject branch
 
-#ifdef ZENITH_TOOLS
-void Zenith_EditorAddLogMessage(const char*, int, Zenith_LogCategory) {}
-#endif
+// NOTE: no Zenith_EditorAddLogMessage stub here (ZEN-111). zenitheditor.lib
+// (Zenith/Editor/Zenith_Editor.cpp) already defines it, and this project now
+// defines ZENITH_TOOLS in a _True config (see Sharpmake_TilePuzzleLevelGen.cs)
+// — a local stub duplicated that symbol and failed the link (LNK2005). The
+// _False config never references it at all: Zenith.h's ZENITH_TOOLS branch
+// is the only place that declares or calls it.
 
 static volatile bool s_bRunning = true;
 
