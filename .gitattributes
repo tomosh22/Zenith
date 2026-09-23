@@ -190,3 +190,44 @@ Zenith/Docs/Board/** -text
 Games/*/Docs/Board/** -text
 archive/legacy/** -text
 /metadata.md -text
+
+###############################################################################
+# LFS override: directories committed as RAW blobs, not pointers (2026-09-23).
+#
+# `git lfs fsck --pointers` found 928 files under the extension patterns above
+# (*.png/*.jpg/*.jpeg, mostly) that were committed as ordinary blobs instead of
+# LFS pointers -- `git lfs ls-files` shows ZERO genuine LFS objects anywhere
+# under these seven directories. On any fresh checkout (a new worktree, a new
+# clone) git re-hashes a "racily clean" file through the LFS clean filter on
+# the next status/diff, turns it into a 131-byte pointer, and the file shows
+# as modified even though nothing touched it -- e.g. every file under
+# `Zenith/complexity_report/` did this immediately after `git worktree add`.
+#
+# The fix is to make .gitattributes match what is actually stored, NOT to
+# renormalize these into LFS -- that would push ~928 objects at the next
+# `git push`, against the user's LFS storage/bandwidth quota, for content
+# that was never meant to be tracked that way (generated tool output and
+# vendored third-party docs/binaries).
+#
+# Attribute rules apply top-to-bottom PER ATTRIBUTE: the LAST matching line
+# for a given attribute wins, regardless of any macro (`binary`) also setting
+# it earlier. These lines come after every `*.png`/`*.jpg`/... line above, so
+# they win `filter`/`diff`/`merge`/`text` for paths under these trees only --
+# every OTHER *.png/*.jpg file in the repo is untouched and still routes
+# through LFS. `-filter` unsets the LFS clean/smudge filter (the actual cause
+# of the phantom-pointer bug); `-diff -merge` match plain `binary` semantics;
+# `-text` keeps these binary files out of `* text=auto` CRLF/LF normalisation,
+# exactly like the .znavmesh/.zscen/Authored carve-out above.
+#
+# Each pattern is scoped to the minimal directory that covers the fsck list
+# (verified programmatically against the 928-path list) -- not a repo-wide
+# extension override, so it can't accidentally swallow a real asset added
+# under these same extensions elsewhere in the tree later.
+###############################################################################
+TilePuzzleLevelGen/output/**        -filter -diff -merge -text
+TilePuzzleLevelGen/LevelRegistry/** -filter -diff -merge -text
+Middleware/glm-master/**            -filter -diff -merge -text
+Middleware/glfw-3.4.bin.WIN64/**    -filter -diff -merge -text
+Middleware/JoltPhysics-5.4.0/**     -filter -diff -merge -text
+Zenith/complexity_report/**         -filter -diff -merge -text
+Tools/complexity_report/**          -filter -diff -merge -text
