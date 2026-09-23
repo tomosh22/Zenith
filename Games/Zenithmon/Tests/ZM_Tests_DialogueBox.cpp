@@ -828,3 +828,63 @@ ZENITH_TEST(ZM_DialogueBox, ReadAccessors_StayCumulativeAcrossCompaction)
 	ZENITH_ASSERT_EQ(xBox.GetRemainingLineCount(), 8u,
 		"GetRemainingLineCount() is the one accessor that reads the PENDING count");
 }
+
+// ---- ZM-119: IsPanelShown() -- the ZM-D-121 "panel stays shown while awaiting" rule as
+// a headless predicate. Present() used to compute `IsActive() || IsAwaitingChoice()`
+// inline, which touches UI elements and so was reachable only by the windowed
+// ZM_S6UIGate_Test (ZM-D-122). These units pin the SAME rule off the pure model.
+
+ZENITH_TEST(ZM_DialogueBox, IsPanelShown_TrueWhileALineIsActive)
+{
+	ZM_UI_DialogueBox xBox;
+	ZENITH_ASSERT_FALSE(xBox.IsPanelShown(), "a fresh box has nothing to show");
+	ZENITH_ASSERT_TRUE(xBox.QueueLine(szLONG_LINE), "the fixture line is queued");
+	ZENITH_ASSERT_TRUE(xBox.IsActive(), "the queued line activated the box");
+	ZENITH_ASSERT_TRUE(xBox.IsPanelShown(), "an active box's panel is shown");
+}
+
+ZENITH_TEST(ZM_DialogueBox, IsPanelShown_TrueWhileAwaitingAChoice_AntiVacuity)
+{
+	// ANTI-VACUITY (ZM-D-121): the advance that opens the wait leaves the box
+	// IsActive() == false, so a predicate implemented as bare IsActive() would report the
+	// panel HIDDEN here -- exactly the ZM-D-112 bleed-through class the S5 gate exists to
+	// catch. This assertion is the one that would RED under `IsPanelShown() { return
+	// IsActive(); }`.
+	ZM_UI_DialogueBox xBox;
+	ZM_ArmAndReachTheChoice(xBox);
+	ZENITH_ASSERT_TRUE(xBox.IsAwaitingChoice(), "the fixture reached the question");
+	ZENITH_ASSERT_FALSE(xBox.IsActive(),
+		"PRE-STATE: the box is INACTIVE while awaiting -- the case bare IsActive() gets wrong");
+	ZENITH_ASSERT_TRUE(xBox.IsPanelShown(),
+		"the panel stays shown while awaiting an answer (ZM-D-121)");
+}
+
+ZENITH_TEST(ZM_DialogueBox, IsPanelShown_FalseWhenIdle)
+{
+	ZM_UI_DialogueBox xBox;
+	ZENITH_ASSERT_FALSE(xBox.IsActive(), "a fresh box is inactive");
+	ZENITH_ASSERT_FALSE(xBox.IsAwaitingChoice(), "a fresh box awaits nothing");
+	ZENITH_ASSERT_FALSE(xBox.IsPanelShown(), "an idle box's panel is hidden");
+}
+
+ZENITH_TEST(ZM_DialogueBox, IsPanelShown_FalseAfterResolveAndAfterClose)
+{
+	// Resolved: ResolveChoice answers and Resets the box (inactive, no longer awaiting),
+	// so the panel that stayed shown through the wait must now drop.
+	ZM_UI_DialogueBox xResolved;
+	ZM_ArmAndReachTheChoice(xResolved);
+	ZENITH_ASSERT_TRUE(xResolved.IsPanelShown(), "PRE-STATE: shown while awaiting");
+	ZENITH_ASSERT_EQ((u_int)xResolved.ResolveChoice(ZM_UI_DialogueBox::szYES_NAME),
+		(u_int)ZM_DIALOGUE_CHOICE_YES, "the fixture answers YES");
+	ZENITH_ASSERT_FALSE(xResolved.IsPanelShown(), "a resolved box's panel is hidden");
+
+	// Closed: an unarmed conversation's last confirm closes the box outright (the SC2
+	// path SC8 deliberately left unchanged).
+	ZM_UI_DialogueBox xClosed;
+	ZENITH_ASSERT_TRUE(xClosed.QueueLine(szSECOND_LINE), "the fixture line is queued");
+	xClosed.Tick(fFULL_ELAPSED);
+	ZENITH_ASSERT_TRUE(xClosed.IsPanelShown(), "PRE-STATE: shown while the line is active");
+	ZENITH_ASSERT_EQ((u_int)xClosed.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_CLOSED,
+		"the fixture's only line closes the box");
+	ZENITH_ASSERT_FALSE(xClosed.IsPanelShown(), "a closed box's panel is hidden");
+}

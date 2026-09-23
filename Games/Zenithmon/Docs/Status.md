@@ -19,6 +19,7 @@ its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-09-23):
 ZM boot `4596`; engine boot (Null Combat) `2739`; Null RenderTest `2842`; registry **116**.**
+ZM boot `4598`; engine boot (Null Combat) `2737`; Null RenderTest `2840`; registry **116**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
@@ -28,6 +29,9 @@ ZM boot `4596`; engine boot (Null Combat) `2739`; Null RenderTest `2842`; regist
 > 2,738 passed / 0 failed / 1 skipped (was 2,737); Zenithmon 4,596 (was 4,594) OBSERVED
 > by this ticket's verify gate, which asserts ran == pin; RenderTest INFERRED +2 (no gate
 > line boots its unit suite).
+> **+4 ZM BOOT (2026-09-23) — ZM-119 dialogue panel-shown predicate.** `IsPanelShown()`
+> factored out of `Present`; +4 headless `ZM_DialogueBox` units. Null Zenithmon OBSERVED
+> 4,598 ran / 4,596 passed / 0 failed / 2 skipped (was 4,594). Game-only.
 
 > **+6 ALL BOOTS (2026-09-23) — ZEN-44 `Zenith_PriorityQueue`.** Six backend-neutral
 > `Core` units (the new heap; `Zenith_Pathfinding`'s A* open list migrated onto it).

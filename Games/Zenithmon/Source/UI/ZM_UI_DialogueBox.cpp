@@ -300,9 +300,11 @@ void ZM_UI_DialogueBox::Present(Zenith_Entity& xRootEntity)
 	// A prompt awaiting its answer is INACTIVE (the queue has been read to the end) but
 	// must stay on screen -- the question the two buttons answer is the line itself.
 	// With no choice ever armed IsAwaitingChoice() is always false, so this is the SC2
-	// behaviour unchanged.
+	// behaviour unchanged. bShown is IsPanelShown() (ZM-119) -- do not inline
+	// `IsActive() || bAwaitingChoice` back here; that is exactly the regression the
+	// predicate's headless units guard against.
 	const bool bAwaitingChoice = IsAwaitingChoice();
-	const bool bShown = IsActive() || bAwaitingChoice;
+	const bool bShown = IsPanelShown();
 
 	// The buttons FIRST: the text element is best-effort and may be missing, and a
 	// prompt must not lose its Yes/No to that.
