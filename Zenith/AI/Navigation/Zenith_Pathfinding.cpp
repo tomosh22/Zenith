@@ -4,14 +4,14 @@
 #include "AI/Zenith_AIWorldHooks.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Collections/Zenith_HashMap.h"
-#include <queue>
+#include "Collections/Zenith_PriorityQueue.h"
 #include <algorithm>
 
 namespace
 {
 	// A* node for the priority queue. Lives at file scope (anonymous namespace)
 	// so file-scope helpers can take it directly without polluting the public
-	// header with <queue> / Zenith_HashMap.
+	// header with Zenith_PriorityQueue / Zenith_HashMap.
 	struct AStarNode
 	{
 		uint32_t m_uPolygonIndex;
@@ -26,7 +26,21 @@ namespace
 		}
 	};
 
-	using AStarOpenSet = std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>>;
+	// Zenith_PriorityQueue's ordering convention matches std::priority_queue:
+	// Compare(a, b) == true means "a has lower priority than b", and Top()/Pop()
+	// return the highest-priority element under Compare. Wrapping AStarNode's
+	// existing operator> here reproduces the min-heap (lowest fCost pops first)
+	// that std::priority_queue<AStarNode, std::vector<AStarNode>,
+	// std::greater<AStarNode>> gave before this migration.
+	struct AStarNodeCompare
+	{
+		bool operator()(const AStarNode& xLHS, const AStarNode& xRHS) const
+		{
+			return xLHS > xRHS;
+		}
+	};
+
+	using AStarOpenSet = Zenith_PriorityQueue<AStarNode, AStarNodeCompare>;
 
 	// Process one neighbour: skip if closed; compute edge/heuristic costs; add or
 	// update the open-set entry. Encapsulates the inner for-loop of FindPathInternal
@@ -78,7 +92,7 @@ namespace
 		xNeighborNode.m_fGCost = fNewGCost;
 		xNeighborNode.m_fHCost = fHCost;
 		xNeighborNode.m_fFCost = fNewGCost + fHCost;
-		xOpenSet.push(xNeighborNode);
+		xOpenSet.Push(xNeighborNode);
 	}
 
 	struct PathEndpoints
@@ -217,17 +231,17 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 	xStartNode.m_fGCost = 0.0f;
 	xStartNode.m_fHCost = Zenith_Maths::Length(xEndpoints.m_xEndProjected - xEndpoints.m_xStartProjected);
 	xStartNode.m_fFCost = xStartNode.m_fGCost + xStartNode.m_fHCost;
-	xOpenSet.push(xStartNode);
+	xOpenSet.Push(xStartNode);
 	xOpenSetGCosts[xEndpoints.m_uStartPoly] = 0.0f;
 
 	uint32_t uBestPartialPoly = xEndpoints.m_uStartPoly;
 	uint32_t uBestPartialClosedIndex = 0;
 	float fBestPartialDist = xStartNode.m_fHCost;
 
-	while (!xOpenSet.empty())
+	while (!xOpenSet.Empty())
 	{
-		AStarNode xCurrent = xOpenSet.top();
-		xOpenSet.pop();
+		AStarNode xCurrent = xOpenSet.Top();
+		xOpenSet.Pop();
 
 		if (xClosedSet.Contains(xCurrent.m_uPolygonIndex)) continue;
 

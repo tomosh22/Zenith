@@ -13,6 +13,7 @@ this directory's headers are owned by exactly one project for IDE browsing.
 - `Zenith_HashSet.h` - Hash set wrapper over HashMap with O(1) insert/remove/contains
 - `Zenith_MemoryPool.h` - Fixed-capacity object pool
 - `Zenith_CircularQueue.h` - Fixed-capacity FIFO queue
+- `Zenith_PriorityQueue.h` - Binary heap over `Zenith_Vector`
 
 ## Zenith_Vector<T>
 
@@ -53,6 +54,16 @@ Non-copyable. Thread-safe: all public methods are protected by an internal mutex
 
 Fixed-capacity FIFO queue with circular buffer. Template parameter specifies compile-time capacity. Stack-allocated buffer. O(1) enqueue/dequeue using modulo arithmetic for wrapping. Methods return bool for success/failure (no exceptions). Not thread-safe - requires external synchronization for multi-threaded use.
 
+## Zenith_PriorityQueue<T, Compare>
+
+Binary heap over `Zenith_Vector<T>` — dynamic capacity, same growth policy as Vector. Replaces `std::priority_queue` (banned). API: `Push`/`Emplace`, `Pop`, `Top()` (mutable and const), `Empty()`, `GetSize()`, `GetCapacity()`, `Reserve()`, `Clear()`.
+
+Ordering matches `std::priority_queue` exactly: `Compare(a, b) == true` means "a has lower priority than b", and `Top()`/`Pop()` return the highest-priority element under `Compare`. The default `Zenith_Less<T>` (`operator<`) makes this a max-heap; pass a comparator built on `operator>` for a min-heap (the common open-list shape — see `Zenith_Pathfinding.cpp`'s `AStarNodeCompare`, which mirrors the old `std::priority_queue<T, std::vector<T>, std::greater<T>>` idiom it replaced).
+
+No decrease-key: a plain binary heap has no external handle into heap slots, so a queued entry's priority cannot be updated in place. `Zenith_Pathfinding::FindPath`'s A* open list does not need one — it tracks best-known g-costs in a side `Zenith_HashMap` and treats a stale heap entry as a cheap no-op via the existing closed-set check on pop, the same lazy-deletion pattern it used with `std::priority_queue`.
+
+No exceptions: `Pop()`/`Top()` assert on an empty queue, matching `Zenith_Vector::GetFront()`/`GetBack()`'s assert-then-proceed shape. Not thread-safe.
+
 ## Container Selection
 
 | Container | Capacity | Growth | Use Case |
@@ -61,6 +72,7 @@ Fixed-capacity FIFO queue with circular buffer. Template parameter specifies com
 | HashMap | Dynamic | Power-of-two | Key-value lookup; replaces `std::unordered_map` |
 | MemoryPool | Fixed | None | Object recycling, known max count |
 | CircularQueue | Fixed | None | FIFO queue, producer-consumer (with external sync) |
+| PriorityQueue | Dynamic | Exponential (via Vector) | Binary heap / priority ordering; replaces `std::priority_queue` |
 
 ## Key Concepts
 
