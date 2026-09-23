@@ -1,6 +1,10 @@
 ---
 kind: labels
 rows:
+  - id: 5wi9eywqf7m7b5rv9pn44rz6
+    name: integration-conflict
+    color: "#f97316"
+    project_id: u0wm3n3u0d5a9s9fjyx9nmg5
   - id: a0rzp598xyrtu5p56dh3f3k6
     name: docs
     color: "#3b82f6"
@@ -40,6 +44,10 @@ rows:
   - id: svljsifz5jnsvp23txsyobfq
     name: question
     color: "#8b5cf6"
+    project_id: u0wm3n3u0d5a9s9fjyx9nmg5
+  - id: ts3b3d31lh0pz4ivdd9fw49a
+    name: approved
+    color: "#10b981"
     project_id: u0wm3n3u0d5a9s9fjyx9nmg5
   - id: v4ijfz1wf1xxo19b1v4nidzi
     name: content

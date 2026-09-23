@@ -235,16 +235,23 @@ Assert-That 'Tooling declares suppressLanguageConventions: true' {
 }
 
 Assert-That 'the root conventions/languageConventions split covers both halves of the pre-split string' {
-    # "Root CLAUDE.md is binding." and "Never run Sharpmake in a worktree."
-    # are universal and must stay in `conventions`, never move to
-    # `languageConventions` -- that is the whole point of the split.
+    # "Root CLAUDE.md is binding." and "Never run Sharpmake in a linked
+    # worktree unless it is a registered lane." are universal and must stay
+    # in `conventions`, never move to `languageConventions` -- that is the
+    # whole point of the split. The Sharpmake clause was reworded from "in a
+    # worktree" (an absolute ban -- wrong, since it also forbade Sharpmake in
+    # the MAIN checkout) to "in a linked worktree unless it is a registered
+    # lane" when parallel lanes landed (Tools/zagent/protocol/TICK.md's
+    # "Lane mode" section) -- a registered lane IS a linked worktree where
+    # Tools/lane_init.ps1 legitimately runs regen, so the plain "in a
+    # worktree" ban was never what was meant.
     $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
     $file = Get-Content (Join-Path $projectRepo 'zagent.project.json') -Raw | ConvertFrom-Json
     ($file.conventions -match 'Root CLAUDE\.md is binding') -and
-        ($file.conventions -match 'Never run Sharpmake in a worktree') -and
+        ($file.conventions -match 'Never run Sharpmake in a linked worktree unless it is a registered lane') -and
         ($file.conventions -notmatch 'std::') -and
         ($file.languageConventions -match 'std::') -and
-        ($file.languageConventions -notmatch 'Sharpmake in a worktree')
+        ($file.languageConventions -notmatch 'Sharpmake in a linked worktree unless it is a registered lane')
 }
 
 Assert-That 'Engine declares a decisionLog + decisionIdPrefix, and the log file exists' {

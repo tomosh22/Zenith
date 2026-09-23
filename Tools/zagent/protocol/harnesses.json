@@ -164,6 +164,7 @@
       "humanPrerequisites": [
         "Codex Automations authoring is GUI-only (Stage 0 probe 7) -- no CLI or config surface exists to wire a repo skill to a schedule, so SCHEDULE/loopMode:in-harness cannot be configured from this checkout alone.",
         "trust_level (machine-local, ~/.codex/config.toml) must be set by a human on each machine that runs this harness; it cannot be committed or asserted from the repo.",
+        "trust_level is keyed per PROJECT PATH ([projects.'<path>']), so a registered lane -- its own directory, distinct from the main checkout's -- needs its own machine-local trust_level entry before Codex will run there; adding a lane does not inherit the main checkout's.",
         "features.multi_agent (DISPATCH's own mechanism) lives in ~/.codex/config.toml -- outside this repo, so no test here can assert it. It is not explicitly set today and defaults to true (Stage 0, stage0-verdicts.md). Declared here so the entry point's own pre-flight checks it before relying on a multi-agent spawn as DISPATCH; Tools/zagent/Test-HarnessParity.ps1 must not assert it -- nothing in this checkout can reach a machine-local config file to verify."
       ]
     }

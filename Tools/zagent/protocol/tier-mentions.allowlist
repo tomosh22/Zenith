@@ -21,10 +21,10 @@
 #   grep -noiE '\bhaiku\b|\bsonnet\b|\bopus\b' Tools/zagent/protocol/TICK.md
 #   and confirm each hit is inside a measured-history sentence, not an
 #   instruction, before adding its line here.
-narrative:Tools/zagent/protocol/TICK.md:412 => opus
-narrative:Tools/zagent/protocol/TICK.md:450 => sonnet
-narrative:Tools/zagent/protocol/TICK.md:1036 => opus
-narrative:Tools/zagent/protocol/TICK.md:1140 => opus
-narrative:Tools/zagent/protocol/TICK.md:1148 => opus
-narrative:Tools/zagent/protocol/TICK.md:1148 => sonnet
-narrative:Tools/zagent/protocol/TICK.md:1148 => haiku
+narrative:Tools/zagent/protocol/TICK.md:674 => opus
+narrative:Tools/zagent/protocol/TICK.md:712 => sonnet
+narrative:Tools/zagent/protocol/TICK.md:1310 => opus
+narrative:Tools/zagent/protocol/TICK.md:1414 => opus
+narrative:Tools/zagent/protocol/TICK.md:1422 => opus
+narrative:Tools/zagent/protocol/TICK.md:1422 => sonnet
+narrative:Tools/zagent/protocol/TICK.md:1422 => haiku

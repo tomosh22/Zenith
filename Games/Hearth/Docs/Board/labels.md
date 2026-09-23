@@ -1,6 +1,14 @@
 ---
 kind: labels
 rows:
+  - id: 07ile5le84aj0026p9qur9ap
+    name: approved
+    color: "#10b981"
+    project_id: vhoct5awix6pbnjxl0qub2ae
+  - id: a3018v3ir4n830256o4yl0d4
+    name: integration-conflict
+    color: "#f97316"
+    project_id: vhoct5awix6pbnjxl0qub2ae
   - id: ajk2d1emwnp8idvdsdu0qoc9
     name: engine-gap
     color: "#14b8a6"

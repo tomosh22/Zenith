@@ -112,7 +112,7 @@ describe('suppressLanguageConventions', () => {
     const rules = rulesFor(realConfig(), 'Tooling');
     // Universal: kept.
     expect(rules.conventions).toMatch(/Root CLAUDE\.md is binding/);
-    expect(rules.conventions).toMatch(/Never run Sharpmake in a worktree/);
+    expect(rules.conventions).toMatch(/Never run Sharpmake in a linked worktree unless it is a registered lane/);
     // Language: suppressed.
     expect(rules.conventions).not.toMatch(/No std::/);
     expect(rules.conventions).not.toMatch(/Zenith_Assert is the real assert/);

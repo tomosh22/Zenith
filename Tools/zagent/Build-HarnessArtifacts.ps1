@@ -78,17 +78,23 @@
   worker resolves it by reading TICK.md with a single Read call, that only
   works while the protocol fits inside that tool's default read window.
   Claude's own Read tool defaults to a 2000-line window, and
-  Tools/zagent/protocol/TICK.md is currently 1952 lines -- **48 lines of
+  Tools/zagent/protocol/TICK.md is currently 2233 lines -- **-233 lines of
   headroom: 117 when first measured, 98 after the protocol was
-  neutralised, 48 now**. The TREND is the finding -- the protocol grows,
-  because nearly every addition to it is a recorded failure. Note also
-  that 2000 is CLAUDE CODE'S Read default; no other harness's window has
-  been measured, so a "stub" harness is bounded by a number borrowed from
-  a tool it does not use. That margin
-  shrinks every time TICK.md grows and nobody is re-measuring it by hand;
-  Tools/zagent/Test-HarnessParity.ps1 carries the assertion that fails
-  once it thins below 50 lines, specifically so this stops being something
-  a person has to remember to check.
+  neutralised, 48 before parallel lanes landed, -233 now (the "Lane mode"
+  section alone added a little over 200)**. The TREND is the finding -- the
+  protocol grows, because nearly every addition to it is a recorded
+  failure or, as here, a whole new mode of operation. Note also that 2000
+  is CLAUDE CODE'S Read default; no other harness's window has been
+  measured, so a "stub" harness is bounded by a number borrowed from a
+  tool it does not use. The margin is NEGATIVE today and nothing is
+  failing over it, because every harness in harnesses.json is still
+  `deliveryMode: "inline"` -- Tools/zagent/Test-HarnessParity.ps1's own
+  headroom assertion only BINDS once some harness is actually `"stub"`,
+  which is exactly why this figure was allowed to go negative unnoticed
+  rather than blocking a landed feature: nothing here relies on a single
+  default-sized Read of the whole file today. The assertion re-arms, with
+  this same negative number, the moment a harness flips to `"stub"` --
+  see that harness's own headroom failure for what to do about it then.
 
 .PARAMETER Check
   Regenerate every artifact to memory (never touching disk) and byte-

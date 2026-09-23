@@ -28,7 +28,13 @@
       "PowerShell(& \"C:\\Program Files\\Microsoft Visual Studio\\18\\Insiders\\MSBuild\\Current\\Bin\\MSBuild.exe\" *)",
       "PowerShell(Get-Process*)",
       "Bash(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools/zagent/zagent.ps1*)",
-      "PowerShell(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\zagent\\zagent.ps1*)"
+      "PowerShell(pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\zagent\\zagent.ps1*)",
+      "Bash(pwsh -NoProfile -File Tools/lane_pins.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\lane_pins.ps1*)",
+      "Bash(pwsh -NoProfile -File Tools/build_lock.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\build_lock.ps1*)",
+      "Bash(pwsh -NoProfile -File Tools/sweep_game_exes.ps1*)",
+      "PowerShell(pwsh -NoProfile -File Tools\\sweep_game_exes.ps1*)"
     ]
   }
 }

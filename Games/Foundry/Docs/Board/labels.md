@@ -1,6 +1,10 @@
 ---
 kind: labels
 rows:
+  - id: 1mnmnob4p2zt8fkwx10w5iv4
+    name: integration-conflict
+    color: "#f97316"
+    project_id: pwd7f8n4egx222rkl7emmzrx
   - id: fawq8lfyu0fl04qilc4koupx
     name: blocked-scope
     color: "#8b5cf6"
@@ -8,6 +12,10 @@ rows:
   - id: j6dhgtv7fpdec5xixezc33ua
     name: human-gate
     color: "#f59e0b"
+    project_id: pwd7f8n4egx222rkl7emmzrx
+  - id: o5nwf4xme1tlabm9g3nz8wzw
+    name: approved
+    color: "#10b981"
     project_id: pwd7f8n4egx222rkl7emmzrx
   - id: pwx8d14alkoi33e7rbxopo9q
     name: question

@@ -45,6 +45,14 @@ rows:
     name: human-gate
     color: "#f59e0b"
     project_id: n5y2i7n3yn436t00r2v41s82
+  - id: s6jf4gwjwkyih1lf46uomx56
+    name: integration-conflict
+    color: "#f97316"
+    project_id: n5y2i7n3yn436t00r2v41s82
+  - id: uhs7a9dyd0spw0pxrk80knps
+    name: approved
+    color: "#10b981"
+    project_id: n5y2i7n3yn436t00r2v41s82
   - id: x4qz70m8j3b4fdiqbm7q6iiu
     name: blocked-scope
     color: "#8b5cf6"

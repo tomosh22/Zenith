@@ -1,6 +1,14 @@
 ---
 kind: labels
 rows:
+  - id: 3w9nl5qaewu2s3gkxmntoamr
+    name: integration-conflict
+    color: "#f97316"
+    project_id: r1m7idj9n6rkv5b1iulqz2ho
+  - id: 3xlpf33v9xs1nf0i1n9im7yi
+    name: approved
+    color: "#10b981"
+    project_id: r1m7idj9n6rkv5b1iulqz2ho
   - id: 615475e3bf105950e5651cd45faf0a6b
     name: needs-human
     color: "#e11d48"

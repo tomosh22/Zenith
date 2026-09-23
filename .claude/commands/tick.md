@@ -105,12 +105,17 @@ loop without it lies to itself.
 - **I5 — Serial execution per repo.** One in-flight ticket per repo,
   enforced atomically by the CLI's claim transaction. If a claim is
   refused naming another key, that is I5 working — do not work around it.
+  In [lane mode](#lane-mode), the scope narrows to "main, or this lane" —
+  two lanes may each legitimately hold one in-flight ticket at once.
 - **I6 — Idempotence over memory.** A firing may crash at any point and
   the next must reconstruct from durable state alone: the board, git, and
   `.zagent/run/<KEY>/`. Never from anything you remember.
 - **I7 — Never sign your own gate.** A `human-gate` ticket stops at
   In Review no matter how green the gates are, and no matter whether a
-  human asked for it by name.
+  human asked for it by name. In [lane mode](#lane-mode), the `approved`
+  label on such a row IS that human signature (step 8's lane rule) — it
+  does not weaken this invariant, because no agent identity may ever
+  apply the label itself.
 
 **Two standing rules about this file and the config:**
 
@@ -144,18 +149,33 @@ loop without it lies to itself.
 
 - No `psql`, no direct database access, no importing `@upstream/database`.
   Every board interaction is a `zagent …` call.
-- No `git push`. No `--force`. No `reset --hard`. No deleting a branch.
+- No `git push`. No `--force`. No `reset --hard`. No deleting a branch,
+  except in [lane mode](#lane-mode), where step 9 runs a safe
+  `git branch -d` (never `-D`) on `agent/<KEY>` once it has landed.
 - No `git switch -c`, `git worktree`, or `gh pr` when `branching` is
-  `"direct"`.
+  `"direct"`. [Lane mode](#lane-mode) is the one exception to
+  `git switch -c` — step 4 cuts `agent/<KEY>` from `baseBranch` by name,
+  in every ticket, whatever `branching` says. `git worktree` itself stays
+  forbidden inside a tick either way: a lane is registered by a human
+  running `zagent lane add`, never by a tick.
+- No `git merge --abort`, except in [lane mode](#lane-mode) on our OWN
+  `agent/<KEY>` with `MERGE_HEAD` present (a REGATE conflict outside the
+  allowed pin sites, or crash recovery).
 - No editing files outside the ticket's `repo`.
 - No second ticket in this tick.
 - No stashing and no resetting to work around a dirty tree.
 
 # Running the CLI, and reading its output
 
-**`zagent …`, bare**, from this repo or any subdirectory of it — it walks
-up for `zagent.project.json` the way git walks up for `.git`. If it is
-not on PATH, `Tools/zagent/README.md` has the one-time setup.
+**`zagent …`, bare**, from this repo, from any subdirectory of it, or from
+a [registered lane](#lane-mode). **It does NOT walk up from the current
+directory looking for `zagent.project.json`** — `zagent.ps1` resolves its
+own repo root from where the `zagent` script itself lives, the same way on
+every invocation, never by searching upward the way git walks up for
+`.git`. What the current directory DOES decide is which MODE this firing
+runs in — main, lane, or an unregistered worktree that must stop — see
+[Lane mode](#lane-mode). If `zagent` is not on PATH, `Tools/zagent/README.md`
+has the one-time setup.
 
 Its scratch is HERE now: `.zagent/last.json`, `.zagent/last.exit` and
 `.zagent/run/<KEY>/`, at the repo root, gitignored so `git status
@@ -263,9 +283,13 @@ which is the cheap sanity check that the vault actually loaded:
 A failing check here explains most "the loop did nothing for an hour"
 incidents. Report and stop if `ok` is false or any diagnostic is present.
 
-**And `zagent` must be run from inside the checkout.** The client walks up from
-the CURRENT directory for `zagent.project.json`, the way git walks up for
-`.git`. From outside it cannot find the vault at all.
+**And `zagent` must be run from inside a checkout it recognises.** It does
+**not** walk up from the current directory for `zagent.project.json` — see
+[Running the CLI](#running-the-cli-and-reading-its-output) above. From
+outside any checkout it cannot find the vault at all. What the current
+directory DOES decide is [Lane mode](#lane-mode): whether this firing is
+the main checkout, a registered lane, or an unregistered worktree that
+must stop.
 
 **`Tools/zagent/zagent`** — extensionless, LF-pinned in `.gitattributes` — is
 what makes a bare `zagent` work in a POSIX shell as well as in PowerShell. If
@@ -296,6 +320,243 @@ this, **11 of the last 12 commits on `master` were board commits**.
    already do. Measured: two `board: decide` commits landed between a ticket
    commit and `finish` and the commit-completeness check was unaffected,
    because it reads `changed.txt` rather than a commit range.
+
+## Lane mode
+
+Everything above is written for ONE checkout with ONE tick in flight at a
+time. **A lane changes only WHERE things run, never what a step means** —
+one board project (`ZM`, `ZEN`, …) bound to one persistent, *registered*
+git worktree, so more than one project's queue can run at once without two
+ticks fighting over the same tree. With no lane registered anywhere, this
+whole section is inert and behaviour is exactly the serial protocol above.
+Every passage elsewhere in this file whose premise a lane falsifies carries
+a one-line pointer back to here; this section is where the delta actually
+lives, spelled out per step.
+
+**Step 0, amended.** After `zagent doctor --json`, also run
+`zagent lane which --json` once, at the start of the firing. It always
+exits 0 and answers `{mode, project, path, inFlight}` — `mode` is `main`,
+`lane`, or `unregistered`. `unregistered` means this session sits in a
+linked worktree nobody registered as a lane: **the tick STOPS here**,
+reporting the path. Driving `zagent` from an unregistered worktree while
+its own tree holds edits nothing else knows about is exactly the hazard
+lanes exist to close, not a state to work around.
+
+**Step 1, entry — run `zagent lane which --json` on EVERY firing, not just
+the first.** Step 0 is "first firing after a restart only"; mode and path
+may be cached across firings, `inFlight` may not — it names this lane's
+OWN agent-owned In Progress ticket, using the same predicate I5's lane
+scoping uses, and it changes every time this lane's own tick moves a
+ticket.
+
+- **`inFlight` is a key, and `$1` (if given) names a different one.**
+  Report it and `stop` — the same disposition main mode uses for a
+  targeted exit 5. Never `claim` or `next` over a ticket already In
+  Progress in this lane.
+- **`inFlight` is a key, and `$1` is absent or matches it.** Skip
+  `claim`/`next` entirely and go straight to the recovery list below — a
+  re-claim here would archive the very scratch recovery depends on.
+  Confirm first with `zagent show <KEY> --json` (In Progress, assignee
+  this agent), then enter recovery.
+- **`inFlight` is null (an idle lane).** Dispatch as the serial protocol's
+  step 1 describes — `next`, scoped to this lane's project, or
+  `claim $1` — with one addition: **before claiming an In Review `$1`,
+  run `zagent show <KEY> --json` and require `approved`.** No `approved`
+  → report it, change nothing, `stop` — an unapproved claim must never
+  wedge the lane on a ticket it cannot land. With `approved` present, the
+  order is: `claim` — this shape (lane mode, `previousStatus` In Review,
+  `human-gate` **and** `approved`, and `refs/heads/agent/<KEY>` already
+  existing) is exactly what makes `claim` restore the six scratch files
+  (`predispatch.json`, `filelist.txt`, `gates.json`, `tick_gates.json`,
+  `changed.txt`, `worklog.md`) from its own `.prev` archive **automatically**
+  — then confirm `run/<KEY>/gates.json` and `tick_gates.json` both exist;
+  if either is missing (a crash before the restore ever ran), fall through
+  to recovery item 1 instead of assuming it happened. Either way, continue
+  → [step 3](#3-preconditions) → [step 4](#4-branch)
+  (`git switch agent/<KEY>`) → [step 7](#7-integrate)'s land call, below.
+  If `integrate` still answers `UNAPPROVED` (the label was pulled between
+  the check above and here), `finish "In Review"` to re-park rather than a
+  bare `stop`.
+
+**Step 1, recovery** — the lane's own In Progress ticket. Work through
+these IN ORDER; each one either routes the ticket or normalises state and
+falls through to the next. **`.zagent/integrate/<KEY>.json` is read for
+its timeout ceiling only** (see the wait row, below) — it is never itself
+a routing input.
+
+1. **Restore.** The row is an approved `human-gate`, `run/<KEY>/gates.json`
+   is absent, and the claim's `.prev` archive holds the six files (a crash
+   between re-claim and restore) → restore them, then continue.
+2. **`MERGE_HEAD` present** in the lane → `git merge --abort`, then
+   continue — one of the [lane exceptions to Never](#never): this is our
+   own `agent/<KEY>` merge, never a stranger's.
+3. **Landed** — `git log --first-parent --fixed-strings --grep="integrate
+   <KEY>: " <baseBranch>` in the lane is non-empty → [step 8](#8-write-back).
+   Not "`agent/<KEY>` is an ancestor of `<baseBranch>`": that is trivially
+   true for a branch freshly cut from `<baseBranch>` with nothing committed
+   yet, and would route a no-work attempt straight to Done.
+4. **Normalise HEAD.** Detached with `agent/<KEY>` existing →
+   `git switch agent/<KEY>` (a crash between claim and step 4), then
+   continue. Detached with no `agent/<KEY>` → steps 3 → 4 → 5, a fresh
+   dispatch. From here on HEAD is on `agent/<KEY>`.
+5. **Find this attempt's ticket commit `C`, before touching the tree.**
+   `P` = `run/<KEY>/predispatch.json`; `C` is the first-parent `<KEY>:` or
+   `WIP(<KEY>):` commit newer than `P.head` (absent `P`, there is no `C`).
+   If the tree is dirty:
+   - **dirty, `C` is `<KEY>:`** → mid-REGATE — a crash, or a slot timeout
+     during REGATE 3.5–3.6 below, left the re-pin edits uncommitted. Do
+     **not** run step 6 or `guard`: resume at REGATE 3.4 with
+     `-ReuseGateList`, through 3.8. Counts against the once-per-firing
+     `STALE_VERDICT` budget below.
+   - **dirty, no `C`** → step 6, re-running `-Phase measure` — a crash
+     mid-verification, or a step-6 slot timeout with the worker's edits
+     still uncommitted. HEAD is still `P.head` here, so `guard`'s
+     `headMoved` cannot fire.
+   - **dirty, `C` is `WIP(<KEY>):`** is unreachable (a WIP commit leaves
+     the tree clean) — Blocked as infrastructure if seen anyway.
+6. **Route on `C`, clean tree.** `C` is `WIP(<KEY>):` → `finish Blocked`,
+   never land. `C` is `<KEY>:` → [step 7](#7-integrate)'s land call — a
+   stale or missing verdict comes back `STALE_VERDICT`,
+   which the ladder handles; this covers a crash after the ticket commit,
+   or mid-REGATE. No `C` at all (clean tree, nothing committed since
+   dispatch) → step 5, a fresh dispatch — `build_prompt.ps1` rewrites
+   `predispatch.json`/`filelist.txt`.
+
+**The wait file is not a routing input; its ceiling is.** On the
+`MAIN_DIRTY` / `MAIN_NOT_ON_BASE` / build-slot-busy-past-its-wait row of
+the merge table below, write `.zagent/integrate/<KEY>.json` as
+`{firstWaitAt, firings}` — **outside** `run/<KEY>/`, so
+`workerMovedNothing` never reads it as scratch litter — and set
+`next.json` to `wait` (`delaySeconds: 600`). `firstWaitAt` is written once
+and never overwritten again; `firings` increments per attempt, and the
+2-attempt REGATE budget below resets each firing. The file is deleted on
+`LANDED`, on any `Blocked`, and in [step 9](#9-close-out), so a stale file
+left behind can never trip the ceiling on a later, unrelated re-claim.
+Past `lanes.integrateWaitMinutes` (default 240) since `firstWaitAt` →
+Blocked `integration-conflict` instead of another wait. **If the tree is
+dirty at that breach** (a step-6 slot timeout, say), first commit
+`WIP(<KEY>): <title> — SLOT TIMEOUT`, so the lane is not left failing its
+own [step 3](#3-preconditions) clean-tree check on the very next firing.
+
+**Step 3 is replaced, not amended** (see the note at
+[step 3](#3-preconditions) itself), because "HEAD equals `baseBranch`" is
+unsatisfiable in a lane — a board write can move `master` at any moment a
+lane does not control, and every step-9 detach leaves HEAD off `master`
+on purpose. The lane-mode check passes when the tree is clean AND HEAD is
+either detached (step 4 always cuts `agent/<KEY>` from `baseBranch` by
+name, so a detached HEAD is always startable) or already on `agent/<KEY>`
+for the ticket being worked. An idle `agent/*` for a ticket that is not
+this lane's In Progress row → `git switch --detach <baseBranch>`. Any
+other named branch → fail, same as the serial check.
+
+**Step 4** (see the note there too): `git switch -c agent/<KEY> <baseBranch>`,
+reusing the branch if it already exists and the ticket is ours (the
+recovery list's normalise-HEAD case). Lane mode ignores `branching`
+entirely — direct or branch, every lane ticket gets its own `agent/<KEY>`.
+
+**Step 7 — when to merge, mechanically:**
+
+| Ticket outcome | Integrate? | Work sits on |
+| --- | --- | --- |
+| Green, fresh verdict, every DoD box ticked, no `human-gate` | Yes, before `finish Done` | `master`, via `integrate` |
+| `human-gate` | No — `finish "In Review"`. A human applies `approved`; the next firing re-claims per the step-1 entry rule above and resumes at `integrate` | `agent/<KEY>` |
+| DoD box unmet, or red | Never. Commit `WIP(<KEY>): <title>`, `finish Blocked` | `agent/<KEY>` |
+| Board-file conflict on landing | No — `git merge --abort`, `finish Blocked` with label `integration-conflict` | `agent/<KEY>` |
+| Lock busy, or landing raced a code commit | Retry inside this tick, at most 2 attempts (the same budget REGATE 3.8 shares) | — |
+| `MAIN_DIRTY`, main not on `baseBranch`, or the build slot busy past its wait | Not yet — the wait row above | `agent/<KEY>` |
+
+**Land through the build slot, never with a bare `zagent integrate`:**
+`pwsh -NoProfile -File Tools/build_lock.ps1 -Run "zagent integrate <KEY>"`.
+`integrate`'s `read-tree -m -u` rewrites sources in the main checkout, and
+doing that underneath a human's own in-progress `zenith build` there is
+exactly the hazard the build slot exists to prevent — this is the same
+`-Run` form [step 7](#7-integrate) documents for its own reasoning. If the
+slot itself cannot be acquired, `build_lock.ps1` exits **11** ("slot
+busy") before `integrate` ever runs — treat that exactly like the
+`MAIN_DIRTY` wait row above. **Any other exit code IS `integrate`'s own,
+unchanged** — `build_lock.ps1 -Run` only wraps the call, it does not
+translate its result. Branch on `payload.result` — the **FINAL** ladder
+(`Tools/Vault/spec/command-matrix.md`'s own `### integrate` section
+carries the identical table; keep both in step):
+
+| `result` | Tick action |
+| --- | --- |
+| `LANDED` | [step 8](#8-write-back) |
+| `REGATE` | the REGATE loop below (consumes one of its 2 attempts) |
+| `STALE_VERDICT` | run REGATE 3.4–3.7 WITHOUT 3.1 (nothing new landed on `<baseBranch>`, so no re-merge) — then land again. Does not consume a merge attempt, but only **once per firing**: a second `STALE_VERDICT` in the same firing → Blocked `integration-conflict`. The normal shape after a firing that died between the lane-side merge and a finished verify — a "slot busy" exit, say |
+| `NOT_GREEN` | `finish Blocked` as a **failure** (counts toward the breaker) — the first-parent commit is a `WIP(<KEY>):` park, or the verdict is complete with a real gate failure |
+| `CONFLICT` | Blocked `integration-conflict` — the ticket's own edit conflicts with a board file `<baseBranch>` also changed |
+| `TREE_UNSTABLE` | Blocked `integration-conflict` directly, never `STALE_VERDICT` — `tick_gates.ps1` already retried verify once internally before returning this |
+| `LOCKED`, `RACED` (both exit 5) | retry the land call within this tick, sharing REGATE 3.8's 2-attempts-total budget; exhausted → the wait row above, same disposition as the next row |
+| `MAIN_DIRTY`, `MAIN_NOT_ON_BASE` | the wait row above |
+| `UNAPPROVED` | `finish "In Review"` (re-park) |
+
+**REGATE (mechanics 3.1–3.8), with `agent/<KEY>` still checked out in the
+lane:**
+
+- **3.1** `git merge --no-ff --no-edit -m "integrate <KEY>: merge <baseBranch>" <baseBranch>`.
+  The subject deliberately does not start `<KEY>:`, so
+  `commitCompleteness` still finds the worker's own ticket commit.
+- **3.2** On conflict, run `pwsh -NoProfile -File Tools/lane_pins.ps1`.
+  Exit 0 → every conflicted path was an allowed pin site
+  (`Tools/unit_baselines.json`, `Games/<G>/Docs/Status.md`), resolved and
+  staged — commit the merge. Exit 2 → a conflict outside those two sites;
+  nothing was written, so `git merge --abort`, then `finish Blocked`
+  with label `integration-conflict`.
+- **3.3** No regen action here — the first build gate line's own
+  staleness check regens automatically against a stale `regen_sha`.
+- **3.4** `pwsh -NoProfile -File Tools/tick_gates.ps1 <KEY> -Phase measure -ReuseGateList` —
+  reuse the ticket's OWN recorded `gates.json` rather than re-deriving it
+  from the merged tree. The selection stays the ticket's own, never
+  "every category the merge happened to touch".
+- **3.5** On exit 10: re-bump the rows this lane observed from OBSERVED
+  counts, and recompute the LIVE PIN line from them in the same edit so
+  C7 stays green at verify. Rows this lane cannot observe keep the
+  delta-merged value `lane_pins.ps1` wrote, unchanged.
+- **3.6** `pwsh -NoProfile -File Tools/tick_gates.ps1 <KEY> -Phase verify -ReuseGateList`.
+- **3.7** Tree dirty → `git add -A`, then
+  `git commit -m "integrate <KEY>: re-pin"` (the pins AND any tracked
+  output the build rewrote — the same `add -A` rule as the serial
+  [step 7](#7-integrate)). Tree clean → skip this step.
+- **3.8** Land again —
+  `pwsh -NoProfile -File Tools/build_lock.ps1 -Run "zagent integrate <KEY>"`,
+  the same wrapped form [step 7](#7-integrate) uses. **2 attempts total,
+  hard-coded** — not per REGATE call.
+
+`guard` is not part of this loop — it refuses a clean tree, and
+`integrate` checks freshness itself. A `tick_gates` exit inside REGATE
+that is not 0, 10, or 11 is red → `finish Blocked`.
+
+**Step 8, lane amendment.** The serial rule — "a `human-gate` ticket goes
+to In Review, always" — gets one exception here: a `human-gate` row
+carrying `approved` whose `<KEY>:` commit is already an ancestor of
+`baseBranch` (landed by a prior `integrate`) → `finish Done`. Otherwise →
+`finish "In Review"`, same as the serial rule. In lane mode the `approved`
+label IS the human's signature on the gate (see [I7](#operating-invariants)) —
+"never merge" has nowhere else to attach here, because the work already
+sits on an unmerged `agent/<KEY>` until a human says otherwise.
+
+**Step 9, lane amendment.** `git switch --detach <baseBranch>`, then
+`git branch -d agent/<KEY>` (safe delete, never `-D`) if it landed. **Skip
+the project's `cleanup` commands entirely** — a main-mode tick's step 9
+runs after `finish` releases I5, while a lane may already be mid-build,
+and sweeping stray processes against a build in progress is exactly the
+cross-checkout hazard the path-scoped sweep exists to avoid.
+
+**"Never" amendments** are listed where they belong, in [Never](#never)
+itself, not duplicated here.
+
+**Also state:**
+
+- Engine-category tickets belong in the `ZEN` lane.
+- While lanes are in use, the main checkout is the **integration tree**.
+  A human's own work there belongs in a worktree of their own, and
+  `integrate` refuses to land over an overlapping dirty path
+  (`MAIN_DIRTY`).
+- A Tooling ticket editing `Tools/Vault/**` in a lane is not exercised by
+  its own tick's `zagent` calls until it lands — the lane keeps running
+  the PREVIOUS `zagent` build for everything up to and including that
+  ticket's own `integrate` call.
 
 ## 1. Pick the ticket
 
@@ -345,6 +606,7 @@ tool call leaving no trace at all — which also satisfies invariant I6.
 | Exit | Meaning                   | Do                                                                                                    |
 | ---- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
 | 0    | Claimed, contract valid   | → step 2                                                                                              |
+| 1    | [Lane-scope](#lane-mode) refusal — an unregistered worktree, or another project's key/`--project` from a lane | Report the scope named in the refusal, disposition `stop`; nothing was claimed. |
 | 3    | Queue empty               | Disposition `wait` (delaySeconds 900), stop                                                          |
 | 4    | Claimed, contract invalid | → step 2                                                                                              |
 | 5    | Repo busy, or would steal | Report which key holds it. Queue mode: disposition `wait` (delaySeconds 300). Targeted: disposition `stop`. |
@@ -742,6 +1004,12 @@ So in `direct` mode: **commit, then park at In Review.** Nothing is pushed
 rejection is a `git revert`. What `human-gate` buys there is that the ticket is
 not CLOSED and the reporter is told — not that the code is withheld.
 
+**[Lane mode](#lane-mode) is the exception: there, `human-gate` DOES
+withhold code.** The ticket's `agent/<KEY>` stays unmerged until a human
+applies `approved`, exactly like `branching: "branch"` above — regardless
+of the category's own `branching` setting, because a lane ticket always
+gets its own branch.
+
 ## 3. Preconditions
 
 In `repo`:
@@ -756,10 +1024,16 @@ never reset.** For `branching: "direct"` this check is the only thing
 standing between you and someone else's uncommitted work: treat a dirty
 tree as fatal, not as something to work around.
 
+**[Lane mode](#lane-mode) replaces this whole check** — "HEAD equals
+`baseBranch`" is unsatisfiable there, because a board write can move
+`master` out from under a lane at any moment nothing here controls.
+
 ## 4. Branch
 
 - `branching: "branch"` → `git -C <repo> switch -c <branch>`
 - `branching: "direct"` → do nothing; work on `baseBranch` in place.
+- [Lane mode](#lane-mode) ignores `branching` entirely and always cuts
+  `agent/<KEY>`.
 
 ## 5. Dispatch the worker
 
@@ -1722,6 +1996,9 @@ Then:
   `git -C <repo> merge --ff-only <branch>`. Base moved and ff impossible
   → Blocked. No rebase, no merge commit.
 - `direct` mode: already there.
+- [Lane mode](#lane-mode): neither of the above — land through the build
+  slot instead (`Tools/build_lock.ps1 -Run "zagent integrate <KEY>"`), and
+  branch on its result ladder.
 - `push` is false — nothing reaches a remote.
 
 **Red** → **first, re-run the FAILING GATE LINE ONLY, once.** This suite carries
@@ -1781,6 +2058,10 @@ order-dependence.
 > days. So commit onto `baseBranch` with a `WIP(<KEY>): <title> — GATES RED`
 > subject, then move to Blocked. Nothing is pushed; a rejection is one
 > `git revert`. Leaving the tree dirty is worse than anything it prevents.
+>
+> **[Lane mode](#lane-mode):** the same WIP commit, same subject — it lands
+> on `agent/<KEY>` instead of `baseBranch`, because HEAD is already there
+> and lane mode has no bare-`baseBranch` working state to protect.
 
 **Docs mirror.** Only after a Green commit lands — never on a Blocked or
 abandoned ticket, whose edits may be half-done or uncommitted.

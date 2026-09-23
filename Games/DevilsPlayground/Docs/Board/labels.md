@@ -1,6 +1,10 @@
 ---
 kind: labels
 rows:
+  - id: 0wpy0t2hyiot4ih2mk4mza8w
+    name: integration-conflict
+    color: "#f97316"
+    project_id: f1ecqdf4ab8xgdorovsz6t7v
   - id: 513ead1e066f365a2fdf09f6e0794a7d
     name: needs-human
     color: "#e11d48"
@@ -40,6 +44,10 @@ rows:
   - id: ovn6l6nlwe7dtqt1cixi9j2v
     name: question
     color: "#8b5cf6"
+    project_id: f1ecqdf4ab8xgdorovsz6t7v
+  - id: rh67co7mrovm0izpi8spxlpb
+    name: approved
+    color: "#10b981"
     project_id: f1ecqdf4ab8xgdorovsz6t7v
   - id: shyqergyg2ukxrvjevocv6nt
     name: engine-gap

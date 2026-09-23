@@ -47,6 +47,29 @@
   "merge": {
     "push": false
   },
+  "$lanes": [
+    "Parallel /tick lanes (Docs plan: parallel `/tick` lanes; Tools/zagent/protocol/TICK.md's own",
+    "'Lane mode' section). Off by default -- `enabled: false` means every /tick",
+    "in this checkout runs the serial protocol above, unchanged, and turning",
+    "lanes on is a deliberate human commit to this file, never something a",
+    "tick does to itself.",
+    "",
+    "`root`: where `zagent lane add <PROJECT>` creates a lane's persistent",
+    "worktree (one per board project, never per ticket) when no `--path` is",
+    "given. `integrateWaitMinutes`: the ceiling on `.zagent/integrate/<KEY>.json`'s",
+    "wait row (MAIN_DIRTY / MAIN_NOT_ON_BASE / a build-slot timeout past its own",
+    "budget) before a lane gives up and Blocks `integration-conflict` instead of",
+    "waiting again. `buildSlotWaitMinutes`: how long Tools/build_lock.ps1 waits",
+    "for the one machine-wide build slot before tick_gates.ps1 exits 11 (\"slot",
+    "busy\") -- read by build_lock.ps1 itself, since ZenithCli reads no zagent",
+    "config."
+  ],
+  "lanes": {
+    "enabled": false,
+    "root": "C:/dev/Zenith-lanes",
+    "integrateWaitMinutes": 240,
+    "buildSlotWaitMinutes": 90
+  },
   "reviewOn": [
     "HIGH",
     "MEDIUM"
@@ -62,7 +85,7 @@
     "`languageConventions` back in here -- that reintroduces the exact",
     "always-concatenated bug the split fixed."
   ],
-  "conventions": "Root CLAUDE.md is binding. Never run Sharpmake in a worktree.",
+  "conventions": "Root CLAUDE.md is binding. Never run Sharpmake in a linked worktree unless it is a registered lane (ZEN-D-LANES).",
   "$languageConventions": [
     "The C++-only half, split out from `conventions` above (2026-09-20).",
     "Suppressed for a category via `suppressLanguageConventions: true`",
@@ -72,14 +95,15 @@
     "",
     "Note `Build/**` joined Engine's `paths` in the same pass that added",
     "the suppression flag: a Tooling ticket that touches a regen-adjacent",
-    "path is now MORE likely to trip \"never run Sharpmake in a worktree\",",
-    "not less, which is exactly why that clause had to stay universal",
-    "rather than be dropped alongside the C++ rules."
+    "path is now MORE likely to trip \"never run Sharpmake in a linked",
+    "worktree unless it is a registered lane\", not less, which is exactly",
+    "why that clause had to stay universal rather than be dropped",
+    "alongside the C++ rules."
   ],
   "languageConventions": "No std:: containers; every .cpp starts with #include \"Zenith.h\"; tabs; braces on new lines; Zenith_Assert is the real assert (ZENITH_ASSERT is an empty marker).",
-  "$cleanup": "Stop-Process is given its OWN -ErrorAction and the whole thing ends in `exit 0`, because the COMMON case is that no game is running: -ErrorAction SilentlyContinue suppresses the error OUTPUT but Get-Process still fails, so `$?` is false and pwsh exits 1. A sweep that finds nothing to sweep is a success, and a cleanup line that reports 1 for it is a trap for anything that ever branches on the result.",
+  "$cleanup": "Tools/sweep_game_exes.ps1 replaces the old inline Get-Process/Stop-Process one-liner, which matched by NAME ALONE across the WHOLE MACHINE -- exactly the hazard a lane makes real, since two lanes (or a lane and the main checkout) can each have their own zenithmon.exe running at once and the old line would kill both. The new script dot-sources Tools/tick_gates.ps1 -NoRun to reach Invoke-ExeSweep/Select-SweepTargets, the same path-scoped, directory-boundary-safe killer every gate phase already uses, and sweeps only THIS checkout's own tree. It is a `$`-free committed string on purpose: this array may be run by a POSIX shell OR PowerShell, and a `$` inside the committed string would be expanded by whichever shell reads it. It still always `exit 0` -- a sweep that finds nothing to sweep is a success, and a cleanup line that reports failure for the common case is a trap for anything that ever branches on the result. Lane mode skips this step entirely at its own step 9 (Tools/zagent/protocol/TICK.md's Lane mode section) -- a main-mode tick's step 9 runs after `finish` releases I5, while a lane may still be mid-build.",
   "cleanup": [
-    "pwsh -NoProfile -Command \"Get-Process zenithmon,combat,devilsplayground -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0\""
+    "pwsh -NoProfile -File Tools\\sweep_game_exes.ps1"
   ],
   "categories": {
     "Zenithmon": {
@@ -103,7 +127,7 @@
         "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
       ],
-      "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031).",
+      "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031); in lane mode only the tick itself cuts agent/<KEY> (ZM-D-LANES).",
       "decisionLog": "Games/Zenithmon/Docs/DecisionLog.md",
       "decisionIdPrefix": "ZM-D-",
       "docs": {
@@ -368,9 +392,12 @@
         "The fix is NOT to drop the root text wholesale -- the root",
         "`conventions` string also carries two clauses that have nothing to",
         "do with C++ and are just as binding on a Tooling worker: \"Root",
-        "CLAUDE.md is binding\" and \"Never run Sharpmake in a worktree\".",
-        "Dropping the first tells a Tooling worker the opposite of what is",
-        "meant, and the second got MORE reachable from here, not less, once",
+        "CLAUDE.md is binding\" and \"Never run Sharpmake in a linked",
+        "worktree unless it is a registered lane\" (reworded from \"in a",
+        "worktree\" when parallel lanes landed -- see the `conventions` key",
+        "itself for the live text). Dropping the first tells a Tooling",
+        "worker the opposite of what is meant, and the second got MORE",
+        "reachable from here, not less, once",
         "Build/** joined Engine's paths above -- a Tools/ ticket that",
         "touches a regen path is exactly the shape that trips it. So the",
         "root string is split in two: `conventions` (universal, ALWAYS",
@@ -395,6 +422,8 @@
         "pwsh -NoProfile -File Tools\\zagent\\Test-ZagentClient.ps1",
         "pwsh -NoProfile -File Tools\\zagent\\Test-BuildPrompt.ps1",
         "pwsh -NoProfile -File Tools\\zagent\\Test-HarnessParity.ps1",
+        "pwsh -NoProfile -File Tools\\Test_LanePins.ps1",
+        "pwsh -NoProfile -File Tools\\Test_LaneInit.ps1",
         "pwsh -NoProfile -Command \"Set-Location Tools/Vault; npm test\"",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game DevilsPlayground",
@@ -426,7 +455,7 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Undervault --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Undervault --headless"
       ],
-      "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct, never a branch/PR/worktree.",
+      "conventions": "Games/Undervault/Docs (GDD + TDD) are binding for design; the TDD's UV_ prefix and determinism rules (section 4) bind code once the scaffold lands. Branching inherited: direct; never a branch/PR/worktree (in lane mode only the tick itself cuts agent/<KEY>, ZEN-D-LANES).",
       "docs": {
         "dir": "Games/Undervault/Docs",
         "title": "Undervault",
