@@ -178,5 +178,39 @@ public class ZenithUILibProject : ZenithBaseProject
 		conf.AddPublicDependency<ZenithFluxLibProject>(target);
 		conf.AddPublicDependency<ZenithInputLibProject>(target);
 		conf.AddPublicDependency<ZenithProfilingLibProject>(target);
+
+		// Tools define: ZenithUI carries its own tools-only code (every
+		// Zenith_UI*::RenderPropertiesPanel(), each already #ifdef
+		// ZENITH_TOOLS) AND the PCH it CREATEs (Zenith.h) branches on
+		// ZENITH_TOOLS, so the binary .pch must be built with the same
+		// define as zenith.lib and every other consumer in a True config —
+		// otherwise the per-lib PCH diverges and the properties-panel code
+		// never compiles into a _True build. Worse than a missing feature: the
+		// UI TUs built Zenith_UIElement's vtable WITHOUT the ZENITH_TOOLS-only
+		// RenderPropertiesPanel slot while Zenith_UIComponent (compiled WITH it)
+		// makes that virtual call -- a vtable ODR mismatch (ZEN-111 found this
+		// missing here; every other module lib with its own PCH already
+		// carries this block — see e.g. Sharpmake_ZenithCore.cs /
+		// Sharpmake_ZenithFlux.cs). The tools-gated UI code reaches
+		// g_xEditorQuery (Core/Zenith_EditorQuery.h, already covered by the
+		// mandatory ZenithCore edge above) and imgui.h (include path already
+		// added above) only — no new dependency needed.
+		if (target.ToolsEnabled == ToolsEnabled.True && target.Platform == Platform.win64)
+		{
+			conf.Defines.Add("ZENITH_TOOLS");
+
+			// The ZENITH_TOOLS PCH branch may pull tools/editor headers; mirror
+			// the aggregate's tools include paths so the per-lib PCH resolves
+			// identically in True. Include paths only (no tool libs linked).
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/assimp/include");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/freetype/include");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen");
+			conf.IncludePaths.Add(RootPath + "/Tools/Middleware/msdf-atlas-gen/msdfgen/Config");
+
+			// Exclude Tools from the PCH create (no tools sources here anyway).
+			conf.PrecompSourceExcludeFolders.Add(RootPath + "/Tools");
+		}
 	}
 }
