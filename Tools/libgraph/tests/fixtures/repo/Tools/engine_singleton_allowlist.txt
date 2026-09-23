@@ -1,0 +1,4 @@
+# engine_singleton_allowlist.txt -- a symbol-keyed allowlist file. Must be
+# ignored entirely by model.py's loader (not layering/architecture/*_leaf
+# format, and explicitly out of scope per the W1 brief).
+Zenith_SomeSingleton::Get

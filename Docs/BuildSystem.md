@@ -1232,6 +1232,17 @@ Notes:
 | Regen refuses to run | You're in a linked git worktree — run from the main checkout (§3). |
 | Sentinel link error | A leaf lib grew an engine/platform reference. If it's a sanctioned L0 seam, add the shim to `Tests/Sentinel*/sentinel_platform.cpp`; otherwise fix the leak (that's the point of the proof). |
 
+`Tools/libgraph/` measures the boundaries between the engine libraries
+listed in §4 — declared vs. used dependencies, each lib's public
+header/type/link surface, leakage, and a swap contract — straight from the
+generated `.vcxproj`/Sharpmake output and (optionally) a `dumpbin
+/symbols` pass on a built Debug config. Run
+`python Tools\libgraph\libgraph.py --open` (or add `--no-symbols` for a
+header-only pass that needs no build first); the report lands at
+`Build/artifacts/libgraph/index.html` (+ `libgraph.json`), both gitignored.
+It is report-only — nothing here gates a build or a CI check; see
+`Tools/libgraph/README.md` for how to read it.
+
 ### Whole-solution build status (ZEN-85, 2026-09-21)
 
 The historical rule — "never build the whole solution, the aux tools are

@@ -1,0 +1,21 @@
+Microsoft (R) COFF/PE Dumper Version 14.51.36237.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+Dump of file Games/GameX/build/obj/fx_debug/GameX.obj
+
+File Type: COFF OBJECT
+
+COFF SYMBOL TABLE
+000 0105899A ABS    notype       Static       | @comp.id
+001 80030190 ABS    notype       Static       | @feat.00
+003 00000000 SECT1  notype       Static       | .text$mn
+    Section length   F0, #relocs    0, #linenums    0, checksum AAAAAAAA
+005 00000000 SECT1  notype ()    External     | ?GameX_Main@@YAHXZ (int __cdecl GameX_Main(void))
+006 00000000 UNDEF  notype ()    External     | ?LibA_Init@@YAXXZ (void __cdecl LibA_Init(void))
+007 00000000 UNDEF  notype ()    External     | ?DoSomething@LibB_Widget@@QEAAXXZ (public: void __cdecl LibB_Widget::DoSomething(void))
+
+String Table Size = 0x100 bytes
+
+  Summary
+
+          F0 .text$mn

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="fx_debug|x64">
+      <Configuration>fx_debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="fx_release|x64">
+      <Configuration>fx_release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>LibA</ProjectName>
+    <ProjectGuid>{00000000-0000-0000-0000-000000000001}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='fx_debug|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='fx_release|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='fx_debug|x64'">
+    <TargetName>liba</TargetName>
+    <OutDir>output\fx_debug\</OutDir>
+    <IntDir>obj\liba\fx_debug\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='fx_release|x64'">
+    <TargetName>liba</TargetName>
+    <OutDir>output\fx_release\</OutDir>
+    <IntDir>obj\liba\fx_release\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='fx_debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..\Zenith;..\Zenith\LibA;..\Middleware</AdditionalIncludeDirectories>
+      <PrecompiledHeader>Create</PrecompiledHeader>
+      <PrecompiledHeaderFile>FxPch.h</PrecompiledHeaderFile>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+    </ClCompile>
+    <Lib>
+      <OutputFile>output\fx_debug\liba.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='fx_release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>..\Zenith;..\Zenith\LibA;..\Middleware</AdditionalIncludeDirectories>
+      <PrecompiledHeader>Create</PrecompiledHeader>
+      <PrecompiledHeaderFile>FxPch.h</PrecompiledHeaderFile>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+    </ClCompile>
+    <Lib>
+      <OutputFile>output\fx_release\liba.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Zenith\LibA\FxPch.h" />
+    <ClInclude Include="..\Zenith\LibA\Internal\LibA_Private.h" />
+    <ClInclude Include="..\Zenith\LibA\Internal\LibA_Detail.h" />
+    <ClInclude Include="..\Zenith\LibA\LibA_Unused.h" />
+    <ClInclude Include="..\Zenith\LibA\LibA.h" />
+    <ClInclude Include="..\Zenith\LibA\LibA.Tests.inl" />
+    <ClInclude Include="..\Zenith\LibA\LibA_Math.h" />
+    <ClInclude Include="..\Zenith\LibA\LibA_Solo.h" />
+    <ClInclude Include="..\Zenith\LibA\LibA_Extra.h" />
+    <ClInclude Include="..\Zenith\LibA\FxConfig.h" />
+    <ClInclude Include="..\Zenith\FxConfig.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Zenith\LibA\LibA.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

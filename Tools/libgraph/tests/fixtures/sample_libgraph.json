@@ -1,0 +1,994 @@
+{
+  "meta": {
+    "config": "fx_debug",
+    "generated": "2026-09-23T00:00:00Z",
+    "repo_head": "7efbfd58ea79fac0251f226c4943a063315d87a",
+    "baseline": "Tools/libgraph/tests/fixtures/sample_libgraph_baseline.json",
+    "health": {
+      "orphans": [
+        "Zenith/LibC/LibC_Orphan.h"
+      ],
+      "duplicates": [
+        "Zenith/Shared/LibC_Thing_Copy.h"
+      ],
+      "ambiguous": [
+        {
+          "file": "Zenith/LibB/LibB_Service.cpp",
+          "line": 9,
+          "raw": "#include \"Zenith_OS_Include.h\"",
+          "candidates": [
+            "Windows/Zenith_OS_Include.h",
+            "Android/Zenith_OS_Include.h"
+          ]
+        }
+      ],
+      "unresolved_conditions": [
+        "#if ZENITH_EXPERIMENTAL_LIBD in Build/Sharpmake_LibC.cs:44"
+      ],
+      "missing_link_inputs": [
+        "GameY: no .obj files under Games/GameY/build/obj/win64/fx_debug -- run `zenith build GameY`"
+      ]
+    },
+    "delta_removed": [
+      "LibOld"
+    ],
+    "delta_added": [
+      "LibC"
+    ],
+    "symbols": true
+  },
+  "nodes": [
+    {
+      "name": "LibA",
+      "kind": "lib",
+      "layer": 0,
+      "in_cycle": false,
+      "inbound_size": 10
+    },
+    {
+      "name": "LibB",
+      "kind": "lib",
+      "layer": 2,
+      "in_cycle": true,
+      "inbound_size": 8
+    },
+    {
+      "name": "LibC",
+      "kind": "lib",
+      "layer": 1,
+      "in_cycle": true,
+      "inbound_size": 4
+    },
+    {
+      "name": "MidLib",
+      "kind": "middleware",
+      "layer": 1,
+      "in_cycle": false,
+      "inbound_size": 0
+    },
+    {
+      "name": "glmx",
+      "kind": "middleware",
+      "layer": 0,
+      "in_cycle": false,
+      "inbound_size": 0
+    },
+    {
+      "name": "Zenith",
+      "kind": "lib",
+      "layer": 3,
+      "in_cycle": false,
+      "inbound_size": 6
+    },
+    {
+      "name": "GameX",
+      "kind": "game",
+      "layer": 4,
+      "in_cycle": false,
+      "inbound_size": 0
+    },
+    {
+      "name": "GameY",
+      "kind": "game",
+      "layer": 4,
+      "in_cycle": false,
+      "inbound_size": 0
+    },
+    {
+      "name": "SentinelLibB",
+      "kind": "proof",
+      "layer": 2,
+      "in_cycle": false,
+      "inbound_size": 0
+    }
+  ],
+  "edges": [
+    {
+      "src": "LibB",
+      "dst": "LibA",
+      "classes": [
+        "declared+used"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": true,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Zenith/LibB/LibB_Api.h",
+          "line": 5,
+          "raw": "#include \"Zenith/LibA/LibA_Api.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "LibA_Widget",
+          "mode": "embed",
+          "count": 1
+        },
+        {
+          "name": "LibA_Handle",
+          "mode": "ref",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "LibA_Widget::Compute",
+          "cls": "LibA_Widget"
+        }
+      ]
+    },
+    {
+      "src": "LibB",
+      "dst": "MidLib",
+      "classes": [
+        "declared+used"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": true,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Zenith/LibB/LibB_Service.cpp",
+          "line": 3,
+          "raw": "#include \"Middleware/MidLib/MidLib_Core.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "MidLib_Core",
+          "mode": "ref",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "MidLib_Core::Init",
+          "cls": "MidLib_Core"
+        }
+      ]
+    },
+    {
+      "src": "LibB",
+      "dst": "LibC",
+      "classes": [
+        "declared+used",
+        "in-cycle"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Zenith/LibB/LibB_Api.h",
+          "line": 8,
+          "raw": "#include \"Zenith/Shared/LibC_Thing.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "LibC_Thing",
+          "mode": "embed",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "LibC_Thing::Query",
+          "cls": "LibC_Thing"
+        }
+      ]
+    },
+    {
+      "src": "LibC",
+      "dst": "LibB",
+      "classes": [
+        "used-undeclared",
+        "in-cycle"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Zenith/Shared/LibC_Thing.cpp",
+          "line": 4,
+          "raw": "#include \"Zenith/Shared/LibB_Api.h\"",
+          "tags": [
+            "conditional"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "LibB_Service",
+          "mode": "ref",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "LibB_Service::Notify",
+          "cls": "LibB_Service"
+        }
+      ]
+    },
+    {
+      "src": "Zenith",
+      "dst": "LibC",
+      "classes": [
+        "declared-unused"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 0,
+      "files": [],
+      "types": [],
+      "symbols": []
+    },
+    {
+      "src": "Zenith",
+      "dst": "LibA",
+      "classes": [
+        "test-only"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "EngineComposition/Zenith_Engine.Tests.inl",
+          "line": 12,
+          "raw": "#include \"Zenith/LibA/LibA_Api.h\"",
+          "tags": [
+            "test"
+          ]
+        }
+      ],
+      "types": [
+        {
+          "name": "LibA_Handle",
+          "mode": "mention",
+          "count": 1
+        }
+      ],
+      "symbols": []
+    },
+    {
+      "src": "MidLib",
+      "dst": "LibA",
+      "classes": [
+        "pch"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Middleware/MidLib/MidLib_Core.cpp",
+          "line": 1,
+          "raw": "#include \"Zenith/LibA/FxPch.h\"",
+          "tags": [
+            "pch"
+          ]
+        }
+      ],
+      "types": [],
+      "symbols": []
+    },
+    {
+      "src": "Zenith",
+      "dst": "MidLib",
+      "classes": [
+        "link-only"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 0,
+      "files": [],
+      "types": [],
+      "symbols": [
+        {
+          "demangled": "MidLib_Core::ExportAll",
+          "cls": "MidLib_Core"
+        }
+      ]
+    },
+    {
+      "src": "LibC",
+      "dst": "LibA",
+      "classes": [
+        "declared+used",
+        "allowlisted"
+      ],
+      "allowlist_kind": "encapsulation",
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Zenith/Shared/LibC_Thing.h",
+          "line": 2,
+          "raw": "#include \"Zenith/LibA/LibA_Api.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "LibA_Widget",
+          "mode": "ref",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "LibA_Widget::Query",
+          "cls": "LibA_Widget"
+        }
+      ]
+    },
+    {
+      "src": "Zenith",
+      "dst": "LibB",
+      "classes": [
+        "declared+used",
+        "allowlisted"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "EngineComposition/Zenith_Engine.cpp",
+          "line": 15,
+          "raw": "#include \"Zenith/Shared/LibB_Api.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "LibB_Service",
+          "mode": "mention",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "LibB_Service::Notify",
+          "cls": "LibB_Service"
+        }
+      ]
+    },
+    {
+      "src": "MidLib",
+      "dst": "glmx",
+      "classes": [
+        "declared+used"
+      ],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Middleware/MidLib/MidLib_Core.h",
+          "line": 1,
+          "raw": "#include \"Middleware/glmx/glmx.h\"",
+          "tags": []
+        }
+      ],
+      "types": [],
+      "symbols": []
+    },
+    {
+      "src": "GameX",
+      "dst": "Zenith",
+      "classes": [],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Games/GameX/Source/GameX_Main.cpp",
+          "line": 2,
+          "raw": "#include \"EngineComposition/Zenith_Engine.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "Zenith_Engine",
+          "mode": "ref",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "Zenith_Engine::Boot",
+          "cls": "Zenith_Engine"
+        }
+      ]
+    },
+    {
+      "src": "GameY",
+      "dst": "Zenith",
+      "classes": [],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Games/GameY/Source/GameY_Main.cpp",
+          "line": 2,
+          "raw": "#include \"EngineComposition/Zenith_Engine.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "Zenith_Engine",
+          "mode": "ref",
+          "count": 1
+        }
+      ],
+      "symbols": [
+        {
+          "demangled": "Zenith_Engine::Boot",
+          "cls": "Zenith_Engine"
+        }
+      ]
+    },
+    {
+      "src": "GameX",
+      "dst": "LibB",
+      "classes": [],
+      "allowlist_kind": null,
+      "lower_bound": false,
+      "include_lines": 1,
+      "files": [
+        {
+          "file": "Games/GameX/Source/GameX_Main.cpp",
+          "line": 6,
+          "raw": "#include \"Zenith/Shared/LibB_Api.h\"",
+          "tags": []
+        }
+      ],
+      "types": [
+        {
+          "name": "LibB_Service",
+          "mode": "mention",
+          "count": 1
+        }
+      ],
+      "symbols": []
+    }
+  ],
+  "libs": {
+    "LibA": {
+      "inbound": {
+        "entry_headers": 2,
+        "exposed_headers": 0,
+        "types_embed": 1,
+        "types_ref": 3,
+        "link_symbols": 1,
+        "consumer_libs": 2,
+        "consumer_games": 0,
+        "leaking_headers": 1
+      },
+      "outbound": {
+        "edges": [],
+        "symbols_by_target": {},
+        "lower_bound": []
+      },
+      "headers": [
+        {
+          "path": "Zenith/LibA/LibA_Api.h",
+          "role": "entry",
+          "declared_internal": false,
+          "consumers": [
+            {
+              "node": "LibB",
+              "files": [
+                "Zenith/LibB/LibB_Api.h"
+              ]
+            },
+            {
+              "node": "LibC",
+              "files": [
+                "Zenith/Shared/LibC_Thing.h"
+              ]
+            }
+          ],
+          "symbols_out_of_line": 2,
+          "hint": null
+        },
+        {
+          "path": "Zenith/LibA/FxPch.h",
+          "role": "entry",
+          "declared_internal": false,
+          "consumers": [
+            {
+              "node": "MidLib",
+              "files": [
+                "Middleware/MidLib/MidLib_Core.cpp"
+              ]
+            }
+          ],
+          "symbols_out_of_line": 0,
+          "hint": "pch header \u2014 leave public"
+        },
+        {
+          "path": "Zenith/LibA/Internal/LibA_Detail.h",
+          "role": "internal",
+          "declared_internal": true,
+          "consumers": [],
+          "symbols_out_of_line": 0,
+          "hint": null
+        },
+        {
+          "path": "Zenith/LibA/LibA_Unused.h",
+          "role": "unused-public",
+          "declared_internal": false,
+          "consumers": [],
+          "symbols_out_of_line": 0,
+          "hint": "move to Internal/"
+        }
+      ],
+      "types": [
+        {
+          "name": "LibA_Widget",
+          "header": "Zenith/LibA/LibA_Api.h",
+          "embed": 1,
+          "ref": 2,
+          "mention": 0,
+          "consumers": [
+            {
+              "node": "LibB",
+              "mode": "embed"
+            },
+            {
+              "node": "LibC",
+              "mode": "ref"
+            }
+          ],
+          "hint": "embedded by value in 1 consumer \u2014 consider forward-declare+pointer"
+        },
+        {
+          "name": "LibA_Handle",
+          "header": "Zenith/LibA/LibA_Api.h",
+          "embed": 0,
+          "ref": 1,
+          "mention": 1,
+          "consumers": [
+            {
+              "node": "LibC",
+              "mode": "ref"
+            },
+            {
+              "node": "Zenith",
+              "mode": "mention"
+            }
+          ],
+          "hint": null
+        },
+        {
+          "name": "LibA_Internal_Only",
+          "header": "Zenith/LibA/Internal/LibA_Detail.h",
+          "embed": 0,
+          "ref": 0,
+          "mention": 0,
+          "consumers": [],
+          "hint": "no external consumers"
+        }
+      ],
+      "symbols": [
+        {
+          "cls": "LibA_Widget",
+          "header": "Zenith/LibA/LibA_Api.h",
+          "count": 2,
+          "referenced_by": [
+            "LibB",
+            "LibC"
+          ]
+        }
+      ],
+      "unreferenced": [
+        {
+          "demangled": "LibA_Widget::InternalHelper",
+          "cls": "LibA_Widget"
+        }
+      ],
+      "leakage": [
+        {
+          "header": "Zenith/Shared/LibB_Api.h",
+          "via_node": "LibB",
+          "downstream_via_header": [
+            "Zenith"
+          ],
+          "downstream_via_cpp_only": [
+            "GameX"
+          ]
+        }
+      ],
+      "sentinel": null
+    },
+    "LibB": {
+      "inbound": {
+        "entry_headers": 2,
+        "exposed_headers": 1,
+        "types_embed": 0,
+        "types_ref": 1,
+        "link_symbols": 1,
+        "consumer_libs": 2,
+        "consumer_games": 1,
+        "leaking_headers": 0
+      },
+      "outbound": {
+        "edges": [
+          "LibA",
+          "MidLib",
+          "LibC"
+        ],
+        "symbols_by_target": {
+          "LibA": [
+            {
+              "demangled": "LibA_Widget::Compute",
+              "cls": "LibA_Widget"
+            }
+          ],
+          "MidLib": [
+            {
+              "demangled": "MidLib_Core::Init",
+              "cls": "MidLib_Core"
+            }
+          ]
+        },
+        "lower_bound": [
+          "LibA",
+          "MidLib"
+        ]
+      },
+      "headers": [
+        {
+          "path": "Zenith/Shared/LibB_Api.h",
+          "role": "entry",
+          "declared_internal": false,
+          "consumers": [
+            {
+              "node": "LibC",
+              "files": [
+                "Zenith/Shared/LibC_Thing.cpp"
+              ]
+            },
+            {
+              "node": "Zenith",
+              "files": [
+                "EngineComposition/Zenith_Engine.cpp"
+              ]
+            },
+            {
+              "node": "GameX",
+              "files": [
+                "Games/GameX/Source/GameX_Main.cpp"
+              ]
+            }
+          ],
+          "symbols_out_of_line": 3,
+          "hint": "leaks LibA types (LibA_Widget) \u2014 narrow the param type"
+        },
+        {
+          "path": "Zenith/LibB/Internal/LibB_Detail.h",
+          "role": "entry",
+          "declared_internal": true,
+          "consumers": [
+            {
+              "node": "Zenith",
+              "files": [
+                "EngineComposition/Zenith_Engine.cpp"
+              ]
+            }
+          ],
+          "symbols_out_of_line": 1,
+          "hint": "encapsulation break \u2014 Internal/ header included from outside"
+        },
+        {
+          "path": "Zenith/LibB/LibB_Detail_Exposed.h",
+          "role": "exposed",
+          "declared_internal": false,
+          "consumers": [],
+          "symbols_out_of_line": 0,
+          "hint": null
+        },
+        {
+          "path": "Zenith/LibB/LibB_ZeroConsumer.h",
+          "role": "unused-public",
+          "declared_internal": false,
+          "consumers": [],
+          "symbols_out_of_line": 0,
+          "hint": "move to Internal/"
+        }
+      ],
+      "types": [
+        {
+          "name": "LibB_Service",
+          "header": "Zenith/Shared/LibB_Api.h",
+          "embed": 0,
+          "ref": 1,
+          "mention": 1,
+          "consumers": [
+            {
+              "node": "LibC",
+              "mode": "ref"
+            },
+            {
+              "node": "Zenith",
+              "mode": "mention"
+            }
+          ],
+          "hint": null
+        },
+        {
+          "name": "LibB_ZeroType",
+          "header": "Zenith/LibB/LibB_ZeroConsumer.h",
+          "embed": 0,
+          "ref": 0,
+          "mention": 0,
+          "consumers": [],
+          "hint": "no external consumers"
+        }
+      ],
+      "symbols": [
+        {
+          "cls": "LibB_Service",
+          "header": "Zenith/Shared/LibB_Api.h",
+          "count": 1,
+          "referenced_by": [
+            "Zenith"
+          ]
+        }
+      ],
+      "unreferenced": [],
+      "leakage": [],
+      "sentinel": "SentinelLibB"
+    },
+    "LibC": {
+      "inbound": {
+        "entry_headers": 1,
+        "exposed_headers": 0,
+        "types_embed": 1,
+        "types_ref": 0,
+        "link_symbols": 1,
+        "consumer_libs": 1,
+        "consumer_games": 0,
+        "leaking_headers": 0
+      },
+      "outbound": {
+        "edges": [
+          "LibB",
+          "LibA"
+        ],
+        "symbols_by_target": {
+          "LibA": [
+            {
+              "demangled": "LibA_Widget::Query",
+              "cls": "LibA_Widget"
+            }
+          ],
+          "LibB": [
+            {
+              "demangled": "LibB_Service::Notify",
+              "cls": "LibB_Service"
+            }
+          ]
+        },
+        "lower_bound": []
+      },
+      "headers": [
+        {
+          "path": "Zenith/Shared/LibC_Thing.h",
+          "role": "entry",
+          "declared_internal": false,
+          "consumers": [
+            {
+              "node": "LibB",
+              "files": [
+                "Zenith/LibB/LibB_Api.h"
+              ]
+            }
+          ],
+          "symbols_out_of_line": 1,
+          "hint": null
+        },
+        {
+          "path": "Zenith/LibC/Internal/LibC_Detail.h",
+          "role": "internal",
+          "declared_internal": true,
+          "consumers": [],
+          "symbols_out_of_line": 0,
+          "hint": null
+        },
+        {
+          "path": "Zenith/LibC/LibC_Unused.h",
+          "role": "unused-public",
+          "declared_internal": false,
+          "consumers": [],
+          "symbols_out_of_line": 0,
+          "hint": "move to Internal/"
+        }
+      ],
+      "types": [
+        {
+          "name": "LibC_Thing",
+          "header": "Zenith/Shared/LibC_Thing.h",
+          "embed": 1,
+          "ref": 0,
+          "mention": 0,
+          "consumers": [
+            {
+              "node": "LibB",
+              "mode": "embed"
+            }
+          ],
+          "hint": "embedded by value in 1 consumer"
+        }
+      ],
+      "symbols": [
+        {
+          "cls": "LibC_Thing",
+          "header": "Zenith/Shared/LibC_Thing.h",
+          "count": 1,
+          "referenced_by": [
+            "LibB"
+          ]
+        }
+      ],
+      "unreferenced": [],
+      "leakage": [],
+      "sentinel": null
+    },
+    "Zenith": {
+      "inbound": {
+        "entry_headers": 1,
+        "exposed_headers": 0,
+        "types_embed": 0,
+        "types_ref": 2,
+        "link_symbols": 1,
+        "consumer_libs": 0,
+        "consumer_games": 2,
+        "leaking_headers": 0
+      },
+      "outbound": {
+        "edges": [
+          "LibC",
+          "LibA",
+          "MidLib",
+          "LibB"
+        ],
+        "symbols_by_target": {
+          "MidLib": [
+            {
+              "demangled": "MidLib_Core::ExportAll",
+              "cls": "MidLib_Core"
+            }
+          ]
+        },
+        "lower_bound": []
+      },
+      "headers": [
+        {
+          "path": "EngineComposition/Zenith_Engine.h",
+          "role": "entry",
+          "declared_internal": false,
+          "consumers": [
+            {
+              "node": "GameX",
+              "files": [
+                "Games/GameX/Source/GameX_Main.cpp"
+              ]
+            },
+            {
+              "node": "GameY",
+              "files": [
+                "Games/GameY/Source/GameY_Main.cpp"
+              ]
+            }
+          ],
+          "symbols_out_of_line": 5,
+          "hint": null
+        }
+      ],
+      "types": [
+        {
+          "name": "Zenith_Engine",
+          "header": "EngineComposition/Zenith_Engine.h",
+          "embed": 0,
+          "ref": 2,
+          "mention": 0,
+          "consumers": [
+            {
+              "node": "GameX",
+              "mode": "ref"
+            },
+            {
+              "node": "GameY",
+              "mode": "ref"
+            }
+          ],
+          "hint": null
+        }
+      ],
+      "symbols": [
+        {
+          "cls": "Zenith_Engine",
+          "header": "EngineComposition/Zenith_Engine.h",
+          "count": 2,
+          "referenced_by": [
+            "GameX",
+            "GameY"
+          ]
+        }
+      ],
+      "unreferenced": [
+        {
+          "demangled": "Zenith_Engine::DebugOnlyHook",
+          "cls": "Zenith_Engine"
+        }
+      ],
+      "leakage": [],
+      "sentinel": null
+    }
+  },
+  "delta": {
+    "LibA": {
+      "entry_headers": 0,
+      "exposed_headers": 0,
+      "types_embed": 1,
+      "types_ref": -1,
+      "link_symbols": 0,
+      "consumer_libs": 1,
+      "consumer_games": 0,
+      "leaking_headers": 0
+    },
+    "LibC": {
+      "entry_headers": 1,
+      "exposed_headers": 0,
+      "types_embed": 1,
+      "types_ref": 0,
+      "link_symbols": 1,
+      "consumer_libs": 1,
+      "consumer_games": 0,
+      "leaking_headers": 0
+    },
+    "LibOld": {
+      "entry_headers": -2,
+      "exposed_headers": 0,
+      "types_embed": 0,
+      "types_ref": -3,
+      "link_symbols": -1,
+      "consumer_libs": -2,
+      "consumer_games": 0,
+      "leaking_headers": 0
+    }
+  }
+}

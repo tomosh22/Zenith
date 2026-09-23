@@ -1,0 +1,6 @@
+# layering_allowlist.txt -- fixture mirror of the real Tools/layering_allowlist.txt.
+# Format (one edge per line): <repo-relative-source> => <included-path>
+#
+# Scenario 14: LibB -> LibC is used-undeclared + in-cycle; this line marks it
+# allowlisted (allowlist_kind = null, a plain line -- not the "kind:" format).
+Zenith/Shared/LibB_Impl.cpp => Shared/LibC_Api.h

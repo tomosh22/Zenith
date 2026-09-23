@@ -1,0 +1,3 @@
+# fx_leaf_allowlist.txt -- fixture mirror of the real Tools/*_leaf_allowlist.txt
+# files (plain format, no "kind:" prefix). Empty today, like
+# Tools/ai_leaf_allowlist.txt in the real repo: zero known leaf violations.

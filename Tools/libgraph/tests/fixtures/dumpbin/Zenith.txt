@@ -1,0 +1,19 @@
+Microsoft (R) COFF/PE Dumper Version 14.51.36237.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+Dump of file Build/output/fx_debug/zenith.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 0105899A ABS    notype       Static       | @comp.id
+001 80030190 ABS    notype       Static       | @feat.00
+003 00000000 SECT1  notype       Static       | .text$mn
+    Section length   F0, #relocs    0, #linenums    0, checksum 99999999
+005 00000000 UNDEF  notype ()    External     | ?LibC_ExportAll@@YAXXZ (void __cdecl LibC_ExportAll(void))
+
+String Table Size = 0x100 bytes
+
+  Summary
+
+          F0 .text$mn

@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>libgraph report</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-alt: #f5f6f8;
+    --bg-alt2: #eceef1;
+    --fg: #1b1e24;
+    --fg-muted: #5b616e;
+    --border: #d7dbe1;
+    --accent: #3468c0;
+    --accent-fg: #ffffff;
+    --green: #1a7f37;
+    --red: #cf222e;
+    --amber: #9a6700;
+    --badge-bg: #eef1f5;
+    --mono: 'Cascadia Code', 'Consolas', 'SFMono-Regular', Menlo, Monaco, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --panel-w: 440px;
+    --edge-declared-used: #3468c0;
+    --edge-declared-unused: #8a8f98;
+    --edge-used-undeclared: #c2410c;
+    --edge-test-only: #2a9d8f;
+    --edge-pch: #8854d0;
+    --edge-link-only: #b08a2e;
+    --incycle: #e0384d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1b1d21;
+      --bg-alt: #24262b;
+      --bg-alt2: #2b2e35;
+      --fg: #e6e8eb;
+      --fg-muted: #9aa1ad;
+      --border: #3a3d44;
+      --accent: #7aa6ff;
+      --accent-fg: #0b1220;
+      --green: #4bc766;
+      --red: #ff6b6b;
+      --amber: #e3b341;
+      --badge-bg: #2b2e35;
+      --edge-used-undeclared: #e0793f;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; padding: 0; }
+  body {
+    display: flex; flex-direction: column;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--sans); font-size: 14px;
+    overflow-x: hidden;
+  }
+  [hidden] { display: none !important; }
+  code, .mono { font-family: var(--mono); }
+  .muted { color: var(--fg-muted); }
+  .small { font-size: 12px; }
+
+  #fatal-error {
+    background: var(--red); color: #fff; padding: 14px 18px;
+    font-weight: 600; white-space: pre-wrap;
+  }
+
+  .app-header { padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-alt); flex: 0 0 auto; }
+  .app-header h1 { margin: 0 0 4px 0; font-size: 17px; }
+  .meta-line { color: var(--fg-muted); font-size: 12px; }
+  .meta-line .mono { color: var(--fg); }
+
+  .health-banner { border-bottom: 1px solid var(--border); background: #fff7e6; flex: 0 0 auto; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .health-banner { background: #332a12; }
+  }
+  .health-toggle {
+    width: 100%; text-align: left; padding: 8px 18px; border: none; background: transparent;
+    color: var(--amber); font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .health-body { padding: 0 18px 12px 18px; }
+  .health-hint {
+    font-weight: 700; color: var(--red); margin-bottom: 8px;
+  }
+  .health-group { margin: 4px 0; }
+  .health-group summary { cursor: pointer; }
+  .health-group ul { margin: 4px 0 8px 18px; padding: 0; max-height: 220px; overflow: auto; }
+  .health-group li { font-size: 12px; }
+
+  .tabs { display: flex; align-items: center; gap: 6px; padding: 8px 18px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+  .tab-btn {
+    border: 1px solid var(--border); background: var(--bg-alt); color: var(--fg);
+    padding: 6px 14px; border-radius: 6px 6px 0 0; cursor: pointer; font: inherit;
+  }
+  .tab-btn.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+  .search-wrap { margin-left: auto; }
+  #search-box {
+    font: inherit; padding: 5px 10px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg); color: var(--fg); width: 220px;
+  }
+
+  .layout { flex: 1 1 auto; display: flex; min-height: 0; }
+  .views { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .view { display: none; flex: 1 1 auto; min-height: 0; flex-direction: column; overflow: auto; padding: 12px 18px; }
+  .view.active { display: flex; }
+  #view-graph.active { padding: 0; }
+
+  .graph-toolbar {
+    display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); background: var(--bg-alt); flex: 0 0 auto;
+  }
+  .toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; user-select: none; }
+  .toggle input { cursor: pointer; }
+
+  .graph-error {
+    margin: 16px; padding: 12px 16px; background: var(--red); color: #fff; border-radius: 6px; font-weight: 600;
+  }
+  /* flex:1 1 auto fills whatever the header/toolbar/health-banner leave;
+     min-height is a floor so the canvas never collapses to ~0 if that chain
+     mis-resolves (e.g. a very short viewport with the toolbar wrapped to two
+     rows). */
+  .graph-canvas-wrap { position: relative; flex: 1 1 auto; min-height: 400px; }
+  #cy { position: absolute; inset: 0; background: var(--bg); }
+
+  .legend {
+    position: absolute; right: 14px; bottom: 14px; z-index: 5;
+    background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 11px; max-width: 240px; max-height: 60vh; overflow: auto;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  }
+  .legend-toggle {
+    display: block; width: 100%; text-align: left; border: none; background: transparent;
+    color: var(--fg); font: inherit; font-weight: 700; font-size: 11px; cursor: pointer;
+    padding: 2px 0;
+  }
+  .legend-body[hidden] { display: none; }
+  .legend-title { font-weight: 700; margin: 8px 0 4px 0; }
+  .legend-title:first-child { margin-top: 0; }
+  .legend-row { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; display: inline-block; }
+  .legend-line { width: 22px; height: 0; border-top: 3px solid var(--fg-muted); flex: 0 0 auto; display: inline-block; }
+  .legend-line.dashed { border-top-style: dashed; }
+  .legend-line.incycle { border-top-color: var(--incycle); border-top-width: 3px; box-shadow: 0 0 0 2px rgba(224,56,77,0.25); }
+  .legend-line.upedge { border-top-width: 6px; }
+  .legend-shape { width: 14px; height: 11px; background: var(--accent); flex: 0 0 auto; display: inline-block; }
+  .legend-shape.rr { border-radius: 3px; }
+  .legend-shape.barrel { border-radius: 45% 45% 10% 10% / 65% 65% 10% 10%; }
+  .legend-shape.hex { clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+  .legend-shape.diamond { clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+
+  .matrix-toolbar {
+    display: flex; align-items: center; gap: 14px; padding: 0 0 10px 0; flex: 0 0 auto;
+  }
+  .mx-counts { color: var(--fg-muted); font-size: 12px; }
+  .matrix-container { overflow: auto; flex: 1 1 auto; }
+  table.dsm { border-collapse: collapse; font-size: 11px; }
+  table.dsm th, table.dsm td { border: 1px solid var(--border); padding: 2px 5px; text-align: center; }
+  table.dsm th.corner { position: sticky; top: 0; left: 0; z-index: 3; background: var(--bg-alt); }
+  table.dsm th.col-head { position: sticky; top: 0; z-index: 2; background: var(--bg-alt); height: 120px; vertical-align: bottom; }
+  table.dsm th.row-head { position: sticky; left: 0; z-index: 2; background: var(--bg-alt); text-align: right; white-space: nowrap; }
+  table.dsm .rot { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; margin: 0 auto; }
+  table.dsm td.diag { background: var(--bg-alt2); }
+  table.dsm td[data-src] { cursor: pointer; color: #fff; font-weight: 600; }
+  table.dsm td.upedge { outline: 2px solid var(--amber); outline-offset: -2px; }
+  table.dsm td.incycle { outline: 2px solid var(--incycle); outline-offset: -2px; }
+
+  #libraries-container { flex: 1 1 auto; overflow: auto; }
+
+  .panel { width: var(--panel-w); max-width: 42vw; flex: 0 0 auto; border-left: 1px solid var(--border); background: var(--bg-alt); overflow-y: auto; padding: 16px; position: relative; }
+  .panel.hidden { display: none; }
+  /* Narrow panes: a fixed --panel-w squeezes the graph down to nothing
+     (measured 558px wide with the panel open). Below ~900px the panel
+     becomes a full-width bottom-drawer overlay instead, so the graph keeps
+     its own full width while the panel is closed, and the drawer covers it
+     (rather than sharing space with it) while open. */
+  @media (max-width: 899px) {
+    .panel {
+      position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+      width: 100%; max-width: 100%; height: 82vh; max-height: 82vh;
+      border-left: none; border-top: 1px solid var(--border);
+      border-radius: 12px 12px 0 0; box-shadow: 0 -6px 28px rgba(0,0,0,0.35);
+      z-index: 100;
+    }
+  }
+  .panel-close {
+    position: absolute; top: 8px; right: 8px; border: none; background: transparent; color: var(--fg-muted);
+    font-size: 20px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  }
+  .panel-close:hover { color: var(--fg); }
+  .panel-header h2 { margin: 0 0 2px 0; font-size: 16px; word-break: break-word; }
+  .panel-sub { color: var(--fg-muted); font-size: 12px; margin: 3px 0; }
+  .panel-sub .link { color: var(--accent); cursor: pointer; text-decoration: underline; margin-right: 10px; }
+
+  .summary-cards { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg); }
+  .card h3 { margin: 0 0 6px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--fg-muted); }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.kv td { padding: 2px 0; }
+  table.kv td.num { text-align: right; font-family: var(--mono); }
+  .outbound-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .lib-section { margin: 18px 0; }
+  .lib-section h3 { font-size: 13px; margin: 0 0 6px 0; }
+  .lib-section h4 { font-size: 12px; margin: 10px 0 4px 0; color: var(--fg-muted); }
+
+  .badge {
+    display: inline-block; background: var(--badge-bg); color: var(--fg); border-radius: 10px;
+    padding: 1px 8px; font-size: 10px; font-weight: 600; white-space: nowrap;
+  }
+  .badge-warn { background: var(--red); color: #fff; }
+  .badge-cycle { background: var(--incycle); color: #fff; }
+  .badge-removed { background: var(--red); color: #fff; }
+  .badge-added { background: var(--green); color: #fff; }
+  .badge-lb { background: var(--green); color: #fff; }
+  .link-badge { cursor: pointer; }
+  .link-badge:hover { filter: brightness(1.1); }
+  .badge-class-declared-used { background: var(--edge-declared-used); color: #fff; }
+  .badge-class-declared-unused { background: var(--edge-declared-unused); color: #fff; }
+  .badge-class-used-undeclared { background: var(--edge-used-undeclared); color: #fff; }
+  .badge-class-test-only { background: var(--edge-test-only); color: #fff; }
+  .badge-class-pch { background: var(--edge-pch); color: #fff; }
+  .badge-class-link-only { background: var(--edge-link-only); color: #fff; }
+  .badge-class-allowlisted { background: var(--fg-muted); color: #fff; }
+  .badge-class-in-cycle { background: var(--incycle); color: #fff; }
+
+  .delta { font-family: var(--mono); font-size: 11px; margin-left: 4px; }
+  .delta.good { color: var(--green); }
+  .delta.bad { color: var(--red); }
+  .delta.zero { color: var(--fg-muted); }
+
+  .row-removed { opacity: 0.65; font-style: italic; }
+  .row-removed:hover { cursor: default; }
+
+  .ztable-wrap { margin: 4px 0 10px 0; }
+  .ztable-filter { margin-bottom: 6px; }
+  .ztable-filter input {
+    font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg); color: var(--fg); width: 100%; max-width: 320px;
+  }
+  .ztable-scroll { overflow-x: auto; max-width: 100%; max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+  table.ztable { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.ztable th, table.ztable td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  table.ztable th { position: sticky; top: 0; background: var(--bg-alt); cursor: pointer; user-select: none; white-space: nowrap; }
+  table.ztable th:hover { color: var(--accent); }
+  table.ztable tbody tr:hover { background: var(--bg-alt); }
+  table.ztable tbody tr[data-clickable] { cursor: pointer; }
+  .ztable-status { font-size: 11px; color: var(--fg-muted); margin-top: 4px; }
+  .ztable-showall {
+    font: inherit; font-size: 11px; margin-left: 8px; padding: 2px 8px; border: 1px solid var(--border);
+    border-radius: 4px; background: var(--bg); color: var(--fg); cursor: pointer;
+  }
+  table.ztable details { margin: 0; }
+  table.ztable summary { cursor: pointer; }
+  table.ztable ul { margin: 4px 0 4px 14px; padding: 0; max-height: 160px; overflow: auto; }
+  .outbound-target { margin: 4px 0; font-size: 12px; }
+  .outbound-target summary { cursor: pointer; }
+  .outbound-target ul { margin: 4px 0 8px 16px; }
+  .unused-outside { margin-top: 10px; }
+  .unused-outside > summary { cursor: pointer; font-size: 12px; color: var(--fg-muted); margin-bottom: 6px; }
+
+  #cy:focus { outline: none; }
+</style>
+</head>
+<body>
+
+<div id="fatal-error" hidden></div>
+
+<header class="app-header">
+  <h1 id="app-title">libgraph report</h1>
+  <div class="meta-line" id="meta-line"></div>
+</header>
+
+<section id="health-banner" class="health-banner" hidden>
+  <button id="health-toggle" class="health-toggle" type="button">Health</button>
+  <div id="health-body" class="health-body" hidden></div>
+</section>
+
+<nav class="tabs" id="tabs">
+  <button class="tab-btn active" data-tab="graph" type="button">Graph</button>
+  <button class="tab-btn" data-tab="matrix" type="button">Matrix</button>
+  <button class="tab-btn" data-tab="libraries" type="button">Libraries</button>
+  <div class="search-wrap">
+    <input id="search-box" type="text" placeholder="Search libs...  ( / )" list="node-names-datalist" autocomplete="off">
+    <datalist id="node-names-datalist"></datalist>
+  </div>
+</nav>
+
+<div class="layout">
+  <main class="views">
+    <section id="view-graph" class="view active">
+      <div class="graph-toolbar" id="graph-toolbar"></div>
+      <div id="graph-error" class="graph-error" hidden></div>
+      <div class="graph-canvas-wrap">
+        <div id="cy"></div>
+        <div id="graph-legend" class="legend"></div>
+      </div>
+    </section>
+
+    <section id="view-matrix" class="view">
+      <div class="matrix-toolbar" id="matrix-toolbar"></div>
+      <div id="matrix-container" class="matrix-container"></div>
+    </section>
+
+    <section id="view-libraries" class="view">
+      <div id="libraries-container"></div>
+    </section>
+  </main>
+
+  <aside id="detail-panel" class="panel hidden">
+    <button id="panel-close" class="panel-close" type="button" aria-label="Close panel">&times;</button>
+    <div id="panel-body">
+      <p class="muted">Click a node, an edge, a matrix cell, or a library row to see details here.</p>
+    </div>
+  </aside>
+</div>
+
+<script>/*__LIBGRAPH_VENDOR_CYTOSCAPE__*/</script>
+<script>/*__LIBGRAPH_VENDOR_DAGRE__*/</script>
+<script>/*__LIBGRAPH_VENDOR_CYTOSCAPE_DAGRE__*/</script>
+<script type="application/json" id="libgraph-data">__LIBGRAPH_JSON_DATA__</script>
+
+<script>
+(function () {
+  'use strict';
+
+  // ===========================================================================
+  // esc() -- the one HTML-escaping helper. Every string that comes from the
+  // repo or the JSON document is inserted through this, or through
+  // textContent/DOM APIs -- never through raw, unescaped innerHTML. Paths,
+  // `raw`, `demangled`, hints, names and conditions all pass through here.
+  // ===========================================================================
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function cssSafe(s) {
+    return String(s).replace(/[^a-zA-Z0-9]+/g, '-');
+  }
+
+  function getVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function showFatalError(msg) {
+    var el = document.getElementById('fatal-error');
+    el.textContent = 'libgraph report error: ' + msg;
+    el.hidden = false;
+  }
+
+  // ===========================================================================
+  // Boot: parse the embedded JSON. A parse failure shows a fatal banner
+  // instead of leaving a blank page.
+  // ===========================================================================
+  var DOC;
+  try {
+    var dataEl = document.getElementById('libgraph-data');
+    DOC = JSON.parse(dataEl.textContent);
+  } catch (e) {
+    showFatalError('could not parse the embedded libgraph.json (' + (e && e.message ? e.message : e) + ')');
+    return;
+  }
+
+  // ===========================================================================
+  // Contract vocabulary (mirrors tests/contract.py's enums).
+  // ===========================================================================
+  var BASE_CLASSES = ['declared+used', 'declared-unused', 'used-undeclared', 'test-only', 'pch', 'link-only'];
+  var HEADER_ROLES = ['entry', 'exposed', 'unused-public', 'internal'];
+  var ROLE_LABELS = { entry: 'Entry', exposed: 'Exposed', 'unused-public': 'Unused public (move to Internal/)', internal: 'Internal' };
+  var INBOUND_FIELDS = ['entry_headers', 'exposed_headers', 'types_embed', 'types_ref', 'link_symbols', 'consumer_libs', 'consumer_games', 'leaking_headers'];
+  var INBOUND_LABELS = {
+    entry_headers: 'Entry headers', exposed_headers: 'Exposed headers',
+    types_embed: 'Types (embed)', types_ref: 'Types (ref)', link_symbols: 'Link symbols',
+    consumer_libs: 'Consumer libs', consumer_games: 'Consumer games', leaking_headers: 'Leaking headers',
+  };
+
+  // ===========================================================================
+  // Derived data (built once).
+  // ===========================================================================
+  var NODES = DOC.nodes || [];
+  var EDGES = DOC.edges || [];
+  var LIBS = DOC.libs || {};
+  var DELTA = DOC.delta || null;
+  var META = DOC.meta || {};
+
+  var nodeByName = {};
+  NODES.forEach(function (n) { nodeByName[n.name] = n; });
+
+  var maxLayer = NODES.reduce(function (m, n) { return Math.max(m, n.layer || 0); }, 0);
+
+  var edgesBySrc = {}, edgesByDst = {}, edgeKey = {};
+  EDGES.forEach(function (e) {
+    (edgesBySrc[e.src] = edgesBySrc[e.src] || []).push(e);
+    (edgesByDst[e.dst] = edgesByDst[e.dst] || []).push(e);
+    edgeKey[e.src + '\u0000' + e.dst] = e;
+  });
+
+  var ADDED_SET = {};
+  (META.delta_added || []).forEach(function (n) { ADDED_SET[n] = true; });
+
+  // false for a header-only (--no-symbols) run: no dumpbin pass ran, so
+  // every link-derived count/list is 0/[]/{} by omission, not by
+  // observation. The UI must say so rather than rendering those as real
+  // zeros.
+  var SYMBOLS_COLLECTED = META.symbols !== false;
+  var NO_SYMBOLS_NOTE = 'n/a — header-only run, link data not collected';
+
+  function edgeBase(e) {
+    for (var i = 0; i < e.classes.length; i++) {
+      if (BASE_CLASSES.indexOf(e.classes[i]) !== -1) return e.classes[i];
+    }
+    return null;
+  }
+  function edgeIsAllowlisted(e) { return e.classes.indexOf('allowlisted') !== -1; }
+  function edgeIsInCycle(e) { return e.classes.indexOf('in-cycle') !== -1; }
+  function edgeIsGame(e) {
+    var s = nodeByName[e.src], d = nodeByName[e.dst];
+    return (s && s.kind === 'game') || (d && d.kind === 'game');
+  }
+
+  var EDGE_COLORS = {
+    'declared+used': getVar('--edge-declared-used'),
+    'declared-unused': getVar('--edge-declared-unused'),
+    'used-undeclared': getVar('--edge-used-undeclared'),
+    'test-only': getVar('--edge-test-only'),
+    'pch': getVar('--edge-pch'),
+    'link-only': getVar('--edge-link-only'),
+  };
+
+  function layerColor(layer) {
+    var L = maxLayer > 0 ? (layer || 0) / maxLayer : 0;
+    var lightness = 30 + L * 42;
+    return 'hsl(212, 55%, ' + lightness.toFixed(0) + '%)';
+  }
+  function shapeForKind(kind) {
+    if (kind === 'lib') return 'round-rectangle';
+    if (kind === 'middleware') return 'barrel';
+    if (kind === 'game') return 'hexagon';
+    if (kind === 'proof') return 'diamond';
+    return 'ellipse';
+  }
+  function nodeSize(d) {
+    var v = Math.max(0, d.inbound_size || 0);
+    var s = 20 + Math.sqrt(v) * 5.5;
+    return Math.max(20, Math.min(85, s));
+  }
+  function edgeWidth(d) {
+    var v = Math.max(0, d.includeLines || 0);
+    var w = 1 + Math.log2(v + 1) * 1.5;
+    return Math.max(1, Math.min(10, w));
+  }
+
+  // ===========================================================================
+  // Generic sortable + filterable table builder. Returns a DOM node.
+  // `columns[i]`: { key, label, get(row)->sortable value, render(row)->HTML
+  // string (dynamic parts must go through esc()), numeric? }.
+  // The filter searches the FULL underlying array; the row cap applies AFTER
+  // filtering, and the status line reports "showing N of M".
+  // ===========================================================================
+  function makeTable(opts) {
+    var state = {
+      sortKey: opts.defaultSortKey || (opts.columns[0] && opts.columns[0].key),
+      sortDir: opts.defaultSortDir || 'asc',
+      filter: '',
+      showAll: false,
+    };
+    var cap = opts.cap || 200;
+
+    var wrap = document.createElement('div');
+    wrap.className = 'ztable-wrap';
+
+    if (opts.filterable) {
+      var filterRow = document.createElement('div');
+      filterRow.className = 'ztable-filter';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Filter…';
+      input.addEventListener('input', function () {
+        state.filter = input.value;
+        state.showAll = false;
+        render();
+      });
+      filterRow.appendChild(input);
+      wrap.appendChild(filterRow);
+    }
+
+    var scrollBox = document.createElement('div');
+    scrollBox.className = 'ztable-scroll';
+    var table = document.createElement('table');
+    table.className = 'ztable';
+    var thead = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    opts.columns.forEach(function (col) {
+      var th = document.createElement('th');
+      th.textContent = col.label + (state.sortKey === col.key ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : '');
+      th.dataset.colKey = col.key;
+      th.addEventListener('click', function () {
+        if (state.sortKey === col.key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        else { state.sortKey = col.key; state.sortDir = 'asc'; }
+        render();
+      });
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+    scrollBox.appendChild(table);
+    wrap.appendChild(scrollBox);
+
+    var statusLine = document.createElement('div');
+    statusLine.className = 'ztable-status';
+    wrap.appendChild(statusLine);
+
+    function render() {
+      Array.prototype.forEach.call(headRow.children, function (th) {
+        var col = opts.columns.filter(function (c) { return c.key === th.dataset.colKey; })[0];
+        th.textContent = col.label + (state.sortKey === col.key ? (state.sortDir === 'asc' ? ' ↑' : ' ↓') : '');
+      });
+
+      var rows = opts.rows;
+      var filtered = rows;
+      if (opts.filterable && state.filter.trim()) {
+        var q = state.filter.trim().toLowerCase();
+        filtered = rows.filter(function (r) {
+          return (opts.filterText ? opts.filterText(r) : '').toLowerCase().indexOf(q) !== -1;
+        });
+      }
+
+      var col = opts.columns.filter(function (c) { return c.key === state.sortKey; })[0];
+      var sorted = filtered.slice();
+      if (col) {
+        sorted.sort(function (a, b) {
+          var av = col.get(a), bv = col.get(b);
+          if (av < bv) return state.sortDir === 'asc' ? -1 : 1;
+          if (av > bv) return state.sortDir === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
+
+      var shown = state.showAll ? sorted : sorted.slice(0, cap);
+
+      tbody.innerHTML = shown.map(function (r) {
+        var cells = opts.columns.map(function (c) { return '<td>' + c.render(r) + '</td>'; }).join('');
+        var rowClass = opts.rowClass ? opts.rowClass(r) : '';
+        var clickAttr = opts.onRowClick ? ' data-clickable' : '';
+        return '<tr class="' + esc(rowClass) + '"' + clickAttr + '>' + cells + '</tr>';
+      }).join('');
+
+      if (opts.onRowClick) {
+        Array.prototype.forEach.call(tbody.querySelectorAll('tr'), function (tr, idx) {
+          tr.addEventListener('click', function (evt) {
+            if (evt.target.closest('details,.link-badge,[data-goto-node]')) return;
+            opts.onRowClick(shown[idx], tr);
+          });
+        });
+      }
+
+      var total = rows.length, matched = filtered.length;
+      var text = matched === total
+        ? ('showing ' + shown.length + ' of ' + total)
+        : ('showing ' + shown.length + ' of ' + matched + ' (filtered from ' + total + ')');
+      statusLine.textContent = text;
+
+      if (sorted.length > cap && !state.showAll) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ztable-showall';
+        btn.textContent = 'Show all ' + sorted.length;
+        btn.addEventListener('click', function () { state.showAll = true; render(); });
+        statusLine.appendChild(document.createTextNode(' '));
+        statusLine.appendChild(btn);
+      }
+    }
+
+    render();
+    return wrap;
+  }
+
+  function nodeListCell(list) {
+    if (!list || !list.length) return '<span class="muted">none</span>';
+    return '<details><summary>' + list.length + '</summary><ul>' +
+      list.map(function (n) { return '<li class="mono">' + esc(n) + '</li>'; }).join('') + '</ul></details>';
+  }
+
+  // ===========================================================================
+  // Header / meta line.
+  // ===========================================================================
+  function renderMeta() {
+    var parts = [];
+    parts.push('config: <span class="mono">' + esc(META.config) + '</span>');
+    parts.push('generated: ' + esc(META.generated));
+    parts.push('repo head: <span class="mono">' + esc(META.repo_head) + '</span>');
+    if (META.baseline) parts.push('baseline: <span class="mono">' + esc(META.baseline) + '</span>');
+    if (!SYMBOLS_COLLECTED) parts.push('<span class="badge badge-warn">header-only run: link data not collected</span>');
+    document.getElementById('meta-line').innerHTML = parts.join(' &middot; ');
+  }
+
+  // ===========================================================================
+  // Health banner.
+  // ===========================================================================
+  function countBlock(title, items, renderItem) {
+    if (!items || !items.length) return '';
+    return '<details class="health-group"><summary>' + esc(title) + ' (' + items.length + ')</summary><ul>' +
+      items.map(function (it) { return '<li>' + renderItem(it) + '</li>'; }).join('') + '</ul></details>';
+  }
+  function renderHealthBanner() {
+    var h = META.health || {};
+    var orphans = h.orphans || [], dups = h.duplicates || [], amb = h.ambiguous || [], unres = h.unresolved_conditions || [];
+    var missingLink = h.missing_link_inputs || [];
+    var any = orphans.length || dups.length || amb.length || unres.length || missingLink.length;
+    var banner = document.getElementById('health-banner');
+    if (!any) { banner.hidden = true; return; }
+    banner.hidden = false;
+
+    var toggle = document.getElementById('health-toggle');
+    toggle.textContent = 'Health: ' + orphans.length + ' orphan(s), ' + dups.length + ' duplicate(s), ' +
+      amb.length + ' ambiguous include(s), ' + unres.length + ' unresolved condition(s), ' +
+      missingLink.length + ' missing link input(s) — click to expand';
+    toggle.addEventListener('click', function () {
+      var body = document.getElementById('health-body');
+      body.hidden = !body.hidden;
+    });
+
+    var body = document.getElementById('health-body');
+    var stale = orphans.length > 20;
+    var hint = stale ? '<div class="health-hint">vcxproj looks stale — run <code>Build\\regen.ps1</code></div>' : '';
+    body.innerHTML = hint +
+      countBlock('Orphans', orphans, function (p) { return '<span class="mono">' + esc(p) + '</span>'; }) +
+      countBlock('Duplicates', dups, function (p) { return '<span class="mono">' + esc(p) + '</span>'; }) +
+      countBlock('Unresolved Sharpmake conditions', unres, function (c) { return esc(c); }) +
+      countBlock('Ambiguous includes', amb, function (a) {
+        return '<span class="mono">' + esc(a.file) + ':' + esc(a.line) + '</span> ' + esc(a.raw) + ' &rarr; ' +
+          a.candidates.map(function (c) { return '<span class="mono">' + esc(c) + '</span>'; }).join(', ');
+      }) +
+      countBlock('Missing link inputs (games/libs skipped by the symbols stage)', missingLink, function (m) { return esc(m); });
+  }
+
+  // ===========================================================================
+  // Tabs / keyboard / panel close.
+  // ===========================================================================
+  function activateTab(tab) {
+    Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (b) {
+      b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.view'), function (v) { v.classList.remove('active'); });
+    document.getElementById('view-' + tab).classList.add('active');
+    if (tab === 'graph' && cy) { cy.resize(); cy.fit(undefined, 30); }
+  }
+  function wireTabs() {
+    Array.prototype.forEach.call(document.querySelectorAll('.tab-btn'), function (btn) {
+      btn.addEventListener('click', function () { activateTab(btn.getAttribute('data-tab')); });
+    });
+  }
+  function wireKeyboard() {
+    document.addEventListener('keydown', function (evt) {
+      var tag = (evt.target && evt.target.tagName || '').toLowerCase();
+      var typing = tag === 'input' || tag === 'textarea' || (evt.target && evt.target.isContentEditable);
+      if (evt.key === '/' && !typing) {
+        evt.preventDefault();
+        document.getElementById('search-box').focus();
+      } else if (evt.key === 'Escape') {
+        closePanel();
+      }
+    });
+  }
+  function wirePanelClose() {
+    document.getElementById('panel-close').addEventListener('click', closePanel);
+  }
+  function showPanel() { document.getElementById('detail-panel').classList.remove('hidden'); }
+  function closePanel() { document.getElementById('detail-panel').classList.add('hidden'); }
+
+  // A hidden/mis-measured container (a tab not yet shown, a viewport that
+  // just changed) is what makes cytoscape draw everything into a tiny
+  // top-left cluster. Debounced so a drag-resize doesn't thrash layout.
+  function wireWindowResize() {
+    var timer = null;
+    window.addEventListener('resize', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () {
+        if (cy) { cy.resize(); cy.fit(undefined, 30); }
+      }, 150);
+    });
+  }
+
+  function wireGotoNodeBadges(container) {
+    Array.prototype.forEach.call(container.querySelectorAll('[data-goto-node]'), function (el) {
+      el.addEventListener('click', function () { gotoNode(el.getAttribute('data-goto-node')); });
+    });
+  }
+  function gotoNode(name) {
+    var node = nodeByName[name];
+    if (!node) return;
+    if (cy) {
+      // A game/middleware/proof node may be hidden by its Graph toggle
+      // (games default OFF) -- reveal it so "search zooms to it" is
+      // actually true rather than silently doing nothing.
+      var toggleKey = node.kind === 'game' ? 'games' : (node.kind === 'middleware' || node.kind === 'proof') ? node.kind : null;
+      if (toggleKey && !graphState[toggleKey]) {
+        graphState[toggleKey] = true;
+        renderGraphToolbar();
+        rebuildGraph();
+      }
+      var ele = cy.getElementById(name);
+      if (ele && ele.length) focusCyEle(ele);
+    }
+    if (node.kind === 'lib') openLibPanel(name);
+    else openGenericNodePanel(node);
+  }
+
+  function findSearchMatch(query) {
+    var q = query.trim().toLowerCase();
+    if (!q) return null;
+    return NODES.filter(function (n) { return n.name.toLowerCase() === q; })[0] ||
+      NODES.filter(function (n) { return n.name.toLowerCase().indexOf(q) === 0; })[0] ||
+      NODES.filter(function (n) { return n.name.toLowerCase().indexOf(q) !== -1; })[0] ||
+      null;
+  }
+
+  // ===========================================================================
+  // Search box: type a lib name to focus it; Enter commits the exact/first
+  // match, switches to the Graph tab, zooms to it and applies node focus.
+  // A <datalist> backs the box with every node name as a browser-native
+  // suggestion list.
+  // ===========================================================================
+  function wireSearch() {
+    var box = document.getElementById('search-box');
+
+    var datalist = document.getElementById('node-names-datalist');
+    NODES.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; })
+      .forEach(function (n) {
+        var opt = document.createElement('option');
+        opt.value = n.name; // IDL property assignment -- never parsed as HTML
+        datalist.appendChild(opt);
+      });
+
+    box.addEventListener('input', function () {
+      var match = findSearchMatch(box.value);
+      if (!match) { if (!box.value.trim()) resetFocus(); return; }
+      gotoNode(match.name);
+    });
+    box.addEventListener('keydown', function (evt) {
+      if (evt.key !== 'Enter') return;
+      evt.preventDefault();
+      var match = findSearchMatch(box.value);
+      if (!match) return;
+      activateTab('graph');
+      gotoNode(match.name);
+    });
+  }
+
+  // ===========================================================================
+  // GRAPH view (cytoscape + dagre).
+  // ===========================================================================
+  var cy = null;
+  var cyNodeDefs = NODES.map(function (n) {
+    return { data: { id: n.name, name: n.name, kind: n.kind, layer: n.layer, in_cycle: n.in_cycle, inbound_size: n.inbound_size } };
+  });
+  // An up-edge (excluding game edges) is layer[src] <= layer[dst] -- per
+  // CONTRACT.md "Up-edges", a derived property the UI joins through
+  // nodes[].layer, not a `classes` value. Computed once here so the Graph
+  // and Matrix views share one definition.
+  function isUpEdge(e) {
+    if (edgeIsGame(e)) return false;
+    var s = nodeByName[e.src], d = nodeByName[e.dst];
+    if (!s || !d) return false;
+    return s.layer <= d.layer;
+  }
+
+  var cyEdgeDefs = EDGES.map(function (e) {
+    return {
+      data: {
+        id: e.src + '__' + e.dst, source: e.src, target: e.dst,
+        base: edgeBase(e), allowlisted: edgeIsAllowlisted(e), inCycle: edgeIsInCycle(e),
+        lowerBound: !!e.lower_bound, includeLines: e.include_lines, isGame: edgeIsGame(e),
+        upEdge: isUpEdge(e),
+      },
+    };
+  });
+
+  var graphState = {
+    // Games OFF by default: on the real engine (~45 nodes, a few hundred
+    // edges) 164 grey game edges drown out the violations the graph exists
+    // to show. Everything a game touches is still reachable via search/the
+    // Libraries tab.
+    games: false, middleware: false, proof: false,
+    'test-only': true, pch: false, allowlisted: true,
+    'declared-unused': true, 'link-only': true,
+    'undeclared-only': false, 'lower-bound': false,
+    'up-edges-only': false,
+    // declared+used is the EXPECTED edge -- dimmed by default so the
+    // violation classes (used-undeclared/link-only/declared-unused/
+    // test-only) and every up-edge, both drawn at full strength, read as
+    // the anomalies they are instead of being lost in the expected traffic.
+    'dim-expected': true,
+  };
+  // 'layered': preset positions straight from nodes[].layer (the declared
+  // architecture) -- the default per CONTRACT.md, since real-use layering
+  // collapses most of the real engine into one SCC. 'dagre': the previous
+  // usage-driven ranking, kept as a selectable alternative.
+  var graphLayoutMode = 'layered';
+  var DAGRE_AVAILABLE = false;
+
+  function cyStyle() {
+    var fg = getVar('--fg');
+    var incycle = getVar('--incycle');
+    var accent = getVar('--accent');
+    var muted = getVar('--fg-muted');
+    var green = getVar('--green');
+    return [
+      { selector: 'node', style: {
+          'background-color': function (ele) { return layerColor(ele.data('layer')); },
+          'label': 'data(name)', 'font-size': 9, 'color': fg,
+          'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': 4,
+          // Readable at ~45 nodes without a manual zoom-linked font-size
+          // recompute: below this on-screen size the label simply doesn't
+          // draw, rather than shrinking into illegible pixel soup. Focus
+          // and hover both force it back on regardless of zoom (below).
+          'min-zoomed-font-size': 7,
+          'width': function (ele) { return nodeSize(ele.data()); },
+          'height': function (ele) { return nodeSize(ele.data()); },
+          'shape': function (ele) { return shapeForKind(ele.data('kind')); },
+          'border-width': function (ele) { return ele.data('in_cycle') ? 3 : 1; },
+          'border-color': function (ele) { return ele.data('in_cycle') ? incycle : 'rgba(120,120,120,0.5)'; },
+        },
+      },
+      { selector: 'node.faded', style: { 'opacity': 0.12 } },
+      { selector: 'node.focused', style: { 'border-width': 4, 'border-color': accent, 'min-zoomed-font-size': 0, 'z-index': 50 } },
+      { selector: 'node.hovered', style: { 'font-size': 11, 'min-zoomed-font-size': 0, 'z-index': 40 } },
+      { selector: 'edge', style: {
+          'width': function (ele) { return edgeWidth(ele.data()); },
+          'line-color': function (ele) { return ele.data('isGame') ? muted : (EDGE_COLORS[ele.data('base')] || muted); },
+          'target-arrow-color': function (ele) { return ele.data('isGame') ? muted : (EDGE_COLORS[ele.data('base')] || muted); },
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'line-style': function (ele) { return ele.data('allowlisted') ? 'dashed' : 'solid'; },
+          'opacity': 0.8,
+        },
+      },
+      { selector: 'edge.in-cycle', style: { 'line-outline-width': 2, 'line-outline-color': incycle, 'z-index': 10 } },
+      { selector: 'edge.lower-bound-on', style: { 'line-color': green, 'target-arrow-color': green } },
+      // declared+used, the EXPECTED edge: thin and faint by default (the
+      // "dim expected edges" toggle) so the violation classes and up-edges
+      // read as the exceptions they are instead of drowning in traffic.
+      { selector: 'edge.dim-expected', style: { 'opacity': 0.25, 'width': 1 } },
+      // Up-edge: layer[src] <= layer[dst] (excluding game edges) -- a
+      // layering violation. Thicker and drawn above everything else so it
+      // reads as the anomaly it is, per CONTRACT.md "Up-edges".
+      { selector: 'edge.up-edge', style: { 'width': function (ele) { return edgeWidth(ele.data()) + 2.5; }, 'z-index': 30 } },
+      // Node focus (item 2): the focused node's own edges stay at full
+      // strength (overriding dim-expected); every other edge is fully
+      // hidden rather than merely faded, since at real-repo scale (a few
+      // hundred edges) even a faint line from an unrelated cluster reads
+      // as clutter.
+      { selector: 'edge.focused-edge', style: { 'opacity': 1 } },
+      { selector: 'edge.focus-hidden', style: { 'display': 'none' } },
+      { selector: 'edge.faded', style: { 'opacity': 0.04 } },
+    ];
+  }
+
+  // Re-derives the classes that depend only on graphState / edge data
+  // (never on which node, if any, is focused) -- called after a rebuild
+  // and again whenever focus is cleared, so resetFocus() doesn't need to
+  // remember what the pre-focus styling was.
+  function applyStaticEdgeClasses() {
+    if (!cy) return;
+    cy.edges().forEach(function (ed) {
+      var d = ed.data();
+      ed.toggleClass('in-cycle', !!d.inCycle);
+      ed.toggleClass('lower-bound-on', graphState['lower-bound'] && !!d.lowerBound);
+      ed.toggleClass('up-edge', !!d.upEdge);
+      // An edge currently highlighted by node focus stays exempt -- it was
+      // deliberately pulled out of dim-expected to read at full strength,
+      // and a mid-focus toggle flip shouldn't undo that.
+      if (!ed.hasClass('focused-edge')) {
+        ed.toggleClass('dim-expected', graphState['dim-expected'] && d.base === 'declared+used' && !d.upEdge);
+      }
+    });
+  }
+
+  function focusCyEle(nodeEle) {
+    if (!cy) return;
+    cy.elements().removeClass('focused focused-edge');
+    var connectedEdges = nodeEle.connectedEdges();
+    var neighborNodes = nodeEle.closedNeighborhood().nodes();
+
+    cy.nodes().addClass('faded');
+    neighborNodes.removeClass('faded');
+
+    // Only this node's own incoming/outgoing edges stay visible, at full
+    // strength; everything else is hidden outright until the background
+    // is clicked (resetFocus).
+    cy.edges().addClass('focus-hidden');
+    connectedEdges.removeClass('focus-hidden dim-expected').addClass('focused-edge');
+
+    nodeEle.addClass('focused');
+    cy.animate({ fit: { eles: neighborNodes, padding: 60 } }, { duration: 200 });
+  }
+  function resetFocus() {
+    if (!cy) return;
+    cy.elements().removeClass('faded focused focused-edge focus-hidden');
+    applyStaticEdgeClasses();
+  }
+
+  var LEGEND_WIDE_BREAKPOINT = 1100;
+
+  function renderGraphLegend() {
+    var el = document.getElementById('graph-legend');
+    var edgeRows = BASE_CLASSES.map(function (c) {
+      return '<div class="legend-row"><span class="legend-swatch" style="background:' + EDGE_COLORS[c] + '"></span>' + esc(c) + '</div>';
+    }).join('');
+    var body =
+      '<div class="legend-title">Layout</div>' +
+      '<div class="legend-row">vertical position = declared layer; upward/sideways edges = uses that break the declared layering</div>' +
+      '<div class="legend-row"><span class="legend-line upedge"></span>up-edge (layer[src] &le; layer[dst]): thicker, drawn on top</div>' +
+      '<div class="legend-row">"dim expected edges" (on by default) fades declared+used edges to 25% so violations stand out</div>' +
+      '<div class="legend-title">Edge colour (base class)</div>' + edgeRows +
+      '<div class="legend-row"><span class="legend-line dashed"></span>allowlisted</div>' +
+      '<div class="legend-row"><span class="legend-line incycle"></span>in-cycle (red halo)</div>' +
+      '<div class="legend-row">arrow points src &rarr; dst</div>' +
+      '<div class="legend-title">Node shape</div>' +
+      '<div class="legend-row"><span class="legend-shape rr"></span>lib</div>' +
+      '<div class="legend-row"><span class="legend-shape barrel"></span>middleware</div>' +
+      '<div class="legend-row"><span class="legend-shape hex"></span>game</div>' +
+      '<div class="legend-row"><span class="legend-shape diamond"></span>proof</div>' +
+      '<div class="legend-title">Node colour / size</div>' +
+      '<div class="legend-row">colour: layer 0 (leaf) &rarr; layer ' + esc(maxLayer) + ' (lightness ramp)</div>' +
+      '<div class="legend-row">size: inbound swap-contract size (sqrt-scaled)</div>' +
+      '<div class="legend-row"><span class="legend-swatch" style="border:2px solid var(--incycle);background:transparent"></span>red outline = in-cycle node</div>';
+
+    el.innerHTML =
+      '<button type="button" id="legend-toggle" class="legend-toggle">Legend <span id="legend-caret">▾</span></button>' +
+      '<div id="legend-body" class="legend-body">' + body + '</div>';
+
+    var toggleBtn = document.getElementById('legend-toggle');
+    var bodyEl = document.getElementById('legend-body');
+    var caret = document.getElementById('legend-caret');
+    var userToggled = false;
+
+    function setExpanded(expanded) {
+      bodyEl.hidden = !expanded;
+      caret.textContent = expanded ? '▾' : '▸';
+    }
+    // Collapsible so it can never sit on top of the nodes it's meant to
+    // explain: expanded by default on a wide screen, collapsed below the
+    // breakpoint until the person opens it themselves.
+    setExpanded(window.innerWidth >= LEGEND_WIDE_BREAKPOINT);
+
+    toggleBtn.addEventListener('click', function () {
+      userToggled = true;
+      setExpanded(bodyEl.hidden);
+    });
+    window.addEventListener('resize', function () {
+      if (!userToggled) setExpanded(window.innerWidth >= LEGEND_WIDE_BREAKPOINT);
+    });
+  }
+
+  function renderGraphToolbar() {
+    var host = document.getElementById('graph-toolbar');
+    var defs = [
+      { key: 'games', label: 'Games' },
+      { key: 'middleware', label: 'Middleware' },
+      { key: 'proof', label: 'Proof / tool' },
+      { key: 'test-only', label: 'test-only' },
+      { key: 'pch', label: 'pch' },
+      { key: 'allowlisted', label: 'allowlisted' },
+      { key: 'declared-unused', label: 'declared-unused' },
+      // A link-only class needs a measured link symbol with no include edge
+      // -- impossible for a header-only run, so the toggle would control
+      // nothing.
+      { key: 'link-only', label: 'link-only', hideWhen: !SYMBOLS_COLLECTED },
+      { key: 'undeclared-only', label: 'undeclared only' },
+      { key: 'up-edges-only', label: 'up-edges only' },
+      { key: 'dim-expected', label: 'dim expected edges' },
+      { key: 'lower-bound', label: 'Sentinel lower bound overlay' },
+    ].filter(function (d) { return !d.hideWhen; });
+
+    var layoutHtml = '<label class="toggle">Layout: <select id="layout-select">' +
+      '<option value="layered"' + (graphLayoutMode === 'layered' ? ' selected' : '') + '>layered (declared)</option>' +
+      '<option value="dagre"' + (graphLayoutMode === 'dagre' ? ' selected' : '') + (DAGRE_AVAILABLE ? '' : ' disabled') + '>dagre (usage)' + (DAGRE_AVAILABLE ? '' : ' — unavailable') + '</option>' +
+      '</select></label>';
+
+    host.innerHTML = layoutHtml + defs.map(function (d) {
+      return '<label class="toggle"><input type="checkbox" data-toggle="' + esc(d.key) + '"' +
+        (graphState[d.key] ? ' checked' : '') + '>' + esc(d.label) + '</label>';
+    }).join('');
+
+    document.getElementById('layout-select').addEventListener('change', function (evt) {
+      graphLayoutMode = evt.target.value;
+      rebuildGraph();
+    });
+    Array.prototype.forEach.call(host.querySelectorAll('input[data-toggle]'), function (cb) {
+      cb.addEventListener('change', function () {
+        var key = cb.getAttribute('data-toggle');
+        graphState[key] = cb.checked;
+        if (key === 'dim-expected') {
+          // Purely a restyle -- no element is shown/hidden, so skip the
+          // relayout+refit a full rebuildGraph() would otherwise trigger.
+          applyStaticEdgeClasses();
+        } else {
+          rebuildGraph();
+        }
+      });
+    });
+  }
+
+  function rebuildGraph() {
+    if (!cy) return;
+    var visible = {};
+    cyNodeDefs.forEach(function (nd) {
+      var kind = nd.data.kind;
+      var show = kind === 'lib' ||
+        (kind === 'game' && graphState.games) ||
+        (kind === 'middleware' && graphState.middleware) ||
+        (kind === 'proof' && graphState.proof);
+      if (show) visible[nd.data.id] = true;
+    });
+    var visibleEdges = cyEdgeDefs.filter(function (ed) {
+      var d = ed.data;
+      if (!visible[d.source] || !visible[d.target]) return false;
+      if (d.isGame) {
+        // Game edges carry no classes and are never up-edges (CONTRACT.md
+        // excludes them from that definition), so both isolating filters
+        // hide them; every other toggle leaves them alone.
+        if (graphState['undeclared-only']) return false;
+        if (graphState['up-edges-only']) return false;
+        return true;
+      }
+      if (graphState['undeclared-only'] && d.base !== 'used-undeclared') return false;
+      if (graphState['up-edges-only'] && !d.upEdge) return false;
+      if (d.base === 'pch' && !graphState.pch) return false;
+      if (d.base === 'test-only' && !graphState['test-only']) return false;
+      if (d.base === 'declared-unused' && !graphState['declared-unused']) return false;
+      if (d.base === 'link-only' && !graphState['link-only']) return false;
+      if (d.allowlisted && !graphState.allowlisted) return false;
+      return true;
+    });
+    var visibleNodes = cyNodeDefs.filter(function (nd) { return visible[nd.data.id]; });
+
+    cy.elements().remove();
+    cy.add(visibleNodes);
+    cy.add(visibleEdges);
+    applyStaticEdgeClasses();
+
+    if (graphLayoutMode === 'dagre' && DAGRE_AVAILABLE) {
+      // rankDir 'TB': edges point dependent -> dependency (src depends on
+      // dst), and dagre ranks a TB edge's source above its target -- the
+      // "usage" alternative, ranked from the visible edges themselves.
+      cy.layout({ name: 'dagre', rankDir: 'TB', nodeSep: 28, rankSep: 64, animate: false }).run();
+    } else {
+      // Default: place nodes from nodes[].layer directly (the declared
+      // architecture), not from dagre's edge-driven ranking -- real-use
+      // layering collapses most of the real engine into one SCC (see
+      // CONTRACT.md), so ranking off the visible edges would produce an
+      // arbitrary blob instead of a readable DAG.
+      var positions = computeLayeredPositions(cy.nodes(), cy.edges());
+      cy.layout({
+        name: 'preset',
+        positions: function (node) { return positions[node.id()] || { x: 0, y: 0 }; },
+        fit: false,
+        padding: 30,
+      }).run();
+    }
+    cy.resize();
+    cy.fit(undefined, 30);
+    // A layout can under-measure a container that hasn't finished a layout
+    // pass yet (e.g. right after the Graph tab first becomes visible in a
+    // small viewport) -- one more resize+fit next frame catches that.
+    requestAnimationFrame(function () {
+      if (cy) { cy.resize(); cy.fit(undefined, 30); }
+    });
+  }
+
+  // Sugiyama-style barycenter sweep over the CURRENTLY VISIBLE nodes/edges
+  // only (post-filter), so hidden toggles never skew ordering. Not a full
+  // Sugiyama layout (no dummy nodes for edges spanning more than one
+  // layer), just enough crossing reduction to keep ~45 nodes / a few
+  // hundred edges legible.
+  function computeLayeredPositions(nodeEles, edgeEles) {
+    var byLayer = {};
+    var order = {};
+    nodeEles.forEach(function (n) {
+      var l = n.data('layer') || 0;
+      (byLayer[l] = byLayer[l] || []).push(n);
+    });
+    var layers = Object.keys(byLayer).map(Number).sort(function (a, b) { return a - b; });
+
+    // Deterministic initial order (alphabetical) within each layer.
+    layers.forEach(function (l) {
+      byLayer[l].sort(function (a, b) { return a.data('name') < b.data('name') ? -1 : a.data('name') > b.data('name') ? 1 : 0; });
+      byLayer[l].forEach(function (n, i) { order[n.id()] = i; });
+    });
+
+    // Undirected adjacency over the visible edges only.
+    var adj = {};
+    nodeEles.forEach(function (n) { adj[n.id()] = []; });
+    edgeEles.forEach(function (e) {
+      var s = e.data('source'), t = e.data('target');
+      if (adj[s] && adj[t]) { adj[s].push(t); adj[t].push(s); }
+    });
+
+    var SWEEPS = 4;
+    for (var sweep = 0; sweep < SWEEPS; sweep++) {
+      var passLayers = (sweep % 2 === 0) ? layers : layers.slice().reverse();
+      passLayers.forEach(function (l) {
+        byLayer[l].forEach(function (n) {
+          var neighbours = adj[n.id()];
+          var sum = 0, count = 0;
+          neighbours.forEach(function (nb) {
+            if (order.hasOwnProperty(nb)) { sum += order[nb]; count++; }
+          });
+          n._zgBary = count > 0 ? (sum / count) : order[n.id()];
+        });
+        byLayer[l].sort(function (a, b) {
+          if (a._zgBary !== b._zgBary) return a._zgBary - b._zgBary;
+          return order[a.id()] - order[b.id()];
+        });
+        byLayer[l].forEach(function (n, i) { order[n.id()] = i; });
+      });
+    }
+
+    // y: higher layer -> smaller y -> higher on screen (games on top,
+    // leaves at the bottom). x: evenly spaced within a layer, centred, in
+    // the barycenter-refined order above.
+    var maxLayerVisible = layers.length ? layers[layers.length - 1] : 0;
+    var NODE_SEP = 120, RANK_SEP = 150;
+    var positions = {};
+    layers.forEach(function (l) {
+      var arr = byLayer[l];
+      var totalWidth = (arr.length - 1) * NODE_SEP;
+      arr.forEach(function (node, i) {
+        positions[node.id()] = {
+          x: i * NODE_SEP - totalWidth / 2,
+          y: (maxLayerVisible - l) * RANK_SEP,
+        };
+      });
+    });
+    return positions;
+  }
+
+  function initGraph() {
+    // Only cytoscape itself failing to load is fatal: nothing can render
+    // without the core library.
+    if (typeof cytoscape === 'undefined') {
+      var fatalErr = document.getElementById('graph-error');
+      fatalErr.hidden = false;
+      fatalErr.textContent = 'Graph rendering engine (cytoscape) failed to load — the Graph view cannot render. The Matrix and Libraries tabs are unaffected.';
+      document.getElementById('cy').hidden = true;
+      return;
+    }
+
+    var dagreOk = false;
+    try {
+      var already = false;
+      try { already = !!cytoscape('layout', 'dagre'); } catch (e1) { already = false; }
+      if (!already && typeof cytoscapeDagre !== 'undefined') {
+        cytoscape.use(cytoscapeDagre);
+      }
+      try { dagreOk = !!cytoscape('layout', 'dagre'); } catch (e2) { dagreOk = false; }
+    } catch (e) {
+      dagreOk = false;
+    }
+    DAGRE_AVAILABLE = dagreOk;
+
+    if (!dagreOk) {
+      // Non-fatal: the default 'layered' layout places nodes straight from
+      // nodes[].layer and needs no dagre. Only the 'dagre (usage)'
+      // alternative is unavailable, so warn rather than blocking the whole
+      // Graph view with what used to be a hard failure.
+      var warn = document.getElementById('graph-error');
+      warn.hidden = false;
+      warn.textContent = 'Graph layout engine (dagre) failed to register — the "dagre (usage)" layout is unavailable. The default layered layout does not need it and still works.';
+    }
+
+    cy = cytoscape({ container: document.getElementById('cy'), elements: [], style: cyStyle(), wheelSensitivity: 0.25 });
+    cy.on('tap', 'node', function (evt) { var n = evt.target; focusCyEle(n); gotoNode(n.id()); });
+    cy.on('tap', 'edge', function (evt) {
+      var d = evt.target.data();
+      var e = edgeKey[d.source + '\u0000' + d.target];
+      if (e) openEdgePanel(e);
+    });
+    cy.on('tap', function (evt) { if (evt.target === cy) resetFocus(); });
+    // Labels below the zoom threshold stay hidden except on hover (and on
+    // focus, via the .focused style) -- item 4's "always on hover/focus".
+    cy.on('mouseover', 'node', function (evt) { evt.target.addClass('hovered'); });
+    cy.on('mouseout', 'node', function (evt) { evt.target.removeClass('hovered'); });
+
+    renderGraphToolbar();
+    renderGraphLegend();
+    rebuildGraph();
+  }
+
+  // ===========================================================================
+  // MATRIX (DSM) view. Independent node-set toggles, off by default.
+  // ===========================================================================
+  var matrixState = { middleware: false, proof: false };
+
+  function matrixNodeSet() {
+    return NODES.filter(function (n) {
+      if (n.kind === 'game') return false;
+      if (n.kind === 'middleware' && !matrixState.middleware) return false;
+      if (n.kind === 'proof' && !matrixState.proof) return false;
+      return true;
+    }).sort(function (a, b) {
+      if (a.layer !== b.layer) return a.layer - b.layer;
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    });
+  }
+
+  function renderMatrixToolbar() {
+    var host = document.getElementById('matrix-toolbar');
+    host.innerHTML =
+      '<label class="toggle"><input type="checkbox" id="mx-middleware"' + (matrixState.middleware ? ' checked' : '') + '> include middleware</label>' +
+      '<label class="toggle"><input type="checkbox" id="mx-proof"' + (matrixState.proof ? ' checked' : '') + '> include proof</label>' +
+      '<span id="mx-counts" class="mx-counts"></span>';
+    document.getElementById('mx-middleware').addEventListener('change', function (evt) { matrixState.middleware = evt.target.checked; renderMatrix(); });
+    document.getElementById('mx-proof').addEventListener('change', function (evt) { matrixState.proof = evt.target.checked; renderMatrix(); });
+  }
+
+  function renderMatrix() {
+    var nodes = matrixNodeSet();
+    var container = document.getElementById('matrix-container');
+    var edgeCount = 0;
+
+    var thead = '<tr><th class="corner"></th>' + nodes.map(function (c) {
+      return '<th class="col-head"><div class="rot mono">' + esc(c.name) + '</div></th>';
+    }).join('') + '</tr>';
+
+    var rows = nodes.map(function (r) {
+      var cells = nodes.map(function (c) {
+        if (r.name === c.name) return '<td class="diag"></td>';
+        var e = edgeKey[r.name + '\u0000' + c.name];
+        if (!e) return '<td></td>';
+        edgeCount++;
+        var base = edgeBase(e);
+        var cls = ['cell'];
+        if (isUpEdge(e)) cls.push('upedge');
+        if (edgeIsInCycle(e)) cls.push('incycle');
+        var bg = base ? EDGE_COLORS[base] : getVar('--fg-muted');
+        return '<td class="' + cls.join(' ') + '" style="background:' + bg + '" data-src="' + esc(r.name) + '" data-dst="' + esc(c.name) + '" title="' +
+          esc(r.name) + ' -&gt; ' + esc(c.name) + ': ' + esc(e.include_lines) + ' include line(s)">' + esc(e.include_lines) + '</td>';
+      }).join('');
+      return '<tr><th class="row-head mono">' + esc(r.name) + '</th>' + cells + '</tr>';
+    }).join('');
+
+    container.innerHTML = '<table class="dsm"><thead>' + thead + '</thead><tbody>' + rows + '</tbody></table>';
+    var counts = document.getElementById('mx-counts');
+    if (counts) counts.textContent = nodes.length + ' × ' + nodes.length + ' nodes, ' + edgeCount + ' edge(s) shown';
+
+    Array.prototype.forEach.call(container.querySelectorAll('td[data-src]'), function (td) {
+      td.addEventListener('click', function () {
+        var e = edgeKey[td.getAttribute('data-src') + '\u0000' + td.getAttribute('data-dst')];
+        if (e) openEdgePanel(e);
+      });
+    });
+  }
+
+  // ===========================================================================
+  // LIBRARIES tab.
+  // ===========================================================================
+  function deltaSpan(field, name) {
+    if (!DELTA || !DELTA[name] || !(field in DELTA[name])) return '';
+    var d = DELTA[name][field];
+    if (d === 0) return ' <span class="delta zero">±0</span>';
+    var cls = d < 0 ? 'good' : 'bad'; // smaller inbound surface is better
+    var sign = d > 0 ? '+' : '';
+    return ' <span class="delta ' + cls + '">(' + sign + d + ')</span>';
+  }
+  function inboundCell(name, field) {
+    if (field === 'link_symbols' && !SYMBOLS_COLLECTED) return '<span class="muted" title="' + esc(NO_SYMBOLS_NOTE) + '">n/a</span>';
+    return esc(LIBS[name].inbound[field]) + deltaSpan(field, name);
+  }
+  function removedCell(name, field) {
+    if (field === 'link_symbols' && !SYMBOLS_COLLECTED) return '<span class="muted" title="' + esc(NO_SYMBOLS_NOTE) + '">n/a</span>';
+    var d = DELTA && DELTA[name] ? DELTA[name][field] : 0;
+    if (d < 0) return '<span class="delta good">' + esc(d) + '</span>';
+    return '&mdash;';
+  }
+
+  function buildLibraryColumns() {
+    var cols = [{
+      key: 'name', label: 'Library',
+      get: function (r) { return r.name; },
+      render: function (r) {
+        var badge = '';
+        if (r.removed) badge = ' <span class="badge badge-removed">removed</span>';
+        else if (ADDED_SET[r.name]) badge = ' <span class="badge badge-added">added</span>';
+        return '<span class="mono">' + esc(r.name) + '</span>' + badge;
+      },
+    }];
+    INBOUND_FIELDS.forEach(function (f) {
+      cols.push({
+        key: f, label: INBOUND_LABELS[f],
+        get: function (r) { return r.removed ? (DELTA && DELTA[r.name] ? DELTA[r.name][f] : 0) : LIBS[r.name].inbound[f]; },
+        render: function (r) { return r.removed ? removedCell(r.name, f) : inboundCell(r.name, f); },
+      });
+    });
+    cols.push({
+      key: 'outbound_edges', label: 'Outbound edges',
+      get: function (r) { return r.removed ? -1 : LIBS[r.name].outbound.edges.length; },
+      render: function (r) { return r.removed ? '&mdash;' : esc(LIBS[r.name].outbound.edges.length); },
+    });
+    cols.push({
+      key: 'sentinel', label: 'Sentinel',
+      get: function (r) { return r.removed ? '' : (LIBS[r.name].sentinel || ''); },
+      render: function (r) {
+        if (r.removed) return '&mdash;';
+        return LIBS[r.name].sentinel ? '<span class="mono">' + esc(LIBS[r.name].sentinel) + '</span>' : '<span class="muted">none</span>';
+      },
+    });
+    return cols;
+  }
+
+  function initLibrariesView() {
+    var container = document.getElementById('libraries-container');
+    var libRows = Object.keys(LIBS).sort().map(function (n) { return { name: n, removed: false }; });
+    (META.delta_removed || []).forEach(function (n) { libRows.push({ name: n, removed: true }); });
+    container.appendChild(makeTable({
+      columns: buildLibraryColumns(),
+      rows: libRows,
+      filterable: true,
+      filterText: function (r) { return r.name; },
+      cap: 200,
+      defaultSortKey: 'name',
+      rowClass: function (r) { return r.removed ? 'row-removed' : ''; },
+      onRowClick: function (r) { if (!r.removed) gotoNode(r.name); },
+    }));
+  }
+
+  // ===========================================================================
+  // LIB PANEL.
+  // ===========================================================================
+  function renderLibHeader(lib, node) {
+    var badges = '';
+    if (node.in_cycle) badges += ' <span class="badge badge-cycle">in-cycle</span>';
+    if (lib.sentinel) badges += ' <span class="badge">sentinel: ' + esc(lib.sentinel) + '</span>';
+    return '<div class="panel-header"><h2 class="mono">' + esc(node.name) + '</h2>' +
+      '<div class="panel-sub">kind: lib &middot; layer ' + esc(node.layer) + badges + '</div></div>';
+  }
+
+  function renderSummaryCards(lib, node) {
+    var inboundRows = INBOUND_FIELDS.map(function (f) {
+      var cell = (f === 'link_symbols' && !SYMBOLS_COLLECTED)
+        ? '<span class="muted" title="' + esc(NO_SYMBOLS_NOTE) + '">n/a</span>'
+        : (esc(lib.inbound[f]) + deltaSpan(f, node.name));
+      return '<tr><td>' + esc(INBOUND_LABELS[f]) + '</td><td class="num">' + cell + '</td></tr>';
+    }).join('');
+    var outboundBadges = lib.outbound.edges.slice().sort().map(function (dst) {
+      var lb = lib.outbound.lower_bound.indexOf(dst) !== -1;
+      return '<span class="badge link-badge' + (lb ? ' badge-lb' : '') + '" data-goto-node="' + esc(dst) + '">' + esc(dst) + (lb ? ' ✓' : '') + '</span>';
+    }).join(' ');
+    return '<div class="summary-cards">' +
+      '<div class="card"><h3>Inbound &mdash; what a replacement must provide</h3><table class="kv">' + inboundRows + '</table></div>' +
+      '<div class="card"><h3>Outbound &mdash; what it may consume</h3><div class="outbound-badges">' + (outboundBadges || '<span class="muted">none</span>') + '</div>' +
+      '<div class="muted small" style="margin-top:6px;">✓ = in the Sentinel-proved lower bound (' + lib.outbound.lower_bound.length + ' of ' + lib.outbound.edges.length + ')</div></div>' +
+      '</div>';
+  }
+
+  function headerPathCell(h) {
+    var badges = '';
+    if (h.declared_internal) badges += ' <span class="badge">internal</span>';
+    if (h.role === 'entry' && h.declared_internal) badges += ' <span class="badge badge-warn">encapsulation break</span>';
+    return '<span class="mono">' + esc(h.path) + '</span>' + badges;
+  }
+  function headerConsumersCell(consumers) {
+    if (!consumers.length) return '<span class="muted">none</span>';
+    return consumers.map(function (c) {
+      return '<details><summary>' + esc(c.node) + ' (' + c.files.length + ')</summary><ul>' +
+        c.files.map(function (f) { return '<li class="mono">' + esc(f) + '</li>'; }).join('') + '</ul></details>';
+    }).join('');
+  }
+  function headerColumns() {
+    return [
+      { key: 'path', label: 'Header', get: function (h) { return h.path; }, render: headerPathCell },
+      { key: 'consumers', label: 'Consumers', get: function (h) { return h.consumers.length; }, render: function (h) { return headerConsumersCell(h.consumers); } },
+      { key: 'symbols_out_of_line', label: 'Out-of-line symbols', numeric: true, get: function (h) { return h.symbols_out_of_line; }, render: function (h) { return esc(h.symbols_out_of_line); } },
+      { key: 'hint', label: 'Hint', get: function (h) { return h.hint || ''; }, render: function (h) { return h.hint ? esc(h.hint) : '<span class="muted">&mdash;</span>'; } },
+    ];
+  }
+
+  function leakageColumns() {
+    return [
+      { key: 'header', label: 'Foreign header', get: function (l) { return l.header; }, render: function (l) { return '<span class="mono">' + esc(l.header) + '</span>'; } },
+      { key: 'via_node', label: 'Owned by', get: function (l) { return l.via_node; }, render: function (l) { return '<span class="mono link" data-goto-node="' + esc(l.via_node) + '" style="color:var(--accent);cursor:pointer;">' + esc(l.via_node) + '</span>'; } },
+      { key: 'downstream_via_header', label: 'Header consumers', get: function (l) { return l.downstream_via_header.length; }, render: function (l) { return nodeListCell(l.downstream_via_header); } },
+      { key: 'downstream_via_cpp_only', label: '.cpp-only consumers', get: function (l) { return l.downstream_via_cpp_only.length; }, render: function (l) { return nodeListCell(l.downstream_via_cpp_only); } },
+    ];
+  }
+
+  function typeConsumersCell(consumers) {
+    if (!consumers.length) return '<span class="muted">none</span>';
+    return '<details><summary>' + consumers.length + '</summary><ul>' +
+      consumers.map(function (c) { return '<li class="mono">' + esc(c.node) + ' — ' + esc(c.mode) + '</li>'; }).join('') + '</ul></details>';
+  }
+  function typesColumns() {
+    return [
+      { key: 'name', label: 'Type', get: function (t) { return t.name; }, render: function (t) { return '<span class="mono">' + esc(t.name) + '</span>'; } },
+      { key: 'header', label: 'Header', get: function (t) { return t.header; }, render: function (t) { return '<span class="mono">' + esc(t.header) + '</span>'; } },
+      { key: 'embed', label: 'Embed', numeric: true, get: function (t) { return t.embed; }, render: function (t) { return esc(t.embed); } },
+      { key: 'ref', label: 'Ref', numeric: true, get: function (t) { return t.ref; }, render: function (t) { return esc(t.ref); } },
+      { key: 'mention', label: 'Mention', numeric: true, get: function (t) { return t.mention; }, render: function (t) { return esc(t.mention); } },
+      { key: 'consumers', label: 'Consumers', get: function (t) { return t.consumers.length; }, render: function (t) { return typeConsumersCell(t.consumers); } },
+      { key: 'hint', label: 'Hint', get: function (t) { return t.hint || ''; }, render: function (t) { return t.hint ? esc(t.hint) : '<span class="muted">&mdash;</span>'; } },
+    ];
+  }
+
+  function symbolsColumns() {
+    return [
+      { key: 'cls', label: 'Class', get: function (s) { return s.cls || ''; }, render: function (s) { return s.cls ? '<span class="mono">' + esc(s.cls) + '</span>' : '<span class="muted">(free function)</span>'; } },
+      { key: 'header', label: 'Header', get: function (s) { return s.header; }, render: function (s) { return '<span class="mono">' + esc(s.header) + '</span>'; } },
+      { key: 'count', label: 'Count', numeric: true, get: function (s) { return s.count; }, render: function (s) { return esc(s.count); } },
+      { key: 'referenced_by', label: 'Referenced by', get: function (s) { return s.referenced_by.length; }, render: function (s) { return nodeListCell(s.referenced_by); } },
+    ];
+  }
+  function unreferencedColumns() {
+    return [
+      { key: 'demangled', label: 'Symbol', get: function (u) { return u.demangled; }, render: function (u) { return '<span class="mono">' + esc(u.demangled) + '</span>'; } },
+      { key: 'cls', label: 'Class', get: function (u) { return u.cls || ''; }, render: function (u) { return u.cls ? '<span class="mono">' + esc(u.cls) + '</span>' : '<span class="muted">(free function)</span>'; } },
+    ];
+  }
+
+  function renderOutboundSection(lib) {
+    var targets = lib.outbound.edges.slice().sort();
+    if (!targets.length) return '<div class="muted">no outbound edges</div>';
+    return targets.map(function (dst) {
+      var syms = (lib.outbound.symbols_by_target && lib.outbound.symbols_by_target[dst]) || [];
+      var lb = lib.outbound.lower_bound.indexOf(dst) !== -1;
+      var countLabel = SYMBOLS_COLLECTED ? (syms.length + ' symbol(s)') : 'n/a';
+      var body;
+      if (!SYMBOLS_COLLECTED) body = '<div class="muted small">' + esc(NO_SYMBOLS_NOTE) + '</div>';
+      else if (syms.length) body = '<ul>' + syms.map(function (s) { return '<li class="mono">' + esc(s.demangled) + (s.cls ? ' <span class="muted">[' + esc(s.cls) + ']</span>' : '') + '</li>'; }).join('') + '</ul>';
+      else body = '<div class="muted small">no link symbols to this target (include-only edge)</div>';
+      return '<details class="outbound-target"><summary><span class="mono link" data-goto-node="' + esc(dst) + '" style="color:var(--accent);cursor:pointer;">' + esc(dst) + '</span> — ' +
+        esc(countLabel) + (lb ? ' <span class="badge badge-lb">lower bound</span>' : '') + '</summary>' + body + '</details>';
+    }).join('');
+  }
+
+  function openLibPanel(name) {
+    var lib = LIBS[name], node = nodeByName[name];
+    if (!lib || !node) return;
+    var body = document.getElementById('panel-body');
+    body.innerHTML = renderLibHeader(lib, node) + renderSummaryCards(lib, node) +
+      '<section class="lib-section"><h3>Headers</h3><div id="sec-headers"></div></section>' +
+      '<section class="lib-section"><h3>Leakage</h3><div id="sec-leakage"></div></section>' +
+      '<section class="lib-section"><h3>Types</h3><div id="sec-types"></div></section>' +
+      '<section class="lib-section"><h3>Link symbols</h3><div id="sec-symbols"></div></section>' +
+      '<section class="lib-section"><h3>Unreferenced externals</h3><div id="sec-unref"></div></section>' +
+      '<section class="lib-section"><h3>Outbound, per target</h3><div id="sec-outbound"></div></section>';
+    wireGotoNodeBadges(body);
+
+    var byRole = {};
+    HEADER_ROLES.forEach(function (r) { byRole[r] = []; });
+    lib.headers.forEach(function (h) { (byRole[h.role] = byRole[h.role] || []).push(h); });
+    var headersHost = document.getElementById('sec-headers');
+    if (!lib.headers.length) headersHost.innerHTML = '<div class="muted">none</div>';
+    HEADER_ROLES.forEach(function (role) {
+      var list = byRole[role];
+      if (!list.length) return;
+      var h4 = document.createElement('h4');
+      h4.textContent = ROLE_LABELS[role] + ' (' + list.length + ')';
+      headersHost.appendChild(h4);
+      var t = makeTable({
+        columns: headerColumns(), rows: list, filterable: true,
+        filterText: function (h) { return h.path + ' ' + (h.hint || ''); },
+        cap: 200, defaultSortKey: 'symbols_out_of_line', defaultSortDir: 'desc',
+      });
+      wireGotoNodeBadges(t);
+      headersHost.appendChild(t);
+    });
+
+    var leakHost = document.getElementById('sec-leakage');
+    if (!lib.leakage.length) leakHost.innerHTML = '<div class="muted">none</div>';
+    else {
+      var leakTable = makeTable({
+        columns: leakageColumns(), rows: lib.leakage, filterable: true,
+        filterText: function (l) { return l.header + ' ' + l.via_node; }, cap: 200, defaultSortKey: 'header',
+      });
+      wireGotoNodeBadges(leakTable);
+      leakHost.appendChild(leakTable);
+    }
+
+    var typesHost = document.getElementById('sec-types');
+    var usedTypes = lib.types.filter(function (t) { return t.consumers.length > 0; });
+    var unusedTypes = lib.types.filter(function (t) { return t.consumers.length === 0; });
+    if (!usedTypes.length) typesHost.innerHTML = '<div class="muted">none with external consumers</div>';
+    else typesHost.appendChild(makeTable({
+      columns: typesColumns(), rows: usedTypes, filterable: true,
+      filterText: function (t) { return t.name + ' ' + t.header + ' ' + (t.hint || ''); }, cap: 200, defaultSortKey: 'name',
+    }));
+    if (unusedTypes.length) {
+      var det = document.createElement('details');
+      det.className = 'unused-outside';
+      var sum = document.createElement('summary');
+      sum.textContent = 'Unused outside (' + unusedTypes.length + ')';
+      det.appendChild(sum);
+      det.appendChild(makeTable({
+        columns: typesColumns(), rows: unusedTypes, filterable: true,
+        filterText: function (t) { return t.name + ' ' + t.header; }, cap: 200, defaultSortKey: 'name',
+      }));
+      typesHost.appendChild(det);
+    }
+
+    var symHost = document.getElementById('sec-symbols');
+    if (!SYMBOLS_COLLECTED) symHost.innerHTML = '<div class="muted">' + esc(NO_SYMBOLS_NOTE) + '</div>';
+    else if (!lib.symbols.length) symHost.innerHTML = '<div class="muted">none</div>';
+    else symHost.appendChild(makeTable({
+      columns: symbolsColumns(), rows: lib.symbols, filterable: true,
+      filterText: function (s) { return (s.cls || '') + ' ' + s.header; }, cap: 200, defaultSortKey: 'cls',
+    }));
+
+    var unrefHost = document.getElementById('sec-unref');
+    if (!SYMBOLS_COLLECTED) unrefHost.innerHTML = '<div class="muted">' + esc(NO_SYMBOLS_NOTE) + '</div>';
+    else if (!lib.unreferenced.length) unrefHost.innerHTML = '<div class="muted">none</div>';
+    else unrefHost.appendChild(makeTable({
+      columns: unreferencedColumns(), rows: lib.unreferenced, filterable: true,
+      filterText: function (u) { return u.demangled + ' ' + (u.cls || ''); }, cap: 200, defaultSortKey: 'demangled',
+    }));
+
+    var outHost = document.getElementById('sec-outbound');
+    outHost.innerHTML = renderOutboundSection(lib);
+    wireGotoNodeBadges(outHost);
+
+    showPanel();
+  }
+
+  function makeEdgeListTable(edges) {
+    return makeTable({
+      columns: [
+        { key: 'src', label: 'Src', get: function (e) { return e.src; }, render: function (e) { return '<span class="mono">' + esc(e.src) + '</span>'; } },
+        { key: 'dst', label: 'Dst', get: function (e) { return e.dst; }, render: function (e) { return '<span class="mono">' + esc(e.dst) + '</span>'; } },
+        { key: 'classes', label: 'Classes', get: function (e) { return e.classes.join(','); }, render: function (e) { return e.classes.length ? e.classes.map(function (c) { return '<span class="badge">' + esc(c) + '</span>'; }).join(' ') : '<span class="muted">&mdash;</span>'; } },
+        { key: 'include_lines', label: 'Includes', numeric: true, get: function (e) { return e.include_lines; }, render: function (e) { return esc(e.include_lines); } },
+      ],
+      rows: edges, filterable: false, cap: 200, defaultSortKey: 'dst',
+      onRowClick: function (e) { openEdgePanel(e); },
+    });
+  }
+
+  function openGenericNodePanel(node) {
+    var body = document.getElementById('panel-body');
+    var out = edgesBySrc[node.name] || [];
+    var incoming = edgesByDst[node.name] || [];
+    body.innerHTML = '<div class="panel-header"><h2 class="mono">' + esc(node.name) + '</h2>' +
+      '<div class="panel-sub">kind: ' + esc(node.kind) + ' &middot; layer ' + esc(node.layer) +
+      (node.in_cycle ? ' <span class="badge badge-cycle">in-cycle</span>' : '') + '</div></div>' +
+      '<section class="lib-section"><h3>Outgoing edges (' + out.length + ')</h3><div id="sec-out"></div></section>' +
+      '<section class="lib-section"><h3>Incoming edges (' + incoming.length + ')</h3><div id="sec-in"></div></section>';
+    document.getElementById('sec-out').appendChild(makeEdgeListTable(out));
+    document.getElementById('sec-in').appendChild(makeEdgeListTable(incoming));
+    showPanel();
+  }
+
+  // ===========================================================================
+  // EDGE PANEL.
+  // ===========================================================================
+  function openEdgePanel(e) {
+    var srcNode = nodeByName[e.src], dstNode = nodeByName[e.dst];
+    var body = document.getElementById('panel-body');
+    var classBadges = e.classes.length
+      ? e.classes.map(function (c) { return '<span class="badge badge-class-' + esc(cssSafe(c)) + '">' + esc(c) + '</span>'; }).join(' ')
+      : '<span class="muted">(game edge — unclassified)</span>';
+    var links = '';
+    if (srcNode && srcNode.kind === 'lib') links += '<span class="link" data-goto-node="' + esc(e.src) + '">open ' + esc(e.src) + ' lib panel</span>';
+    if (dstNode && dstNode.kind === 'lib') links += '<span class="link" data-goto-node="' + esc(e.dst) + '">open ' + esc(e.dst) + ' lib panel</span>';
+
+    var header = '<div class="panel-header"><h2 class="mono">' + esc(e.src) + ' → ' + esc(e.dst) + '</h2>' +
+      '<div class="panel-sub">' + classBadges + '</div>' +
+      '<div class="panel-sub">allowlist_kind: ' + (e.allowlist_kind ? esc(e.allowlist_kind) : '<span class="muted">null</span>') +
+      ' &middot; lower_bound: ' + (e.lower_bound ? '<span class="badge badge-lb">true</span>' : 'false') + '</div>' +
+      '<div class="panel-sub">' + (links || '<span class="muted">neither endpoint is a lib node</span>') + '</div></div>';
+
+    body.innerHTML = header +
+      '<section class="lib-section"><h3>Include lines (' + e.files.length + ')</h3><div id="sec-files"></div></section>' +
+      '<section class="lib-section"><h3>Types used (' + e.types.length + ')</h3><div id="sec-etypes"></div></section>' +
+      '<section class="lib-section"><h3>Symbols (' + e.symbols.length + ')</h3><div id="sec-esyms"></div></section>';
+    wireGotoNodeBadges(body);
+
+    var filesHost = document.getElementById('sec-files');
+    if (!e.files.length) filesHost.innerHTML = '<div class="muted">none</div>';
+    else filesHost.appendChild(makeTable({
+      columns: [
+        { key: 'loc', label: 'file:line', get: function (f) { return f.file + ':' + f.line; }, render: function (f) { return '<span class="mono">' + esc(f.file) + ':' + esc(f.line) + '</span>'; } },
+        { key: 'raw', label: 'raw', get: function (f) { return f.raw; }, render: function (f) { return '<span class="mono">' + esc(f.raw) + '</span>'; } },
+        { key: 'tags', label: 'tags', get: function (f) { return f.tags.join(','); }, render: function (f) { return f.tags.length ? f.tags.map(function (t) { return '<span class="badge">' + esc(t) + '</span>'; }).join(' ') : '<span class="muted">&mdash;</span>'; } },
+      ],
+      rows: e.files, filterable: true, filterText: function (f) { return f.file + ' ' + f.raw; }, cap: 200, defaultSortKey: 'loc',
+    }));
+
+    var typesHost = document.getElementById('sec-etypes');
+    if (!e.types.length) typesHost.innerHTML = '<div class="muted">none</div>';
+    else typesHost.appendChild(makeTable({
+      columns: [
+        { key: 'name', label: 'Type', get: function (t) { return t.name; }, render: function (t) { return '<span class="mono">' + esc(t.name) + '</span>'; } },
+        { key: 'mode', label: 'Mode', get: function (t) { return t.mode; }, render: function (t) { return esc(t.mode); } },
+        { key: 'count', label: 'Count', numeric: true, get: function (t) { return t.count; }, render: function (t) { return esc(t.count); } },
+      ],
+      rows: e.types, filterable: true, filterText: function (t) { return t.name; }, cap: 200, defaultSortKey: 'name',
+    }));
+
+    var symsHost = document.getElementById('sec-esyms');
+    if (!SYMBOLS_COLLECTED) symsHost.innerHTML = '<div class="muted">' + esc(NO_SYMBOLS_NOTE) + '</div>';
+    else if (!e.symbols.length) symsHost.innerHTML = '<div class="muted">none</div>';
+    else symsHost.appendChild(makeTable({
+      columns: [
+        { key: 'demangled', label: 'Symbol', get: function (s) { return s.demangled; }, render: function (s) { return '<span class="mono">' + esc(s.demangled) + '</span>'; } },
+        { key: 'cls', label: 'Class', get: function (s) { return s.cls || ''; }, render: function (s) { return s.cls ? '<span class="mono">' + esc(s.cls) + '</span>' : '<span class="muted">(free function)</span>'; } },
+      ],
+      rows: e.symbols, filterable: true, filterText: function (s) { return s.demangled + ' ' + (s.cls || ''); }, cap: 200, defaultSortKey: 'demangled',
+    }));
+
+    showPanel();
+  }
+
+  // ===========================================================================
+  // Boot.
+  // ===========================================================================
+  try {
+    renderMeta();
+    renderHealthBanner();
+    wirePanelClose();
+    wireTabs();
+    wireKeyboard();
+    wireSearch();
+    wireWindowResize();
+    initGraph();
+    renderMatrixToolbar();
+    renderMatrix();
+    initLibrariesView();
+  } catch (bootErr) {
+    showFatalError('failed to initialise (' + (bootErr && bootErr.message ? bootErr.message : bootErr) + ')');
+  }
+})();
+</script>
+</body>
+</html>

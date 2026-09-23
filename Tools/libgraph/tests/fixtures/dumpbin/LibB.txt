@@ -1,0 +1,25 @@
+Microsoft (R) COFF/PE Dumper Version 14.51.36237.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+Dump of file Build/output/fx_debug/libb.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 0105899A ABS    notype       Static       | @comp.id
+001 80030190 ABS    notype       Static       | @feat.00
+003 00000000 SECT1  notype       Static       | .text$mn
+    Section length   F0, #relocs    0, #linenums    0, checksum 55555555
+005 00000000 SECT1  notype ()    External     | ?DoSomething@LibB_Widget@@QEAAXXZ (public: void __cdecl LibB_Widget::DoSomething(void))
+005A 00000090 SECT1  notype ()    External     | ?LibB_Widget_Poke@@YAXXZ (void __cdecl LibB_Widget_Poke(void))
+006 00000000 SECT2  notype       Static       | .text$mn
+    Section length   30, #relocs    0, #linenums    0, checksum 66666666, selection    2 (pick any)
+007 00000000 SECT2  notype ()    External     | ?LibA_SharedInline@@YAXXZ (void __cdecl LibA_SharedInline(void))
+008 00000000 UNDEF  notype ()    External     | ?Tick@LibA_Thing@@QEAAXXZ (public: void __cdecl LibA_Thing::Tick(void))
+009 00000000 UNDEF  notype ()    External     | ?LibC_Api_Touch@@YAXXZ (void __cdecl LibC_Api_Touch(void))
+
+String Table Size = 0x100 bytes
+
+  Summary
+
+          F0 .text$mn

@@ -1,0 +1,22 @@
+Microsoft (R) COFF/PE Dumper Version 14.51.36237.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+Dump of file Build/output/fx_debug/midlib.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 0105899A ABS    notype       Static       | @comp.id
+001 80030190 ABS    notype       Static       | @feat.00
+003 00000000 SECT1  notype       Static       | .text$mn
+    Section length   F0, #relocs    0, #linenums    0, checksum 88888888
+005 00000000 SECT1  notype ()    External     | ?MidLib_Init@@YAXXZ (void __cdecl MidLib_Init(void))
+006 00000020 SECT1  notype ()    External     | ?MidLib_BackendImpl@@YAXXZ (void __cdecl MidLib_BackendImpl(void))
+007 00000040 SECT1  notype ()    External     | ?MidLib_PokeLibB@@YAXXZ (void __cdecl MidLib_PokeLibB(void))
+008 00000000 UNDEF  notype ()    External     | ?LibB_Widget_Poke@@YAXXZ (void __cdecl LibB_Widget_Poke(void))
+
+String Table Size = 0x100 bytes
+
+  Summary
+
+          F0 .text$mn

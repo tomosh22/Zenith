@@ -1,0 +1,8 @@
+# architecture_allowlist.txt -- fixture mirror of the real
+# Tools/architecture_allowlist.txt. Format: <kind>: <file> => <include>.
+# Lines with no " => ", like the module-fanout one below, are skipped.
+#
+# Scenario 3: the one known encapsulation break, allowlisted.
+encapsulation: Zenith/EngineComposition/Composition.cpp => LibA/Internal/LibA_Detail.h
+module-fanout: EngineComposition
+unmapped: Docs/design/some_prototype.cpp
