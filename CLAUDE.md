@@ -631,6 +631,10 @@ Hazards, once lanes are on:
   assets, copied in whole).
 - **Remove every lane before disabling** — `zagent lane add`/`remove`
   refuse while `lanes.enabled` is `false`.
+- **Claude Code needs interactive trust per lane directory** — until
+  `claude` has run there once and the workspace-trust dialog was
+  accepted, every `permissions.allow` entry is ignored, so gate commands
+  prompt or fail unattended.
 
 ### The `zagent` CLI
 

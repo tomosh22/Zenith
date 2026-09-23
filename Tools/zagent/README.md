@@ -152,7 +152,15 @@ registered.
 - **Claude Code** — start `claude` in the lane's own directory (a
   genuinely separate `cwd`, not `--add-dir` on the main checkout) and run
   `/loop /tick` there. This is the one harness with a real in-harness
-  scheduler, so it can drain that lane's queue unattended.
+  scheduler, so it can drain that lane's queue unattended. Claude Code
+  needs a per-directory trust grant for the lane first: start `claude`
+  INTERACTIVELY in the lane directory once
+  and accept the workspace-trust dialog — grant it the same way you
+  trusted the main checkout, once per lane. Until that happens, Claude
+  Code ignores every `permissions.allow` entry in `.claude/settings.json`
+  and `.claude/settings.local.json`, so pre-authorised gate and `zagent`
+  commands prompt or are refused; a headless `claude -p` launched into an
+  untrusted lane behaves the same way (observed).
 - **OpenCode** — open the OpenCode desktop app on the lane's directory
   and re-invoke `/tick` there by hand for each firing (`loopMode:
   "manual"` — no in-app scheduler reaches this checkout). If the app has
