@@ -115,10 +115,13 @@
         "while the number lived here the agent loop could never bump a pin,",
         "which made every test-adding ticket unreachable. Read it from a",
         "NULL-config exe — a Vulkan exe reports higher for the same tree.",
-        "-TimeoutSec is 1200, not 600 (2026-09-23): the Zenithmon unit boot measured",
-        "258-559 s in the main checkout and 498-702 s in a registered lane, so 600 s",
-        "timed out a green tree (ZM-89 verify, twice). The timeout is a wall-clock",
-        "kill for a WEDGED boot, not a performance budget."
+        "-TimeoutSec is 1200, not 600 (2026-09-23): the gate's boot runs the tool",
+        "asset exports (run_unit_gate passes no --skip-tool-exports), and that full",
+        "boot measured 244-558 s in the main checkout and 459-702 s in a registered",
+        "lane, so 600 s timed out a green tree (ZM-89 verify, twice). The exports",
+        "regenerate on EVERY boot in every checkout (no up-to-date check exists), so",
+        "this is not lane-specific; faster boots in logs are --skip-tool-exports",
+        "runs. The timeout is a wall-clock kill for a WEDGED boot, not a budget."
       ],
       "project": "ZM",
       "$paths": "The directories this area OWNS. A ticket filed under another category whose diff reaches one of these has THESE gates unioned into its own — see the Engine note below for the failure that motivated it.",
