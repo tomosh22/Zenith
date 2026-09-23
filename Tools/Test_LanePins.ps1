@@ -68,6 +68,10 @@ function New-LanePinsTestRepo {
     & git -C $dir config core.autocrlf false 2>$null | Out-Null
     & git -C $dir config user.email 'test@example.invalid' 2>$null | Out-Null
     & git -C $dir config user.name 'test' 2>$null | Out-Null
+    # Pinned so the suite is deterministic whatever the machine's global git
+    # config says -- a personal/global merge.conflictStyle=diff3 (or zdiff3)
+    # would otherwise change the shape of every fixture below.
+    & git -C $dir config merge.conflictStyle merge 2>$null | Out-Null
     & git -C $dir checkout -q -b base 2>$null | Out-Null
     return $dir
 }
@@ -84,7 +88,7 @@ function New-LanePinsTestConflict {
     # parameter), commits both, checks out 'ours', and attempts
     # `git merge --no-ff theirs`. Leaves the repo mid-merge; does not assert
     # the merge actually conflicted (callers check MERGE_HEAD / file state).
-    param([string]$Dir, [scriptblock]$ApplyOurs, [scriptblock]$ApplyTheirs)
+    param([string]$Dir, [scriptblock]$ApplyOurs, [scriptblock]$ApplyTheirs, [string]$ConflictStyle = $null)
     & git -C $Dir checkout -q -b ours 2>$null | Out-Null
     & $ApplyOurs $Dir
     New-LanePinsTestCommit -Dir $Dir -Message 'ours'
@@ -93,7 +97,12 @@ function New-LanePinsTestConflict {
     & $ApplyTheirs $Dir
     New-LanePinsTestCommit -Dir $Dir -Message 'theirs'
     & git -C $Dir checkout -q ours 2>$null | Out-Null
-    & git -C $Dir merge --no-ff theirs -m 'merge theirs into ours' 2>$null | Out-Null
+    if ($ConflictStyle) {
+        & git -C $Dir -c "merge.conflictStyle=$ConflictStyle" merge --no-ff theirs -m 'merge theirs into ours' 2>$null | Out-Null
+    }
+    else {
+        & git -C $Dir merge --no-ff theirs -m 'merge theirs into ours' 2>$null | Out-Null
+    }
 }
 
 function Invoke-LanePinsScript {
@@ -124,7 +133,8 @@ function New-LanePinsStatusMdText {
         [string]$LastUpdatedDate,
         [string]$LivePinDate,
         [int[]]$LivePinNumbers,
-        [string[]]$HistoryLines = @()
+        [string[]]$HistoryLines = @(),
+        [string[]]$NarrationLines = @()
     )
     # Padded with unchanged filler context lines between each conflicting
     # region -- git merges two changed hunks into ONE conflict block when
@@ -141,6 +151,17 @@ function New-LanePinsStatusMdText {
     $entries += @{ T = ''; N = "`r`n" }
     $entries += @{ T = "LIVE PIN (UPDATED $LivePinDate):"; N = "`n" }
     $entries += @{ T = "$GameLabel boot ``$($LivePinNumbers[0])``; engine boot (Null Combat) ``$($LivePinNumbers[1])``; Null RenderTest ``$($LivePinNumbers[2])``; registry **$($LivePinNumbers[3])**."; N = "`r`n" }
+    # The real file's small gap below the LIVE PIN pair: blank, a 2-line
+    # ">  OBSERVED ..." blockquote anchor (never itself edited by a test
+    # scenario -- always identical across base/ours/theirs, so it never
+    # introduces a conflict of its own), then blank, then optional narration
+    # paragraphs a test scenario inserts (distinct from -HistoryLines, which
+    # lives in the separate History area further down).
+    $entries += @{ T = ''; N = "`n" }
+    $entries += @{ T = '> OBSERVED: fixture measurement anchor line one.'; N = "`n" }
+    $entries += @{ T = '> fixture measurement anchor line two.'; N = "`n" }
+    $entries += @{ T = ''; N = "`n" }
+    foreach ($n in $NarrationLines) { $entries += @{ T = $n; N = "`n" } }
     for ($i = 9; $i -le 16; $i++) { $entries += @{ T = "context filler line $i"; N = "`n" } }
     $entries += @{ T = ''; N = "`n" }
     $entries += @{ T = 'History:'; N = "`r`n" }
@@ -245,6 +266,114 @@ Assert-That 'Last updated -> today; exactly one LIVE PIN pair, delta-merged + (U
 }
 
 # =============================================================================
+Write-Host "`n=== D1: same-day LIVE PIN header (identical both sides), numbers-only conflict ===" -ForegroundColor Cyan
+# =============================================================================
+# When two lanes bump pins the same day the header line is byte-identical on
+# both branches, so git narrows the conflict to the numbers line alone and the
+# header sits OUTSIDE the <<<<<<< / ======= / >>>>>>> span entirely.
+
+Assert-That 'identical header date both sides: single numbers line delta-merged (4600/2739/2842/116), header date -> today, real doc_lint C7 passes' {
+    $repo = New-LanePinsTestRepo
+    try {
+        $relPath = 'Games/Fixture/Docs/Status.md'
+        $baseText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4594, 2737, 2840, 116)
+        Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $repo $relPath) -Text $baseText
+        Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $repo 'Tools/unit_baselines.json') -Text '{ "baselines": { "Fixture": 4600 } }'
+        Copy-Item -LiteralPath $docLintScript -Destination (Join-Path $repo 'Tools/doc_lint.ps1') -Force
+        New-LanePinsTestCommit -Dir $repo -Message 'base'
+
+        New-LanePinsTestConflict -Dir $repo `
+            -ApplyOurs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4596, 2739, 2842, 116)
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        } `
+            -ApplyTheirs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4598, 2737, 2840, 116)
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        }
+
+        $exit = Invoke-LanePinsScript -Repo $repo
+        if ($exit -ne 0) { return $false }
+
+        $resultText = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+        $expectedText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate $today -LivePinNumbers @(4600, 2739, 2842, 116)
+        if (-not (Test-LanePinsTextEqual -A $resultText -B $expectedText)) { return $false }
+
+        $docLintOut = & pwsh -NoProfile -File (Join-Path $repo 'Tools/doc_lint.ps1') -RepoRoot $repo -Game Fixture -ShowPassed 2>&1 | Out-String
+        ($docLintOut -match 'PASS \[C7\]') -and ($docLintOut -notmatch 'VIOLATION \[C7\]')
+    }
+    finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'D1 + D3: same numbers-only conflict, both sides also add a distinct narration paragraph -> two conflict blocks, narration separated by one blank line, ours first' {
+    $repo = New-LanePinsTestRepo
+    try {
+        $relPath = 'Games/Fixture/Docs/Status.md'
+        $baseText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4594, 2737, 2840, 116)
+        Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $repo $relPath) -Text $baseText
+        New-LanePinsTestCommit -Dir $repo -Message 'base'
+
+        New-LanePinsTestConflict -Dir $repo `
+            -ApplyOurs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4596, 2739, 2842, 116) -NarrationLines @('> **+1 ours narration**')
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        } `
+            -ApplyTheirs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4598, 2737, 2840, 116) -NarrationLines @('> **+1 theirs narration**')
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        }
+
+        $mergedText = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+        $conflictBlockCount = ([regex]::Matches($mergedText, '(?m)^<<<<<<< ')).Count
+        if ($conflictBlockCount -ne 2) { return $false }
+
+        $exit = Invoke-LanePinsScript -Repo $repo
+        if ($exit -ne 0) { return $false }
+
+        $resultText = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+        $expectedText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate $today -LivePinNumbers @(4600, 2739, 2842, 116) -NarrationLines @('> **+1 ours narration**', '', '> **+1 theirs narration**')
+
+        Test-LanePinsTextEqual -A $resultText -B $expectedText
+    }
+    finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'only one side inserts narration (a pure one-sided insertion, auto-merges outside any conflict block) -> no blank-line insertion artefacts' {
+    $repo = New-LanePinsTestRepo
+    try {
+        $relPath = 'Games/Fixture/Docs/Status.md'
+        $baseText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(100, 200, 300, 10)
+        Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $repo $relPath) -Text $baseText
+        New-LanePinsTestCommit -Dir $repo -Message 'base'
+
+        New-LanePinsTestConflict -Dir $repo `
+            -ApplyOurs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-05' -LivePinDate '2026-09-05' -LivePinNumbers @(105, 200, 300, 10) -HistoryLines @('+1 ours entry') -NarrationLines @('> **+1 ours narration**')
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        } `
+            -ApplyTheirs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-06' -LivePinDate '2026-09-06' -LivePinNumbers @(102, 200, 305, 12) -HistoryLines @('+1 theirs entry')
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        }
+
+        $exit = Invoke-LanePinsScript -Repo $repo
+        if ($exit -ne 0) { return $false }
+
+        $resultText = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+        $expectedText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate $today -LivePinDate $today -LivePinNumbers @(107, 200, 305, 12) -HistoryLines @('+1 ours entry', '+1 theirs entry') -NarrationLines @('> **+1 ours narration**')
+
+        Test-LanePinsTextEqual -A $resultText -B $expectedText
+    }
+    finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# =============================================================================
 Write-Host "`n=== Mandatory: the resolved Status.md passes the REAL doc_lint C7 check ===" -ForegroundColor Cyan
 # =============================================================================
 # A minimal fixture -- Games/<Fixture>/Docs/Status.md + a matching
@@ -328,6 +457,75 @@ Assert-That 'a conflict below the first ## heading -> exit 2, working file byte-
         $onDiskAfter = [IO.File]::ReadAllText((Join-Path $repo $relPath))
 
         ($exit -eq 2) -and (Test-LanePinsTextEqual -A $onDiskBefore -B $onDiskAfter) -and ($onDiskAfter -match '<<<<<<<')
+    }
+    finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a LIVE PIN numbers-line conflict with an adjacent line changed too (header identical, outside) -> exit 2, byte-unchanged' {
+    $repo = New-LanePinsTestRepo
+    try {
+        $relPath = 'Games/Fixture/Docs/Status.md'
+        $baseText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4594, 2737, 2840, 116)
+        Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $repo $relPath) -Text $baseText
+        New-LanePinsTestCommit -Dir $repo -Message 'base'
+
+        # Both sides change the numbers line AND the adjacent OBSERVED anchor
+        # line, one line apart -- close enough that git merges them into a
+        # single conflict block, so neither side's slice is the required
+        # exactly-one-line shape.
+        New-LanePinsTestConflict -Dir $repo `
+            -ApplyOurs {
+            param($Dir)
+            $p = Join-Path $Dir $relPath
+            $t = [IO.File]::ReadAllText($p)
+            $t = $t -replace 'Fixture boot `4594`; engine boot \(Null Combat\) `2737`; Null RenderTest `2840`; registry \*\*116\*\*\.', 'Fixture boot `4596`; engine boot (Null Combat) `2739`; Null RenderTest `2842`; registry **116**.'
+            $t = $t -replace '> OBSERVED: fixture measurement anchor line one\.', '> OBSERVED: ours changed this anchor line too.'
+            Write-LanePinsTestFileUtf8NoBom -Path $p -Text $t
+        } `
+            -ApplyTheirs {
+            param($Dir)
+            $p = Join-Path $Dir $relPath
+            $t = [IO.File]::ReadAllText($p)
+            $t = $t -replace 'Fixture boot `4594`; engine boot \(Null Combat\) `2737`; Null RenderTest `2840`; registry \*\*116\*\*\.', 'Fixture boot `4598`; engine boot (Null Combat) `2737`; Null RenderTest `2840`; registry **116**.'
+            $t = $t -replace '> OBSERVED: fixture measurement anchor line one\.', '> OBSERVED: theirs changed this anchor line too.'
+            Write-LanePinsTestFileUtf8NoBom -Path $p -Text $t
+        }
+
+        $onDiskBefore = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+        $exit = Invoke-LanePinsScript -Repo $repo
+        $onDiskAfter = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+
+        ($exit -eq 2) -and (Test-LanePinsTextEqual -A $onDiskBefore -B $onDiskAfter) -and ($onDiskAfter -match '<<<<<<<')
+    }
+    finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'diff3-style conflict markers (merge.conflictStyle=diff3) -> exit 2, byte-unchanged' {
+    $repo = New-LanePinsTestRepo
+    try {
+        $relPath = 'Games/Fixture/Docs/Status.md'
+        $baseText = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4594, 2737, 2840, 116)
+        Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $repo $relPath) -Text $baseText
+        New-LanePinsTestCommit -Dir $repo -Message 'base'
+
+        New-LanePinsTestConflict -Dir $repo -ConflictStyle 'diff3' `
+            -ApplyOurs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4596, 2739, 2842, 116)
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        } `
+            -ApplyTheirs {
+            param($Dir)
+            $t = New-LanePinsStatusMdText -GameLabel 'Fixture' -LastUpdatedDate '2026-09-01' -LivePinDate '2026-09-01' -LivePinNumbers @(4598, 2737, 2840, 116)
+            Write-LanePinsTestFileUtf8NoBom -Path (Join-Path $Dir $relPath) -Text $t
+        }
+
+        $onDiskBefore = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+        if ($onDiskBefore -notmatch '\|\|\|\|\|\|\|') { return $false }
+        $exit = Invoke-LanePinsScript -Repo $repo
+        $onDiskAfter = [IO.File]::ReadAllText((Join-Path $repo $relPath))
+
+        ($exit -eq 2) -and (Test-LanePinsTextEqual -A $onDiskBefore -B $onDiskAfter)
     }
     finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
 }

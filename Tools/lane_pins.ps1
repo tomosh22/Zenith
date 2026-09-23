@@ -14,8 +14,10 @@
 #         `git add`ed -- the caller commits the merge.
 # Exit 2: could not resolve (no MERGE_HEAD, a conflict outside the allowed
 #         pin sites, a delete/modify conflict, a conflict below Status.md's
-#         first '## ' heading, or malformed conflict markers) -- NOTHING is
-#         written. Never runs `git merge --abort` or `git commit`.
+#         first '## ' heading, malformed conflict markers, diff3/zdiff3-style
+#         conflict markers ('|||||||'), or a LIVE PIN numbers-line conflict
+#         that does not match a supported shape) -- NOTHING is written. Never
+#         runs `git merge --abort` or `git commit`.
 #
 # Usage:
 #   pwsh -NoProfile -File Tools/lane_pins.ps1 [-Repo <path>]
@@ -354,12 +356,32 @@ function Set-LanePinsDigitRunsInOrder {
     return $sb.ToString()
 }
 
+function Test-LanePinsIsNumbersLine {
+    # Structural detector for a LIVE PIN numbers line -- "boot `<digits>`"
+    # plus a "registry" field, matched independently so either can appear
+    # anywhere in the given text (a single line, or a whole block's combined
+    # text). Matches the real Status.md numbers line and the test fixture's
+    # synthetic one; never matches the header line alone (no "boot `" run).
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+    return ($Text -match 'boot\s*`\d+') -and ($Text -match 'registry')
+}
+
 function Resolve-LanePinsStatusMd {
     param([Parameter(Mandatory)][string]$RepoRoot, [Parameter(Mandatory)][string]$RelPath, [Parameter(Mandatory)]$Blobs, [Parameter(Mandatory)][string]$TodayDate)
 
     $fullPath = Join-Path $RepoRoot ($RelPath -replace '/', '\')
     $onDiskText = [IO.File]::ReadAllText($fullPath)
     $lines = Split-LanePinsLines -Text $onDiskText
+
+    # diff3/zdiff3 conflict style adds a '|||||||' base section that
+    # Get-LanePinsConflictBlocks does not know how to skip -- it would be
+    # silently absorbed into ours' slice. Refuse outright rather than
+    # classify a block from garbled text.
+    foreach ($l in $lines) {
+        if ($l.Text -match '^\|{7}') {
+            throw "[lane_pins] ${RelPath}: diff3/zdiff3-style conflict markers ('|||||||') are not supported"
+        }
+    }
 
     $headingIdx = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -386,6 +408,15 @@ function Resolve-LanePinsStatusMd {
     $oursLP = Get-LanePinsLivePinNumbersFromText -Text $oursText
     $theirsLP = Get-LanePinsLivePinNumbersFromText -Text $theirsText
 
+    # The document's first LIVE PIN header line, if any -- when two lanes
+    # bump pins the same day the header text is IDENTICAL on both sides, so
+    # git narrows the conflict to the numbers line alone and the header
+    # never appears inside any block's <<<<<<< / ======= / >>>>>>> span.
+    $firstLivePinHeaderIdx = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].Text -match 'LIVE PIN \(UPDATED') { $firstLivePinHeaderIdx = $i; break }
+    }
+
     # Work on a mutable copy of the whole line list; splice blocks from LAST to
     # FIRST so earlier blocks' indices stay valid across the edit.
     $result = New-Object System.Collections.Generic.List[object]
@@ -399,6 +430,16 @@ function Resolve-LanePinsStatusMd {
         $oursSlice = Get-LanePinsBlockSlice -Lines $lines -Start $b.OursStart -End $b.OursEnd
         $theirsSlice = Get-LanePinsBlockSlice -Lines $lines -Start $b.TheirsStart -End $b.TheirsEnd
         $combinedText = (@($oursSlice + $theirsSlice) | ForEach-Object { $_.Text }) -join "`n"
+
+        # Header-outside LIVE PIN shape: the line directly above this
+        # block's <<<<<<< is the document's first LIVE PIN header line (so
+        # the header itself sits OUTSIDE the conflict, identical on both
+        # sides), and each side of the block is exactly one numbers line.
+        $isHeaderOutsideLivePin = ($b.StartIndex -gt 0) -and
+        (($b.StartIndex - 1) -eq $firstLivePinHeaderIdx) -and
+        ($oursSlice.Count -eq 1) -and ($theirsSlice.Count -eq 1) -and
+        (Test-LanePinsIsNumbersLine -Text $oursSlice[0].Text) -and
+        (Test-LanePinsIsNumbersLine -Text $theirsSlice[0].Text)
 
         if ($combinedText -match '\*\*Last updated:\*\*') {
             if ($lastUpdatedSeen) {
@@ -434,10 +475,48 @@ function Resolve-LanePinsStatusMd {
                 [PSCustomObject]@{ Text = $newNumbersText; Terminator = $numbersLine.Terminator }
             )
         }
+        elseif ($isHeaderOutsideLivePin) {
+            if ($livePinSeen) {
+                throw "[lane_pins] ${RelPath}: more than one LIVE PIN conflict block"
+            }
+            $livePinSeen = $true
+            if ($null -eq $baseLP -or $null -eq $oursLP -or $null -eq $theirsLP -or
+                $baseLP.Count -ne 4 -or $oursLP.Count -ne 4 -or $theirsLP.Count -ne 4) {
+                throw "[lane_pins] ${RelPath}: could not extract exactly 4 LIVE PIN numbers from base/ours/theirs"
+            }
+            $numbersLine = $theirsSlice[0]
+            $newNumbers = @(0, 1, 2, 3 | ForEach-Object { $theirsLP[$_] + ($oursLP[$_] - $baseLP[$_]) })
+            $newNumbersText = Set-LanePinsDigitRunsInOrder -Text $numbersLine.Text -NewValues $newNumbers
+            $replacement = , ([PSCustomObject]@{ Text = $newNumbersText; Terminator = $numbersLine.Terminator })
+            # The header line sits OUTSIDE this block, directly above it --
+            # safe to mutate $result by absolute index here because blocks
+            # are processed in DESCENDING StartIndex order, so every index
+            # below the current block's StartIndex is still aligned with the
+            # original $lines.
+            $result[$b.StartIndex - 1].Text = Set-LanePinsUpdatedDate -Text $result[$b.StartIndex - 1].Text -NewDate $TodayDate
+        }
+        elseif (Test-LanePinsIsNumbersLine -Text $combinedText) {
+            # Looks like a LIVE PIN numbers-line conflict but not in a shape
+            # this script knows how to resolve (e.g. the numbers line and an
+            # adjacent line changed together in one hunk) -- refuse rather
+            # than guess.
+            throw "[lane_pins] ${RelPath}: LIVE PIN numbers-line conflict at line $($b.StartIndex + 1) does not match a supported shape"
+        }
         else {
             # Every other conflict block (e.g. the +N history entries): union
-            # -- ours' lines, then theirs' lines, verbatim.
-            $replacement = @($oursSlice + $theirsSlice | ForEach-Object { [PSCustomObject]@{ Text = $_.Text; Terminator = $_.Terminator } })
+            # -- ours' lines, then theirs' lines, verbatim. When ours ends
+            # with a Markdown blockquote paragraph and theirs begins with
+            # one, insert a blank line between them so they don't render as
+            # one glued paragraph.
+            if ($oursSlice.Count -gt 0 -and $theirsSlice.Count -gt 0 -and
+                $oursSlice[$oursSlice.Count - 1].Text -match '^>' -and
+                $theirsSlice[0].Text -match '^>') {
+                $blankLine = [PSCustomObject]@{ Text = ''; Terminator = $oursSlice[$oursSlice.Count - 1].Terminator }
+                $replacement = @($oursSlice + , $blankLine + $theirsSlice | ForEach-Object { [PSCustomObject]@{ Text = $_.Text; Terminator = $_.Terminator } })
+            }
+            else {
+                $replacement = @($oursSlice + $theirsSlice | ForEach-Object { [PSCustomObject]@{ Text = $_.Text; Terminator = $_.Terminator } })
+            }
         }
 
         $count = $b.EndIndex - $b.StartIndex + 1
