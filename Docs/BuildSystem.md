@@ -146,18 +146,30 @@ lane, not merely a linked one.
 
 **Regen staleness is tracked per checkout, and a stale tree auto-regens.**
 `Build/artifacts/regen_sha` (gitignored) is written ONLY by a successful
-`regen.ps1`, as its last step: line 1 is HEAD's commit, the remaining
-lines are the current set of untracked *project-shaping* files (any
-`.cpp`/`.c`/`.h`/`.inl`/`.slang` outside `Middleware/`, or a
-`Build/Sharpmake_*.cs`/`Games/*/*.zproj`). `zenith build` and `zenith hub`
-compare this against HEAD before every build
-(`Get-ZenithBuildRegenStaleness` → `Test-ZenithRegenStale`,
+`regen.ps1`, as its last step: line 1 is HEAD's commit; every following line
+is prefixed `untracked <path>` (the current set of untracked *project-shaping*
+files — any `.cpp`/`.c`/`.h`/`.inl`/`.slang` outside `Middleware/`, or a
+`Build/Sharpmake_*.cs`/`Games/*/*.zproj`) or `dirty <entry>` (the current
+*uncommitted* project-shaping fingerprint — below). `zenith build` and
+`zenith hub` compare this against HEAD **and the working tree** before every
+build (`Get-ZenithBuildRegenStaleness` → `Test-ZenithRegenStale`,
 `Build/zenith_buildsystem.psm1`) and call `Build/regen.ps1` automatically
-when the tree is stale — missing/empty/unresolvable `regen_sha`; an
+when stale: missing/empty/unresolvable/old-format `regen_sha`; an
 add/delete/rename of a project-shaping file, or ANY status change on a
-Sharpmake/`.zproj` file, between the recorded commit and HEAD; or a NEW
-untracked project-shaping file since the last regen. A plain edit (`M`)
-to an existing `.cpp`/`.h`/etc. does **not** count — Sharpmake already
+Sharpmake/`.zproj` file, **committed** between the recorded commit and HEAD;
+a NEW untracked project-shaping file since the last regen; or an
+**uncommitted** (staged or unstaged) project-shaping change the last regen
+did not see — any status on a Sharpmake/`.zproj` file, or an add/delete/rename
+of any other project-shaping source. That last check exists because `/tick`
+gates *before* it commits: until it existed, a ticket that edited a
+`Build/Sharpmake_*.cs` was built against stale projects and every build gate
+went green (ZEN-111, observed in the first lane test run). It is a
+fingerprint — each dirty Sharpmake/`.zproj` file's `git hash-object`, or just
+the path for an add/delete/rename of a plain source — compared for exact set
+equality on every build, so the SAME uncommitted edit does not re-trigger a
+regen on every gate line, while a further edit (new hash) or a revert (a
+recorded entry now gone) does. A plain edit (`M`) to an existing
+`.cpp`/`.h`/etc., committed or not, does **not** count — Sharpmake already
 knows the file; only its contents changed. If a `devenv.exe` process has
 this repo open at the moment an auto-regen fires, a best-effort check
 prints a warning that it may need to reload the solution afterwards.
