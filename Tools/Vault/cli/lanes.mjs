@@ -312,17 +312,89 @@ async function laneList(laneInfo) {
 
 // Real process runner, overridable per invocation (`context.laneRunProcess`)
 // so tests can stub `git worktree add` / `Tools/lane_init.ps1` without
-// actually running them.
-function defaultRunProcess(command, args, cwd) {
+// actually running them. `{ stream: true }` (used only for the lane_init
+// call, which can run for tens of minutes) ALSO mirrors the child's
+// stdout/stderr onto the parent's stderr as it arrives, so `zagent lane add`
+// shows live progress; the buffered result returned to the caller is
+// unchanged either way. The git calls stay quiet (no `stream` option).
+function defaultRunProcess(command, args, cwd, { stream = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, windowsHide: true });
     const out = [];
     const err = [];
-    child.stdout.on('data', chunk => out.push(chunk));
-    child.stderr.on('data', chunk => err.push(chunk));
+    child.stdout.on('data', chunk => {
+      out.push(chunk);
+      if (stream) process.stderr.write(chunk);
+    });
+    child.stderr.on('data', chunk => {
+      err.push(chunk);
+      if (stream) process.stderr.write(chunk);
+    });
     child.on('error', reject);
     child.on('close', code => resolve({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }));
   });
+}
+
+// ── the `lanes.json` lock (D-race) ────────────────────────────────────────
+//
+// Two concurrent `lane add`/`lane remove` each used to read the registry at
+// the start of their (multi-minute) run and write it at the end, so one
+// could silently drop the other's entry. The fix is narrow: only the
+// re-read-then-write around each command's own edit is serialized, never
+// the long-running `git worktree add` / `lane_init.ps1` work before it.
+
+const LANE_LOCK_RETRY_MS = 50;
+const LANE_LOCK_RETRY_LIMIT = 100; // ~5s of polling before giving up
+const LANE_LOCK_STALE_MS = 60_000;
+
+function lanesLockPath(common) {
+  return path.join(common, 'vault', 'lanes.json.lock');
+}
+
+async function acquireLanesLock(common) {
+  const lockFile = lanesLockPath(common);
+  await fs.mkdir(path.dirname(lockFile), { recursive: true });
+  const stamp = () => `${process.pid}\n${new Date().toISOString()}\n`;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await fs.writeFile(lockFile, stamp(), { flag: 'wx' });
+      return lockFile;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let stat;
+      try { stat = await fs.stat(lockFile); } catch { stat = null; }
+      if (stat && Date.now() - stat.mtimeMs > LANE_LOCK_STALE_MS) {
+        // Stale-lock takeover: the previous holder almost certainly crashed
+        // without reaching its `finally`. Clear it and try again right away.
+        try { await fs.rm(lockFile, { force: true }); } catch { /* raced another taker */ }
+        continue;
+      }
+      if (attempt >= LANE_LOCK_RETRY_LIMIT) {
+        throw new Error(`timed out waiting for the lanes registry lock at ${lockFile}`);
+      }
+      await new Promise(resolve => setTimeout(resolve, LANE_LOCK_RETRY_MS));
+    }
+  }
+}
+
+async function releaseLanesLock(lockFile) {
+  try { await fs.rm(lockFile, { force: true }); } catch { /* already gone */ }
+}
+
+/** Run `fn` with the lanes registry lock held; released in `finally` whether `fn` resolves or throws. */
+export async function withLanesLock(common, fn) {
+  const lockFile = await acquireLanesLock(common);
+  try {
+    return await fn();
+  } finally {
+    await releaseLanesLock(lockFile);
+  }
+}
+
+function trimTail(text, maxLines) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const tail = lines.length <= maxLines ? lines : lines.slice(-maxLines);
+  return tail.join('\n').trim();
 }
 
 async function laneAdd(index, context, laneInfo) {
@@ -341,27 +413,66 @@ async function laneAdd(index, context, laneInfo) {
   const baseBranch = baseBranchOf(laneInfo.authorityRoot);
   const run = context.laneRunProcess ?? defaultRunProcess;
 
-  const worktree = await run('git', ['worktree', 'add', '--detach', targetPath, baseBranch], laneInfo.authorityRoot);
-  if (worktree.code !== 0) return refused(`git worktree add ${targetPath} ${baseBranch} failed: ${(worktree.stderr || worktree.stdout || '').trim()}`);
+  const alreadyRegisteredElsewhere = Object.values(registry.lanes ?? {}).some(
+    entry => entry?.path && normalizeForCompare(entry.path) === normalizeForCompare(targetPath),
+  );
+  if (alreadyRegisteredElsewhere) return refused(`${targetPath} is already a registered lane; choose a different --path.`);
+
+  // Retry-after-lane_init-failure (I5/I1): a prior `lane add` for this exact
+  // path can have created the worktree — the expensive part, tens of
+  // minutes and ~14 GB of copied assets — and then failed inside
+  // `lane_init.ps1`, leaving the worktree unregistered on disk. Reuse it
+  // rather than requiring the caller to delete it first: `git worktree add`
+  // refuses outright once the path exists.
+  if (await pathExists(targetPath)) {
+    const existingCtx = await laneGitContext(targetPath);
+    if (!existingCtx || normalizeForCompare(existingCtx.common) !== normalizeForCompare(laneInfo.common)) {
+      return refused(
+        `${targetPath} already exists and is not a linked worktree of this repository; `
+        + `remove it by hand or choose a different --path.`,
+      );
+    }
+    // `lane_init.ps1` asserts a clean tree itself; this only puts the
+    // worktree back on `baseBranch`, and fails safely (reporting git's own
+    // error) if local edits would be overwritten by doing so.
+    const checkout = await run('git', ['checkout', '--detach', baseBranch], targetPath);
+    if (checkout.code !== 0) {
+      return refused(`git -C ${targetPath} checkout --detach ${baseBranch} failed: ${(checkout.stderr || checkout.stdout || '').trim()}`);
+    }
+  } else {
+    const worktree = await run('git', ['worktree', 'add', '--detach', targetPath, baseBranch], laneInfo.authorityRoot);
+    if (worktree.code !== 0) return refused(`git worktree add ${targetPath} ${baseBranch} failed: ${(worktree.stderr || worktree.stdout || '').trim()}`);
+  }
 
   const initScript = path.join(laneInfo.authorityRoot, 'Tools', 'lane_init.ps1');
   if (!(await pathExists(initScript))) {
     return refused(
       `Tools/lane_init.ps1 is missing. The worktree at ${targetPath} was created but NOT registered; `
-      + `remove it by hand (\`git worktree remove --force ${targetPath}\`) or add the script and retry \`zagent lane add ${project}\`.`,
+      + `remove it by hand (\`git worktree remove --force ${targetPath}\`) or add the script and retry \`zagent lane add ${project}\` `
+      + `— a retry reuses this worktree rather than re-copying it.`,
     );
   }
-  const init = await run('pwsh', ['-NoProfile', '-File', initScript, '-Lane', targetPath, '-Main', laneInfo.authorityRoot], laneInfo.authorityRoot);
+  const init = await run(
+    'pwsh',
+    ['-NoProfile', '-File', initScript, '-Lane', targetPath, '-Main', laneInfo.authorityRoot],
+    laneInfo.authorityRoot,
+    { stream: true },
+  );
   if (init.code !== 0) {
+    const combined = [init.stdout, init.stderr].filter(Boolean).join('\n');
     return refused(
-      `Tools/lane_init.ps1 failed (exit ${init.code}): ${(init.stderr || init.stdout || '').trim()}. `
-      + `The worktree at ${targetPath} was created but NOT registered; fix the failure and retry \`zagent lane add ${project}\`, or remove it by hand.`,
+      `Tools/lane_init.ps1 failed (exit ${init.code}): ${trimTail(combined, 40) || '(no output)'}. `
+      + `The worktree at ${targetPath} was created but NOT registered; fix the failure and retry \`zagent lane add ${project}\` `
+      + `— a retry reuses this worktree rather than re-copying it, or remove it by hand.`,
     );
   }
 
-  const now = new Date().toISOString();
-  registry.lanes = { ...(registry.lanes ?? {}), [project]: { project, path: targetPath, createdAt: now, provisionedAt: now } };
-  await writeLanesRegistry(laneInfo.common, registry);
+  await withLanesLock(laneInfo.common, async () => {
+    const fresh = await readLanesRegistry(laneInfo.common);
+    const now = new Date().toISOString();
+    fresh.lanes = { ...(fresh.lanes ?? {}), [project]: { project, path: targetPath, createdAt: now, provisionedAt: now } };
+    await writeLanesRegistry(laneInfo.common, fresh);
+  });
   return { exitCode: 0, payload: { project, path: targetPath, registered: true } };
 }
 
@@ -401,9 +512,12 @@ async function laneRemove(index, context, laneInfo) {
   const removed = await run('git', ['worktree', 'remove', '--force', entry.path], laneInfo.authorityRoot);
   if (removed.code !== 0) return refused(`git worktree remove --force ${entry.path} failed: ${(removed.stderr || removed.stdout || '').trim()}`);
 
-  const next = { ...(registry.lanes ?? {}) };
-  delete next[project];
-  await writeLanesRegistry(laneInfo.common, { lanes: next });
+  await withLanesLock(laneInfo.common, async () => {
+    const fresh = await readLanesRegistry(laneInfo.common);
+    const next = { ...(fresh.lanes ?? {}) };
+    delete next[project];
+    await writeLanesRegistry(laneInfo.common, { lanes: next });
+  });
   return { exitCode: 0, payload: { project, removed: true } };
 }
 
