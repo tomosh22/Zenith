@@ -248,6 +248,40 @@ Assert-That 'Copy-LaneInitIgnoredTree returns 0 and copies nothing when the dir 
     }
 }
 
+Write-Host "`n=== Invoke-LaneInitGateLine: the run-command helper returns ONLY a plain [int] ===" -ForegroundColor Cyan
+# Regression coverage for a live defect (first `zagent lane add ZEN`):
+# `Invoke-Expression $Line` runs a NESTED `pwsh -File ...` as an external
+# child process, and every line it prints to stdout used to flow, unsuppressed,
+# onto THIS function's own success pipeline alongside the trailing
+# `return $LASTEXITCODE`. A caller assigning the result then collected an
+# ARRAY of [output lines..., exit code], and PowerShell's `-ne` on an array is
+# a FILTER (returns non-matching elements), not a boolean -- so a clean,
+# exit-0 build (whose output lines are never literally the integer 0) was
+# reported as failed. Trivial `pwsh -Command` children stand in for a real
+# gate line here -- never invoke a real build from this test.
+
+Assert-That 'a command that prints several lines and exits 0 returns exactly [int]0, not an array' {
+    $line = 'pwsh -NoProfile -Command "Write-Output a; Write-Output b; Write-Host c; exit 0"'
+    $result = Invoke-LaneInitGateLine -LaneRoot ([IO.Path]::GetTempPath()) -Line $line
+    ($result -is [int]) -and ($result -eq 0)
+}
+
+Assert-That 'a command that prints several lines and exits 3 returns exactly [int]3, not an array' {
+    $line = 'pwsh -NoProfile -Command "Write-Output a; Write-Output b; Write-Host c; exit 3"'
+    $result = Invoke-LaneInitGateLine -LaneRoot ([IO.Path]::GetTempPath()) -Line $line
+    ($result -is [int]) -and ($result -eq 3)
+}
+
+Assert-That 'the returned exit code compares correctly with -ne (the array-filter trap this regression guards)' {
+    # This is the exact shape Invoke-LaneInitProvisionCheck relies on:
+    # `if ($buildExit -ne 0) { throw ... }`. Pinned directly, so a regression
+    # that reintroduces array pollution fails here even if the -is [int]
+    # checks above were ever loosened.
+    $line = 'pwsh -NoProfile -Command "Write-Output lots; Write-Output of; Write-Output output; exit 0"'
+    $result = Invoke-LaneInitGateLine -LaneRoot ([IO.Path]::GetTempPath()) -Line $line
+    -not ($result -ne 0)
+}
+
 Write-Host ''
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) {

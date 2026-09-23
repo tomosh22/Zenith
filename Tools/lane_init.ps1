@@ -293,9 +293,17 @@ function Invoke-LaneInitRegen {
     }
     Push-Location -LiteralPath $LaneRoot
     try {
-        & pwsh -NoProfile -File $regenScript -AllowLinkedWorktree
-        if ($LASTEXITCODE -ne 0) {
-            throw "[lane_init] Build/regen.ps1 -AllowLinkedWorktree exited $LASTEXITCODE in lane '$LaneRoot'"
+        # Same audit as Invoke-LaneInitGateLine: this is also a nested `pwsh
+        # -File ...` child process, so its stdout is piped to Out-Host rather
+        # than left to leak, unsuppressed, into this function's (and in turn
+        # Invoke-LaneInit's) own output. $LASTEXITCODE is read into a local
+        # BEFORE anything else runs, so a later statement can never clobber
+        # it, and the comparison below is always a plain scalar check.
+        & pwsh -NoProfile -File $regenScript -AllowLinkedWorktree | Out-Host
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 0 }
+        if ($code -ne 0) {
+            throw "[lane_init] Build/regen.ps1 -AllowLinkedWorktree exited $code in lane '$LaneRoot'"
         }
     }
     finally { Pop-Location }
@@ -369,12 +377,37 @@ function Get-LaneInitBaselineGames {
 
 function Invoke-LaneInitGateLine {
     # Runs one gate command line (as zagent.project.json spells it, a single
-    # `pwsh ...` invocation) with the lane as the working directory.
+    # `pwsh ...` invocation) with the lane as the working directory. Returns
+    # ONLY its exit code, as a single [int].
+    #
+    # ★ OUTPUT-POLLUTION HAZARD, MEASURED LIVE (first `zagent lane add ZEN`):
+    # `Invoke-Expression $Line` runs a NESTED `pwsh -File ...` as an external
+    # child process. Every line that child prints to stdout -- Write-Host
+    # included, since Write-Host output still crosses a process boundary as
+    # plain bytes once redirected -- becomes a separate string object on
+    # THIS function's own success pipeline, because nothing here captures or
+    # suppresses it. `return $LASTEXITCODE` then adds one more object (the
+    # int) after every one of those lines. A caller that assigns the result
+    # (`$buildExit = Invoke-LaneInitGateLine ...`) collects ALL of it into an
+    # array, not just the trailing int -- and PowerShell's `-ne` on an array
+    # is a FILTER (it returns the elements that are not equal), not a
+    # boolean, so `$buildExit -ne 0` was true for almost any array (build
+    # output lines are never literally the integer 0) even on a clean, exit-0
+    # build. A successful "0 errors" msbuild run was reported as a failure
+    # whose "exit code" -- once string-interpolated into the error message --
+    # was the entire captured build log with a stray `0` stuck on the end.
+    #
+    # Out-Host is a SINK: it writes every object it receives straight to the
+    # host and emits nothing back onto the pipeline, so progress stays fully
+    # visible (unbuffered, streamed as it arrives) while this function's only
+    # pipeline output becomes the single explicit `return` below.
     param([Parameter(Mandatory)][string]$LaneRoot, [Parameter(Mandatory)][string]$Line)
     Push-Location -LiteralPath $LaneRoot
     try {
-        Invoke-Expression $Line
-        return $LASTEXITCODE
+        Invoke-Expression $Line | Out-Host
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 0 }
+        return [int]$code
     }
     finally { Pop-Location }
 }
