@@ -186,6 +186,21 @@ Assert-That 'opens with the blast-radius survey clause' {
 Assert-That 'the survey clause demands a STOP on any hit outside the list' {
     $promptText -match 'STOP and report the complete corrected list before making a single edit'
 }
+# E2: every path in the prompt is relative to SOMETHING, and step zero is
+# the worker's first instruction -- so the repo root belongs right after
+# the clause's bold opener, POSIX-normalised the same way filelist.txt and
+# the Files clause already are (ConvertTo-PosixPath), not the fixture's
+# native Windows path.
+$expectedRepoRoot = ($fx.Repo -replace '\\', '/') -replace '/+$', ''
+Assert-That 'the survey clause states the repository root, POSIX-normalised' {
+    $promptText.Contains($expectedRepoRoot)
+}
+Assert-That 'the repository-root sentence sits immediately after the bold opener' {
+    $promptText.TrimStart().StartsWith('**Step zero, before you edit anything.** Every path in this prompt')
+}
+Assert-That 'the repository-root sentence appears before the Files clause' {
+    $promptText.IndexOf($expectedRepoRoot) -lt $promptText.IndexOf('**Files you may edit:**')
+}
 Assert-That 'carries the DO NOT clause, after the survey' {
     ($promptText -match '\*\*DO NOT\*\*') -and
     ($promptText.IndexOf('**Step zero') -lt $promptText.IndexOf('**DO NOT**'))

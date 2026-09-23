@@ -360,6 +360,18 @@ foreach ($rulingPath in $Rulings) {
 $normalisedFiles = @($Files | ForEach-Object { ConvertTo-PosixPath $_ })
 $filesInline = $normalisedFiles -join ', '
 
+# `$Repo` is the checkout whose own copy of this script ran -- the lane,
+# when invoked as TICK.md's relative `Tools\zagent\build_prompt.ps1` from a
+# lane's worktree (Find-ClientRepo -StartDir $PSScriptRoot, above). Every
+# path this prompt hands the worker is repo-relative and never says
+# relative to WHAT, which is silently correct when the harness session is
+# rooted in the same checkout the ticket belongs to and silently wrong
+# when an orchestrator drives a registered lane from a session rooted
+# elsewhere (or on a harness whose subagents do not inherit cwd) -- the
+# worker then greps and edits the MAIN checkout instead of the lane
+# (observed 2026-09-23). Stated once, in the step-zero clause, below.
+$repoPosix = ConvertTo-PosixPath $Repo
+
 # ─── Assemble the prompt ──────────────────────────────
 #
 # This is a transcription of the five clauses at tick.md step 5, kept
@@ -383,7 +395,7 @@ $lines = [System.Collections.Generic.List[string]]::new()
 # the worker must falsify is what caught ZM-69's missing scene-registry row
 # and ZEN-40's entirely wrong subsystem -- in the latter case the worker made
 # ZERO edits and returned a corrected list pointing two directories away.
-[void]$lines.Add('**Step zero, before you edit anything.** For every identifier and every behaviour you intend to change, grep the whole repository and confirm each hit that must CHANGE is inside the file list below. Read the UNITS that reference them, not just the file names — a test can pin your change without naming it in a way that greps. A file list bounds WRITES, not READS: read as widely as you need. **If ANY hit that must change lands outside the list, STOP and report the complete corrected list before making a single edit.** Say what the survey found even if it found nothing.')
+[void]$lines.Add('**Step zero, before you edit anything.** Every path in this prompt — the file list below and everything you grep or read — is relative to the repository root `' + $repoPosix + '`: read, grep and edit only under it. For every identifier and every behaviour you intend to change, grep the whole repository and confirm each hit that must CHANGE is inside the file list below. Read the UNITS that reference them, not just the file names — a test can pin your change without naming it in a way that greps. A file list bounds WRITES, not READS: read as widely as you need. **If ANY hit that must change lands outside the list, STOP and report the complete corrected list before making a single edit.** Say what the survey found even if it found nothing.')
 [void]$lines.Add('')
 [void]$lines.Add('**DO NOT** attempt to run **CI gate command lines**, build, test, commit, push, or touch the board — you have no shell; the orchestrator does all of that.')
 [void]$lines.Add("**Files you may edit:** $filesInline.")
