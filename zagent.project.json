@@ -114,7 +114,11 @@
         "file and .github/workflows/zm-tests.yml are both protectedPaths, so",
         "while the number lived here the agent loop could never bump a pin,",
         "which made every test-adding ticket unreachable. Read it from a",
-        "NULL-config exe — a Vulkan exe reports higher for the same tree."
+        "NULL-config exe — a Vulkan exe reports higher for the same tree.",
+        "-TimeoutSec is 1200, not 600 (2026-09-23): the Zenithmon unit boot measured",
+        "258-559 s in the main checkout and 498-702 s in a registered lane, so 600 s",
+        "timed out a green tree (ZM-89 verify, twice). The timeout is a wall-clock",
+        "kill for a WEDGED boot, not a performance budget."
       ],
       "project": "ZM",
       "$paths": "The directories this area OWNS. A ticket filed under another category whose diff reaches one of these has THESE gates unioned into its own — see the Engine note below for the failure that motivated it.",
@@ -125,7 +129,7 @@
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --headless",
         "pwsh -NoProfile -File Tools\\zenith.ps1 build Zenithmon --config D3D12_vs2022_Debug_Win64_False",
         "pwsh -NoProfile -File Tools\\zenith.ps1 test Zenithmon --headless",
-        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 600",
+        "pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\\run_unit_gate.ps1 -Exe Games\\Zenithmon\\Build\\output\\win64\\null_vs2022_debug_win64_true\\zenithmon.exe -Game Zenithmon -TimeoutSec 1200",
         "pwsh -NoProfile -File Tools\\doc_lint.ps1 -Game Zenithmon"
       ],
       "conventions": "Games/Zenithmon/CLAUDE.md + Docs/AgentBriefing.md are binding. ZM_ prefix. NEVER create a branch, PR, or worktree (ZM-D-031); in lane mode only the tick itself cuts agent/<KEY> (ZM-D-224).",
