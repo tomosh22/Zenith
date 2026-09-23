@@ -670,6 +670,398 @@ try {
         finally { Pop-Location }
         if ($ignored.Count -gt 0) { throw ("hand-written files are ignored (surgical-ignore violation): " + ($ignored -join '; ')) }
     }
+
+    # ========================================================================
+    # WP5: regen staleness (plan Sec.2 "regen_sha in every checkout") +
+    # registered lanes. No git-fixture idiom existed for this module before
+    # WP5 (Tools/Test_TickGates.ps1's New-GitFixture is the model this
+    # follows) -- every test below builds a real throwaway `git init` repo
+    # under $script:TempRoot, never touches the real checkout, and never runs
+    # msbuild/regen/Sharpmake.
+    Write-Host "`n[14] WP5: project-shaping predicate + untracked-file listing" -ForegroundColor Cyan
+
+    function New-Wp5GitFixture {
+        # A throwaway repo with a tracked .cpp, a .gitignore excluding
+        # Build/artifacts/ (mirrors the real repo's .gitignore:212), and one
+        # commit. Every regen-staleness test below builds on this.
+        $dir = Join-Path $script:TempRoot ("wp5_git_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        & git -C $dir init --quiet 2>$null | Out-Null
+        & git -C $dir config user.email 'test@example.invalid' 2>$null | Out-Null
+        & git -C $dir config user.name 'test' 2>$null | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir '.gitignore') -Value '/Build/artifacts/'
+        New-Item -ItemType Directory -Path (Join-Path $dir 'Games/Probe') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'Games/Probe/Existing.cpp') -Value '// tracked'
+        & git -C $dir add -A 2>$null | Out-Null
+        & git -C $dir commit -m init --quiet 2>$null | Out-Null
+        return $dir
+    }
+
+    function Invoke-Wp5Git {
+        param([string]$Dir, [string[]]$GitArgs)
+        & git -C $Dir @GitArgs 2>$null | Out-Null
+    }
+
+    Invoke-Test "Test-ZenithProjectShapingPath: extensions, Middleware exclusion, Sharpmake/.zproj, backslashes" {
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'Games/X/Y.cpp') "cpp"
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'Zenith/Flux/Z.h') "h"
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'A/B.inl') "inl"
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'A/B.slang') "slang"
+        Assert-False (Test-ZenithProjectShapingPath -RelativePath 'A/B.hpp') "hpp is NOT in SourceFilesExtensions"
+        Assert-False (Test-ZenithProjectShapingPath -RelativePath 'A/B.cc') "cc is NOT in SourceFilesExtensions"
+        Assert-False (Test-ZenithProjectShapingPath -RelativePath 'Middleware/foo/bar.cpp') "Middleware/ is excluded"
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'Games\X\Y.cpp') "backslash paths normalise"
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'Build/Sharpmake_Zenith.cs') "Sharpmake source"
+        Assert-True (Test-ZenithProjectShapingPath -RelativePath 'Games/Zenithmon/Zenithmon.zproj') "descriptor"
+        Assert-False (Test-ZenithProjectShapingPath -RelativePath 'Docs/BuildSystem.md') "unrelated file"
+    }
+
+    Invoke-Test "Get-ZenithUntrackedProjectShapingFiles: only untracked + shaping, sorted" {
+        $repo = New-Wp5GitFixture
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Zeta.cpp') -Value '// u'
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Alpha.cpp') -Value '// u'
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/readme.md') -Value '// not shaping'
+        $found = @(Get-ZenithUntrackedProjectShapingFiles -RepoRoot $repo)
+        Assert-Equal 2 $found.Count "only the two .cpp files, readme.md excluded"
+        Assert-Equal 'Games/Probe/Alpha.cpp' $found[0] "sorted first"
+        Assert-Equal 'Games/Probe/Zeta.cpp' $found[1] "sorted second"
+    }
+
+    Invoke-Test "Get-ZenithUntrackedProjectShapingFiles: clean tree -> empty array, never null" {
+        $repo = New-Wp5GitFixture
+        $found = @(Get-ZenithUntrackedProjectShapingFiles -RepoRoot $repo)
+        Assert-Equal 0 $found.Count "clean tree, nothing untracked"
+    }
+
+    # ========================================================================
+    Write-Host "`n[15] WP5: Write-ZenithRegenStateFile + Test-ZenithRegenStale" -ForegroundColor Cyan
+
+    Invoke-Test "Write-ZenithRegenStateFile: writes under Build/artifacts/, gitignored, porcelain status unchanged" {
+        $repo = New-Wp5GitFixture
+        $before = @(& git -C $repo status --porcelain)
+        $ok = Write-ZenithRegenStateFile -RepoRoot $repo
+        Assert-True $ok "write should succeed against a real git repo with a HEAD"
+        $shaFile = Join-Path $repo 'Build/artifacts/regen_sha'
+        Assert-True (Test-Path -LiteralPath $shaFile) "regen_sha should exist"
+        $after = @(& git -C $repo status --porcelain)
+        Assert-Equal ($before -join '|') ($after -join '|') "porcelain status unchanged (Build/artifacts/ is gitignored)"
+    }
+
+    Invoke-Test "Write-ZenithRegenStateFile: writes NOTHING when HEAD cannot be resolved (unborn repo)" {
+        $dir = Join-Path $script:TempRoot ("wp5_unborn_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        & git -C $dir init --quiet 2>$null | Out-Null
+        $ok = Write-ZenithRegenStateFile -RepoRoot $dir
+        Assert-False $ok "no commits yet -> HEAD unresolvable"
+        Assert-False (Test-Path -LiteralPath (Join-Path $dir 'Build/artifacts/regen_sha')) "nothing written on failure"
+    }
+
+    Invoke-Test "clean tree, freshly written state -> NOT stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r.Stale "reason: $($r.Reason)"
+    }
+
+    Invoke-Test "missing regen_sha -> stale" {
+        $repo = New-Wp5GitFixture
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "no state file at all"
+        Assert-AnyLike @($r.Reason) "*no Build/artifacts/regen_sha*" "reason names the missing file"
+    }
+
+    Invoke-Test "unresolvable regen_sha commit (rebase / deleted branch) -> stale" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build/artifacts') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/artifacts/regen_sha') -Value 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "unresolvable commit"
+        Assert-AnyLike @($r.Reason) "*unresolvable*" "reason names the sha"
+    }
+
+    Invoke-Test "a tracked .cpp ADDED since the last regen -> stale (A)" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/New.cpp') -Value '// new'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "added source"
+        Assert-AnyLike @($r.Reason) "*New.cpp*" "reason names the file"
+    }
+
+    Invoke-Test "a tracked .slang ADDED since the last regen -> stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Shader.slang') -Value '// s'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "added shader"
+    }
+
+    Invoke-Test "a tracked .cpp MODIFIED only -> NOT stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Games/Probe/Existing.cpp') -Value '// edited'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'edit', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r.Stale "a plain M on a .cpp is not stale: $($r.Reason)"
+    }
+
+    Invoke-Test "Build/Sharpmake_X.cs MODIFIED -> stale (ANY status, not just A/D/R)" {
+        $repo = New-Wp5GitFixture
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// x'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add sharpmake', '--quiet')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_X.cs') -Value '// tweak'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'tweak', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "a plain M on a Sharpmake_*.cs must still trigger"
+    }
+
+    Invoke-Test "a NEW Build/Sharpmake_Y.cs -> stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Build') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Build/Sharpmake_Y.cs') -Value '// y'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "a newly ADDED Sharpmake_*.cs needs a regen too"
+    }
+
+    Invoke-Test "a .zproj MODIFIED -> stale" {
+        $repo = New-Wp5GitFixture
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Probe.zproj') -Value '{ }'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'add zproj', '--quiet')
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Add-Content -LiteralPath (Join-Path $repo 'Games/Probe/Probe.zproj') -Value ' '
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'edit zproj', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r.Stale "descriptor edit"
+    }
+
+    Invoke-Test "Middleware/*.cpp ADDED -> NOT stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $repo 'Middleware') | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Middleware/foo.cpp') -Value '// vendored'
+        Invoke-Wp5Git -Dir $repo -GitArgs @('add', '-A')
+        Invoke-Wp5Git -Dir $repo -GitArgs @('commit', '-m', 'vendor', '--quiet')
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r.Stale "vendored source excluded: $($r.Reason)"
+    }
+
+    Invoke-Test "an untracked NEW .cpp -> stale; after a (simulated) regen records it, the SAME file -> NOT stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        Set-Content -LiteralPath (Join-Path $repo 'Games/Probe/Untracked.cpp') -Value '// u'
+        $r1 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-True $r1.Stale "new untracked source"
+        Assert-AnyLike @($r1.Reason) "*Untracked.cpp*" "reason names it"
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        $r2 = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r2.Stale "the SAME untracked file, now recorded, stops tripping it: $($r2.Reason)"
+    }
+
+    Invoke-Test "a fully clean tree (no changes since the last regen) -> NOT stale" {
+        $repo = New-Wp5GitFixture
+        Write-ZenithRegenStateFile -RepoRoot $repo | Out-Null
+        $r = Test-ZenithRegenStale -RepoRoot $repo
+        Assert-False $r.Stale "clean: $($r.Reason)"
+    }
+
+    # ========================================================================
+    Write-Host "`n[16] WP5: Test-ZenithRegisteredLane" -ForegroundColor Cyan
+
+    function New-Wp5LaneFixture {
+        # A main repo + a linked worktree (mirrors `zagent lane add`'s `git
+        # worktree add --detach`), for Test-ZenithRegisteredLane.
+        $main = Join-Path $script:TempRoot ("wp5_lane_main_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Path $main -Force | Out-Null
+        & git -C $main init --quiet -b master 2>$null | Out-Null
+        & git -C $main config user.email 'test@example.invalid' 2>$null | Out-Null
+        & git -C $main config user.name 'test' 2>$null | Out-Null
+        Set-Content -LiteralPath (Join-Path $main 'readme.txt') -Value 'x'
+        & git -C $main add -A 2>$null | Out-Null
+        & git -C $main commit -m init --quiet 2>$null | Out-Null
+        $lane = Join-Path $script:TempRoot ("wp5_lane_wt_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        & git -C $main worktree add --detach $lane master 2>$null | Out-Null
+        return [PSCustomObject]@{ Main = $main; Lane = $lane }
+    }
+
+    function Get-Wp5LaneVaultDir {
+        param([string]$LaneRoot)
+        $commonDir = (& git -C $LaneRoot rev-parse --git-common-dir 2>$null)
+        if (-not [System.IO.Path]::IsPathRooted($commonDir)) { $commonDir = Join-Path $LaneRoot $commonDir }
+        return (Join-Path $commonDir 'vault')
+    }
+
+    Invoke-Test "main checkout is never a lane" {
+        $f = New-Wp5LaneFixture
+        Assert-False (Test-ZenithRegisteredLane -RepoRoot $f.Main) "main checkout"
+    }
+
+    Invoke-Test "an unregistered linked worktree is not a lane (no lanes.json)" {
+        $f = New-Wp5LaneFixture
+        Assert-False (Test-ZenithRegisteredLane -RepoRoot $f.Lane) "no lanes.json at all"
+    }
+
+    Invoke-Test "a worktree registered in <git-common-dir>/vault/lanes.json IS a lane (case/slash-insensitive)" {
+        $f = New-Wp5LaneFixture
+        $vaultDir = Get-Wp5LaneVaultDir -LaneRoot $f.Lane
+        New-Item -ItemType Directory -Force -Path $vaultDir | Out-Null
+        # Deliberately different case AND separator than the real path -- the
+        # match must still hold (regen.ps1/ZenithCli.psm1 build-slot messages
+        # quote a Windows-style path; a lane could be registered from either
+        # style).
+        $laneUpperBackslash = $f.Lane.ToUpperInvariant().Replace('/', '\')
+        $payload = @{ lanes = @{ ZM = @{ path = $laneUpperBackslash } } } | ConvertTo-Json -Depth 5
+        Set-Content -LiteralPath (Join-Path $vaultDir 'lanes.json') -Value $payload
+        Assert-True (Test-ZenithRegisteredLane -RepoRoot $f.Lane) "registered, case/slash-insensitively"
+    }
+
+    Invoke-Test "an invalid lanes.json is treated as 'not a lane', never throws" {
+        $f = New-Wp5LaneFixture
+        $vaultDir = Get-Wp5LaneVaultDir -LaneRoot $f.Lane
+        New-Item -ItemType Directory -Force -Path $vaultDir | Out-Null
+        Set-Content -LiteralPath (Join-Path $vaultDir 'lanes.json') -Value '{ not json'
+        $threw = $false
+        $result = $true
+        try { $result = Test-ZenithRegisteredLane -RepoRoot $f.Lane } catch { $threw = $true }
+        Assert-False $threw "must never throw"
+        Assert-False $result "malformed json -> false"
+    }
+
+    Invoke-Test "a lanes.json with no matching path -> not a lane" {
+        $f = New-Wp5LaneFixture
+        $vaultDir = Get-Wp5LaneVaultDir -LaneRoot $f.Lane
+        New-Item -ItemType Directory -Force -Path $vaultDir | Out-Null
+        $payload = @{ lanes = @{ ZM = @{ path = 'C:/somewhere/else/entirely' } } } | ConvertTo-Json -Depth 5
+        Set-Content -LiteralPath (Join-Path $vaultDir 'lanes.json') -Value $payload
+        Assert-False (Test-ZenithRegisteredLane -RepoRoot $f.Lane) "registered lane names a DIFFERENT path"
+    }
+
+    Invoke-Test "regen.ps1's worktree-refusal condition: a registered lane needs no flag, an unregistered one is still refused" {
+        # Pins the exact boolean combination regen.ps1 uses at its refusal
+        # check (~line 43) and its ZENITH_ROOT post-check (~line 115), without
+        # running regen.ps1 itself (which needs a real Sharpmake install).
+        $f = New-Wp5LaneFixture
+        $allowFlag = $false
+
+        $refuseUnregistered = (Test-ZenithInWorktree -RepoRoot $f.Lane) -and (-not $allowFlag) -and (-not (Test-ZenithRegisteredLane -RepoRoot $f.Lane))
+        Assert-True $refuseUnregistered "an unregistered linked worktree must still be refused with no flag"
+
+        $vaultDir = Get-Wp5LaneVaultDir -LaneRoot $f.Lane
+        New-Item -ItemType Directory -Force -Path $vaultDir | Out-Null
+        $payload = @{ lanes = @{ ZM = @{ path = $f.Lane } } } | ConvertTo-Json -Depth 5
+        Set-Content -LiteralPath (Join-Path $vaultDir 'lanes.json') -Value $payload
+
+        $refuseRegistered = (Test-ZenithInWorktree -RepoRoot $f.Lane) -and (-not $allowFlag) -and (-not (Test-ZenithRegisteredLane -RepoRoot $f.Lane))
+        Assert-False $refuseRegistered "a REGISTERED lane must pass with NO -AllowLinkedWorktree flag"
+
+        # The ZENITH_ROOT post-check is keyed on Test-ZenithInWorktree alone
+        # (not on -AllowLinkedWorktree), so it still applies to a lane even
+        # though Invoke-Regen never passes the flag.
+        Assert-True (Test-ZenithInWorktree -RepoRoot $f.Lane) "the post-check guard still covers a lane"
+    }
+
+    # ========================================================================
+    # WP5 follow-up (post-review). Invoke-Regen (ZenithCli.psm1) runs
+    # regen.ps1 in-process via `& $regen`, as a CHILD SCOPE of a module that
+    # already has `Set-StrictMode -Version Latest` set -- strict mode is
+    # inherited by child scopes, so regen.ps1 runs strict there even though it
+    # sets nothing itself and is non-strict when run standalone
+    # (`pwsh -File Build/regen.ps1`). A REAL `zenith build --headless` hit
+    # this: step 7.6's `$prunedEngine = Remove-ZenithOrphanEngineArtifacts
+    # ...` captured $null (that function ends `return $removed.ToArray()`,
+    # unrolled by `return`, so an EMPTY result is zero pipeline objects and a
+    # plain-assignment capture of zero objects is $null, not an empty array --
+    # the same trap Get-ZenithUntrackedProjectShapingFiles's own header
+    # comment documents), and `$prunedEngine.Count` under Version Latest
+    # throws "The property 'Count' cannot be found on this object" rather
+    # than evaluating falsy. regen.ps1 now wraps that capture (and the
+    # analogous $sourceFiles one) in `@(...)`, which is null-safe regardless
+    # of strict mode. This section pins the fix directly, WITHOUT running
+    # Sharpmake.
+    Write-Host "`n[17] WP5 follow-up: regen.ps1's post-Sharpmake tail is StrictMode-safe (Invoke-Regen hazard)" -ForegroundColor Cyan
+
+    Invoke-Test "characterization: an UNWRAPPED capture of Remove-ZenithOrphanEngineArtifacts throws under Set-StrictMode -Version Latest when there is nothing to prune" {
+        # Proves the mechanism this whole section guards against -- and that
+        # this test would have caught the original bug. A fixture repo whose
+        # Build/ dir has neither a Sharpmake_*.cs nor a stray .vcxproj is
+        # exactly the "nothing to prune" case the real failure hit.
+        $fakeRepo = Join-Path $script:TempRoot ("wp5_strict_prune_naive_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Force -Path (Join-Path $fakeRepo 'Build') | Out-Null
+
+        $script:Wp5NaiveThrew = $false
+        $script:Wp5NaiveMessage = ''
+        & {
+            Set-StrictMode -Version Latest
+            try {
+                $naive = Remove-ZenithOrphanEngineArtifacts -RepoRoot $fakeRepo
+                [void]$naive.Count
+            }
+            catch {
+                $script:Wp5NaiveThrew = $true
+                $script:Wp5NaiveMessage = $_.Exception.Message
+            }
+        }
+        Assert-True $script:Wp5NaiveThrew "an unwrapped plain-assignment .Count must throw under strict mode with nothing to prune (got no throw -- the mechanism this section relies on may have changed)"
+        Assert-AnyLike @($script:Wp5NaiveMessage) "*Count*" "the strict-mode error names the missing property: $script:Wp5NaiveMessage"
+    }
+
+    Invoke-Test "the fix: @(Remove-ZenithOrphanEngineArtifacts ...) survives Set-StrictMode -Version Latest, Count is 0" {
+        $fakeRepo = Join-Path $script:TempRoot ("wp5_strict_prune_fixed_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Force -Path (Join-Path $fakeRepo 'Build') | Out-Null
+
+        $script:Wp5FixedThrew = $false
+        $script:Wp5FixedCount = -1
+        & {
+            Set-StrictMode -Version Latest
+            try {
+                # The exact expression regen.ps1 now uses at its step 7.6.
+                $prunedEngine = @(Remove-ZenithOrphanEngineArtifacts -RepoRoot $fakeRepo)
+                $script:Wp5FixedCount = $prunedEngine.Count
+            }
+            catch {
+                $script:Wp5FixedThrew = $true
+            }
+        }
+        Assert-False $script:Wp5FixedThrew "regen.ps1's own @(...)-wrapped pattern must not throw under strict mode"
+        Assert-Equal 0 $script:Wp5FixedCount "nothing to prune -> Count 0, never null"
+    }
+
+    Invoke-Test "the fix also covers Get-ChildItem | Sort-Object (regen.ps1's `$sourceFiles): @(...) survives strict mode on an empty match" {
+        # Mirrors regen.ps1's `$sourceFiles = @(Get-ChildItem ... -Filter
+        # 'Sharpmake_*.cs' | Sort-Object Name)` -- Sort-Object's pipeline also
+        # collapses to $null (not an empty array) on zero input, the same
+        # trap, different source.
+        $emptyDir = Join-Path $script:TempRoot ("wp5_strict_sourcefiles_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Force -Path $emptyDir | Out-Null
+
+        $script:Wp5SourceFilesThrew = $false
+        $script:Wp5SourceFilesCount = -1
+        & {
+            Set-StrictMode -Version Latest
+            try {
+                $sourceFiles = @(Get-ChildItem -LiteralPath $emptyDir -Filter 'Sharpmake_*.cs' -File | Sort-Object Name)
+                $script:Wp5SourceFilesCount = $sourceFiles.Count
+            }
+            catch {
+                $script:Wp5SourceFilesThrew = $true
+            }
+        }
+        Assert-False $script:Wp5SourceFilesThrew "the @(...)-wrapped Sort-Object pipeline must not throw under strict mode"
+        Assert-Equal 0 $script:Wp5SourceFilesCount "no Sharpmake_*.cs in an empty dir -> Count 0, never null"
+    }
 }
 finally {
     Remove-Item -Recurse -Force -Path $script:TempRoot -ErrorAction SilentlyContinue

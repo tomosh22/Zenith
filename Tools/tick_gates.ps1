@@ -64,6 +64,18 @@
 #         interface -- branch on them, not on the text" is supposed to
 #         prevent. 8 is free in BOTH ladders.
 #       10 MEASURED: the unit pin needs bumping (not a failure; see below)
+#       11 slot busy -- the machine-wide build slot (Tools/build_lock.ps1,
+#          Local\ZenithBuildSlot) could not be acquired within its wait
+#          budget. Non-evidential, like 8: nothing about THIS ticket's gates
+#          failed, another checkout is simply mid-build. A lane-mode caller
+#          treats this as `next.json` = wait, not a failure block.
+#       12 tree unstable: non-deterministic tracked output. Verify's working
+#          tree changed (treeShaStart != treeShaEnd) on BOTH the first pass
+#          and the one automatic retry -- see the treeShaStart/treeShaEnd/
+#          treeRetried fields in tick_gates.json. A single mismatch is not
+#          this: a gate line legitimately rewriting a tracked generated file
+#          (Zenith/Flux/Shaders/Generated/*.h) or re-authoring a .zscen is
+#          handled by re-running verify once, silently, with treeRetried set.
 #
 # ASCII-only body; runs under Windows PowerShell 5.1 and pwsh 7.
 # =============================================================================
@@ -79,6 +91,15 @@ param(
     #            line, in order. This is the run that certifies the commit.
     # all     -- both, back to back. Correct only when no doc edit is coming.
     [ValidateSet('measure', 'verify', 'all')][string]$Phase = 'all',
+
+    # Skip `zagent gates $Key`'s shell-out and read the ticket's OWN already-
+    # recorded $runDir/gates.json instead, at BOTH call sites (measure's
+    # initial read and verify's re-derive). This is lane REGATE (plan
+    # mechanics 3.4): the selection has to stay the one the ticket was
+    # originally claimed against, not "every category whose paths a
+    # merge-with-master diff now touches". Missing/empty gates.json falls
+    # through to the same exit-5 path as a failed `zagent gates` call.
+    [switch]$ReuseGateList,
 
     [string]$RepoRoot,
 
@@ -97,6 +118,14 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
 $script:RepoRoot = $RepoRoot
 
+# Enter-ZenithBuildSlot / Exit-ZenithBuildSlot. Dot-sourcing this defines
+# functions only -- nothing runs merely by reaching this line, -NoRun
+# included, which is why it happens unconditionally at the top rather than
+# behind the `if ($NoRun) { return }` gate further down. $PSScriptRoot here
+# is THIS file's own directory (Tools/), same as build_lock.ps1's own -- both
+# scripts live beside each other.
+. (Join-Path $PSScriptRoot 'build_lock.ps1')
+
 $runDir = Join-Path $RepoRoot ".zagent/run/$Key"
 $logPath = Join-Path $runDir 'gates.log'
 $resultPath = Join-Path $runDir 'tick_gates.json'
@@ -105,6 +134,13 @@ if (-not $NoRun -and -not (Test-Path -LiteralPath $runDir)) {
 }
 
 $script:Steps = New-Object System.Collections.Generic.List[object]
+
+# The build-slot handle from Enter-ZenithBuildSlot, set inside the try block
+# below. Initialised to $null here so the outermost `finally` can safely call
+# Exit-ZenithBuildSlot on it even on the (unreachable in practice, but never
+# assumed) chance something throws before the acquire line runs -- see
+# Exit-ZenithBuildSlot's own contract: it is a no-op for $null.
+$script:BuildSlotHandle = $null
 
 # ★★ PROVENANCE. A verdict with no commit and no state is indistinguishable from
 # a stale one left by an earlier attempt -- and I6 points a crash-resumed firing
@@ -167,6 +203,21 @@ $script:Flakes = New-Object System.Collections.Generic.List[object]
 # vanishing on a run that never reached the loop.
 $script:RegistryCounts = [ordered]@{}
 
+# Freshness = verified tree (plan "Integration mechanics" 1). `git write-tree`
+# of the working tree, taken before the first gate line and after the last,
+# via Get-WorkingTreeSha below. Populated by BOTH phases: measure's pair is
+# informational only (nothing branches on it); verify's pair is what
+# `integrate` later compares against the landed commit's own tree, and a
+# mismatch there drives the one-time automatic re-verify (see the VERIFY
+# phase body). Left at $null until a phase that runs gate lines computes
+# them, same "field present even when unpopulated" rule as `registry` above.
+$script:TreeShaStart = $null
+$script:TreeShaEnd = $null
+# Set only by the verify retry path -- true iff the tree changed between
+# verify's first pass and its second. Never set by measure, and never
+# cleared back to $false once verify has retried once in this invocation.
+$script:TreeRetried = $false
+
 # The automated-test registry count, derived EXACTLY as doc_lint.ps1 check C7
 # derives it -- the paren is load-bearing. A bare `grep -c
 # ZENITH_AUTOMATED_TEST_REGISTER` also counts the paren-less mentions in comments
@@ -213,14 +264,57 @@ function Write-Banner([string]$Text) {
 # otherwise be swept by nothing, and the symptom is a build failing on a locked
 # output file with no connection to the change that caused it. Step 9 of the
 # tick has a sweep too, and it is far too late -- it runs after the gates.
+#
+# NAME ALONE used to be the whole criterion, and lane mode makes that wrong:
+# a ZM lane's tick_gates would kill a `zenithmon.exe` a DIFFERENT lane (or a
+# human) is running out of `C:\dev\Zenith-lanes\ZM`. Select-SweepTargets adds
+# a PATH scope -- name match AND the process's own .Path under -RepoRoot --
+# factored out as a pure function so it is testable without ever actually
+# killing anything (see Tools/Test_TickGates.ps1's own warning on that).
+function Select-SweepTargets {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Processes,
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$Names
+    )
+    $normRoot = ($RepoRoot -replace '/', '\').TrimEnd('\')
+    $prefixedRoot = $normRoot + '\'
+    $result = New-Object System.Collections.Generic.List[object]
+    foreach ($p in $Processes) {
+        $name = $null
+        try { $name = $p.Name } catch { $name = $null }
+        if ([string]::IsNullOrEmpty($name)) { continue }
+        if ($Names -notcontains $name.ToLowerInvariant()) { continue }
+
+        # $null/inaccessible .Path -> SKIP, never kill. A protected or
+        # cross-session process can throw merely reading .Path (access
+        # denied), and "cannot prove where it lives" must resolve to "leave
+        # it alone", not "kill it because the name matched".
+        $path = $null
+        try { $path = $p.Path } catch { $path = $null }
+        if ([string]::IsNullOrEmpty($path)) { continue }
+
+        $normPath = ($path -replace '/', '\')
+        # Prefix on a DIRECTORY BOUNDARY, case-insensitive (Windows paths):
+        # `C:\dev\Zenith` must not match `C:\dev\Zenith-lanes\ZM` -- a bare
+        # StartsWith without the trailing separator would.
+        $isRootItself = $normPath.Equals($normRoot, [System.StringComparison]::OrdinalIgnoreCase)
+        $isUnderRoot = $normPath.StartsWith($prefixedRoot, [System.StringComparison]::OrdinalIgnoreCase)
+        if ($isRootItself -or $isUnderRoot) { $result.Add($p) }
+    }
+    # `.ToArray()` via the leading comma -- see the note above Write-Result:
+    # `@($list)` on a List[object] throws regardless of what it holds.
+    return , $result.ToArray()
+}
+
 function Invoke-ExeSweep {
     param([string]$RepoRoot = $script:RepoRoot)
     $names = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'Games') -Directory -ErrorAction SilentlyContinue |
         ForEach-Object { $_.Name.ToLowerInvariant() })
     if ($names.Count -eq 0) { return }
+    $targets = Select-SweepTargets -Processes @(Get-Process -ErrorAction SilentlyContinue) -RepoRoot $RepoRoot -Names $names
     $killed = @()
-    foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) {
-        if ($names -notcontains $p.ProcessName.ToLowerInvariant()) { continue }
+    foreach ($p in $targets) {
         try { $p.Kill(); $killed += "$($p.ProcessName) (pid $($p.Id))" } catch { }
     }
     if ($killed.Count -gt 0) { Write-Line "[sweep] killed stray game exe(s): $($killed -join ', ')" 'Yellow' }
@@ -252,6 +346,7 @@ function Invoke-GateLine {
 
     $proc = Start-Process -FilePath 'pwsh' `
         -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $wrapper) `
+        -WorkingDirectory $script:RepoRoot `
         -NoNewWindow -PassThru -RedirectStandardOutput $outPath -RedirectStandardError "$outPath.err"
 
     # Unbounded by default. A gate that is merely SLOW must not be killed: a
@@ -391,6 +486,13 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
         # script that never wrote this" if the key simply vanishes on a run
         # that never reached the registry-count loop.
         registry    = $script:RegistryCounts
+        # Freshness = verified tree (see $script:TreeShaStart's own header
+        # comment). Present unconditionally, same "field over absence" rule
+        # as `registry` -- a run that never reached a tree-sha computation
+        # (an early exit-5 with no gate list) still emits the key, as $null.
+        treeShaStart = $script:TreeShaStart
+        treeShaEnd   = $script:TreeShaEnd
+        treeRetried  = $script:TreeRetried
     }
     # Extra can override anything above, INCLUDING state -- the internal-error
     # catch block passes state = 'error' this way, because 'complete' on a
@@ -416,9 +518,36 @@ function Write-Result([int]$Code, [string]$Verdict, $Extra) {
 # RECORDS the selection in gates.json -- which `zagent guard <KEY>` later
 # re-derives and compares against. Re-deriving it here by hand would produce a
 # recording that no longer describes the diff, which guard reports as a failure.
+#
+# -ReuseGateList (lane REGATE, plan mechanics 3.4): skip the `zagent gates`
+# shell-out entirely and read the ticket's OWN already-recorded gates.json.
+# The selection this reuses is the ticket's own claim-time gate list, not
+# "everything a merge-with-master diff now touches" -- re-deriving after a
+# lane-side `merge master` could silently narrow OR widen it depending on
+# what the merge changed, and REGATE's whole point is running the SAME gates
+# again on the merged tip.
 function Get-GateList {
-    Write-Banner "zagent gates $Key"
+    param([switch]$ReuseGateList)
+
     $gatesJson = Join-Path $runDir 'gates.json'
+
+    if ($ReuseGateList) {
+        Write-Banner "reusing recorded gate list (-ReuseGateList): $gatesJson"
+        if (-not (Test-Path -LiteralPath $gatesJson)) {
+            Write-Line "[tick_gates] -ReuseGateList set but no gates.json at $gatesJson" 'Red'
+            return $null
+        }
+        $record = Get-Content -LiteralPath $gatesJson -Raw -Encoding utf8 | ConvertFrom-Json
+        $lines = @($record.gates)
+        if ($lines.Count -eq 0) {
+            Write-Line '[tick_gates] the gate list is EMPTY. An empty gate list can never merge.' 'Red'
+            return $null
+        }
+        foreach ($l in $lines) { Write-Line "  $l" }
+        return $lines
+    }
+
+    Write-Banner "zagent gates $Key"
     & zagent gates $Key 2>&1 | ForEach-Object { Write-Line "  $_" }
     $rc = $LASTEXITCODE
     if ($rc -ne 0) {
@@ -439,6 +568,57 @@ function Get-GateList {
         return $null
     }
     return $lines
+}
+
+# --- The working-tree SHA (freshness = verified tree) ------------------------
+#
+# `git write-tree` of the CURRENT working tree, without ever touching the
+# real index: the real index file (`git rev-parse --git-path index` -- a
+# RELATIVE `.git/index` in a main checkout, an ABSOLUTE
+# `.../worktrees/<name>/index` in a linked worktree, brief §"Integration
+# mechanics" 1) is copied to a throwaway temp file, `GIT_INDEX_FILE` is
+# pointed at the copy for the duration of `add -A` + `write-tree`, and the
+# prior `GIT_INDEX_FILE` is restored in a `finally` regardless of outcome.
+# Copying the real index (rather than starting from an empty one) keeps its
+# stat cache and CRLF-in-index protection and avoids re-hashing every tracked
+# file -- the same reasoning the plan gives for this exact technique.
+function Get-WorkingTreeSha {
+    param([string]$RepoRoot = $script:RepoRoot)
+
+    $indexPathOut = & git -C $RepoRoot rev-parse --git-path index 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($indexPathOut)) { return $null }
+    $indexPathOut = ([string]$indexPathOut).Trim()
+    $realIndex = if ([System.IO.Path]::IsPathRooted($indexPathOut)) { $indexPathOut } else { Join-Path $RepoRoot $indexPathOut }
+
+    $tempIndex = Join-Path ([System.IO.Path]::GetTempPath()) ('tick_gates_index_' + [guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $realIndex) {
+        try { Copy-Item -LiteralPath $realIndex -Destination $tempIndex -Force } catch { return $null }
+    }
+    # else: no index has ever been written (a brand-new repo before any `git
+    # add`) -- a GIT_INDEX_FILE pointing at a path that does not yet exist is
+    # a legal empty index to git, and `add -A` below creates it there.
+
+    $priorIndexEnv = $env:GIT_INDEX_FILE
+    try {
+        $env:GIT_INDEX_FILE = $tempIndex
+        & git -C $RepoRoot add -A 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $tree = & git -C $RepoRoot write-tree 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tree)) { return $null }
+        return ([string]$tree).Trim()
+    }
+    catch {
+        return $null
+    }
+    finally {
+        if ($null -eq $priorIndexEnv) {
+            Remove-Item -Path Env:\GIT_INDEX_FILE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:GIT_INDEX_FILE = $priorIndexEnv
+        }
+        Remove-Item -LiteralPath $tempIndex -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # --- Created source files ----------------------------------------------------
@@ -659,7 +839,21 @@ try {
     Write-Line "[tick_gates] $Key - phase '$Phase' - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     Write-Line "[tick_gates] HEAD $(if ($script:HeadSha) { $script:HeadSha.Substring(0, [Math]::Min(12, $script:HeadSha.Length)) } else { '(unknown)' })"
 
-    $gateLines = Get-GateList
+    # --- The build slot: held for the WHOLE invocation that runs gate lines,
+    # every phase (measure/verify/all) -- released only in the outermost
+    # `finally` below, AFTER Invoke-ExeSweep. Acquired here, first thing
+    # inside the try, so a long wait leaves tick_gates.json saying `running`
+    # (the record written just above, before this try) rather than a stale
+    # verdict from a previous invocation -- and so a timeout can still write
+    # an honest exit-11 verdict through the SAME Write-Result/finally paths
+    # every other exit uses.
+    $script:BuildSlotHandle = Enter-ZenithBuildSlot -Reason "tick_gates $Key phase=$Phase"
+    if ($null -eq $script:BuildSlotHandle) {
+        Write-Result 11 'slot busy -- the machine-wide build slot is held by another checkout; not a gate failure' $null
+        exit 11
+    }
+
+    $gateLines = Get-GateList -ReuseGateList:$ReuseGateList
     if ($null -eq $gateLines) {
         Write-Result 5 'could not read the gate list; nothing ran' $null
         exit 5
@@ -699,6 +893,10 @@ try {
             Write-Line "[tick_gates] measure runs $($script:PlannedLines.Count) of $($gateLines.Count) gate line(s); $($script:DeferredLines.Count) DEFERRED to -Phase verify:" 'DarkGray'
             foreach ($l in $script:DeferredLines) { Write-Line "[tick_gates]   deferred: $l" 'DarkGray' }
         }
+
+        # Working-tree SHA, informational for measure (see $script:TreeShaStart's
+        # own header comment) -- taken before the first gate line runs.
+        $script:TreeShaStart = Get-WorkingTreeSha -RepoRoot $RepoRoot
 
         # 1. Regen, when and only when a source file was created.
         $created = Get-CreatedSourceFiles
@@ -876,6 +1074,13 @@ try {
             }
         }
 
+        # Working-tree SHA, informational -- after the last gate line measure
+        # actually ran. (An early exit above -- regen/build/uncompiled/unit
+        # failure -- leaves this at its $null initial value; that is fine,
+        # this pair is not authoritative for measure the way it is for
+        # verify.)
+        $script:TreeShaEnd = Get-WorkingTreeSha -RepoRoot $RepoRoot
+
         if ($pinNeedsBump) {
             # Exit 10, not 0 and not 1. The caller must stop here and write the
             # pin, the Status.md narration and any doc edits BEFORE the verify
@@ -899,13 +1104,16 @@ try {
     # ---- VERIFY --------------------------------------------------------------
     if ($Phase -eq 'verify' -or $Phase -eq 'all') {
 
-        # Re-derived, not reused. Between measure and verify the caller edits
-        # the pin and the docs, and those edits can pull in a category whose
-        # gates were never selected -- which is exactly what `zagent guard`
-        # fails on. Asking again here means the recording matches the diff that
-        # is about to be committed.
+        # Re-derived, not reused (unless -ReuseGateList). Between measure and
+        # verify the caller edits the pin and the docs, and those edits can
+        # pull in a category whose gates were never selected -- which is
+        # exactly what `zagent guard` fails on. Asking again here means the
+        # recording matches the diff that is about to be committed.
+        # -ReuseGateList (lane REGATE) is the deliberate exception: the point
+        # there is running the SAME selection again on a merged tip, not
+        # re-deriving from whatever the merge happened to touch.
         if ($Phase -eq 'verify') {
-            $gateLines = Get-GateList
+            $gateLines = Get-GateList -ReuseGateList:$ReuseGateList
             if ($null -eq $gateLines) {
                 Write-Result 5 'could not read the gate list; nothing ran' $null
                 exit 5
@@ -918,29 +1126,73 @@ try {
         $script:PlannedLines.Clear()
         foreach ($l in $gateLines) { $script:PlannedLines.Add($l) }
 
-        Write-Banner "verify -- every gate, in order ($($gateLines.Count) line(s))"
-        foreach ($line in $gateLines) {
-            # Flake-aware: a RED non-build line is re-run once and the outcome
-            # recorded in $script:Flakes, but $step is still the FIRST run's
-            # result and the branch below is unchanged by a rerun -- see
-            # Invoke-GateLineFlakeAware's own comment.
-            $step = Invoke-GateLineFlakeAware -Line $line -Label 'verify'
-            if ($step.ExitCode -ne 0) {
+        # ★ FRESHNESS = VERIFIED TREE (plan "Integration mechanics" 1). Every
+        # gate line legitimately rewrites tracked output sometimes (a shader
+        # header regenerated by the build gate, a .zscen re-authored by a
+        # boot), so a single treeShaStart != treeShaEnd is NOT itself a
+        # failure -- it is answered by re-running verify ONCE more, in this
+        # same invocation, on the now-current tree. Only a SECOND mismatch
+        # (pass 2's own start != its own end) is non-deterministic tracked
+        # output, which is a real red: exit 12.
+        $maxVerifyPasses = 2
+        for ($verifyPass = 1; $verifyPass -le $maxVerifyPasses; $verifyPass++) {
+            $passLabel = if ($verifyPass -eq 1) { '' } else { " (pass $verifyPass -- retry after a tree change)" }
+            Write-Banner "verify -- every gate, in order ($($gateLines.Count) line(s))$passLabel"
+
+            # Pass 2 recomputes its own start FRESH rather than reusing pass
+            # 1's end -- they are expected to be equal, but computing it
+            # again is what makes this correct even if they are not.
+            $passTreeShaStart = Get-WorkingTreeSha -RepoRoot $RepoRoot
+            if ($verifyPass -eq 1) { $script:TreeShaStart = $passTreeShaStart }
+
+            $failedLine = $null
+            foreach ($line in $gateLines) {
+                # Flake-aware: a RED non-build line is re-run once and the
+                # outcome recorded in $script:Flakes, but $step is still the
+                # FIRST run's result and the branch below is unchanged by a
+                # rerun -- see Invoke-GateLineFlakeAware's own comment.
+                $step = Invoke-GateLineFlakeAware -Line $line -Label 'verify'
+                if ($step.ExitCode -ne 0) {
+                    $failedLine = $line
+                    break
+                }
+            }
+
+            $passTreeShaEnd = Get-WorkingTreeSha -RepoRoot $RepoRoot
+            $script:TreeShaEnd = $passTreeShaEnd
+
+            if ($null -ne $failedLine) {
                 # ★ A FAILED GATE VOIDS EVERY GATE BEHIND IT. Stopping here is
                 # correct and cheap, but the lines that never ran are the ones a
                 # reader most needs named: on one ticket the unit gate and
                 # doc_lint were both behind a failing suite, so a freshly-bumped
                 # pin was unconfirmed and the linter had never seen the edited
                 # docs -- and nothing in the result said so.
-                $notRun = @($gateLines | Where-Object { $_ -ne $line -and @($script:Steps.ToArray() | ForEach-Object { $_.Line }) -notcontains $_ })
+                $notRun = @($gateLines | Where-Object { $_ -ne $failedLine -and @($script:Steps.ToArray() | ForEach-Object { $_.Line }) -notcontains $_ })
                 if ($notRun.Count -gt 0) {
                     Write-Line ''
                     Write-Line "[tick_gates] $($notRun.Count) gate line(s) NEVER RAN because this one failed:" 'Yellow'
                     foreach ($n in $notRun) { Write-Line "  not run: $n" 'Yellow' }
                 }
-                Write-Result 4 "gate failed: $line" $null
+                Write-Result 4 "gate failed: $failedLine" $null
                 exit 4
             }
+
+            # A $null on either side means Get-WorkingTreeSha itself could not
+            # produce an answer (e.g. `git write-tree` failed for a reason
+            # unrelated to any gate) -- treated as stable rather than as a
+            # mismatch, so a diagnostic helper's own failure can never block
+            # an otherwise-green verify or force a pointless retry.
+            $stable = ($null -eq $passTreeShaStart) -or ($null -eq $passTreeShaEnd) -or ($passTreeShaStart -eq $passTreeShaEnd)
+            if ($stable) { break }
+
+            if ($verifyPass -ge $maxVerifyPasses) {
+                Write-Result 12 "tree unstable: non-deterministic tracked output across two verify passes (pass $verifyPass start=$passTreeShaStart end=$passTreeShaEnd)" $null
+                exit 12
+            }
+
+            Write-Line "[tick_gates] working tree changed during verify (start $passTreeShaStart != end $passTreeShaEnd) -- a gate line rewrote tracked output; re-running verify once more" 'Yellow'
+            $script:TreeRetried = $true
         }
     }
 
@@ -974,4 +1226,11 @@ finally {
     # a game exe open fails the NEXT build on a locked output file, and that
     # failure names a file nobody touched.
     Invoke-ExeSweep
+    # The build slot is released LAST, after the sweep -- a stray game exe
+    # this run's own gates left open should be cleared while THIS run still
+    # holds the slot, not handed to whichever checkout acquires it next.
+    # Exit-ZenithBuildSlot is a safe no-op for $null (never acquired, e.g. an
+    # exit-11 timeout) and for an inherited handle (a nested tick_gates or
+    # `zenith build` inside an already-held slot never touches the mutex).
+    Exit-ZenithBuildSlot $script:BuildSlotHandle
 }

@@ -689,6 +689,375 @@ Assert-That 'a `zenith.ps1 build` line is NEVER retried, even red -- a build fai
     $ok
 }
 
+Write-Host "`n=== Get-GateList -ReuseGateList ===" -ForegroundColor Cyan
+# WP4: skip the `zagent gates` shell-out and read the ticket's own recorded
+# gates.json instead. There is no existing precedent in this suite for
+# stubbing `zagent` -- every other test's own header warns never to call the
+# REAL one -- so this builds a fake one: a temp dir holding a `zagent.cmd`
+# that writes a marker file if invoked, prepended to PATH. -ReuseGateList
+# reaching the shell-out at all would be the regression; the marker's
+# absence is the proof it did not.
+New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+
+function New-FakeZagentOnPath {
+    param([string]$MarkerPath)
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_fakezagent_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $cmdPath = Join-Path $dir 'zagent.cmd'
+    Set-Content -LiteralPath $cmdPath -Value @(
+        '@echo off',
+        "echo marker > ""$MarkerPath"""
+        'exit /b 1'
+    ) -Encoding ascii
+    return $dir
+}
+
+Assert-That '-ReuseGateList reads gates.json directly -- the zagent shell-out marker never appears' {
+    $marker = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_marker_" + [guid]::NewGuid().ToString('N') + '.txt')
+    $fakeDir = New-FakeZagentOnPath -MarkerPath $marker
+    $priorPath = $env:PATH
+    $gatesJsonPath = Join-Path $runDir 'gates.json'
+    try {
+        $env:PATH = "$fakeDir;$priorPath"
+        Set-Content -LiteralPath $gatesJsonPath -Value (@{ gates = @('pwsh -NoProfile -Command "exit 0"', 'pwsh -NoProfile -Command "exit 0"') } | ConvertTo-Json) -Encoding utf8
+
+        # Exercises the SAME function both real call sites (measure's initial
+        # read, verify's re-derive) invoke with -ReuseGateList:$ReuseGateList
+        # -- there is nothing left to factor out beyond this switch, since
+        # Get-GateList was already the one place the gate-list decision lives.
+        $lines = Get-GateList -ReuseGateList
+
+        (@($lines).Count -eq 2) -and (-not (Test-Path -LiteralPath $marker))
+    }
+    finally {
+        $env:PATH = $priorPath
+        Remove-Item -LiteralPath $fakeDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $gatesJsonPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Assert-That '-ReuseGateList with NO gates.json on disk returns $null -- the same shape the exit-5 path checks' {
+    $gatesJsonPath = Join-Path $runDir 'gates.json'
+    Remove-Item -LiteralPath $gatesJsonPath -Force -ErrorAction SilentlyContinue
+    $null -eq (Get-GateList -ReuseGateList)
+}
+
+Write-Host "`n=== Get-WorkingTreeSha ===" -ForegroundColor Cyan
+# `git write-tree` from a temp copy of the real index -- never the real index
+# itself. Confirmed two ways: the result equals a real commit's tree, and the
+# real index file is byte-identical before and after the call.
+
+function Test-WorkingTreeShaScenario {
+    <#
+      Dirties $RepoPath (a modified tracked file + an untracked one), calls
+      Get-WorkingTreeSha, and checks it against an INDEPENDENTLY-produced
+      tree: `git add -A; git commit`, then `rev-parse HEAD^{tree}` -- done
+      AFTER the byte-identical check below, so that check is not proving the
+      function against its own side effect.
+    #>
+    param([Parameter(Mandatory)][string]$RepoPath)
+
+    Add-Content -LiteralPath (Join-Path $RepoPath 'Games/Probe/Tests/Existing.cpp') -Value '// dirtied for tree-sha test'
+    Set-Content -LiteralPath (Join-Path $RepoPath 'Games/Probe/Tests/Untracked_TreeSha.cpp') -Value '// untracked' -Encoding utf8
+
+    $indexOut = (& git -C $RepoPath rev-parse --git-path index 2>$null)
+    $indexOut = ([string]$indexOut).Trim()
+    $realIndex = if ([System.IO.Path]::IsPathRooted($indexOut)) { $indexOut } else { Join-Path $RepoPath $indexOut }
+
+    $beforeHash = if (Test-Path -LiteralPath $realIndex) { (Get-FileHash -LiteralPath $realIndex -Algorithm SHA256).Hash } else { $null }
+
+    $sha = Get-WorkingTreeSha -RepoRoot $RepoPath
+
+    $afterHash = if (Test-Path -LiteralPath $realIndex) { (Get-FileHash -LiteralPath $realIndex -Algorithm SHA256).Hash } else { $null }
+    $indexUnchanged = ($beforeHash -eq $afterHash)
+
+    & git -C $RepoPath add -A 2>$null | Out-Null
+    & git -C $RepoPath commit -m 'tree-sha test commit' --quiet 2>$null | Out-Null
+    $expected = (& git -C $RepoPath rev-parse 'HEAD^{tree}' 2>$null)
+    $expected = ([string]$expected).Trim()
+
+    return ($null -ne $sha) -and ($sha -eq $expected) -and $indexUnchanged
+}
+
+Assert-That 'equals `git write-tree` of a real commit, and the real index is byte-identical before/after' {
+    $repo = New-GitFixture
+    try {
+        Test-WorkingTreeShaScenario -RepoPath $repo
+    }
+    finally { Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'the SAME check from inside a LINKED WORKTREE -- git-path index there is ABSOLUTE, not .git/index' {
+    $repo = New-GitFixture
+    $worktree = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_wt_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    try {
+        & git -C $repo worktree add --detach $worktree HEAD 2>$null | Out-Null
+        Test-WorkingTreeShaScenario -RepoPath $worktree
+    }
+    finally {
+        & git -C $repo worktree remove --force $worktree 2>$null | Out-Null
+        Remove-Item -LiteralPath $worktree -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $repo -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "`n=== Select-SweepTargets (pure -- never touches a real process) ===" -ForegroundColor Cyan
+# ** NEVER CALL Invoke-ExeSweep FROM A TEST (see this file's own warning
+# above). This asserts the SELECTION only, against synthetic process objects.
+
+Assert-That 'requires name AND path -- a name match under an unrelated path is not swept' {
+    # PLAIN ASSIGNMENT, never `@(...)` around the call -- Select-SweepTargets
+    # returns `, $result.ToArray()`, the same "carry an empty array through
+    # intact" contract Get-CreatedSourceFiles/Get-CreatedIncludeFiles use
+    # (see their own header comments). Wrapping the CALL in `@()` re-wraps
+    # that envelope: the function already emits ONE pipeline object (the
+    # array), so `@(...)` around it produces a 1-element array whose element
+    # IS that array -- `.Count` is then always 1, never 0, no matter how many
+    # real hits there were. Measured while writing this test.
+    $procs = @(
+        [PSCustomObject]@{ Name = 'zenithmon'; Path = 'C:\dev\Zenith-lanes\ZM\Games\Zenithmon\Build\output\win64\x\zenithmon.exe' }
+    )
+    $hits = Select-SweepTargets -Processes $procs -RepoRoot 'C:\dev\Zenith' -Names @('zenithmon')
+    $hits.Count -eq 0
+}
+
+Assert-That 'a directory-boundary sibling (Zenith-lanes) is NOT matched by root Zenith -- prefix must respect the boundary' {
+    # The whole point of the path scope: `C:\dev\Zenith-lanes\ZM\...` starts
+    # with the literal string `C:\dev\Zenith`, but is not UNDER it.
+    $procs = @(
+        [PSCustomObject]@{ Name = 'combat'; Path = 'C:\dev\Zenith-lanes\ZM\Games\Combat\Build\output\win64\x\combat.exe' },
+        [PSCustomObject]@{ Name = 'combat'; Path = 'C:\dev\Zenith\Games\Combat\Build\output\win64\x\combat.exe' }
+    )
+    $hits = Select-SweepTargets -Processes $procs -RepoRoot 'C:\dev\Zenith' -Names @('combat')
+    ($hits.Count -eq 1) -and ($hits[0].Path -eq 'C:\dev\Zenith\Games\Combat\Build\output\win64\x\combat.exe')
+}
+
+Assert-That 'a $null path is SKIPPED -- never treated as a match' {
+    $procs = @([PSCustomObject]@{ Name = 'zenithmon'; Path = $null })
+    $hits = Select-SweepTargets -Processes $procs -RepoRoot 'C:\dev\Zenith' -Names @('zenithmon')
+    $hits.Count -eq 0
+}
+
+Assert-That 'a path under the root with the WRONG name is skipped' {
+    $procs = @([PSCustomObject]@{ Name = 'msbuild'; Path = 'C:\dev\Zenith\Build\output\msbuild.exe' })
+    $hits = Select-SweepTargets -Processes $procs -RepoRoot 'C:\dev\Zenith' -Names @('zenithmon', 'combat')
+    $hits.Count -eq 0
+}
+
+Assert-That 'the repo root itself (no trailing separator) still matches -- a game exe could sit directly at the root' {
+    $procs = @([PSCustomObject]@{ Name = 'zenithmon'; Path = 'C:\dev\Zenith' })
+    $hits = Select-SweepTargets -Processes $procs -RepoRoot 'C:\dev\Zenith' -Names @('zenithmon')
+    $hits.Count -eq 1
+}
+
+Write-Host "`n=== the build slot (Tools/build_lock.ps1, dot-sourced transitively via tick_gates.ps1) ===" -ForegroundColor Cyan
+# Enter-ZenithBuildSlot / Exit-ZenithBuildSlot are defined by build_lock.ps1,
+# which tick_gates.ps1 dot-sources unconditionally near its own top (before
+# the -NoRun gate) -- so they are already in scope here via this file's own
+# `. tick_gates.ps1 -NoRun` at the top. These tests acquire the REAL
+# machine-wide `Local\ZenithBuildSlot` mutex, so every one of them releases
+# what it acquired in a `finally`, and the diagnostics-file tests clean up
+# after themselves in THIS repo's own .git directory (Enter-ZenithBuildSlot's
+# repoRoot always resolves to wherever Tools/build_lock.ps1 itself lives,
+# never a test fixture -- it is a real machine-wide resource by design).
+#
+# A holder on a genuinely separate OS thread is required for the blocking
+# tests -- NOT a PowerShell scriptblock run via [Threading.Thread] (that
+# throws "no Runspace available": a scriptblock delegate always needs the
+# engine, even calling only .NET types), and NOT a second Mutex object
+# acquired on THIS SAME thread (a named Windows mutex is reentrant for its
+# OWNING THREAD regardless of which .NET Mutex object represents it, so a
+# same-thread "holder" would let this process's own Enter-ZenithBuildSlot
+# re-acquire immediately -- measured while writing this test). Add-Type
+# compiles a tiny C# holder whose Run() is invoked as a real ThreadStart
+# delegate on its own OS thread, sidestepping both problems.
+Add-Type -TypeDefinition @'
+using System.Threading;
+public class ZenithTestMutexHolder {
+    private string _name;
+    private ManualResetEvent _ready;
+    private ManualResetEvent _release;
+    public ZenithTestMutexHolder(string name, ManualResetEvent ready, ManualResetEvent release) {
+        _name = name; _ready = ready; _release = release;
+    }
+    public void Run() {
+        var m = new Mutex(false, _name);
+        m.WaitOne();
+        _ready.Set();
+        _release.WaitOne();
+        m.ReleaseMutex();
+    }
+}
+'@ -ErrorAction SilentlyContinue
+
+function Start-ZenithTestMutexHolderThread {
+    # Returns @{ Thread; Ready; Release } -- Release.Set() then Thread.Join()
+    # to tear down.
+    $ready = New-Object System.Threading.ManualResetEvent($false)
+    $release = New-Object System.Threading.ManualResetEvent($false)
+    $holder = New-Object ZenithTestMutexHolder('Local\ZenithBuildSlot', $ready, $release)
+    $del = [Delegate]::CreateDelegate([System.Threading.ThreadStart], $holder, 'Run')
+    $thread = [System.Threading.Thread]::new($del)
+    $thread.IsBackground = $true
+    $thread.Start()
+    $ready.WaitOne(10000) | Out-Null
+    return [PSCustomObject]@{ Thread = $thread; Ready = $ready; Release = $release }
+}
+
+function Stop-ZenithTestMutexHolderThread {
+    param($Holder)
+    $Holder.Release.Set() | Out-Null
+    $Holder.Thread.Join(10000) | Out-Null
+}
+
+Assert-That 'no re-acquire under ZENITH_BUILD_SLOT_HELD=1, even while the mutex is held elsewhere -- returns an INHERITED handle immediately' {
+    $holder = Start-ZenithTestMutexHolderThread
+    $priorHeld = $env:ZENITH_BUILD_SLOT_HELD
+    try {
+        $env:ZENITH_BUILD_SLOT_HELD = '1'
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $h = Enter-ZenithBuildSlot -WaitMinutes 1 -PollMilliseconds 5000
+        $sw.Stop()
+        $ok = ($null -ne $h) -and ($h.Inherited -eq $true) -and ($null -eq $h.Mutex) -and ($sw.ElapsedMilliseconds -lt 4000)
+        Exit-ZenithBuildSlot $h   # must be a safe no-op -- never touches the mutex the holder owns
+        $ok
+    }
+    finally {
+        if ($null -eq $priorHeld) { Remove-Item Env:\ZENITH_BUILD_SLOT_HELD -ErrorAction SilentlyContinue } else { $env:ZENITH_BUILD_SLOT_HELD = $priorHeld }
+        Stop-ZenithTestMutexHolderThread $holder
+    }
+}
+
+Assert-That 'a bounded wait with a tiny -WaitMinutes and small -PollMilliseconds returns $null, not a hang' {
+    $holder = Start-ZenithTestMutexHolderThread
+    try {
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $h = Enter-ZenithBuildSlot -WaitMinutes 0.02 -PollMilliseconds 200
+        $sw.Stop()
+        ($null -eq $h) -and ($sw.ElapsedMilliseconds -lt 10000)
+    }
+    finally {
+        Stop-ZenithTestMutexHolderThread $holder
+    }
+}
+
+Assert-That 'an ABANDONED mutex (holder killed) counts as ACQUIRED on the next WaitOne' {
+    $marker = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_abandon_" + [guid]::NewGuid().ToString('N') + '.marker')
+    $childScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_abandon_child_" + [guid]::NewGuid().ToString('N') + '.ps1')
+    Set-Content -LiteralPath $childScriptPath -Value @(
+        '$m = New-Object System.Threading.Mutex($false, ''Local\ZenithBuildSlot'')',
+        '$null = $m.WaitOne()',
+        "Set-Content -LiteralPath '$marker' -Value '1'",
+        'Start-Sleep -Seconds 300'
+    ) -Encoding utf8
+    $child = $null
+    $handle = $null
+    try {
+        $child = Start-Process -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-File', $childScriptPath) -PassThru -WindowStyle Hidden
+        $deadline = (Get-Date).AddSeconds(15)
+        while (-not (Test-Path -LiteralPath $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 100 }
+        $markerSeen = Test-Path -LiteralPath $marker
+        Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue
+        $child.WaitForExit(10000) | Out-Null
+
+        $handle = Enter-ZenithBuildSlot -WaitMinutes 1 -PollMilliseconds 200
+        $markerSeen -and ($null -ne $handle) -and (-not $handle.Inherited)
+    }
+    finally {
+        Exit-ZenithBuildSlot $handle
+        if ($child -and -not $child.HasExited) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $marker, $childScriptPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Invoke-BuildLockRunChild {
+    <#
+      Runs `pwsh -File Tools/build_lock.ps1 -Run <cmd> ...` as a CHILD process
+      and returns its exit code. Does NOT pass the arguments through
+      Start-Process's `-ArgumentList` (a string array) directly -- that array
+      is joined into a raw command line WITHOUT quoting elements containing
+      spaces, so a multi-word -Run value (e.g. 'exit 7') gets torn apart:
+      `-Run` binds only the first word, and the remainder ('7') lands on the
+      next declared parameter by POSITION (`-WaitMinutes`), silently -- no
+      error, a completely different run. Measured while writing this test:
+      `-Run 'exit 7'` this way returned exit code 0 (a bare `exit` inside the
+      wrapper), not 7. The fix used everywhere else in this repo for exactly
+      this class of problem (Invoke-GateLine's own header comment; build_lock.ps1's
+      own -Run implementation) is to write the invocation to a wrapper .ps1
+      and run THAT through `-File` -- parsed by the PowerShell parser, which
+      quotes correctly, rather than reconstructed by naive array-joining.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$BuildLockPath,
+        [Parameter(Mandatory)][string]$RunCommand,
+        [double]$WaitMinutes,
+        [int]$PollMilliseconds,
+        [string]$RedirectStandardOutput
+    )
+    $outerWrapper = Join-Path ([System.IO.Path]::GetTempPath()) ('tickgates_buildlock_outer_' + [guid]::NewGuid().ToString('N') + '.ps1')
+    $argsLine = "-Run '$($RunCommand -replace "'", "''")'"
+    if ($PSBoundParameters.ContainsKey('WaitMinutes')) { $argsLine += " -WaitMinutes $WaitMinutes" }
+    if ($PSBoundParameters.ContainsKey('PollMilliseconds')) { $argsLine += " -PollMilliseconds $PollMilliseconds" }
+    $body = "& pwsh -NoProfile -File '$BuildLockPath' $argsLine`nexit `$LASTEXITCODE"
+    Set-Content -LiteralPath $outerWrapper -Value $body -Encoding utf8
+    try {
+        $spArgs = @{
+            FilePath     = 'pwsh'
+            ArgumentList = @('-NoProfile', '-File', $outerWrapper)
+            PassThru     = $true
+            Wait         = $true
+            WindowStyle  = 'Hidden'
+        }
+        if ($RedirectStandardOutput) { $spArgs['RedirectStandardOutput'] = $RedirectStandardOutput }
+        $proc = Start-Process @spArgs
+        return $proc.ExitCode
+    }
+    finally {
+        Remove-Item -LiteralPath $outerWrapper -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Assert-That 'build_lock.ps1 -Run exits 11 while the slot is held elsewhere' {
+    $holder = Start-ZenithTestMutexHolderThread
+    try {
+        $buildLockPath = Join-Path $repoRoot 'Tools/build_lock.ps1'
+        $code = Invoke-BuildLockRunChild -BuildLockPath $buildLockPath -RunCommand 'exit 0' -WaitMinutes 0.02 -PollMilliseconds 200
+        $code -eq 11
+    }
+    finally {
+        Stop-ZenithTestMutexHolderThread $holder
+    }
+}
+
+Assert-That 'build_lock.ps1 -Run propagates the wrapped command''s own exit code when the slot is free' {
+    $buildLockPath = Join-Path $repoRoot 'Tools/build_lock.ps1'
+    $code = Invoke-BuildLockRunChild -BuildLockPath $buildLockPath -RunCommand 'exit 7'
+    $code -eq 7
+}
+
+Assert-That 'a Start-Process pwsh child spawned by -Run sees ZENITH_BUILD_SLOT_HELD=1 -- the handshake propagates by environment inheritance' {
+    $buildLockPath = Join-Path $repoRoot 'Tools/build_lock.ps1'
+    $outFile = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_slotenv_" + [guid]::NewGuid().ToString('N') + '.out')
+    try {
+        $code = Invoke-BuildLockRunChild -BuildLockPath $buildLockPath -RunCommand 'Write-Output $env:ZENITH_BUILD_SLOT_HELD' -RedirectStandardOutput $outFile
+        $out = if (Test-Path -LiteralPath $outFile) { (Get-Content -LiteralPath $outFile -Raw) } else { '' }
+        ($code -eq 0) -and ($out -match '1')
+    }
+    finally {
+        Remove-Item -LiteralPath $outFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Assert-That 'the diagnostics file exists while the slot is held and is gone after release' {
+    $h = Enter-ZenithBuildSlot -WaitMinutes 1 -Reason 'Test_TickGates diagnostics probe'
+    $existedWhileHeld = ($null -ne $h) -and ($null -ne $h.DiagPath) -and (Test-Path -LiteralPath $h.DiagPath)
+    $diagPath = $h.DiagPath
+    Exit-ZenithBuildSlot $h
+    $goneAfterRelease = (-not [string]::IsNullOrEmpty($diagPath)) -and (-not (Test-Path -LiteralPath $diagPath))
+    $existedWhileHeld -and $goneAfterRelease
+}
+
 Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ''

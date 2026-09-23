@@ -1073,6 +1073,235 @@ function Test-ZenithInWorktree {
     return ($gitDir -ne $commonDir)
 }
 
+# --- Regen staleness (WP5: plan Sec.2 "regen_sha in every checkout") --------
+
+function Test-ZenithProjectShapingPath {
+    # Predicate shared by the regen state-file writer (regen.ps1) and
+    # Test-ZenithRegenStale below: is $RelativePath (repo-relative, either
+    # slash style accepted) one of the files that SHAPES a generated project?
+    #   (a) a SourceFilesExtensions member (Build/Sharpmake_Common.cs:92 --
+    #       .cpp .c .h .inl .slang; NOT .hpp/.cc, which only appear in the
+    #       vendored Msdf projects) that is NOT under Middleware/; or
+    #   (b) a Sharpmake source file (Build/Sharpmake_*.cs) or a game
+    #       descriptor (Games/*/*.zproj).
+    # The two callers must never disagree about this, or a build can go stale
+    # in one direction and never in the other.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$RelativePath)
+
+    $norm = $RelativePath.Replace('\', '/')
+    $isSharpmakeOrZproj = ($norm -imatch '^Build/Sharpmake_[^/]+\.cs$') -or ($norm -imatch '^Games/[^/]+/[^/]+\.zproj$')
+    if ($isSharpmakeOrZproj) { return $true }
+
+    $underMiddleware = ($norm -imatch '(^|/)Middleware/')
+    if ($underMiddleware) { return $false }
+
+    $ext = [System.IO.Path]::GetExtension($norm)
+    return ($ext -iin @('.cpp', '.c', '.h', '.inl', '.slang'))
+}
+
+function Get-ZenithUntrackedProjectShapingFiles {
+    # Sorted repo-relative (forward-slash) paths of untracked ('??' in
+    # `git status --porcelain --untracked-files=all`) files that are
+    # project-shaping per Test-ZenithProjectShapingPath. Called from BOTH
+    # regen.ps1 (recording the current set into Build/artifacts/regen_sha) and
+    # Test-ZenithRegenStale (comparing the current set against what was
+    # recorded) -- the same command and the same predicate, so the writer and
+    # the reader can never disagree about what "new untracked source" means.
+    [CmdletBinding()]
+    param([string]$RepoRoot)
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+
+    # NOTE: no leading comma on either return below. This codebase's own
+    # gotcha (`return , $arr` + `@(...)` at the call site double-wraps into a
+    # 1-element array holding the WHOLE array) bit this exact function during
+    # WP5 authoring: Sort-Object's pipeline output collapses an empty input to
+    # $null, so a comma-wrapped empty return became a 1-element array
+    # containing $null, and Test-ZenithRegenStale read that back as "1 new
+    # untracked file: System.Object[]". Plain `return $arr`, with $arr already
+    # forced through `@(...)`, lets `return` unroll it (0, 1 or N elements)
+    # and the caller's own `@(Get-Zenith...)` re-collects it losslessly --
+    # exactly the pattern Get-ZenithGameDescriptors/Test-ZenithGameNameSyntax
+    # already use elsewhere in this module.
+    $lines = & git -C $RepoRoot status --porcelain --untracked-files=all 2>$null
+    if ($LASTEXITCODE -ne 0 -or $null -eq $lines) { return @() }
+
+    $result = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($lines)) {
+        if ([string]::IsNullOrEmpty($line) -or $line.Length -lt 3) { continue }
+        $status = $line.Substring(0, 2)
+        if ($status -ne '??') { continue }
+        $path = $line.Substring(3).Trim().Trim('"').Replace('\', '/')
+        if (Test-ZenithProjectShapingPath -RelativePath $path) {
+            [void]$result.Add($path)
+        }
+    }
+    $sorted = @($result | Sort-Object)
+    return $sorted
+}
+
+function Test-ZenithRegenStale {
+    # Whether Build/artifacts/regen_sha (written by regen.ps1 ONLY on success --
+    # Build/artifacts/ is gitignored, .gitignore:212; this is the ONE sanctioned
+    # file, never Build/.regen_sha, which every checkout writing it would turn
+    # into a tracked-file conflict) says the on-disk generated projects are
+    # stale relative to HEAD. Read-only; never writes.
+    #
+    # Distinct from Test-ZenithRegenDrift (descriptor vs. generated .cs content)
+    # and Get-ZenithProjectSourceDrift (a source file present on disk but never
+    # in ANY vcxproj): this answers "has a project-SHAPING file been added,
+    # deleted or renamed, or a Sharpmake/.zproj file changed at all, since the
+    # last regen" -- called from Invoke-ZenithBuild (ZenithCli.psm1) before
+    # every build.
+    #
+    # Stale when ANY of:
+    #   * regen_sha missing or empty;
+    #   * its recorded commit does not resolve (a deleted agent/* commit, a
+    #     rebase);
+    #   * `git diff --name-status <sha> HEAD` lists a project-shaping file with
+    #     status A, D or R, or ANY status on a Sharpmake/.zproj file (a newly
+    #     ADDED Sharpmake_X.cs needs a regen too -- 'M' alone is not enough);
+    #   * the CURRENT untracked project-shaping set has grown since regen_sha
+    #     was written (a new uncommitted .cpp).
+    # A plain modification (M) of a .cpp/.c/.h/.inl/.slang is NOT stale --
+    # Sharpmake already knows the file; only its contents changed.
+    #
+    # Returns [pscustomobject]@{ Stale = <bool>; Reason = <string> }.
+    [CmdletBinding()]
+    param([string]$RepoRoot)
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+
+    $shaPath = Join-Path $RepoRoot 'Build/artifacts/regen_sha'
+    if (-not (Test-Path -LiteralPath $shaPath)) {
+        return [pscustomobject]@{ Stale = $true; Reason = "no Build/artifacts/regen_sha found -- run 'zenith regen'" }
+    }
+    $lines = @(Get-Content -LiteralPath $shaPath -Encoding utf8 -ErrorAction SilentlyContinue)
+    $sha = if ($lines.Count -gt 0) { ([string]$lines[0]).Trim() } else { '' }
+    if ([string]::IsNullOrEmpty($sha)) {
+        return [pscustomobject]@{ Stale = $true; Reason = "Build/artifacts/regen_sha is empty -- run 'zenith regen'" }
+    }
+
+    & git -C $RepoRoot cat-file -e "$sha^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ Stale = $true; Reason = "regen_sha commit $sha is unresolvable (rebase, or a deleted branch?) -- run 'zenith regen'" }
+    }
+
+    $diff = & git -C $RepoRoot diff --name-status "$sha" HEAD 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ Stale = $true; Reason = "'git diff --name-status $sha HEAD' failed -- run 'zenith regen'" }
+    }
+    foreach ($rawLine in @($diff)) {
+        if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+        $fields = $rawLine -split "`t"
+        if ($fields.Count -lt 2) { continue }
+        $statusToken = $fields[0]
+        $statusLetter = $statusToken.Substring(0, 1)
+        # A rename's NEW path is the one that answers "does this exist at
+        # HEAD"; git diff gives old-path/new-path for an 'R' line.
+        $path = if ($statusLetter -eq 'R' -and $fields.Count -ge 3) { $fields[2] } else { $fields[1] }
+        if (-not (Test-ZenithProjectShapingPath -RelativePath $path)) { continue }
+
+        $isSharpmakeOrZproj = ($path -imatch '^Build/Sharpmake_[^/]+\.cs$') -or ($path -imatch '^Games/[^/]+/[^/]+\.zproj$')
+        if ($isSharpmakeOrZproj -or $statusLetter -in @('A', 'D', 'R')) {
+            return [pscustomobject]@{ Stale = $true; Reason = "$path changed ($statusToken) since the last regen -- run 'zenith regen'" }
+        }
+        # else: a plain 'M' on a .cpp/.c/.h/.inl/.slang -- not stale.
+    }
+
+    $recordedUntracked = @()
+    if ($lines.Count -gt 1) {
+        $recordedUntracked = @($lines[1..($lines.Count - 1)] | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -ne '' })
+    }
+    $recordedSet = New-Object System.Collections.Generic.HashSet[string] ([StringComparer]::Ordinal)
+    foreach ($p in $recordedUntracked) { [void]$recordedSet.Add($p) }
+    $currentUntracked = @(Get-ZenithUntrackedProjectShapingFiles -RepoRoot $RepoRoot)
+    $newUntracked = @($currentUntracked | Where-Object { -not $recordedSet.Contains($_) })
+    if ($newUntracked.Count -gt 0) {
+        return [pscustomobject]@{ Stale = $true; Reason = "$($newUntracked.Count) new untracked project-shaping file(s) since the last regen: $($newUntracked -join ', ') -- run 'zenith regen'" }
+    }
+
+    return [pscustomobject]@{ Stale = $false; Reason = '' }
+}
+
+function Write-ZenithRegenStateFile {
+    # Writes Build/artifacts/regen_sha: line 1 is the current HEAD, the rest are
+    # the sorted current untracked project-shaping files (Get-ZenithUntrackedProjectShapingFiles).
+    # Factored out of regen.ps1 (which calls this as its LAST step, only after
+    # every prior step exited 0) so the write itself -- and its "only on
+    # success" contract -- can be tested in isolation, without invoking
+    # Sharpmake. Build/artifacts/ is gitignored (.gitignore:212); this is the
+    # ONE sanctioned home, never Build/.regen_sha.
+    #
+    # Returns $true on success. Returns $false, and writes NOTHING, if HEAD
+    # cannot be resolved (e.g. not a git repo, or a detached/unborn HEAD) --
+    # the caller is expected to log that and move on; a partially-written
+    # state file would be worse than none (Test-ZenithRegenStale would see an
+    # empty/garbage sha and correctly call it stale either way, but this keeps
+    # the file itself always well-formed when it exists at all).
+    [CmdletBinding()]
+    param([string]$RepoRoot)
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+
+    $headSha = (& git -C $RepoRoot rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($headSha)) { return $false }
+    $headSha = ([string]$headSha).Trim()
+
+    $untracked = @(Get-ZenithUntrackedProjectShapingFiles -RepoRoot $RepoRoot)
+    $artifactsDir = Join-Path $RepoRoot 'Build/artifacts'
+    New-Item -ItemType Directory -Force -Path $artifactsDir | Out-Null
+    $stateLines = @($headSha) + $untracked
+    Set-Content -LiteralPath (Join-Path $artifactsDir 'regen_sha') -Value $stateLines -Encoding utf8
+    return $true
+}
+
+function Test-ZenithRegisteredLane {
+    # True iff $RepoRoot's toplevel matches a lane's "path" registered in
+    # <git-common-dir>/vault/lanes.json
+    # ({"lanes":{"<PROJECT>":{"path":"C:/dev/Zenith-lanes/ZM", ...}}}).
+    # git-common-dir is RELATIVE (".git") from a main checkout and ABSOLUTE
+    # from a linked worktree -- IsPathRooted is the correct way to tell them
+    # apart. This mirrors Tools/build_lock.ps1's own Get-ZenithGitCommonDir,
+    # re-derived here rather than imported: that file lives in Tools/ and this
+    # module is imported by regen.ps1 (Build/) with no dependency on it.
+    # Missing/invalid lanes.json, or no matching path, => false; never throws.
+    [CmdletBinding()]
+    param([string]$RepoRoot)
+    if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Get-ZenithRepoRoot }
+
+    try {
+        $top = (& git -C $RepoRoot rev-parse --show-toplevel 2>$null)
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($top)) { return $false }
+        $top = ([string]$top).Trim()
+
+        $commonDir = (& git -C $RepoRoot rev-parse --git-common-dir 2>$null)
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($commonDir)) { return $false }
+        $commonDir = ([string]$commonDir).Trim()
+        if (-not [System.IO.Path]::IsPathRooted($commonDir)) { $commonDir = Join-Path $RepoRoot $commonDir }
+
+        $lanesPath = Join-Path $commonDir 'vault/lanes.json'
+        if (-not (Test-Path -LiteralPath $lanesPath)) { return $false }
+
+        $json = Get-Content -LiteralPath $lanesPath -Raw -Encoding utf8 | ConvertFrom-Json
+        $lanesProp = $json.PSObject.Properties['lanes']
+        if (-not $lanesProp -or $null -eq $lanesProp.Value) { return $false }
+
+        $topNorm = [System.IO.Path]::GetFullPath($top).TrimEnd('\', '/').Replace('\', '/').ToLowerInvariant()
+        foreach ($projectProp in $lanesProp.Value.PSObject.Properties) {
+            $pathProp = $projectProp.Value.PSObject.Properties['path']
+            if (-not $pathProp -or [string]::IsNullOrWhiteSpace([string]$pathProp.Value)) { continue }
+            try {
+                $laneNorm = [System.IO.Path]::GetFullPath([string]$pathProp.Value).TrimEnd('\', '/').Replace('\', '/').ToLowerInvariant()
+            }
+            catch { continue }
+            if ($laneNorm -eq $topNorm) { return $true }
+        }
+        return $false
+    }
+    catch {
+        return $false
+    }
+}
+
 # --- Shared name-validation vectors (pins PS + hub validators in lockstep) ----
 
 function Get-ZenithNameValidationCases {
@@ -1124,5 +1353,10 @@ Export-ModuleMember -Function @(
     'Test-ZenithRegenDrift',
     'Get-ZenithProjectSourceDrift',
     'Remove-ZenithOrphanGameArtifacts',
-    'Remove-ZenithOrphanEngineArtifacts'
+    'Remove-ZenithOrphanEngineArtifacts',
+    'Test-ZenithProjectShapingPath',
+    'Get-ZenithUntrackedProjectShapingFiles',
+    'Write-ZenithRegenStateFile',
+    'Test-ZenithRegenStale',
+    'Test-ZenithRegisteredLane'
 )

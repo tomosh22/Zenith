@@ -260,6 +260,237 @@ try {
     Invoke-Test "package without a name exits 1 (usage)" { Assert ((Invoke-CliCode @('package')) -eq 1) "package -> 1" }
     Invoke-Test "package with unknown game exits 5 (not-found)" { Assert ((Invoke-CliCode @('package', 'NoSuchGameXYZ')) -eq 5) "package missing -> 5" }
     Invoke-Test "package with unknown flag exits 1 (usage)" { Assert ((Invoke-CliCode @('package', 'Combat', '--bogus')) -eq 1) "package --bogus -> 1" }
+
+    Write-Host "`n[5] WP5: build-slot + regen-staleness sequencing (Invoke-ZenithBuild / Invoke-ZenithHub)" -ForegroundColor Cyan
+    # Never invokes a real build slot, regen.ps1 or msbuild: every seam
+    # (Enter-/Exit-ZenithBuildSlot, Test-ZenithRegenStale, Invoke-Regen,
+    # Invoke-ZenithMsbuildStep) is swapped for a logging fake by reaching into
+    # ZenithCli.psm1's own private $script: scope -- the module's documented
+    # test-hook mechanism (see Invoke-ZenithWithBuildSlot's header comment).
+    # `.GetNewClosure()` on the OVERRIDE scriptblocks (not on the module's own
+    # $work scriptblocks -- see that same header comment for why the module
+    # deliberately avoids GetNewClosure() internally) is required here because
+    # each override is stored and invoked later, from a different function's
+    # scope, so it needs its own captured reference to $log.
+    $zenithCliModule = Get-Module ZenithCli
+
+    function Set-Wp5BuildHooks {
+        param(
+            [scriptblock]$EnterSlot,
+            [scriptblock]$ExitSlot,
+            [scriptblock]$RegenStale,
+            [scriptblock]$InvokeRegen,
+            [scriptblock]$MsbuildStep
+        )
+        & $zenithCliModule {
+            param($enter, $exit, $stale, $regen, $msbuild)
+            $script:ZenithBuildSlotEnterOverride = $enter
+            $script:ZenithBuildSlotExitOverride = $exit
+            $script:ZenithRegenStaleOverride = $stale
+            $script:ZenithInvokeRegenOverride = $regen
+            $script:ZenithMsbuildStepOverride = $msbuild
+        } $EnterSlot $ExitSlot $RegenStale $InvokeRegen $MsbuildStep
+    }
+
+    function Clear-Wp5BuildHooks {
+        & $zenithCliModule {
+            $script:ZenithBuildSlotEnterOverride = $null
+            $script:ZenithBuildSlotExitOverride = $null
+            $script:ZenithRegenStaleOverride = $null
+            $script:ZenithInvokeRegenOverride = $null
+            $script:ZenithMsbuildStepOverride = $null
+        }
+    }
+
+    Invoke-Test "stale tree: regen is called once, then msbuild runs, slot released" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('enter'); [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $true; Reason = 'x' } }.GetNewClosure()) `
+                -InvokeRegen ({ $log.Add('regen'); 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('msbuild'); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'Combat')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            Assert (((@($log)) -join ',') -eq 'enter,regen,msbuild,exit') "sequence: $((@($log)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "fresh tree: regen is NOT called" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('enter'); [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ $log.Add('SHOULD-NOT-HAPPEN-regen'); 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('msbuild'); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'Combat')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            Assert (((@($log)) -join ',') -eq 'enter,msbuild,exit') "regen must be skipped on a fresh tree: $((@($log)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "slot entered exactly once, exited exactly once -- engine target (8 msbuild steps)" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('enter'); [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('msbuild'); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'engine')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            $entries = @($log)
+            Assert ((@($entries | Where-Object { $_ -eq 'enter' })).Count -eq 1) "entered exactly once"
+            Assert ((@($entries | Where-Object { $_ -eq 'exit' })).Count -eq 1) "exited exactly once"
+            Assert ((@($entries | Where-Object { $_ -eq 'msbuild' })).Count -eq 8) "8 msbuild steps (Zenith + 7 Sentinels): $((@($entries)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "slot entered exactly once, exited exactly once -- a single game target" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('enter'); [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('msbuild'); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'Combat')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            $entries = @($log)
+            Assert ((@($entries | Where-Object { $_ -eq 'enter' })).Count -eq 1) "entered exactly once"
+            Assert ((@($entries | Where-Object { $_ -eq 'exit' })).Count -eq 1) "exited exactly once"
+            Assert ((@($entries | Where-Object { $_ -eq 'msbuild' })).Count -eq 1) "one msbuild step for a single game"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "slot busy (`$null): no regen, no msbuild, returns the build-failure exit" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('enter'); $null }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('SHOULD-NOT-HAPPEN-exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) $log.Add('SHOULD-NOT-HAPPEN-stale'); [pscustomobject]@{ Stale = $true; Reason = 'x' } }.GetNewClosure()) `
+                -InvokeRegen ({ $log.Add('SHOULD-NOT-HAPPEN-regen'); 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('SHOULD-NOT-HAPPEN-msbuild'); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'engine')
+            Assert ($rc -eq 4) "EXIT_BUILD (4), got $rc"
+            Assert (((@($log)) -join ',') -eq 'enter') "nothing else should have run: $((@($log)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "msbuild failure mid-engine-loop still releases the slot exactly once" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        $stepCount = [ref]0
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('enter'); [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ 0 }.GetNewClosure()) `
+                -MsbuildStep ({
+                    param($m, $b, $t)
+                    $stepCount.Value++
+                    $log.Add("msbuild-$($stepCount.Value)")
+                    if ($stepCount.Value -eq 3) { 1 } else { 0 }
+                }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'engine')
+            Assert ($rc -eq 4) "EXIT_BUILD (4) on the failed target, got $rc"
+            $entries = @($log)
+            Assert ((@($entries | Where-Object { $_ -eq 'exit' })).Count -eq 1) "slot released exactly once despite the mid-loop failure"
+            Assert ((@($entries | Where-Object { $_ -like 'msbuild-*' })).Count -eq 3) "stopped after the 3rd (failing) step, not all 8: $((@($entries)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "an UNREGISTERED linked worktree gets a distinct regen-failure message (never a real msbuild call)" {
+        # Invoke-ZenithWithBuildSlot takes -RepoRoot as a parameter, so it can
+        # be pointed at a real (throwaway) linked worktree directly, without
+        # needing to fake Get-CliRepoRoot. This exercises the lane-vs-other
+        # message branch that Invoke-ZenithBuild's own tests above cannot
+        # reach (Get-CliRepoRoot always resolves to this real checkout).
+        $main = Join-Path $tmp ('wp5_hubmsg_main_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Path $main -Force | Out-Null
+        & git -C $main init --quiet -b master 2>$null | Out-Null
+        & git -C $main config user.email 'test@example.invalid' 2>$null | Out-Null
+        & git -C $main config user.name 'test' 2>$null | Out-Null
+        Set-Content -LiteralPath (Join-Path $main 'r.txt') -Value 'x'
+        & git -C $main add -A 2>$null | Out-Null
+        & git -C $main commit -m init --quiet 2>$null | Out-Null
+        $lane = Join-Path $tmp ('wp5_hubmsg_lane_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        & git -C $main worktree add --detach $lane master 2>$null | Out-Null
+
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $true; Reason = 'x' } }.GetNewClosure()) `
+                -InvokeRegen ({ 1 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) 0 }.GetNewClosure())
+            & $zenithCliModule { Import-BuildSystem }
+            $rc = & $zenithCliModule {
+                param($lane)
+                Invoke-ZenithWithBuildSlot -RepoRoot $lane -Reason 'test' -Work ({ 0 }) -SlotBusyExitCode 4 -RegenFailExitCode 4
+            } $lane
+            Assert ($rc -eq 4) "rc should be 4, got $rc"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "zenith hub routes its build through the same slot/staleness envelope (msbuild step hooked, never real)" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add("enter:$Reason") ; [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) $log.Add('stale-check'); [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ $log.Add('SHOULD-NOT-HAPPEN-regen'); 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('msbuild'); 0 }.GetNewClosure())
+            # --rebuild forces the slot-wrapped branch. The mocked msbuild
+            # step never creates zenithhub.exe, so the command still ends in
+            # EXIT_NOTFOUND (5) -- that is expected; only the ENVELOPE
+            # (enter -> stale-check -> msbuild -> exit, regen skipped) is
+            # under test here.
+            $rc = Invoke-CliCode @('hub', '--rebuild')
+            Assert ($rc -eq 5) "EXIT_NOTFOUND (5, no hub exe was actually built), got $rc"
+            Assert (((@($log)) -join ',') -eq 'enter:zenith hub,stale-check,msbuild,exit') "sequence: $((@($log)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "zenith package: a stale tree is checked (and would warn) but never acquires the slot or calls regen" {
+        $log = [System.Collections.Generic.List[string]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) $log.Add('SHOULD-NOT-HAPPEN-enter'); [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) $log.Add('SHOULD-NOT-HAPPEN-exit') }.GetNewClosure()) `
+                -RegenStale ({ param($r) $log.Add('stale-check'); [pscustomobject]@{ Stale = $true; Reason = 'x' } }.GetNewClosure()) `
+                -InvokeRegen ({ $log.Add('SHOULD-NOT-HAPPEN-regen'); 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $log.Add('SHOULD-NOT-HAPPEN-msbuild'); 0 }.GetNewClosure())
+            # An explicit, deliberately-fictitious --config guarantees NOT_BUILT
+            # (and so EXIT_NOTFOUND) regardless of whatever configs happen to
+            # be built on the machine running this suite -- this must never
+            # depend on Combat's real build output, or fall through to
+            # Invoke-ZenithPackage's file-copy path. Staleness is still
+            # checked (Get-ZenithBuildRegenStaleness, the same hookable
+            # wrapper Invoke-ZenithBuild uses -- see Invoke-ZenithPackage's
+            # own [DEVIATION] comment: package reads staleness but never
+            # acquires the slot or regenerates, because it never builds).
+            $rc = Invoke-CliCode @('package', 'Combat', '--config', 'Wp5NoSuchConfigXYZ')
+            Assert ($rc -eq 5) "no built exe for a fictitious config -> EXIT_NOTFOUND (5), got $rc"
+            Assert (((@($log)) -join ',') -eq 'stale-check') "package checks staleness but never touches the slot or regen: $((@($log)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
 }
 finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

@@ -21,6 +21,55 @@ $script:EXIT_GENERATION = 3
 $script:EXIT_BUILD = 4
 $script:EXIT_NOTFOUND = 5
 
+# Build slot (Tools/build_lock.ps1, WP4): dot-sourced ONCE, here, at module
+# scope. Dot-sourcing inside a FUNCTION only adds definitions to that
+# function's own transient scope (the same hazard as the "nested imports
+# need -Global" gotcha this module's CLAUDE.md already documents for
+# Import-Module) -- doing it here instead makes Enter-/Exit-ZenithBuildSlot
+# (and its private helpers, e.g. Get-ZenithGitCommonDir) available everywhere
+# in this module for the lifetime of the import. build_lock.ps1 is designed
+# for exactly this: dot-sourcing it runs nothing but the two function
+# definitions (its `-Run` entry point only fires when the file itself is
+# executed directly).
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'build_lock.ps1')
+
+# --- Build-slot / regen-staleness test seams ---------------------------------
+# WP5: Invoke-ZenithBuild and Invoke-ZenithHub must never invoke a real build
+# slot, regen or msbuild from a test. Each real call below is routed through a
+# thin wrapper that checks for a $script:-scoped override first; a test sets
+# one by reaching into this module's private scope directly --
+#   & (Get-Module ZenithCli) { $script:ZenithBuildSlotEnterOverride = { param($Reason) ... } }
+# -- rather than through an exported setter, so the public command surface
+# (Export-ModuleMember below) does not grow a test-only API.
+$script:ZenithBuildSlotEnterOverride = $null
+$script:ZenithBuildSlotExitOverride = $null
+$script:ZenithRegenStaleOverride = $null
+$script:ZenithInvokeRegenOverride = $null
+$script:ZenithMsbuildStepOverride = $null
+
+function Invoke-ZenithEnterBuildSlot {
+    param([string]$Reason)
+    if ($script:ZenithBuildSlotEnterOverride) { return (& $script:ZenithBuildSlotEnterOverride $Reason) }
+    return (Enter-ZenithBuildSlot -Reason $Reason)
+}
+
+function Invoke-ZenithExitBuildSlot {
+    param($Handle)
+    if ($script:ZenithBuildSlotExitOverride) { & $script:ZenithBuildSlotExitOverride $Handle; return }
+    Exit-ZenithBuildSlot $Handle
+}
+
+function Get-ZenithBuildRegenStaleness {
+    param([string]$RepoRoot)
+    if ($script:ZenithRegenStaleOverride) { return (& $script:ZenithRegenStaleOverride $RepoRoot) }
+    return (Test-ZenithRegenStale -RepoRoot $RepoRoot)
+}
+
+function Invoke-ZenithBuildRegen {
+    if ($script:ZenithInvokeRegenOverride) { return (& $script:ZenithInvokeRegenOverride) }
+    return (Invoke-Regen)
+}
+
 # Default/hub configs live in Build/zenith_config.psd1 (single source of truth);
 # resolved lazily after Import-BuildSystem via Get-ZenithDefaultConfig etc.
 
@@ -353,11 +402,14 @@ function Invoke-ZenithClean {
 function Invoke-ZenithMsbuildStep {
     # One msbuild invocation with optional watchdog. Returns msbuild's exit code
     # (124 on watchdog timeout, after killing the process tree + stale compilers).
+    # WP5 test seam: never invokes real msbuild when a test has set the
+    # override (see Invoke-ZenithWithBuildSlot's header comment).
     param(
         [string]$Msbuild,
         [string[]]$BuildArgs,
         [int]$TimeoutMinutes = 0
     )
+    if ($script:ZenithMsbuildStepOverride) { return (& $script:ZenithMsbuildStepOverride $Msbuild $BuildArgs $TimeoutMinutes) }
     if ($TimeoutMinutes -le 0) {
         & $Msbuild @BuildArgs | Out-Host
         return $LASTEXITCODE
@@ -371,6 +423,86 @@ function Invoke-ZenithMsbuildStep {
         return 124
     }
     return $proc.ExitCode
+}
+
+function Invoke-ZenithWithBuildSlot {
+    # Shared build-slot + regen-staleness envelope for Invoke-ZenithBuild and
+    # Invoke-ZenithHub (plan Sec.2's regen_sha + build-slot bullets). Acquires
+    # Tools/build_lock.ps1's machine-wide slot, auto-regens a stale tree, then
+    # runs the caller's msbuild steps ($Work) with the slot STILL held -- ONE
+    # try/finally, so every return path (including a slot timeout, a regen
+    # failure, or an msbuild failure mid-loop) releases it exactly once.
+    #
+    # [DEVIATION from the plan text, which says `zenith package` (ZenithCli.psm1
+    # :761) routes through this: line 761 there is Invoke-ZenithHub, and
+    # Invoke-ZenithPackage never builds at all -- see that function's own
+    # regen-staleness WARNING instead. This helper serves Invoke-ZenithBuild
+    # and Invoke-ZenithHub, the two commands that actually invoke msbuild.]
+    #
+    # $Work is a plain scriptblock LITERAL, deliberately NOT `.GetNewClosure()`d
+    # -- a closure detaches from this module's session state, so a private
+    # (non-exported) helper it calls (Write-CliInfo, Invoke-ZenithMsbuildStep,
+    # Get-GameWin64Sln, ...) fails to resolve with "term not recognized",
+    # because GetNewClosure()'s whole point is a SNAPSHOT independent of where
+    # it runs. A plain scriptblock invoked via `&` keeps its defining module's
+    # command resolution; it just cannot see the CALLER's local variables by
+    # name, which is why every value $Work needs travels through $WorkArgs
+    # into its own `param()` block instead of being captured lexically.
+    # $Work returns the command's own exit code; that is this function's
+    # return value on the happy path.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$RepoRoot,
+        [Parameter(Mandatory)][string]$Reason,
+        [Parameter(Mandatory)][scriptblock]$Work,
+        [object[]]$WorkArgs = @(),
+        [Parameter(Mandatory)][int]$SlotBusyExitCode,
+        [Parameter(Mandatory)][int]$RegenFailExitCode
+    )
+
+    $slot = Invoke-ZenithEnterBuildSlot -Reason $Reason
+    if ($null -eq $slot) {
+        $diagHint = '<git-common-dir>/zenith-build-slot.json'
+        try {
+            $commonDir = Get-ZenithGitCommonDir -RepoRoot $RepoRoot
+            if ($commonDir) { $diagHint = Join-Path $commonDir 'zenith-build-slot.json' }
+        }
+        catch { }
+        Write-CliError "build slot busy -- held by another checkout (see $diagHint)"
+        return $SlotBusyExitCode
+    }
+    try {
+        $stale = Get-ZenithBuildRegenStaleness -RepoRoot $RepoRoot
+        if ($stale.Stale) {
+            Write-CliInfo "[build] regen stale: $($stale.Reason)"
+            try {
+                # Best-effort, never blocking: a build-machine devenv holding
+                # this solution open will need to reload it after a regen
+                # rewrites the .vcxproj files underneath it.
+                $devenvHit = @(Get-CimInstance -ClassName Win32_Process -Filter "Name='devenv.exe'" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$RepoRoot*" })
+                if ($devenvHit.Count -gt 0) {
+                    Write-Host "[build] WARNING: Visual Studio (devenv) appears to have this repo open -- it may need to reload the solution after this regen." -ForegroundColor Yellow
+                }
+            }
+            catch { }
+            Write-CliInfo "[build] auto-regenerating (Build/regen.ps1)..."
+            $rc = Invoke-ZenithBuildRegen
+            if ($rc -ne 0) {
+                if ((Test-ZenithInWorktree -RepoRoot $RepoRoot) -and -not (Test-ZenithRegisteredLane -RepoRoot $RepoRoot)) {
+                    Write-CliError 'regen refused: this is a linked worktree that is not a registered lane -- run `Build\regen.ps1 -AllowLinkedWorktree` once, or `zagent lane add`'
+                }
+                else {
+                    Write-CliError "auto-regen failed (exit $rc) -- see output above"
+                }
+                return $RegenFailExitCode
+            }
+        }
+        return (& $Work @WorkArgs)
+    }
+    finally {
+        Invoke-ZenithExitBuildSlot $slot
+    }
 }
 
 function Invoke-ZenithBuild {
@@ -404,89 +536,104 @@ function Invoke-ZenithBuild {
         else { $config = Get-ZenithDefaultConfig }
     }
 
-    $msbuild = Get-ZenithMsbuild
-    if (-not $msbuild) {
-        Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
-            "with the C++ workload, or run from a 'Developer PowerShell for VS' prompt. " +
-            "(CI uses microsoft/setup-msbuild.)")
-        return $script:EXIT_BUILD
-    }
-
-    # Self-heal: an interrupted parallel build can leave cl.exe/mspdbsrv holding
-    # locks on .pdb/.pch files, failing this build with MSB3027 'file in use'.
-    # Only kill genuinely-hung compilers (>= 30 min old) so a live concurrent
-    # build on this machine is never touched.
-    $stale = @(Stop-ZenithBuildProcesses -OlderThanMinutes 30)
-    foreach ($p in $stale) { Write-Host "  killed stale $($p.Name) (pid $($p.Id))" -ForegroundColor Yellow }
-
-    if ($target -ieq 'engine') {
-        # Engine build: Zenith + Sentinels, via /t: because NO single
-        # whole-solution build can cover this. The Sentinels exist only in
-        # ToolsEnabled=False configs (leaf-purity proof), so they build with
-        # the config's _False sibling -- this command necessarily spans two
-        # configurations, which one sln build cannot. (A whole
-        # zenith_engine_win64.sln build IS supported and green in
-        # ToolsEnabled=True as of ZEN-85 -- see Docs/BuildSystem.md section 9.
-        # /t: here is a scoping requirement, not a workaround for red projects.)
-        $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
-        $sentinelConfig = $config -replace '_True$', '_False'
-        $steps = @(
-            @{ Target = 'Zenith'; Config = $config },
-            @{ Target = 'SentinelECS'; Config = $sentinelConfig },
-            @{ Target = 'SentinelPhysics'; Config = $sentinelConfig },
-            @{ Target = 'SentinelAI'; Config = $sentinelConfig },
-            @{ Target = 'SentinelCore'; Config = $sentinelConfig },
-            @{ Target = 'SentinelFlux'; Config = $sentinelConfig },
-            @{ Target = 'SentinelScripting'; Config = $sentinelConfig },
-            @{ Target = 'SentinelUI'; Config = $sentinelConfig }
-        )
-        foreach ($s in $steps) {
-            Write-CliInfo "[build] $($s.Target) ($($s.Config))..."
-            # `10.0` resolves to the newest installed Windows SDK. Generated projects
-            # retain their authoring-machine SDK pin, which GitHub-hosted VS images do
-            # not guarantee (MSB8036).
-            $buildArgs = @($sln, "/t:$($s.Target)", "/p:Configuration=$($s.Config)", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
-            $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
-            if ($rc -ne 0) { Write-CliError "engine target '$($s.Target)' failed"; return $script:EXIT_BUILD }
+    # Everything from here on needs the machine-wide build slot AND a fresh
+    # tree (plan Sec.2's regen_sha bullet): a human `zenith build` in the main
+    # checkout, after a lane lands a new .cpp, must regen instead of silently
+    # building the OLD file list. $work takes $Target/$Config/$TimeoutMin as
+    # explicit -WorkArgs, not by lexical capture -- see Invoke-ZenithWithBuildSlot's
+    # header for why a `.GetNewClosure()` would break every private-function
+    # call ($script:EXIT_* constants read fine either way; they are genuinely
+    # module-scoped, not local variables).
+    $repoRoot = Get-CliRepoRoot
+    $work = {
+        param($target, $config, $timeoutMin)
+        $msbuild = Get-ZenithMsbuild
+        if (-not $msbuild) {
+            Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
+                "with the C++ workload, or run from a 'Developer PowerShell for VS' prompt. " +
+                "(CI uses microsoft/setup-msbuild.)")
+            return $script:EXIT_BUILD
         }
+
+        # Self-heal: an interrupted parallel build can leave cl.exe/mspdbsrv holding
+        # locks on .pdb/.pch files, failing this build with MSB3027 'file in use'.
+        # Only kill genuinely-hung compilers (>= 30 min old) so a live concurrent
+        # build on this machine is never touched.
+        $staleProcs = @(Stop-ZenithBuildProcesses -OlderThanMinutes 30)
+        foreach ($p in $staleProcs) { Write-Host "  killed stale $($p.Name) (pid $($p.Id))" -ForegroundColor Yellow }
+
+        if ($target -ieq 'engine') {
+            # Engine build: Zenith + Sentinels, via /t: because NO single
+            # whole-solution build can cover this. The Sentinels exist only in
+            # ToolsEnabled=False configs (leaf-purity proof), so they build with
+            # the config's _False sibling -- this command necessarily spans two
+            # configurations, which one sln build cannot. (A whole
+            # zenith_engine_win64.sln build IS supported and green in
+            # ToolsEnabled=True as of ZEN-85 -- see Docs/BuildSystem.md section 9.
+            # /t: here is a scoping requirement, not a workaround for red projects.)
+            $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
+            $sentinelConfig = $config -replace '_True$', '_False'
+            $steps = @(
+                @{ Target = 'Zenith'; Config = $config },
+                @{ Target = 'SentinelECS'; Config = $sentinelConfig },
+                @{ Target = 'SentinelPhysics'; Config = $sentinelConfig },
+                @{ Target = 'SentinelAI'; Config = $sentinelConfig },
+                @{ Target = 'SentinelCore'; Config = $sentinelConfig },
+                @{ Target = 'SentinelFlux'; Config = $sentinelConfig },
+                @{ Target = 'SentinelScripting'; Config = $sentinelConfig },
+                @{ Target = 'SentinelUI'; Config = $sentinelConfig }
+            )
+            foreach ($s in $steps) {
+                Write-CliInfo "[build] $($s.Target) ($($s.Config))..."
+                # `10.0` resolves to the newest installed Windows SDK. Generated projects
+                # retain their authoring-machine SDK pin, which GitHub-hosted VS images do
+                # not guarantee (MSB8036).
+                $buildArgs = @($sln, "/t:$($s.Target)", "/p:Configuration=$($s.Config)", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
+                $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
+                if ($rc -ne 0) { Write-CliError "engine target '$($s.Target)' failed"; return $script:EXIT_BUILD }
+            }
+            return $script:EXIT_OK
+        }
+
+        $name = Resolve-ExistingGameName $target
+        if (-not $name) { Write-CliError "no such game '$target'"; return $script:EXIT_NOTFOUND }
+        $sln = Get-GameWin64Sln $name
+        if (-not (Test-Path $sln)) { Write-CliError "solution not found: $sln (run 'zenith regen')"; return $script:EXIT_GENERATION }
+        Write-CliInfo "[build] $name ($config)..."
+        # Match the explicit CI MSBuild calls: resolve, rather than pin, the Windows SDK.
+        $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
+        $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
+        if ($rc -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
+
+        # ★ HEAL THE RUNTIME DLLs, OR THIS COMMAND REPORTS SUCCESS FOR AN EXE THAT
+        # CANNOT START. Sharpmake's post-build copies slang.dll and not the rest of
+        # its dependency tree (slang-rt, slang-glslang, slang-glsl-module,
+        # slang-llvm, slang-compiler, gfx), so a fresh config leaf produces an exe
+        # that dies with STATUS_DLL_NOT_FOUND (0xC0000135) before main() -- an
+        # EMPTY log and no output at all.
+        #
+        # `zenith test` and `zenith package` have always healed. `zenith build` did
+        # not, and the gap was invisible for exactly as long as every consumer ran
+        # `test` first: build (green) -> test (heals) -> unit gate (works). Run the
+        # unit gate WITHOUT test in front of it -- which is what measuring a pin
+        # before the slow suite does, and what `Tools/tick_gates.ps1 -Phase measure`
+        # now does deliberately -- and it reports "no 'Unit tests complete' line",
+        # which reads as a test failure rather than as an unusable build.
+        #
+        # Copy-missing-only, so a healthy dir is untouched and this costs nothing.
+        $exe = Get-GameOutputExe -Name $name -Config $config
+        if ($exe) {
+            foreach ($dll in @(Repair-ZenithRuntimeDlls -ExeDir (Split-Path -Parent $exe.FullName))) {
+                Write-Host "  healed $dll -> exe dir" -ForegroundColor DarkGray
+            }
+        }
+
+        Write-Host "Built $name ($config)." -ForegroundColor Green
         return $script:EXIT_OK
     }
 
-    $name = Resolve-ExistingGameName $target
-    if (-not $name) { Write-CliError "no such game '$target'"; return $script:EXIT_NOTFOUND }
-    $sln = Get-GameWin64Sln $name
-    if (-not (Test-Path $sln)) { Write-CliError "solution not found: $sln (run 'zenith regen')"; return $script:EXIT_GENERATION }
-    Write-CliInfo "[build] $name ($config)..."
-    # Match the explicit CI MSBuild calls: resolve, rather than pin, the Windows SDK.
-    $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
-    $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
-    if ($rc -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
-
-    # ★ HEAL THE RUNTIME DLLs, OR THIS COMMAND REPORTS SUCCESS FOR AN EXE THAT
-    # CANNOT START. Sharpmake's post-build copies slang.dll and not the rest of
-    # its dependency tree (slang-rt, slang-glslang, slang-glsl-module,
-    # slang-llvm, slang-compiler, gfx), so a fresh config leaf produces an exe
-    # that dies with STATUS_DLL_NOT_FOUND (0xC0000135) before main() -- an
-    # EMPTY log and no output at all.
-    #
-    # `zenith test` and `zenith package` have always healed. `zenith build` did
-    # not, and the gap was invisible for exactly as long as every consumer ran
-    # `test` first: build (green) -> test (heals) -> unit gate (works). Run the
-    # unit gate WITHOUT test in front of it -- which is what measuring a pin
-    # before the slow suite does, and what `Tools/tick_gates.ps1 -Phase measure`
-    # now does deliberately -- and it reports "no 'Unit tests complete' line",
-    # which reads as a test failure rather than as an unusable build.
-    #
-    # Copy-missing-only, so a healthy dir is untouched and this costs nothing.
-    $exe = Get-GameOutputExe -Name $name -Config $config
-    if ($exe) {
-        foreach ($dll in @(Repair-ZenithRuntimeDlls -ExeDir (Split-Path -Parent $exe.FullName))) {
-            Write-Host "  healed $dll -> exe dir" -ForegroundColor DarkGray
-        }
-    }
-
-    Write-Host "Built $name ($config)." -ForegroundColor Green
-    return $script:EXIT_OK
+    return (Invoke-ZenithWithBuildSlot -RepoRoot $repoRoot -Reason "zenith build $target" -Work $work -WorkArgs @($target, $config, $timeoutMin) `
+            -SlotBusyExitCode $script:EXIT_BUILD -RegenFailExitCode $script:EXIT_BUILD)
 }
 
 function Invoke-ZenithRun {
@@ -674,6 +821,18 @@ function Invoke-ZenithPackage {
     $lower = $name.ToLowerInvariant()
     $repoRoot = Get-CliRepoRoot
 
+    # [DEVIATION from the plan text, which routes `zenith package` through the
+    # build slot + regen check at ZenithCli.psm1:761 -- that line is actually
+    # Invoke-ZenithHub, and this command never builds (it only copies an
+    # already-built exe + assets), so there is nothing here for a slot or a
+    # regen to protect. A read-only staleness WARNING is the honest version:
+    # it tells the operator the exe they are about to package may predate
+    # HEAD's current file list, without acquiring the slot or regenerating.
+    $staleForPackage = Get-ZenithBuildRegenStaleness -RepoRoot $repoRoot
+    if ($staleForPackage.Stale) {
+        Write-Host "  WARNING: regen is stale ($($staleForPackage.Reason)) -- the packaged exe may predate HEAD's current file list." -ForegroundColor Yellow
+    }
+
     $exe = Get-GameOutputExe -Name $name -Config $config
     if (-not $exe) { Write-CliError "no built exe for '$name' (config $config) -- build first"; return $script:EXIT_NOTFOUND }
     $exeDir = Split-Path $exe.FullName
@@ -758,16 +917,33 @@ function Invoke-ZenithHub {
     $hubLeaf = ConvertTo-ZenithOutputDir -Config $hubConfig
     $hubExe = Join-Path (Get-CliRepoRoot) "ZenithHub/output/win64/$hubLeaf/zenithhub.exe"
     if ($rebuild -or -not (Test-Path $hubExe)) {
-        $msbuild = Get-ZenithMsbuild
-        if (-not $msbuild) {
-            Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
-                "with the C++ workload, or run from a 'Developer PowerShell for VS' prompt.")
-            return $script:EXIT_BUILD
+        # Routed through the same build-slot + regen-staleness envelope as
+        # Invoke-ZenithBuild (item 7 of the plan's regen_sha bullet: the hub is
+        # the OTHER command that actually invokes msbuild -- see
+        # Invoke-ZenithWithBuildSlot's header for the `zenith package` deviation).
+        $repoRoot = Get-CliRepoRoot
+        $work = {
+            param($repoRoot, $hubConfig)
+            $msbuild = Get-ZenithMsbuild
+            if (-not $msbuild) {
+                Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
+                    "with the C++ workload, or run from a 'Developer PowerShell for VS' prompt.")
+                return $script:EXIT_BUILD
+            }
+            $sln = Join-Path $repoRoot 'Build/zenith_engine_win64.sln'
+            Write-CliInfo "[hub] Building ZenithHub ($hubConfig)..."
+            # Through Invoke-ZenithMsbuildStep now rather than a direct `&
+            # $msbuild ...` call (both for a single msbuild-invocation choke
+            # point, and so this path is covered by the same WP5 test seam as
+            # Invoke-ZenithBuild -- see Invoke-ZenithWithBuildSlot's header).
+            $buildArgs = @($sln, '/t:ZenithHub', "/p:Configuration=$hubConfig", '/p:Platform=x64', '/m', '/nologo', '/v:minimal')
+            $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs
+            if ($rc -ne 0) { Write-CliError "hub build failed (is ZenithHub in the engine sln? Stage 4)"; return $script:EXIT_BUILD }
+            return $script:EXIT_OK
         }
-        $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
-        Write-CliInfo "[hub] Building ZenithHub ($hubConfig)..."
-        & $msbuild $sln /t:ZenithHub /p:Configuration=$hubConfig /p:Platform=x64 /m /nologo /v:minimal | Out-Host
-        if ($LASTEXITCODE -ne 0) { Write-CliError "hub build failed (is ZenithHub in the engine sln? Stage 4)"; return $script:EXIT_BUILD }
+        $rc = Invoke-ZenithWithBuildSlot -RepoRoot $repoRoot -Reason 'zenith hub' -Work $work -WorkArgs @($repoRoot, $hubConfig) `
+            -SlotBusyExitCode $script:EXIT_BUILD -RegenFailExitCode $script:EXIT_BUILD
+        if ($rc -ne $script:EXIT_OK) { return $rc }
     }
     if (-not (Test-Path $hubExe)) { Write-CliError "hub exe not found: $hubExe"; return $script:EXIT_NOTFOUND }
     Start-Process $hubExe | Out-Null
