@@ -438,7 +438,10 @@ transition is `packages/agent/OPERATIONS.md` §5 in the board repo.
 **I5 is unaffected, and that is deliberate.** Every project this file
 declares resolves to the SAME checkout, so the advisory lock and the
 in-flight check still mean **one ticket at a time for `C:\dev\Zenith`**,
-not one per board. `zagent next` with no `--project` walks every declared
+not one per board — except with [lanes](Tools/zagent/protocol/TICK.md#lane-mode)
+enabled, where the scope narrows to "main, or this lane": each registered
+lane may legitimately hold one in-flight ticket of its own alongside the
+main checkout's. `zagent next` with no `--project` walks every declared
 board in declaration order and reports "nothing to claim" only when every
 one is empty.
 
@@ -509,16 +512,22 @@ A backend-neutral engine unit still moves **every** game's row, because
 they all boot the same engine suite — bump them together, and note which
 count you actually measured versus inferred.
 
-**Branching policy is enforced mechanically per area.** Zenithmon and
-Engine tickets carry `branching: "direct"` — the loop commits straight
-to `master` and hard-refuses `git switch -c`, `git worktree` and
-`gh pr` (ZM-D-031). DevilsPlayground overrides to `"branch"`, matching
-its `Docs/CIPolicy.md` squash-merge policy. Nothing is ever pushed.
+**Branching policy is enforced mechanically per area.** Zenithmon, Engine
+and DevilsPlayground tickets all carry `branching: "direct"` — the loop
+commits straight to `master` and hard-refuses `git switch -c`,
+`git worktree` and `gh pr` (ZM-D-031). DevilsPlayground no longer
+overrides this to `"branch"`. Nothing is ever pushed. The one exception
+is [lane mode](Tools/zagent/protocol/TICK.md#lane-mode): every lane
+ticket gets its own `agent/<KEY>` branch regardless of `branching`, cut
+in the lane's own worktree, never the main checkout.
 
 **Leave `master` clean.** The loop's precondition check treats a dirty
 tree as fatal and refuses the ticket rather than stashing around it — it
 has to, since `direct` mode commits in place. Uncommitted work here
-silently blocks the queue.
+silently blocks the queue. In lane mode this still holds for the
+**main** checkout specifically — a lane's own precondition checks its own
+worktree, but a human's uncommitted edits in main still block a lane's
+`integrate` (`MAIN_DIRTY`); see "Parallel lanes" below.
 
 Gate command lines are copied VERBATIM from this repo's own docs and CI
 (`.github/workflows/{zm-tests,engine-gate,dp-tests}.yml`,
@@ -594,6 +603,35 @@ checkout — so it needs no network credential of any kind, and there is no
 separate board machine to reach. `Tools/zagent/README.md` has the setup
 and `zagent doctor` names whatever piece is missing.
 
+### Parallel lanes (optional)
+
+A **lane** is a second, persistent, *registered* git worktree bound to one
+board project (`ZM`, `ZEN`, …), so that project's queue can run alongside
+the main checkout's without two ticks fighting over the same tree. Off by
+default: turning it on is a **protected-path hand-edit** to
+`zagent.project.json`'s `lanes.enabled`, plus a commit — never something a
+tick does to itself. Full protocol:
+`Tools/zagent/protocol/TICK.md#lane-mode`; full how-to (enabling, adding a
+lane, per-harness setup, troubleshooting): `Tools/zagent/README.md#lanes`.
+
+Hazards, once lanes are on:
+
+- **Never run `/tick` from an unregistered linked worktree** — every
+  mutating command refuses with exit 1 (`zagent lane which --json` reports
+  the mode).
+- **The main checkout is the integration tree.** A human's own work
+  belongs in a worktree of their own; `integrate` refuses to land over an
+  overlapping dirty path in the main checkout (`MAIN_DIRTY`).
+- **Landings rewrite tracked files in the main checkout**, including
+  generated ones (shader headers, a lane's re-pinned `.zscen`) — the main
+  checkout can go regen-stale under you while lanes run.
+- **Builds serialise on one machine-wide slot** (`Tools/build_lock.ps1`) —
+  a lane's build can wait behind the main checkout's, or another lane's.
+- **~20-30 GB of disk per lane** (ignored runtime inputs plus every game's
+  assets, copied in whole).
+- **Remove every lane before disabling** — `zagent lane add`/`remove`
+  refuse while `lanes.enabled` is `false`.
+
 ### The `zagent` CLI
 
 `zagent` is the board's command line — the **only** thing that writes to
@@ -605,9 +643,17 @@ zagent <command> [--json]
 ```
 
 That works from `C:\dev\Zenith` and from any subdirectory of it
-(`Games\Zenithmon`), in PowerShell, cmd or Git Bash — it walks up for
-`zagent.project.json` the way git walks up for `.git`, so a run from
-`Games\Zenithmon` reads the same gates as one from the repo root.
+(`Games\Zenithmon`), in PowerShell, cmd or Git Bash — **but not because it
+walks up looking for `zagent.project.json`.** `zagent.ps1` resolves this
+repo's root from its own script location (`$PSScriptRoot/../..`), the
+same way on every invocation, never by searching upward from the current
+directory the way git walks up for `.git`. A run from `Games\Zenithmon`
+reads the same gates as one from the repo root simply because the repo
+root never moved. What the current directory DOES decide, once
+[lanes](#parallel-lanes-optional) are enabled, is which MODE the call
+runs in — the main checkout, a registered lane, or an unregistered
+worktree that every mutating command refuses; see
+`Tools/zagent/protocol/TICK.md#lane-mode`.
 
 Its scratch is `.zagent/last.json` and `.zagent/run/<KEY>/` at the repo
 root, gitignored so `git status --porcelain` stays empty while a ticket

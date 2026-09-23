@@ -107,6 +107,132 @@ Plain assert scripts rather than Pester, matching
 `Tools/Test_T0Harness_SessionCloseFlagsExist.ps1` — the only PowerShell
 this repo requires is the `pwsh` every gate already needs.
 
+## Lanes
+
+A **lane** is a second, persistent, *registered* git worktree bound to
+one board project — so that project's `/tick` queue can run alongside
+the main checkout's without two ticks fighting over the same tree. Off
+by default. Full protocol (what a step means differently inside a lane):
+`Tools/zagent/protocol/TICK.md#lane-mode`. This section is the how-to.
+
+**Enable it.** Hand-edit `zagent.project.json`'s `lanes.enabled` to
+`true` and commit — `lanes.enabled` is a protected path, so no tick can
+do this to itself; it is a deliberate human decision every time.
+
+**Add a lane.**
+
+```
+zagent lane add <PROJECT>        # e.g. zagent lane add ZM
+```
+
+This runs `git worktree add --detach <lanes.root>/<PROJECT> <baseBranch>`
+(`lanes.root` defaults to `C:/dev/Zenith-lanes`), then
+`Tools/lane_init.ps1`, which:
+
+- copies every ignored runtime input the worktree needs but does not
+  track — the Slang/VulkanSDK/Sharpmake vendored binaries, and every
+  ignored file under each `Games/*/Assets` and `Zenith/Assets` — never
+  tracked files, ~14 GB;
+- runs `Build\regen.ps1 -AllowLinkedWorktree`;
+- builds and unit-gates every game listed in `Tools/unit_baselines.json`,
+  requiring `ran == pin` for each.
+
+Expect this to take a while (a full regen + build + gate pass per game)
+and to use another ~20-30 GB of disk. The lane is registered in
+`<git-common-dir>/vault/lanes.json` **only if all of that passes** — if
+`lane_init.ps1` fails partway, the worktree exists on disk but is NOT
+registered; either fix the failure and re-run `zagent lane add
+<PROJECT>`, or remove the worktree by hand
+(`git worktree remove --force <path>`) and start over. `zagent lane
+which --json` (below) confirms whether a given directory ended up
+registered.
+
+**Per-harness setup, once a lane exists:**
+
+- **Claude Code** — start `claude` in the lane's own directory (a
+  genuinely separate `cwd`, not `--add-dir` on the main checkout) and run
+  `/loop /tick` there. This is the one harness with a real in-harness
+  scheduler, so it can drain that lane's queue unattended.
+- **OpenCode** — open the OpenCode desktop app on the lane's directory
+  and re-invoke `/tick` there by hand for each firing (`loopMode:
+  "manual"` — no in-app scheduler reaches this checkout). If the app has
+  its own per-session worktree feature, turn it off so it does not layer
+  a second worktree on top of the lane's own (confirm the exact setting
+  name in your app version).
+- **Codex** — open the Codex desktop app on the lane's directory and
+  re-invoke `$tick` there by hand for each firing, same manual pacing as
+  OpenCode. Codex needs a per-path trust entry for the lane's directory
+  before it will run anything there — grant it the same way you trusted
+  the main checkout, once per lane.
+
+**Check what a session is running as.** `zagent lane which --json`
+always exits 0 and answers `{mode, project, path, inFlight}` — `mode` is
+`main`, `lane`, or `unregistered`. Run it from an unregistered linked
+worktree and every mutating command (`claim`, `next`, `check`, `finish`,
+`abandon`, `gates`, `guard`) refuses with exit 1; read commands still
+work.
+
+**Landing: `zagent integrate <KEY>`.** Only runs from a registered lane —
+merges that ticket's `agent/<KEY>` onto `baseBranch` and syncs the main
+checkout. `payload.result` names the outcome; the full ladder (identical
+to `Tools/zagent/protocol/TICK.md`'s own copy) is in
+[`../Vault/spec/command-matrix.md`](../Vault/spec/command-matrix.md)'s
+`### integrate` section:
+
+| `result` | exit | what happens next |
+| --- | --- | --- |
+| `LANDED` | 0 | merged onto `baseBranch`; the ticket finishes Done |
+| `REGATE` | 20 | re-merge `master` + re-verify (2 attempts total) |
+| `STALE_VERDICT` | 21 | re-verify only, without re-merging (once per firing) |
+| `NOT_GREEN` | 22 | Blocked as a failure |
+| `CONFLICT` | 23 | Blocked `integration-conflict` |
+| `TREE_UNSTABLE` | 24 | Blocked `integration-conflict`, directly |
+| `MAIN_DIRTY` | 25 | wait row — see troubleshooting below |
+| `MAIN_NOT_ON_BASE` | 26 | wait row — see troubleshooting below |
+| `UNAPPROVED` | 27 | re-parked to In Review |
+| `LOCKED` / `RACED` | 5 | retried inside the same tick, at most 2 attempts |
+
+**Human-gate approval, end to end.** A `human-gate` ticket in a lane
+stops at *In Review* instead of Done, same as main mode. To let it
+proceed: review `agent/<KEY>` in the lane's worktree, then run
+
+```
+zagent update <KEY> --label approved --human
+```
+
+The lane's next `/tick <KEY>` re-claims the ticket, restores its scratch,
+lands it via `integrate`, and finishes Done. No agent identity may ever
+apply the `approved` label itself — see I7 in `TICK.md`.
+
+**Troubleshooting — one human action per code:**
+
+| Situation | Human action |
+| --- | --- |
+| `MAIN_DIRTY` | Commit, stash, or finish your own overlapping edits in the main checkout. The lane retries on its next firing, up to `lanes.integrateWaitMinutes` (default 240) since it first waited, then Blocks `integration-conflict` instead. |
+| `MAIN_NOT_ON_BASE` | Switch the main checkout back onto `baseBranch` (`git switch master`). |
+| Build slot busy (`tick_gates` exit 11) | Another checkout or lane holds the one machine-wide build slot (`Tools/build_lock.ps1`, `Local\ZenithBuildSlot`) — see `<git-common-dir>/zenith-build-slot.json` for who, and either wait or investigate if it looks stuck. |
+| Tree unstable (`tick_gates` exit 12) | A gate writes non-deterministic tracked output across two verify passes — fix the gate; re-running and hoping only wastes the retry `tick_gates` already spent. |
+| `CONFLICT` / label `integration-conflict` | The ticket's own edit collided with a board file `master` also changed. Resolve it by hand on `agent/<KEY>` in the lane's worktree, then re-run `/tick <KEY>`. |
+| `RECOVERY_CONFLICT` | An external change raced the Vault's own crash recovery. Inspect the journal named in the error under `.git/vault/operations/` and resolve by hand. |
+
+**Disabling.** Remove every registered lane first —
+`zagent lane add`/`zagent lane remove` both refuse outright while
+`lanes.enabled` is `false`, so there is no way to tear one down after
+disabling:
+
+```
+zagent lane remove <PROJECT>      # for every lane in lanes.json
+```
+
+Then hand-edit `lanes.enabled` back to `false` and commit.
+
+**Disk hygiene.** `zagent lane remove <PROJECT>` refuses if the lane's
+worktree has uncommitted changes, or unlanded `agent/<PROJECT>-*`
+branches — land or discard them first. Once it proceeds, it purges the
+lane's own `Build/output`, `Build/obj` and `Build/artifacts` (root and
+per-game) before removing the git worktree, so a removed lane does not
+leave its build output behind.
+
 ## Sharp edges
 
 - **`zagent.cmd` must keep CRLF line endings.** A Windows batch file

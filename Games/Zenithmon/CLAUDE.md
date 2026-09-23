@@ -18,7 +18,11 @@ Current stage, verified test baseline, and in-flight work live in
 `Docs/Status.md`; do not duplicate that fast-moving state here. Operating
 policy is ZM-D-031: work directly on `master`, never create a branch, PR, or
 worktree, and treat the full local gate as the authority before commit/push.
-`zm-tests` runs after the push as a backstop.
+`zm-tests` runs after the push as a backstop. The one exception is a
+registered [lane](../../Tools/zagent/README.md#lanes) (ZM-D-LANES, to be
+recorded): there, every ticket gets its own `agent/<KEY>` branch cut in
+the lane's own worktree, never the main checkout — see
+`Tools/zagent/protocol/TICK.md#lane-mode`.
 
 ## File structure
 
@@ -374,12 +378,15 @@ and it could only be remembered. No gate tells you: `run_unit_gate.ps1`
 asserts `ran == Baseline` **exactly**, so a grown suite fails with zero
 failing tests.
 
-**2. ZM-D-031 is enforced mechanically now.** The `Zenithmon` and
-`Engine` categories carry `branching: "direct"`, so the loop commits
-straight to `master` and hard-refuses `git switch -c`, `git worktree` and
-`gh pr`. DevilsPlayground overrides it to `"branch"` because its
-`Docs/CIPolicy.md` is a squash-merge PR policy. Nothing is pushed —
-`push: false` everywhere.
+**2. ZM-D-031 is enforced mechanically now.** The `Zenithmon`, `Engine`
+and `DevilsPlayground` categories all carry `branching: "direct"`, so the
+loop commits straight to `master` and hard-refuses `git switch -c`,
+`git worktree` and `gh pr` — DevilsPlayground no longer overrides this to
+`"branch"`. Nothing is pushed — `push: false` everywhere. The one
+exception is a registered [lane](../../Tools/zagent/README.md#lanes)
+(ZM-D-LANES, to be recorded): every lane ticket gets its own `agent/<KEY>`
+branch regardless of `branching`, cut in the lane's own worktree — see
+`Tools/zagent/protocol/TICK.md#lane-mode`.
 
 **3. Windowed authoring is the LOOP's, and needs a GPU rather than a person.**
 This section used to read *"windowed authoring stays human, by engine law"*,

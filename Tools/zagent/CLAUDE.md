@@ -169,6 +169,47 @@ other two on disk.
    immediately, rather than drifting silently the way a fourth copy of a
    pinned baseline used to.
 
+## Lane mode
+
+`Tools/zagent/protocol/TICK.md`'s `## Lane mode` section is the parallel-
+`/tick`-lanes protocol; `Tools/zagent/README.md#lanes` is the how-to. It
+adds **no new harness fields** to `harnesses.json` and needed no
+generator change — the same three entry points, generated the same way,
+now also resolve correctly inside a registered lane's own worktree,
+because `zagent.ps1` already resolves the repo root from its own script
+location rather than from the cwd (see the README's own note on this).
+
+It DID add scripts, none of them under this directory: `Tools/build_lock.ps1`
+(the one machine-wide build slot), `Tools/lane_pins.ps1` (resolves a
+lane's merge conflicts on the two allowed pin sites), `Tools/lane_init.ps1`
+(provisions a new lane), `Tools/sweep_game_exes.ps1` (the path-scoped exe
+sweep every lane and the main checkout share), and their tests
+`Tools/Test_LanePins.ps1` / `Tools/Test_LaneInit.ps1` — same top-level
+`Tools/` home as `Tools/tick_gates.ps1`, not `Tools/zagent/`.
+
+**Parity lessons from writing the `## Lane mode` section itself,** worth
+remembering before editing `TICK.md` again:
+
+- **No `file:line` citation of `TICK.md` anywhere in a live file under
+  `Tools/**`.** Line numbers drift every time unrelated content is added
+  earlier in the file; cite `TICK.md#<anchor>` instead. `Test-HarnessParity.ps1`
+  assertions 20/21 check every such citation resolves to a real heading.
+- **A mandated command has to sit in inline backticks, not only inside a
+  fenced code block.** `Get-MandatedCommandsFromTick` blanks out fenced
+  blocks before scanning for pre-authorised commands, so a command that
+  only appears fenced is invisible to the per-harness pre-authorisation
+  audit — write it inline (`` `pwsh -NoProfile -File ...` ``) at least
+  once if it needs to be authorised.
+- **`protocol/tier-mentions.allowlist` pins `TICK.md` mentions by
+  file:line and must be re-derived (per its own header comment) after any
+  insertion that shifts line numbers below it** — a stale entry either
+  stops matching (a new unlisted mention reds the gate) or silently
+  allows the wrong line.
+- **Keep every existing harness-name mention in this file.** `Test-HarnessParity.ps1`
+  assertion 22 requires `Tools/zagent/CLAUDE.md` to name `claude`,
+  `opencode` and `codex` somewhere — an edit that removes the last mention
+  of one fails that gate.
+
 ## Sharp edges
 
 - **Never hand-edit a generated file.** Every file under "Generated" above

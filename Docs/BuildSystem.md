@@ -126,6 +126,36 @@ worktree can produce incorrect roots. `regen.ps1` refuses by default (exit 2).
 For an explicitly authorized linked checkout, `Build/regen.ps1 -AllowLinkedWorktree`
 checks the Git/script root and verifies every generated game root before succeeding.
 
+**Registered-lane exception.** A [lane](../Tools/zagent/README.md#lanes)
+is an explicitly authorized linked worktree by construction: `zagent lane
+add <PROJECT>` provisions it via `Tools/lane_init.ps1`, which itself runs
+`Build\regen.ps1 -AllowLinkedWorktree` as part of setup, and every later
+regen inside that worktree (an auto-regen included, see below) passes the
+same flag. The refusal still fires for an ordinary, *unregistered* linked
+worktree — `zenith build` there fails its first build with a message
+naming the remedy (`run 'Build\regen.ps1 -AllowLinkedWorktree' once, or
+'zagent lane add'`), keyed on whether the worktree is a **registered**
+lane, not merely a linked one.
+
+**Regen staleness is tracked per checkout, and a stale tree auto-regens.**
+`Build/artifacts/regen_sha` (gitignored) is written ONLY by a successful
+`regen.ps1`, as its last step: line 1 is HEAD's commit, the remaining
+lines are the current set of untracked *project-shaping* files (any
+`.cpp`/`.c`/`.h`/`.inl`/`.slang` outside `Middleware/`, or a
+`Build/Sharpmake_*.cs`/`Games/*/*.zproj`). `zenith build` and `zenith hub`
+compare this against HEAD before every build
+(`Get-ZenithBuildRegenStaleness` → `Test-ZenithRegenStale`,
+`Build/zenith_buildsystem.psm1`) and call `Build/regen.ps1` automatically
+when the tree is stale — missing/empty/unresolvable `regen_sha`; an
+add/delete/rename of a project-shaping file, or ANY status change on a
+Sharpmake/`.zproj` file, between the recorded commit and HEAD; or a NEW
+untracked project-shaping file since the last regen. A plain edit (`M`)
+to an existing `.cpp`/`.h`/etc. does **not** count — Sharpmake already
+knows the file; only its contents changed. If a `devenv.exe` process has
+this repo open at the moment an auto-regen fires, a best-effort check
+prints a warning that it may need to reload the solution afterwards.
+`zenith package` never auto-regens (see §7) — it only warns.
+
 ## 4. Configurations, outputs, and the library structure
 
 Config axes (fragments): **RenderBackend** (`Vulkan_` = real renderer /
@@ -1154,6 +1184,15 @@ heal) + `Games/<Name>/Assets` + `Games/<Name>/Config` (if present) +
 `dist/<Name>_<lowercase config>/`, plus a `run.bat` that launches with
 `--assets-root "%~dp0"`.
 
+**`zenith package` never regenerates or builds, unlike `zenith build`/
+`zenith hub` — it only WARNS.** It has nothing to build (it stages an
+already-built exe) and nothing to protect by acquiring the build slot, so
+it checks regen staleness (§3) read-only against HEAD's current file list
+and prints `WARNING: regen is stale (<reason>) -- the packaged exe may
+predate HEAD's current file list.` rather than regenerating. A stale
+warning here means the exe you are about to package was built from an
+older file list than HEAD currently has — rebuild first if that matters.
+
 **How relocation works:** the compile-time `GAME_ASSETS_DIR` /
 `ENGINE_ASSETS_DIR` / `SHADER_SOURCE_ROOT` defines are absolute build-machine
 paths. `Zenith_CommandLine::ResolveUnderAssetsRoot(baked, override, rel)`
@@ -1229,8 +1268,34 @@ Notes:
 | Exe dies at launch, `STATUS_DLL_NOT_FOUND` (0xC0000135) | Slang dependency tree / assimp missing next to the exe → `zenith test`/`zenith package` self-heal via `Repair-ZenithRuntimeDlls`; for a bare `zenith run`, build once via a game that has them or run `zenith test <Name> --filter <anything>` to trigger the heal. |
 | Game hangs at shutdown (headless) | Known; harness/gates tally results from JSON and watchdog-kill. Don't wait on process exit for correctness. |
 | ~~Whole-solution build red (TilePuzzle only)~~ — FIXED (ZEN-103, 2026-09-21) | `Games\TilePuzzle\tilepuzzle_win64.sln` used to be the one solution that failed whole: `TilePuzzleLevelGen` called removed/changed engine APIs and `TilePuzzleRegistryViewer` failed to link (missing `Project_*` composition-root symbols). Both were repaired against the current engine API (see "Whole-solution build status (ZEN-85, 2026-09-21)" below, and its ZEN-103 update) — the solution now builds whole with zero errors, same as every other measured solution. Both tools then crashed at launch (`0xC0000005`) — building is not running — until ZEN-107 gave a standalone tool a supported way to allocate the engine's runtime services (`Zenith_ToolRuntimeServices`); see the section below. |
-| Regen refuses to run | You're in a linked git worktree — run from the main checkout (§3). |
+| Regen refuses to run | You're in a linked git worktree that is not a registered [lane](../Tools/zagent/README.md#lanes) — run from the main checkout, or pass `-AllowLinkedWorktree` for an explicitly authorized one (§3). |
 | Sentinel link error | A leaf lib grew an engine/platform reference. If it's a sanctioned L0 seam, add the shim to `Tests/Sentinel*/sentinel_platform.cpp`; otherwise fix the leak (that's the point of the proof). |
+| `tick_gates.ps1` exits 11, "slot busy" | Another checkout — the main one, or another lane — holds the one machine-wide build slot (`Tools/build_lock.ps1`, named mutex `Local\ZenithBuildSlot`, capacity 1). Non-evidential: wait for it to clear, or check `<git-common-dir>/zenith-build-slot.json` for who holds it. |
+| `tick_gates.ps1` exits 12, "tree unstable" | A gate wrote non-deterministic tracked output across two verify passes — `tick_gates.ps1` already retried once internally before reporting this. Fix the gate (find and freeze whatever it reads that isn't the authored value); re-running again is not a fix. |
+
+**Exe sweep is path-scoped, not name-scoped.** `Tools/sweep_game_exes.ps1`
+(the `cleanup` line every gate runs) dot-sources `Tools/tick_gates.ps1
+-NoRun` to reuse its `Invoke-ExeSweep`/`Select-SweepTargets` — the same
+killer every gate phase already uses — and kills only processes whose exe
+path sits under *this* checkout's own tree. That matters once lanes are
+in play: two lanes, or a lane and the main checkout, can each have their
+own `zenithmon.exe` running at once, and a name-only kill (`Get-Process
+zenithmon.exe | Stop-Process`) would take out both. Lane mode skips the
+cleanup line entirely at its own step 9
+(`Tools/zagent/protocol/TICK.md#lane-mode`) — a main-mode tick's step 9
+runs after `finish` releases the repo lock, while a lane may still be
+mid-build.
+
+**Each [lane](../Tools/zagent/README.md#lanes) is its own full checkout's
+worth of disk**, roughly 20-30 GB: `zagent lane add <PROJECT>` copies
+every ignored runtime input the worktree needs (Slang/VulkanSDK/Sharpmake
+binaries, every ignored file under each `Games/*/Assets` and
+`Zenith/Assets`) on top of the worktree itself, then builds and
+unit-gates every game. `zagent lane remove <PROJECT>` purges that lane's
+own `Build/output`/`Build/obj`/`Build/artifacts` (root and per-game)
+before removing the git worktree, so disk is reclaimed on an orderly
+teardown; a lane abandoned by deleting its directory by hand does not
+get that cleanup and also leaves a dangling `git worktree` entry.
 
 `Tools/libgraph/` measures the boundaries between the engine libraries
 listed in §4 — declared vs. used dependencies, each lib's public
@@ -1454,7 +1519,8 @@ baked paths — overridable at runtime by `--assets-root`, §7).
    `Games\TilePuzzle\tilepuzzle_win64.sln` since ZEN-103 (see "Whole-solution
    build status (ZEN-85, 2026-09-21)" in §9), so it is not a workaround to
    reach for — just not the recommended default.
-3. Never run Sharpmake/regen from a linked worktree.
+3. Never run Sharpmake/regen from a linked worktree — except a registered
+   [lane](../Tools/zagent/README.md#lanes) (§3).
 4. Nothing generated is committed; nothing hand-written is ignored (enforced
    by selftest).
 5. Runner/tool outputs go under `Build/artifacts/`; packages under `dist/`.
