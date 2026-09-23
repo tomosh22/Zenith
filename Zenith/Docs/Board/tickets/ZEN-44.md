@@ -6,8 +6,8 @@ title: "Zenith_PriorityQueue: a binary heap in Zenith/Collections, first consume
 category: "Engine"
 parent: "ZEN-26"
 sprint: "zen-zen-mobile-readiness-p0-before-a-vertical-slice"
-status: "To Do"
-assignee: null
+status: "In Progress"
+assignee: "agent@zenith.invalid"
 priority: "HIGH"
 complexity: "SIMPLE"
 risk: "LOW"
@@ -16,12 +16,15 @@ position: 44
 labels: ["engine-gap"]
 fixVersions: []
 blocks: [{"key":"ZEN-87","reason":"P0 exit lists the priority queue among the P0 items."}]
-updatedAt: "2026-09-19T17:42:36.118Z"
+updatedAt: "2026-09-23T19:06:04.546Z"
 flagged: false
 severity: null
 reproducibility: null
 dueDate: null
 environment: "Null_vs2022_Debug_Win64_True"
+claimAttempt: "795be367-7004-4e93-9eed-5f9746842706"
+harness: "claude"
+lane: "ZEN"
 ---
 ## Goal
 **Register:** Undervault #3 (P0), the A* open list; also Hearth's per-storey router. The TDD row: *"Zenith_PriorityQueue<T>: binary heap over Zenith_Vector. Zenith/Collections/ has Vector/HashMap/HashSet/CircularQueue/MemoryPool and no heap; std::priority_queue is banned."*
