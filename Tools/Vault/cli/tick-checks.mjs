@@ -90,20 +90,37 @@ const GATE_EXIT_MEASURED = 10;
 // red. Chosen as 8, not 6, because 6 is already `zagent`'s own circuit-
 // breaker-open code and a tick reads both ladders.
 const GATE_EXIT_NO_GATE_LINES = 8;
+// Two more non-evidential codes (WP2 item 7, parallel `/tick` lanes):
+//   11 - the build slot (Tools/build_lock.ps1) could not be acquired within
+//        lanes.buildSlotWaitMinutes — "slot busy". The phase never ran.
+//   12 - a second start != end tree-SHA mismatch inside one firing —
+//        "tree unstable". `tick_gates.ps1` retries once internally already;
+//        this is what it leaves behind when the tree still would not hold
+//        still the second time.
+// Neither carries any evidence about whether the tree builds or passes its
+// gates — the run never got far enough to answer that — so both sit beside 8
+// in GATE_EXIT_NON_EVIDENTIAL, never in GATE_EXIT_RED or the blocked-scope
+// RED set.
+const GATE_EXIT_SLOT_BUSY = 11;
+const GATE_EXIT_TREE_UNSTABLE = 12;
+const GATE_EXIT_NON_EVIDENTIAL = new Set([GATE_EXIT_NO_GATE_LINES, GATE_EXIT_SLOT_BUSY, GATE_EXIT_TREE_UNSTABLE]);
 // The full documented ladder `Tools/tick_gates.ps1`'s own header promises to
 // leave in `exitCode`: 0, the three RED codes above, 5 ("could not read the
-// gate list"), 8 (above), and 10. "Documented" is not the same as "fresh
-// evidence" — 2/3/4 and 5 are documented FAILURES and still fresh, current
-// answers about the tree (a gate genuinely failed); 8 is documented but
-// VACUOUS (nothing ran, so there is nothing to be fresh or stale about); an
-// exit code that is not in this set at all is neither — it is what an
-// internal crash outside the ladder's own contract looks like on the wire.
-// Measured on ZEN-101: a phase crashed in a post-build assertion and the
-// top-level process left exitCode 1 — not a value this ladder describes —
-// while every per-step result read exitCode 0 and `state` was left
+// gate list"), 8/11/12 (all non-evidential, above), and 10. "Documented" is
+// not the same as "fresh evidence" — 2/3/4 and 5 are documented FAILURES and
+// still fresh, current answers about the tree (a gate genuinely failed); 8,
+// 11 and 12 are documented but VACUOUS (nothing ran, or the tree never held
+// still long enough to be checked, so there is nothing to be fresh or stale
+// about); an exit code that is not in this set at all is neither — it is
+// what an internal crash outside the ladder's own contract looks like on the
+// wire. Measured on ZEN-101: a phase crashed in a post-build assertion and
+// the top-level process left exitCode 1 — not a value this ladder describes
+// — while every per-step result read exitCode 0 and `state` was left
 // 'complete', so nothing about the SHAPE of the file said anything had gone
 // wrong.
-const GATE_EXIT_DOCUMENTED = new Set([0, 2, 3, 4, 5, GATE_EXIT_NO_GATE_LINES, GATE_EXIT_MEASURED]);
+const GATE_EXIT_DOCUMENTED = new Set([
+  0, 2, 3, 4, 5, GATE_EXIT_NO_GATE_LINES, GATE_EXIT_MEASURED, GATE_EXIT_SLOT_BUSY, GATE_EXIT_TREE_UNSTABLE,
+]);
 
 // ─── 1. Definition-of-Done ─────────────────────────────────────────────
 
@@ -223,10 +240,21 @@ export function unexplainedExcursions(excursions, explanationText) {
  * ticket's commit" and "checked whatever HEAD was" stay distinguishable, per
  * this module's fail-closed convention.
  */
-async function ticketCommitSha(repoRoot, key) {
+// Exported for `write.mjs`'s lane Done<=>landed check (WP2 item 3): a lane
+// row going Done must resolve its OWN `<KEY>:` commit directly — never
+// through `commitCompleteness`, which returns early with no `sha` at all
+// when `changed.txt` is absent, and never via a HEAD fallback, because a
+// branch that never carried a ticket commit is trivially an ancestor of
+// `baseBranch`. `--first-parent` (WP2 item 6) is required here: after a
+// lane-side `merge master` (REGATE), the plain log interleaves master's own
+// commits — 254 of the last 300 on a real run were `board: ` — so a ticket
+// that waited even a few hours can lose its `<KEY>:` commit past the `-n
+// 200` window. `--first-parent` walks only this branch's own commits, never
+// descending into a merged-in master.
+export async function ticketCommitSha(repoRoot, key) {
   try {
     const { stdout } = await execFile(
-      'git', ['-C', repoRoot, 'log', '--format=%H%x1f%s', '-n', '200'], { encoding: 'utf8' },
+      'git', ['-C', repoRoot, 'log', '--first-parent', '--format=%H%x1f%s', '-n', '200'], { encoding: 'utf8' },
     );
     const prefixes = [`${key}:`, `WIP(${key}):`];
     for (const line of stdout.split(/\r?\n/)) {
@@ -543,16 +571,19 @@ export async function gateVerdictFresh({ repoRoot, key }) {
   // other path that manages to leave `state: 'complete'` with an exit code
   // outside the ladder — every branch covers a disjoint verdict shape, none
   // of them the same one twice.
-  if (exitCode !== null && exitCode !== undefined && Number(exitCode) === GATE_EXIT_NO_GATE_LINES) {
-    return {
-      key, fresh: false, state, exitCode, headSha, skipped,
-      reason: `exitCode ${GATE_EXIT_NO_GATE_LINES} — the phase reported 'complete' having run no gate lines at all ("no gate lines") — documented, but it is evidence of nothing: re-run the phase, this is not a corrupt or untrustworthy file`,
-    };
+  if (exitCode !== null && exitCode !== undefined && GATE_EXIT_NON_EVIDENTIAL.has(Number(exitCode))) {
+    const code = Number(exitCode);
+    const reason = code === GATE_EXIT_NO_GATE_LINES
+      ? `exitCode ${GATE_EXIT_NO_GATE_LINES} — the phase reported 'complete' having run no gate lines at all ("no gate lines") — documented, but it is evidence of nothing: re-run the phase, this is not a corrupt or untrustworthy file`
+      : code === GATE_EXIT_SLOT_BUSY
+        ? `exitCode ${GATE_EXIT_SLOT_BUSY} — the build slot could not be acquired within lanes.buildSlotWaitMinutes ("slot busy") — the phase never ran, so there is nothing to be fresh about: wait for the slot and re-run`
+        : `exitCode ${GATE_EXIT_TREE_UNSTABLE} — a second start != end tree-SHA mismatch inside one firing ("tree unstable") — the tree was never verified, only found to still be moving: re-run once it settles`;
+    return { key, fresh: false, state, exitCode, headSha, skipped, reason };
   }
   if (exitCode !== null && exitCode !== undefined && !GATE_EXIT_DOCUMENTED.has(Number(exitCode))) {
     return {
       key, fresh: false, state, exitCode, headSha, skipped,
-      reason: `exitCode ${exitCode} is not one of the codes Tools/tick_gates.ps1's own ladder documents (0, 2, 3, 4, 5, 8, 10) — state was left 'complete' but this is not a verdict the ladder describes; treat as absent`,
+      reason: `exitCode ${exitCode} is not one of the codes Tools/tick_gates.ps1's own ladder documents (0, 2, 3, 4, 5, 8, 10, 11, 12) — state was left 'complete' but this is not a verdict the ladder describes; treat as absent`,
     };
   }
   let currentHead = null;

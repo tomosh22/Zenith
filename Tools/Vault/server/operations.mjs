@@ -25,6 +25,25 @@ export function git(cwd, args, input, extraEnv = {}) {
   });
 }
 
+// `git()` above discards stdout on a non-zero exit -- correct for every
+// caller that just wants "did it work", but `integrate`'s own `merge-tree`
+// and dry-run `read-tree` steps have to CLASSIFY a non-zero exit from the
+// text it produced (a real conflict vs. a hard git failure), and the text
+// that matters is on stdout, not stderr. This never rejects on a non-zero
+// exit code -- only a failure to spawn `git` at all does -- so a caller
+// inspects `.code`/`.stdout`/`.stderr` itself rather than catching.
+function gitRaw(cwd, args, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, { cwd, windowsHide: true });
+    const out = [], err = [];
+    child.stdout.on('data', b => out.push(b)); child.stderr.on('data', b => err.push(b));
+    child.on('error', reject);
+    child.on('close', code => resolve({ code, stdout: Buffer.concat(out).toString(), stderr: Buffer.concat(err).toString() }));
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
+  });
+}
+
 async function context(root) {
   root = await fs.realpath(root);
   const repo = await git(root, ['rev-parse', '--show-toplevel']);
@@ -312,12 +331,87 @@ async function applyJournal(ctx, journal, file) {
   journal.phase = 'complete'; await jsonWrite(file, journal);
 }
 
+/**
+ * Crash recovery for an `integrate` journal (WP3 brief "Crash recovery").
+ * `applyJournal`'s `{changes:[{path,before,after}]}` shape cannot express a
+ * merge, so this is a separate recovery path with its own idempotent state
+ * machine, keyed off the ref state alone rather than off the recorded
+ * `phase` -- a crash can land between updating the ref and writing the next
+ * `phase` value, so "which phase does the journal SAY it's in" is not
+ * trustworthy; "where does the base branch ref actually point" is.
+ *
+ * Never assumes `master` -- `baseBranch` is read off the journal. Decides
+ * whether the main checkout is already synced to a landed merge using the
+ * TOUCHED PATHS ONLY (never a whole-index `write-tree`, which would falsely
+ * mismatch on an unrelated staged edit already sitting in the main checkout,
+ * and can fatal on an unmerged entry). Any git failure along the way is
+ * `RECOVERY_CONFLICT`, never an uncaught crash -- a human reads the journal
+ * and the message, the same contract `applyJournal`'s own conflicts keep.
+ */
+async function applyIntegrateJournal(ctx, journal, file) {
+  if (journal.phase === 'complete') return;
+  const baseBranchRef = journal.baseBranch;
+  let currentRef;
+  try { currentRef = await git(ctx.repo, ['rev-parse', baseBranchRef]); }
+  catch (error) { fail('RECOVERY_CONFLICT', `Cannot resolve ${baseBranchRef} while recovering integrate ${journal.key}: ${error.message}`); }
+
+  if (currentRef === journal.oldMaster) {
+    // The CAS never ran, or ran and lost the race before landing anything of
+    // ours -- nothing to sync. Safe to close the journal out.
+    journal.phase = 'complete';
+    await jsonWrite(file, journal);
+    return;
+  }
+  if (currentRef !== journal.merge) {
+    // The ref points somewhere this journal does not recognise: another
+    // lane's own `integrate` merge, or a human commit, landed on the base
+    // branch after this journal's own CAS would have had to run. Leave the
+    // journal incomplete for a human to read rather than guess.
+    fail(
+      'RECOVERY_CONFLICT',
+      `${baseBranchRef} is at ${currentRef}, neither ${journal.oldMaster} (unlanded) nor `
+      + `${journal.merge} (this integrate's own merge) -- recovering integrate ${journal.key}`,
+    );
+  }
+
+  // currentRef === journal.merge: our own CAS landed. Was the main
+  // checkout's index/worktree already synced to it?
+  const touched = Array.isArray(journal.touched) ? journal.touched : [];
+  const matchesTree = async tree => {
+    if (touched.length === 0) return true;
+    try { await git(ctx.repo, ['diff-index', '--cached', '--exit-code', tree, '--', ...touched]); return true; }
+    catch (error) { if (error?.code !== 'GIT') throw error; return false; }
+  };
+  if (await matchesTree(journal.oldMaster)) {
+    try { await git(ctx.repo, ['read-tree', '-m', '-u', journal.oldMaster, journal.merge]); }
+    catch (error) { fail('RECOVERY_CONFLICT', `Could not sync the main checkout to integrate ${journal.key}'s merge ${journal.merge}: ${error.message}`); }
+    journal.phase = 'synced'; await jsonWrite(file, journal);
+    journal.phase = 'complete'; await jsonWrite(file, journal);
+    return;
+  }
+  if (await matchesTree(journal.merge)) {
+    // Already synced (a crash landed after step 8's read-tree but before the
+    // 'complete' write) -- idempotent, nothing left to do.
+    journal.phase = 'complete';
+    await jsonWrite(file, journal);
+    return;
+  }
+  fail(
+    'RECOVERY_CONFLICT',
+    `The main checkout's touched paths for integrate ${journal.key} match neither `
+    + `${journal.oldMaster} nor ${journal.merge}; leaving the journal incomplete`,
+  );
+}
+
 async function recoverLocked(ctx) {
   const directory = path.join(ctx.state, 'operations'); await fs.mkdir(directory, { recursive: true });
   let count = 0;
   for (const name of (await fs.readdir(directory)).filter(n => n.endsWith('.json')).sort()) {
     const file = path.join(directory, name), journal = await readJson(file);
-    if (journal.phase !== 'complete') { await applyJournal(ctx, journal, file); count++; }
+    if (journal.phase === 'complete') continue;
+    if (journal.kind === 'integrate') { await applyIntegrateJournal(ctx, journal, file); }
+    else { await applyJournal(ctx, journal, file); }
+    count++;
   }
   return count;
 }
@@ -417,4 +511,182 @@ export async function saveDocument(root, relative, bytes, revision, options = {}
   // releasing the lock could attach a later writer's revision to our old text,
   // allowing the browser's next save to overwrite that later edit undetected.
   return { ...operation, revision: { hash: hashBytes(savedBytes), size: savedBytes.length } };
+}
+
+// ─── integrate: land one lane ticket's branch onto its base branch ────────
+//
+// Everything OUTSIDE this function (refusals, freshness/gate-verdict
+// classification, the result -> exit code ladder) lives in
+// `cli/integrate.mjs`, which is the caller. This function is the part that
+// has to happen under `refs/vault/operation-lock` -- the same lock board
+// writes use -- because it moves the base branch ref and syncs the main
+// checkout, neither of which any board mutation ever does. It never throws
+// for an outcome the plan's result ladder names (REGATE, CONFLICT,
+// MAIN_DIRTY, MAIN_NOT_ON_BASE, RACED, LOCKED all come back as `{result,
+// extra}`); it throws only for a git failure the ladder does not describe,
+// which the caller lets propagate as a hard, undifferentiated error.
+
+const REGEN_SOURCE_RE = /\.(cpp|c|h|inl|slang)$/i;
+
+/**
+ * `regenNeeded` (plan mechanics 2.9): true when the merge adds, deletes or
+ * renames a tracked source file (outside `Middleware/`, which is vendored
+ * and never runs through this repo's own Sharpmake project-membership
+ * split), or touches a Sharpmake project file or a game descriptor at all --
+ * any of the three means a stale `.vcxproj` on disk after this lands.
+ * Informational only; `integrate` never regenerates or refuses on it.
+ */
+function computeRegenNeeded(statusLines) {
+  for (const line of statusLines) {
+    const parts = line.split('\t');
+    const status = parts[0] ?? '';
+    // A rename (`R100 old  new`) carries the destination path last; every
+    // other status has exactly one path in `parts[1]`, which is also last.
+    const target = (parts[parts.length - 1] ?? '').replaceAll('\\', '/');
+    if (!target) continue;
+    if (/^[ADR]/.test(status) && REGEN_SOURCE_RE.test(target) && !/(^|\/)Middleware\//.test(target)) return true;
+    if (/^Build\/Sharpmake_[^/]+\.cs$/.test(target)) return true;
+    if (/^Games\/[^/]+\/[^/]+\.zproj$/.test(target)) return true;
+  }
+  return false;
+}
+
+export async function executeIntegrate(root, options) {
+  const { key, project, baseBranch, tip, title } = options;
+  const id = options.id ?? randomUUID();
+  const ctx = await configured(root);
+  let release;
+  try { release = await acquire(ctx); }
+  catch (error) {
+    if (error?.code === 'LOCKED') return { result: 'LOCKED', extra: { reason: error.message } };
+    throw error;
+  }
+  try {
+    await register(ctx);
+    await recoverLocked(ctx);
+
+    // 1. Capture oldMaster fresh, now that the lock is held -- a board
+    // commit that landed between the caller's own reads and this lock is
+    // reclassified below exactly like any other, never missed.
+    const baseBranchRef = `refs/heads/${baseBranch}`;
+    const oldMaster = await git(ctx.repo, ['rev-parse', baseBranchRef]);
+    let mainBranch;
+    try { mainBranch = await git(ctx.repo, ['symbolic-ref', 'HEAD']); } catch { mainBranch = null; }
+    if (mainBranch !== baseBranchRef) {
+      return { result: 'MAIN_NOT_ON_BASE', extra: { reason: `the main checkout's HEAD (${mainBranch ?? '(detached)'}) is not on ${baseBranchRef}` } };
+    }
+
+    // 2. Classify the gap base..oldMaster by COMMIT, never by path: a
+    // category's `paths` can include board roots, so a path-based classifier
+    // would misjudge a commit that happens to touch both.
+    const base = await git(ctx.repo, ['merge-base', tip, oldMaster]);
+    if (base !== oldMaster) {
+      const listRaw = await git(ctx.repo, ['rev-list', '--first-parent', `${base}..${oldMaster}`]);
+      for (const sha of listRaw.split('\n').map(value => value.trim()).filter(Boolean)) {
+        const subject = await git(ctx.repo, ['log', '-1', '--format=%s', sha]);
+        const trailers = await git(ctx.repo, ['log', '-1', '--format=%b', sha]);
+        const boardOnly = subject.startsWith('board: ') && /^Vault-Operation:/m.test(trailers);
+        if (!boardOnly) {
+          return { result: 'REGATE', extra: { reason: `${sha} ("${subject}") in the gap is not a board-only commit`, base, oldMaster } };
+        }
+      }
+    }
+
+    // 3. merge-tree --write-tree, classified from its own raw stdout/stderr
+    // -- `git()` discards stdout on a non-zero exit, so this uses `gitRaw`.
+    const mergeTree = await gitRaw(ctx.repo, ['merge-tree', '--write-tree', oldMaster, tip]);
+    const firstLine = (mergeTree.stdout.split(/\r?\n/)[0] ?? '').trim();
+    let tree;
+    if (mergeTree.code === 0) {
+      tree = firstLine;
+      if (!/^[0-9a-f]{40}$/i.test(tree)) {
+        fail('GIT', `merge-tree --write-tree ${oldMaster} ${tip} exited 0 but stdout did not start with a tree OID:\n${mergeTree.stdout}`);
+      }
+    } else if (/^[0-9a-f]{40}$/i.test(firstLine) && /CONFLICT/.test(mergeTree.stdout)) {
+      // A merge-tree conflict here can only come from a ticket that edited a
+      // board file master also changed (plan mechanics 2.3) -- nothing has
+      // moved yet.
+      return { result: 'CONFLICT', extra: { reason: 'merge-tree reported a real content conflict on the board-only gap', conflict: mergeTree.stdout } };
+    } else {
+      fail('GIT', `merge-tree --write-tree ${oldMaster} ${tip} failed (exit ${mergeTree.code}):\n${mergeTree.stderr || mergeTree.stdout}`);
+    }
+
+    // 4. The merge commit itself -- not yet referenced by anything.
+    const message = `integrate ${key}: ${title}\n\nVault-Operation: ${id}\nLane: ${project}\n`;
+    const merge = await git(ctx.repo, ['commit-tree', tree, '-p', oldMaster, '-p', tip], message);
+
+    // 5. Dry-run read-tree in the main checkout, classified from its own
+    // stderr -- an overlapping dirty/staged/untracked path is MAIN_DIRTY;
+    // anything else is a hard error.
+    const dryRun = await gitRaw(ctx.repo, ['read-tree', '-m', '-u', '-n', oldMaster, merge]);
+    if (dryRun.code !== 0) {
+      const paths = new Set();
+      const patterns = [
+        /Entry '(.+?)' not uptodate/g,
+        /Entry '(.+?)' would be overwritten by merge/g,
+        /Untracked working tree file '(.+?)' would be overwritten/g,
+      ];
+      for (const pattern of patterns) for (const match of dryRun.stderr.matchAll(pattern)) paths.add(match[1]);
+      if (paths.size > 0) {
+        return { result: 'MAIN_DIRTY', extra: { reason: 'the main checkout has an overlapping dirty, staged or untracked-in-the-way path', paths: [...paths] } };
+      }
+      fail('GIT', `read-tree dry-run (-n) ${oldMaster} ${merge} failed (exit ${dryRun.code}):\n${dryRun.stderr}`);
+    }
+
+    // 6. Journal, phase 'prepared' -- the first durable record that this
+    // merge commit exists at all.
+    const statusRaw = await git(ctx.repo, ['diff', '--name-status', oldMaster, merge]);
+    const statusLines = statusRaw.split('\n').map(value => value.trim()).filter(Boolean);
+    const touched = statusLines.map(line => line.split('\t').pop()).filter(Boolean);
+    const regenNeeded = computeRegenNeeded(statusLines);
+
+    const journalDir = path.join(ctx.state, 'operations');
+    await fs.mkdir(journalDir, { recursive: true });
+    const journalFile = path.join(journalDir, `${id}.json`);
+    const journal = {
+      version: 1, id, kind: 'integrate', key, lane: project, baseBranch: baseBranchRef,
+      oldMaster, merge, touched, phase: 'prepared', createdAt: new Date().toISOString(),
+    };
+    await jsonWrite(journalFile, journal);
+    if (process.env.VAULT_TEST_CRASH_AFTER_INTEGRATE_PREPARED === '1' && ctx.config.writes.testFaults === true) process.kill(process.pid, 'SIGKILL');
+
+    // Test-only race hook: move the base branch out from under our own CAS
+    // immediately before we attempt it, so `update-ref`'s compare-and-swap
+    // genuinely loses the race below rather than a test merely asserting it
+    // would have. `VAULT_TEST_INTEGRATE_MOVE_BASE` carries the SHA to move
+    // the ref to (any commit reachable in the fixture repo works).
+    if (ctx.config.writes.testFaults === true && process.env.VAULT_TEST_INTEGRATE_MOVE_BASE) {
+      await git(ctx.repo, ['update-ref', baseBranchRef, process.env.VAULT_TEST_INTEGRATE_MOVE_BASE, oldMaster]);
+    }
+
+    // 7. The true CAS. Losing it means another writer moved the base branch
+    // since step 1 re-read it -- RACED, not a crash; the journal is marked
+    // abandoned and closed rather than left half-prepared.
+    try {
+      await git(ctx.repo, ['update-ref', baseBranchRef, merge, oldMaster]);
+    } catch (error) {
+      journal.abandoned = true;
+      journal.phase = 'complete';
+      await jsonWrite(journalFile, journal);
+      return { result: 'RACED', extra: { reason: `update-ref ${baseBranchRef} ${merge} ${oldMaster} lost the race: ${error.message}` } };
+    }
+    journal.phase = 'ref-updated';
+    await jsonWrite(journalFile, journal);
+    if (process.env.VAULT_TEST_CRASH_AFTER_INTEGRATE_REF_UPDATED === '1' && ctx.config.writes.testFaults === true) process.kill(process.pid, 'SIGKILL');
+
+    // 8. Sync the main checkout for real -- preserves every unrelated dirty
+    // file exactly the way `git merge` does, because only the paths the
+    // dry-run above already cleared are ever touched.
+    await git(ctx.repo, ['read-tree', '-m', '-u', oldMaster, merge]);
+    journal.phase = 'synced';
+    await jsonWrite(journalFile, journal);
+    if (process.env.VAULT_TEST_CRASH_AFTER_INTEGRATE_SYNCED === '1' && ctx.config.writes.testFaults === true) process.kill(process.pid, 'SIGKILL');
+    journal.phase = 'complete';
+    await jsonWrite(journalFile, journal);
+
+    // 9. Landed.
+    return { result: 'LANDED', extra: { merge, oldMaster, regenNeeded } };
+  } finally {
+    await release();
+  }
 }

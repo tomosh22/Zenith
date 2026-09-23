@@ -159,7 +159,13 @@ function scopeBlocked(record) {
     || String(metadata.blockedKind ?? metadata.blocked_kind ?? metadata.blockReasonKind ?? '').toLowerCase() === 'scope'
     || labels.includes('scope')
     || labels.includes('blocked-scope')
-    || labels.includes('blocked_scope');
+    || labels.includes('blocked_scope')
+    // `integrate` parks a REGATE-exhausted or board-file-conflicted lane
+    // ticket the same way a scope block is parked: it was not a failure of
+    // the WORK, so it must not count toward maxConsecutiveBlocked any more
+    // than blocked-scope does. See the write.mjs refusal that stops an agent
+    // applying this label itself outside a lane row.
+    || labels.includes('integration-conflict');
 }
 
 /**
@@ -199,16 +205,34 @@ export function breakerOpen(index, project, limit = undefined) {
   return { open, recent: terminal.map(record => String(canonicalOf(record).key ?? record.key ?? record.relativePath)), limit: threshold };
 }
 
-/** Return the first agent-owned In Progress ticket across every board root. */
-export function inFlightTicket(index, exceptKey = undefined) {
+/**
+ * Return the first agent-owned In Progress ticket that blocks a claim in the
+ * given `scope` — `'main'` (the default, and every pre-lanes caller) or a
+ * lane's project key.
+ *
+ * I5 rescoped for parallel `/tick` lanes: `main` still conflicts with
+ * EVERYTHING (today's one-ticket-per-repo behaviour, lane or no lane), but a
+ * lane conflicts only with its OWN in-flight rows and with main-scope rows
+ * (no `lane:` at all, or an explicitly cleared one) — never with another
+ * lane's. `exceptKey` keeps the existing self-exclusion: an agent re-claiming
+ * its own crashed In-Progress ticket must not block on itself (main-mode I6
+ * recovery depends on this).
+ */
+export function inFlightTicket(index, scope = 'main', exceptKey = undefined) {
   const emails = agentEmails(index);
   const except = String(exceptKey ?? '').toUpperCase();
+  const wantedScope = String(scope ?? 'main');
+  const isMainScope = wantedScope.toLowerCase() === 'main';
+  const wantedProject = wantedScope.toUpperCase();
   return allTicketRecords(index)
     .filter(record => {
       const metadata = canonicalOf(record);
-      return String(metadata.status ?? '') === 'In Progress'
-        && emails.has(String(metadata.assignee ?? '').toLowerCase())
-        && String(metadata.key ?? record.key ?? '').toUpperCase() !== except;
+      if (String(metadata.status ?? '') !== 'In Progress') return false;
+      if (!emails.has(String(metadata.assignee ?? '').toLowerCase())) return false;
+      if (String(metadata.key ?? record.key ?? '').toUpperCase() === except) return false;
+      if (isMainScope) return true;
+      const rowLane = String(metadata.lane ?? '').toUpperCase();
+      return rowLane === '' || rowLane === wantedProject;
     })
     .sort((a, b) => String(canonicalOf(a).key ?? '').localeCompare(String(canonicalOf(b).key ?? '')))[0];
 }
@@ -225,10 +249,16 @@ export function claimDecision(index, ticket, { queue = false } = {}) {
   const projectKey = projectKeyOf(ticket, metadata.key);
   const category = metadata.category ?? null;
   const invalidRepository = invalidRepositoryReason(index);
-  const holding = inFlightTicket(index, metadata.key);
+  // I5 rescoped: a lane's scope is its OWN project — `index.lane` is the one
+  // carrier a mutation-time `prepare` sees (runOperation wraps it onto
+  // `fresh`; see write.mjs). Every pre-lanes caller has no `index.lane` at
+  // all, so `scope` defaults to `'main'` and behaves exactly as before.
+  const scope = index?.lane?.project ?? 'main';
+  const holding = inFlightTicket(index, scope, metadata.key);
   const holdingKey = holding ? String(canonicalOf(holding).key ?? holding.key) : null;
+  const scopeLabel = scope === 'main' ? 'main checkout' : `lane ${scope}`;
   const lockReason = holdingKey
-    ? `${projectKey ?? 'This repository'} already has a ticket in flight: ${holdingKey}. One ticket per repo at a time.`
+    ? `${projectKey ?? 'This repository'} already has a ticket in flight: ${holdingKey} (${scopeLabel}). One ticket per repo at a time.`
     : null;
   const breaker = breakerOpen(index, projectKey);
   const breakerReason = breaker.open

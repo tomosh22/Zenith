@@ -437,6 +437,11 @@ export function semanticFlags(ticket) {
     needsHuman: labels.has('needs-human'),
     needsGpu: labels.has('needs-gpu'),
     deferred: labels.has('deferred'),
+    // ★ ONLY a human may ever APPLY this label (write.mjs refuses an agent
+    // actor on `update`/`create`) — but reading it here is unconditional:
+    // `ensureHumanGateCloseout`'s lane closeout path needs to see it on
+    // whatever row it is handed, human-applied or not.
+    approved: labels.has('approved'),
   };
 }
 
@@ -918,7 +923,12 @@ export function showPayload(index, ticket, projectKey = projectKeyOf(ticket), op
     reviewOn: clone(reviewOn),
     review: reviewOf(index, ticket, projectKey, category),
     workerTools: clone(rules.workerTools ?? project.workerTools ?? policy.policy.clientFile.workerTools ?? 'Read,Edit,Write,Grep,Glob'),
-    repo: rules.repo ?? project.repo ?? policy.policy.clientFile.repo ?? null,
+    // D1 (WP1, parallel lanes): `index.lane` is the one lane carrier, set by
+    // client.mjs's `dynamicDispatcher` after `loadVault` in lane mode only.
+    // A lane's own worktree path always wins over the authority-configured
+    // `repo` — a worker in the lane must see its own tree here, not
+    // `C:\dev\Zenith`.
+    repo: index.lane?.repoRoot ?? rules.repo ?? project.repo ?? policy.policy.clientFile.repo ?? null,
     baseBranch: rules.baseBranch ?? project.baseBranch ?? policy.policy.clientFile.baseBranch ?? null,
     branching: rules.branching ?? branchMode,
     branch: (rules.branching ?? branchMode) === 'branch' ? `${rules.branchPrefix ?? branchPrefix}${metadata.key}` : null,

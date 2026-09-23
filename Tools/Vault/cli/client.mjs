@@ -20,6 +20,14 @@ import { dispatchWrite } from './write.mjs';
 import { matchGoverningRulings, RULINGS_FILE_MIN_SCORE } from './legacy-pure/ticket.mjs';
 import { forbiddenAbandonFlags, gateVerdictFresh, guardNeedsFreshnessOverride, workerMovedNothing } from './tick-checks.mjs';
 import { workingTreeChanges } from './working-tree.mjs';
+import { git } from '../server/operations.mjs';
+import {
+  computeDoctorLanes,
+  dispatchLane,
+  extractUserLaneFlag,
+  resolveLaneMode,
+  UNREGISTERED_REFUSED_COMMANDS,
+} from './lanes.mjs';
 
 export const PROTOCOL_VERSION = 1;
 export const SCRATCH_ROOT = '.zagent';
@@ -381,6 +389,57 @@ async function archivePreviousRun(root, key) {
   return true;
 }
 
+const HUMAN_GATE_RESTORE_FILES = Object.freeze([
+  'filelist.txt', 'changed.txt', 'predispatch.json', 'gates.json', 'tick_gates.json', 'worklog.md',
+]);
+
+// ★ An approved human-gate re-claim carries its scratch forward, and NOTHING
+// ELSE does (WP2 item 5). Every other re-claim on an existing branch — a
+// Blocked ticket re-run by name onto its `WIP(<KEY>)` commit — runs claim's
+// ordinary steps against a FRESH run directory: a restored stale
+// filelist.txt there would be worse than none (see
+// Tools/zagent/protocol/TICK.md#lane-mode), since a fresh dispatch rewrites
+// it anyway.
+//
+// The one row this restore exists for: an approved, landed human-gate row
+// parked at In Review, re-claimed to resume at `integrate`. Without it,
+// `integrate` would have no verdict to resume from at all, and on a
+// `declared` harness (Codex) `finish` refuses `unverified` outright — so the
+// restore is what makes the resume possible, not merely convenient.
+//
+// Conditions, ALL required: lane mode (a human-gate resume at `integrate` is
+// a lane-only concept); this is a re-claim of an In Review row
+// (`previousStatus`, set on `claim`'s own payload); the row carries BOTH
+// `human-gate` and `approved` (case-insensitively — labels are free text on
+// the wire); and `agent/<KEY>` still exists in the lane, which is what tells
+// a genuine resume apart from a claim of a row whose branch was already
+// cleaned up.
+async function restoreHumanGateScratch(root, key, payload, options) {
+  if (options.laneInfo?.mode !== 'lane') return;
+  if (String(payload.previousStatus ?? '') !== 'In Review') return;
+  const labels = Array.isArray(payload.labels) ? payload.labels.map(value => String(value).toLowerCase()) : [];
+  if (!labels.includes('human-gate') || !labels.includes('approved')) return;
+  const laneRoot = options.resolvedRepoRoot ?? options.laneInfo.path;
+  if (!laneRoot) return;
+  try {
+    await git(laneRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/agent/${key}`]);
+  } catch {
+    return; // No branch to resume from — an ordinary fresh claim, not a resume.
+  }
+  const previousRun = path.join(root, 'run', `${key}.prev`);
+  const currentRun = path.join(root, 'run', key);
+  for (const name of HUMAN_GATE_RESTORE_FILES) {
+    let bytes;
+    try {
+      bytes = await fs.readFile(path.join(previousRun, name));
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue;
+      throw error;
+    }
+    await atomicWrite(path.join(currentRun, name), bytes);
+  }
+}
+
 function scratchKey(value) {
   return /^[A-Za-z0-9_-]{1,100}$/.test(String(value ?? '')) ? String(value) : null;
 }
@@ -490,6 +549,7 @@ async function writeCompatibilityScratch(root, command, result, options = {}) {
     // occur, so make it unreachable rather than merely unlikely.
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
       payload.archivedPriorRun = await archivePreviousRun(root, safeKey);
+      await restoreHumanGateScratch(root, safeKey, payload, options);
     }
   }
   await applyScratchWrites(root, result.writes);
@@ -582,15 +642,43 @@ async function dynamicDispatcher(context) {
   ]);
   const authority = await resolveAuthority(context.vaultRoot);
   const index = await loadVault(authority);
+  // D1: the ONE lane carrier. Set here (and in runClient's `ticketProvider`
+  // fallback, the other `loadVault` call site) — never on the other path.
+  // Never overwrite `index.root`/`index.vaultRoot`: every authority-scoped
+  // caller (server/index.js, issue-interactions.mjs, project-actions.mjs,
+  // write.mjs's own `repoRootOf`) depends on those staying the authority in
+  // every mode. `index.lane` stays `undefined` outside lane mode.
+  if (context.lane) index.lane = context.lane;
+  const command = String(context.args[0] ?? '').toLowerCase();
+  // `lane` is neither a board write nor a retained read command — there is
+  // no per-command routing table in client.mjs to add it to, so it is
+  // intercepted here, before the write/read fallback below.
+  if (command === 'lane') return dispatchLane(index, context);
   // Mutations have one explicit local owner.  The dispatcher returns null for
   // retained read commands; only those then reach the read fallback below.
   const write = await dispatchWrite(index, context.args, context.files);
   if (write !== null && write !== undefined) return write;
+  // D4: `doctor`'s lane block needs async git calls that `dispatchLocal`
+  // (synchronous, reached through `dispatchRead` below) cannot make itself.
+  // Stash it on the index; `local.mjs`'s `doctor` case reads
+  // `index.laneDoctor` synchronously, defaulting to an inert value when this
+  // never ran (e.g. via `cli/zagent.mjs`, which calls `dispatchLocal` directly).
+  if (command === 'doctor') {
+    index.laneDoctor = await computeDoctorLanes(authority, context.laneInfo);
+  }
   // Read-only fallback keeps this wrapper useful before the write dispatcher
   // is linked.  It deliberately loads files from the explicit vault root.
-  const command = String(context.args[0] ?? '').toLowerCase();
   const read = command === 'check'
-    ? await withAuthoritativeIndex(authority, current => dispatchRead(current, context.args, context.files))
+    // ★ THE CARRIER GAP, `check`'s OWN COPY (WP2 item 0): `check` never goes
+    // through `runOperation`/`executeOperation` — it reads through
+    // `withAuthoritativeIndex`, which loads its own fresh index exactly the
+    // way `executeOperation` does for a mutation. Copy `index.lane` (set
+    // above, on THIS `index`) onto that fresh `current` before dispatching,
+    // or a lane's `zagent check` would answer as if it were main mode.
+    ? await withAuthoritativeIndex(authority, current => {
+      if (index.lane) current.lane = index.lane;
+      return dispatchRead(current, context.args, context.files);
+    })
     : dispatchRead(index, context.args, context.files);
   if (command === 'history' && read?.exitCode === 0) {
     const key = context.args.find(value => /^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(String(value ?? '')));
@@ -709,6 +797,26 @@ function usage() {
 export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
   const parsed = parseClientArgs(rawArgs, options);
 
+  // D3: mode is resolved ONCE, at the top, from the existing cwd seam —
+  // before markRunning and before scratchRoot is computed, and never from a
+  // bare `process.cwd()` inside lanes.mjs. Tests drive mode exclusively via
+  // `{ cwd: <fixture path> }`, exactly as the existing integration tests
+  // already pass `cwd` for other reasons.
+  const cwd = path.resolve(options.cwd ?? process.cwd());
+  const laneInfo = await resolveLaneMode(cwd);
+  // One `resolvedRepoRoot`, used at every site that used to repeat
+  // `path.resolve(options.repoRoot ?? parsed.vaultRoot)`: scratchRoot below,
+  // `addWorkingTreeInput` (gates/guard's working-tree input), and the
+  // `repoRoot` handed to dispatch. `options.repoRoot` stays a test override;
+  // otherwise lane mode uses the LANE path (scratch and gates/guard belong to
+  // the lane, even though `--vault` keeps pointing at the authority), and
+  // main/unregistered mode is unchanged.
+  const resolvedRepoRoot = options.repoRoot
+    ? path.resolve(options.repoRoot)
+    : laneInfo.mode === 'lane'
+      ? laneInfo.path
+      : (parsed.vaultRoot ? path.resolve(parsed.vaultRoot) : null);
+
   // The scratch root is resolvable exactly when `--vault` (or an injected
   // `options.repoRoot`) is present — the same condition every persist call
   // below already needs. Resolve it ONCE, before ANY command-specific
@@ -720,7 +828,7 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
   // here"). A return that bypasses it is exactly the defect this exists to
   // remove: a stale `.zagent/last.exit` left over from a PREVIOUS
   // invocation, indistinguishable from a fresh, current answer.
-  const scratchRoot = parsed.vaultRoot ? path.join(path.resolve(options.repoRoot ?? parsed.vaultRoot), SCRATCH_ROOT) : null;
+  const scratchRoot = parsed.vaultRoot ? path.join(resolvedRepoRoot ?? path.resolve(parsed.vaultRoot), SCRATCH_ROOT) : null;
   if (scratchRoot) await markRunning(scratchRoot);
 
   async function finish(result) {
@@ -749,6 +857,38 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
   if (parsed.commandArgs.includes('--help') || parsed.commandArgs[0] === 'help' || !parsed.commandArgs[0]) {
     return finish({ exitCode: 0, payload: usage(), writes: [] });
   }
+  // An unregistered linked worktree (today, about 90 harness-made
+  // `.claude/worktrees/*` and similar) must never silently drive the main
+  // checkout or claim/finish work under the wrong tree. Not exit 4 — in
+  // queue mode that means "claimed, contract invalid -> Blocked"; this is a
+  // `stop`, claiming nothing. Read-only commands (show, queue, docs, doctor,
+  // rows, `lane which`/`lane list`, …) are unaffected.
+  if (laneInfo.mode === 'unregistered' && UNREGISTERED_REFUSED_COMMANDS.has(parsed.command)) {
+    return finish({
+      exitCode: 1,
+      payload: { error: `this is an unregistered linked worktree (${laneInfo.path}); run from the main checkout or a registered lane (zagent lane add)` },
+      writes: [],
+    });
+  }
+  // D2: `--lane` is not a vocabulary flag — strip it before
+  // `inspectArguments`/`assertKnownFlags` (legacy-pure/flags.mjs is
+  // vendored/generated and does not carry it), and never inject it into
+  // argv. A user-supplied `--lane` must agree with where this invocation
+  // already resolved to run; any mismatch, or any `--lane` from the main
+  // checkout, refuses without claiming anything. The lane itself reaches
+  // operations only through `index.lane` (set in dynamicDispatcher).
+  const laneFlag = extractUserLaneFlag(parsed.commandArgs);
+  if (laneFlag.present) {
+    const matches = laneInfo.mode === 'lane' && String(laneFlag.value ?? '').toUpperCase() === String(laneInfo.project ?? '').toUpperCase();
+    if (!matches) {
+      return finish({
+        exitCode: 1,
+        payload: { error: `--lane ${laneFlag.value ?? ''} does not match this invocation (mode ${laneInfo.mode}${laneInfo.project ? `, lane ${laneInfo.project}` : ''}).` },
+        writes: [],
+      });
+    }
+  }
+  parsed.commandArgs = laneFlag.args;
   // ★★ `abandon` IS CLIENT-COMPOSED, NOT A BOARD/WRITE COMMAND. tick.md step
   // 9's ownership-lost path used to be three negatives an agent had to hold
   // under pressure: "use comment, but do NOT change status, and do NOT
@@ -785,7 +925,6 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
     parsed.command = 'comment';
   }
   if (!parsed.vaultRoot) return finish({ exitCode: 1, payload: { error: 'Missing required --vault ROOT' }, writes: [] });
-  const cwd = path.resolve(options.cwd ?? process.cwd());
   const scratch = scratchRoot;
   let result;
   let dispatchedFiles;
@@ -802,7 +941,7 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
       const commandArgs = await injectPersistedClaimAttempt(scratch, parsed.commandArgs);
       const files = await readInputFiles(commandArgs, { cwd });
       dispatchedFiles = files;
-      await addWorkingTreeInput(commandArgs, files, path.resolve(options.repoRoot ?? parsed.vaultRoot));
+      await addWorkingTreeInput(commandArgs, files, resolvedRepoRoot ?? path.resolve(options.repoRoot ?? parsed.vaultRoot));
       await readRecordedGateSelection(scratch, commandArgs, files);
       const context = {
         vaultRoot: parsed.vaultRoot,
@@ -812,7 +951,12 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
         protocol: parsed.protocol,
         cwd,
         rawArgs: parsed.rawArgs,
-        repoRoot: path.resolve(options.repoRoot ?? parsed.vaultRoot),
+        repoRoot: resolvedRepoRoot ?? path.resolve(options.repoRoot ?? parsed.vaultRoot),
+        laneInfo,
+        // D1's carrier: only present in lane mode, and only the two fields
+        // `index.lane` is documented to carry.
+        lane: laneInfo.mode === 'lane' ? { project: laneInfo.project, repoRoot: resolvedRepoRoot } : undefined,
+        laneRunProcess: options.laneRunProcess,
       };
       const dispatch = options.dispatch ?? dynamicDispatcher;
       const value = await dispatch(context);
@@ -830,10 +974,14 @@ export async function runClient(rawArgs = process.argv.slice(2), options = {}) {
       ]);
       const authority = await resolveAuthority(parsed.vaultRoot);
       const index = await loadVault(authority);
+      // D1: the other `loadVault` call site — set the same carrier here too.
+      if (laneInfo.mode === 'lane') index.lane = { project: laneInfo.project, repoRoot: resolvedRepoRoot };
       const record = [...index.tickets.values()].find(item => String(item.metadata?.key ?? '').toUpperCase() === String(key).toUpperCase());
       return record ? { ticket: record.metadata, body: record.bodyText } : null;
     });
-    await writeCompatibilityScratch(scratch, parsed.command, result, { ...options, ticketProvider, files: options.files ?? dispatchedFiles });
+    await writeCompatibilityScratch(scratch, parsed.command, result, {
+      ...options, ticketProvider, files: options.files ?? dispatchedFiles, laneInfo, resolvedRepoRoot,
+    });
   } catch (error) {
     // A scratch failure must be visible, but must not turn a successfully
     // completed board operation into an ambiguous result. Preserve the

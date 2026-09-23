@@ -331,10 +331,10 @@ test('labels, semantic flags, and blocks cover every entry shape', () => {
   });
   assert.deepEqual(labelsOf(ticket), ['Needs-Human', 'human-gate', 'needs-gpu', 'deferred']);
   assert.deepEqual(semanticFlags(ticket), {
-    humanGate: true, needsHuman: true, needsGpu: true, deferred: true,
+    humanGate: true, needsHuman: true, needsGpu: true, deferred: true, approved: false,
   });
   assert.deepEqual(semanticFlags(rec('FD-2')), {
-    humanGate: false, needsHuman: false, needsGpu: false, deferred: false,
+    humanGate: false, needsHuman: false, needsGpu: false, deferred: false, approved: false,
   });
   const blocks = blocksOf(ticket);
   assert.deepEqual(blocks[0], { key: 'FD-2', reason: null });

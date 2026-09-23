@@ -193,6 +193,7 @@ available whenever `writes.enabled` is false.
 | `comment <KEY> --text <TEXT>` | `conditional-write` | Same as the file form. | Apply the text through the operation protocol when enabled; disabled vaults refuse without changing files. |
 | `move <KEY> <STATUS>` | `conditional-write` | Changes ticket status and durable `updatedAt`, subject to ownership, attempt and workflow checks. | Apply only an allowed workflow transition. Agent writes require current ownership and claim attempt; human actor may take over explicitly. |
 | `finish <KEY> [--status STATUS] [--comment TEXT] [--worklog TEXT]` | `conditional-write` | Moves/statuses a ticket and appends comment/work log in one operation. `human-gate` tickets stop at `In Review` for an agent; a human actor may close them. | Require both evidence bodies, current ownership/attempt for agents, and a valid workflow transition before the atomic write. |
+| `integrate <KEY>` | `conditional-write` | Lane-mode only. Merges `refs/heads/agent/<KEY>` onto the ticket's project `baseBranch` and syncs the main checkout; never edits a board file, so it carries no ticket-frontmatter mapping. See the `### integrate` section below for the full result/exit ladder. | Read-only refusals and freshness/gate-verdict classification run before any lock; the merge itself runs under `refs/vault/operation-lock`, the same lock board writes use, via `server/operations.mjs`'s `executeIntegrate`. |
 | `gates <KEY>` | `retained-read-local` | Exactly `{key, category, gatesSource, gates, base, unioned, changed}`. `unioned` rows are `{category,matched,gates}` and `changed` is a path array. | Return configured gate commands and selection explanation. `base` is the category/base gate list; changed paths may add category unions. |
 | `guard [<KEY>]` | `retained-read-local` | `{protectedPaths, gates, reviewOn, violations, needsHuman, needsGpu, humanGate}` from policy and optional ticket. | Inspect the working-tree path list if available and report protected-path matches; never alter files. |
 | `create ...` | `conditional-write` | Creates a ticket file and optional links/labels. File flags include `--file`, `--comment`, `--worklog`, `--body`, `--goal`, `--dod`; `--blocks`/`--blocked-by` require `--reason`. | Allocate the key, stable id and path from the fresh locked index, validate all references, then create the file atomically when enabled. |
@@ -239,6 +240,62 @@ available whenever `writes.enabled` is false.
 | `suggestions [--all]` | `retained-read` | Exact `{id,url,values}[]` suggestion rows newest first. Default filters unresolved/new workflow friction; `--all` returns every retained row. | Read rows, resolve SELECT labels and IDs, and include ticket links in `values`. |
 | `suggestions resolve <ID> done\|accepted\|rejected` | `conditional-write` | Updates a suggestion status. | Resolve the row under the operation protocol when enabled; disabled vaults refuse without changing metadata bytes. |
 | `contract` | `removed-transport` | None; the old endpoint advertised a remote wire contract. | Explicit unsupported response. `Tools/zagent/contract.json` was removed along with the retired remote transport it described; this matrix is now the sole offline specification. |
+
+### integrate
+
+`zagent integrate <KEY> [--json]` lands one lane ticket's `agent/<KEY>` branch
+onto its project's `baseBranch` (plan "Integration mechanics"; parallel
+`/tick` lanes). It only ever runs from a registered lane — `index.lane` unset
+(the main checkout, or an unregistered linked worktree) is refused before
+anything else, exit 1, the same disposition `claim`/`next`/etc. already use
+for an unregistered worktree.
+
+Unlike every other `conditional-write` row above, `integrate` never edits a
+board file, so it does not go through `server/operations.mjs`'s
+`executeOperation`/journal-of-file-changes machinery `write.mjs`'s other
+mutations share. It has its OWN journal kind (`kind: 'integrate'`, `phase:
+prepared | ref-updated | synced | complete`) and its own crash-recovery
+branch inside `recoverLocked`, because a merge (`oldMaster` → `merge`, two
+parents) cannot be expressed as a `{path, before, after}` change list. The
+merge itself — `merge-base`, `merge-tree --write-tree`, `commit-tree`, the
+`update-ref` compare-and-swap, and the main checkout's `read-tree -m -u` sync
+— runs under `refs/vault/operation-lock`, the identical lock every board
+write takes, via `server/operations.mjs`'s `executeIntegrate`. Everything
+before that lock (ownership/status/lane refusals, the `UNAPPROVED` check, and
+freshness/gate-verdict classification against the ticket's own
+`.zagent/run/<KEY>/tick_gates.json`) is read-only and lives in
+`cli/integrate.mjs`.
+
+**Read-only refusals, exit 1** (checked in this order, before any lock):
+not lane mode; writes disabled (`vault.config.json:writes.enabled`, the same
+gate every `conditional-write` row obeys); the key does not resolve to a
+ticket; the ticket is not `In Progress`; the ticket is not agent-owned (the
+same `isAgentOwner` predicate `claim`/`finish` use); the ticket's own `lane:`
+frontmatter does not match this invocation's lane project; the lane's `HEAD`
+is not `refs/heads/agent/<KEY>`.
+
+**The result ladder.** `payload.result` names the outcome; `exitCode` is what
+a tick branches on — see `spec/command-matrix.md`'s own convention
+("exit codes are the interface"), not the result string:
+
+| `result` | exit | meaning |
+| --- | --- | --- |
+| `LANDED` | 0 | merged onto `baseBranch`; parents `(oldMaster, tip)`; the main checkout is synced. `payload` carries `{merge, oldMaster, regenNeeded}` — `regenNeeded` is informational: true when the merge adds/deletes/renames a tracked `.cpp`/`.c`/`.h`/`.inl`/`.slang` file outside `Middleware/`, or touches any `Build/Sharpmake_*.cs` / `Games/*/*.zproj`. |
+| `REGATE` | 20 | the gap between the lane's merge-base and `baseBranch`'s current tip contains a commit that is not a board-only commit (subject not `board: `, or no `Vault-Operation:` trailer) — a code change (or another lane's own `integrate` merge) landed since this lane branched. Nothing moved. |
+| `STALE_VERDICT` | 21 | no `tick_gates.json`, or it does not parse; verdict `phase` is not `verify`/`all` (a measure-only run is not a verification); `state` is not `complete`; `exitCode` is one of the non-evidential codes (8, 10, 11) or is undocumented; `tip^{tree}` does not match `treeShaEnd`; or the lane's working tree is dirty. |
+| `NOT_GREEN` | 22 | the ticket's first-parent commit on `agent/<KEY>` is a `WIP(<KEY>):` park; no `<KEY>:` commit exists at all (defensive — not reachable through the protocol, but a human-run branch can do this); or the verdict is `complete` with `exitCode` in `{2, 3, 4, 5}` — a real gate failure, or "could not read the gate list". |
+| `CONFLICT` | 23 | `merge-tree --write-tree` reported a real content conflict on the board-only gap — the ticket itself edited a board file `baseBranch` also changed. Nothing moved. |
+| `TREE_UNSTABLE` | 24 | the verdict is `complete` with `exitCode` 12 ("tree unstable") — `tick_gates.ps1` already retried verify once internally; this is a distinct terminal, not another `STALE_VERDICT`. |
+| `MAIN_DIRTY` | 25 | a dry-run `read-tree -m -u -n` in the main checkout found an overlapping dirty, staged, or untracked-in-the-way path (`payload.paths`). Nothing moved. |
+| `MAIN_NOT_ON_BASE` | 26 | the main checkout's `symbolic-ref HEAD` is not `refs/heads/<baseBranch>`. Nothing moved. |
+| `UNAPPROVED` | 27 | the ticket carries `human-gate` without `approved`. |
+| `LOCKED` | 5 | `refs/vault/operation-lock` is held by another live writer. |
+| `RACED` | 5 | the `update-ref` compare-and-swap on `baseBranch` lost a race after this run's own read of `oldMaster` — another writer landed something first. The journal is marked abandoned; nothing of this run's own landed. |
+
+`integrate` never deletes a branch — that is the tick's own step 9, only
+after detaching, with a safe `git branch -d`. It never reads or writes
+`.zagent/integrate/<KEY>.json`, which is protocol-owned scratch, not a Vault
+concern.
 
 ## Conditional write safety
 

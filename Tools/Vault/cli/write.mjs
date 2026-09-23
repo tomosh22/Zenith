@@ -21,6 +21,7 @@ import {
   policyOf,
   projectField,
   projectKeyOf,
+  projectPolicy,
   semanticFlags,
   showPayload,
   sprintFor,
@@ -46,6 +47,7 @@ import {
   knownHarnessIds,
   needsGpuCompanion,
   routingHarnessMatches,
+  ticketCommitSha,
   unexplainedExcursions,
   unmetDoneCriteria,
   workerMovedNothing,
@@ -331,7 +333,15 @@ function changedFields(argv, current, files = {}) {
   if (category !== undefined) updates.category = String(category).toLowerCase() === 'none' ? null : String(category);
   if (environment !== undefined) updates.environment = environment;
   if (hasFlag(argv, 'flag')) updates.flagged = !hasFlag(argv, 'clear');
-  if (assignee !== undefined) updates.assignee = String(assignee).toLowerCase() === 'none' ? null : String(assignee);
+  if (assignee !== undefined) {
+    updates.assignee = String(assignee).toLowerCase() === 'none' ? null : String(assignee);
+    // I5 rescoped (WP2 item 2): `--assignee none` is the one way to undo a
+    // claim by hand (MEMORY: `move` only changes status). Clearing ownership
+    // must clear a truthy `lane:` the same way `finish` and a human `move`
+    // out of In Progress do — otherwise a released ticket would keep
+    // blocking its own lane's scope forever.
+    if (updates.assignee === null) Object.assign(updates, laneClearUpdate(current));
+  }
   const status = scalarValue(argv, 'status');
   if (status !== undefined) updates.status = status;
   const resolution = valueOf(argv, 'resolution');
@@ -489,8 +499,21 @@ function isDoneStatus(index, project, status) {
   return String(row?.category ?? row?.status_category ?? '').toUpperCase() === 'DONE';
 }
 
-function ensureHumanGateCloseout(index, record, project, actor, status) {
+function ensureHumanGateCloseout(index, record, project, actor, status, { laneLandedPathAllowed = false } = {}) {
   if (actor.kind === 'human' || !semanticFlags(record).humanGate || !isDoneStatus(index, project, status)) return;
+  // ★ The lane closeout path (WP2 item 4) — `laneLandedPathAllowed` is
+  // `true` ONLY from `finish`'s own call site, never from `move` or
+  // `update --status Done`, which skip `checkFinishContent`'s safeguards
+  // entirely and so must never get this bypass. Even there, the agent Done
+  // refusal only lifts for a `lane:` row carrying `approved` — the landing
+  // proof itself (a `<KEY>:` commit that is an ancestor of `baseBranch`) is
+  // item 3, enforced two lines later in `checkFinishContent` for every lane
+  // Done, agent or human. A main-mode human-gate row is unaffected: `approved`
+  // means nothing without a lane to have landed from.
+  if (laneLandedPathAllowed) {
+    const lane = String(canonicalOf(record).lane ?? '').trim();
+    if (lane && semanticFlags(record).approved) return;
+  }
   throw new WriteError(
     `${keyFor(record)} carries human-gate; an agent must park it at In Review for human sign-off`,
     'HUMAN_GATE',
@@ -560,13 +583,27 @@ async function runOperation(index, kind, argv, expected, prepare, fingerprintInp
     const fingerprint = valueOf(argv, 'operation-id') ?? valueOf(argv, 'op-id')
       ? createHash('sha256').update(JSON.stringify({ kind, argv, input: fingerprintInput ?? operationInputs.get(index) ?? null })).digest('hex')
       : undefined;
+    // ★ THE CARRIER GAP (WP2 item 0): `executeOperation` (server/operations.mjs)
+    // loads its OWN fresh VaultIndex and calls `prepare(fresh)` with exactly
+    // one argument — `fresh` never sees the OUTER `index.lane` dynamicDispatcher
+    // set, unless this wrapper copies it across before handing `prepare` off.
+    // Every lane-scoped decision inside a `prepare` callback (I5's scope, the
+    // `lane:` patch field, `checkFinishContent`'s Done<=>landed check) reads
+    // `fresh.lane`, so this is the one seam that makes lane mode reach
+    // `claim`/`next`/`finish` at all. `check` has its own copy, at the
+    // `withAuthoritativeIndex` call site in client.mjs, because it never goes
+    // through `runOperation`.
+    const laneCarrier = index?.lane;
+    const wrappedPrepare = laneCarrier
+      ? async fresh => { fresh.lane = laneCarrier; return prepare(fresh); }
+      : prepare;
     const response = await executeOperation(index.root ?? index.vaultRoot, {
       id,
       kind,
       expected: operationExpected,
       fingerprint,
       commit: undefined,
-      prepare,
+      prepare: wrappedPrepare,
     });
     const payload = response?.result;
     if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
@@ -600,7 +637,24 @@ class WriteError extends Error {
 }
 
 function queueCandidate(index, argv) {
-  const configuredProject = String(valueOf(argv, 'project') ?? policyOf(index).clientFile.project ?? index.boardRoots?.[0]?.project ?? '').toUpperCase();
+  const requestedProject = valueOf(argv, 'project');
+  const laneProject = index?.lane?.project ?? null;
+  // Lane mode (WP2 item 2): a bare `next` is scoped to the lane's OWN
+  // project. `--project` is still legal, but it must agree with the lane —
+  // disagreeing exits 1 (a `stop`, same disposition as an unregistered
+  // worktree) rather than silently claiming from a project this lane does
+  // not own, or being treated as exit 4 ("claimed, contract invalid").
+  if (laneProject && requestedProject !== undefined
+    && String(requestedProject).toUpperCase() !== String(laneProject).toUpperCase()) {
+    throw new WriteError(
+      `--project ${requestedProject} does not match lane ${laneProject}; a lane claims only its own project.`,
+      'LANE_SCOPE',
+      1,
+    );
+  }
+  const configuredProject = String(
+    requestedProject ?? laneProject ?? policyOf(index).clientFile.project ?? index.boardRoots?.[0]?.project ?? '',
+  ).toUpperCase();
   const breaker = breakerOpen(index, configuredProject);
   if (breaker.open) {
     throw new WriteError(
@@ -609,7 +663,12 @@ function queueCandidate(index, argv) {
       6,
     );
   }
-  const queue = dispatchQueue(index, argv);
+  // `dispatchQueue` (read.js, not owned by this work package) reads
+  // `--project` straight off argv; when the caller passed none, inject the
+  // lane's own project so the queue it returns is already scoped, without
+  // touching `dispatchQueue`/`projectSelection` themselves.
+  const queueArgv = requestedProject !== undefined || !laneProject ? argv : [...argv, '--project', configuredProject];
+  const queue = dispatchQueue(index, queueArgv);
   if (queue.exitCode !== 0) throw new WriteError(queue.payload?.error ?? 'Unable to inspect the queue', 'INVALID', queue.exitCode);
   for (const candidate of array(queue.payload)) {
     if (!candidate?.claimable || candidate.assigned) continue;
@@ -654,6 +713,19 @@ async function claim(index, argv, files, queueMode) {
     throw error;
   }
   const initial = requested ? findTicket(index, requested) : undefined;
+  // Lane mode (WP2 item 2): a targeted claim on another project's key exits
+  // 1 — the same `stop` disposition as the bare-`next` mismatch above —
+  // before any ownership/decision logic ever runs, so nothing is claimed.
+  if (!queueMode && index?.lane?.project) {
+    const targetProject = projectOf(index, initial, requested);
+    if (targetProject && targetProject !== String(index.lane.project).toUpperCase()) {
+      return errorResult(
+        `${requested} belongs to ${targetProject}, not lane ${index.lane.project}; a lane claims only its own project.`,
+        1,
+        'LANE_SCOPE',
+      );
+    }
+  }
   const expected = initial ? { [initial.relativePath]: expectedRevision(initial) } : {};
   const actor = actorOf(index, argv);
   return runOperation(index, queueMode ? 'next' : 'claim', argv, expected, async fresh => {
@@ -699,6 +771,12 @@ async function claim(index, argv, files, queueMode) {
         bytes: patchRecord(selected, {
           status: STATUS_IN_PROGRESS, assignee: actor.email, claimAttempt,
           ...(harness !== undefined ? { harness } : {}),
+          // I5 rescoped (WP2 item 2): claim writes `lane: <PROJECT>` in lane
+          // mode — including a "Back to progress" re-claim of an In Review
+          // row, which runs through this exact same patch — and nulls a
+          // STALE `lane:` left over from a previous lane claim when this one
+          // is happening in main mode.
+          ...(fresh.lane ? { lane: fresh.lane.project } : laneClearUpdate(selected)),
         }),
       }],
       result: payload,
@@ -746,6 +824,7 @@ async function move(index, argv) {
     if (actor.kind === 'human' && leavingInProgress) {
       updates.assignee = null;
       updates.claimAttempt = null;
+      Object.assign(updates, laneClearUpdate(current));
     } else if (status === STATUS_TODO && String(currentFields.assignee ?? '').toLowerCase() === actor.email.toLowerCase()) {
       updates.assignee = null;
     }
@@ -755,6 +834,16 @@ async function move(index, argv) {
 
 function repoRootOf(index) {
   return index?.root ?? index?.vaultRoot;
+}
+
+// I5 rescoped (WP2 item 2): every site that releases an agent's ownership —
+// `finish`, a human `move` out of In Progress, `update --assignee none` —
+// also clears a truthy `lane:`, the same way `claim` nulls a stale one in
+// main mode. Conditioned on the row actually carrying one, so an ordinary
+// main-mode ticket (which never had `lane:` at all) never gains a bare
+// `lane: null` key from a release it was never subject to.
+function laneClearUpdate(record) {
+  return String(canonicalOf(record).lane ?? '').trim() ? { lane: null } : {};
 }
 
 /**
@@ -773,9 +862,18 @@ function repoRootOf(index) {
  * (called from inside `finish`'s `prepare`, after `requireAgentOwnership`),
  * so a ticket the agent no longer owns still fails with OWNERSHIP/HUMAN_GATE
  * rather than a content refusal that would obscure the real reason.
+ *
+ * `project` (WP2 item 3) is `finish`'s own already-resolved project key,
+ * threaded through rather than re-derived, so the Done<=>landed check below
+ * reads the same `baseBranch` `finish`'s own `ensureTransition`/
+ * `ensureHumanGateCloseout` calls already resolved against.
  */
-async function checkFinishContent(index, key, status, commentText, worklog, current = null) {
-  const repoRoot = repoRootOf(index);
+async function checkFinishContent(index, key, status, commentText, worklog, current = null, project = null) {
+  // D1 (WP1, parallel lanes): a lane row's finish-time checks (excursion,
+  // commit-completeness, …) must read the LANE's own working tree, not the
+  // authority `repoRootOf(index)` would otherwise resolve to. `index.lane`
+  // is undefined outside lane mode, so this is a no-op there.
+  const repoRoot = index?.lane?.repoRoot ?? repoRootOf(index);
   const statusNorm = String(status ?? '').trim().toLowerCase();
   const isDone = statusNorm === STATUS_DONE.toLowerCase();
 
@@ -829,6 +927,36 @@ async function checkFinishContent(index, key, status, commentText, worklog, curr
           + ' Fix: git add -A, then a new commit (or amend the one that missed it), then finish again.',
           'INVALID', 4,
         );
+      }
+
+      // ★ Done <=> landed, lane rows only (WP2 item 3). A lane row must
+      // never say Done on the board while the work is still sitting on its
+      // own `agent/<KEY>` branch, unmerged into `baseBranch` — that is what
+      // `zagent integrate <KEY>` is FOR. Resolved directly through
+      // `ticketCommitSha`, never through `commitCompleteness` above (which
+      // returns early with no `sha` at all when `changed.txt` is absent),
+      // and with NO HEAD fallback: a branch that never carried a `<KEY>:`
+      // commit is trivially an ancestor of `baseBranch`, so falling back to
+      // HEAD here would wave through exactly the row this check exists to
+      // catch. Main-mode rows (`rowLane` empty) are unchanged.
+      const rowLane = current ? String(canonicalOf(current).lane ?? '').trim() : '';
+      if (rowLane) {
+        const sha = await ticketCommitSha(repoRoot, key);
+        if (!sha) {
+          throw new WriteError(
+            `refusing to finish ${key} as Done — no \`${key}:\` commit exists — nothing to land`,
+            'INVALID', 4,
+          );
+        }
+        const baseBranch = projectPolicy(index, project, current ? canonicalOf(current).category ?? null : null).project.baseBranch ?? 'master';
+        try {
+          await execFileAsync('git', ['-C', repoRoot, 'merge-base', '--is-ancestor', sha, baseBranch]);
+        } catch {
+          throw new WriteError(
+            `refusing to finish ${key} as Done — not landed on ${baseBranch} — run \`zagent integrate ${key}\``,
+            'INVALID', 4,
+          );
+        }
       }
     }
 
@@ -907,13 +1035,22 @@ async function finish(index, argv, files) {
     const project = projectOf(fresh, current, key);
     const status = ensureStatus(fresh, project, statusRequested);
     ensureTransition(fresh, project, canonicalOf(current).status, status);
-    ensureHumanGateCloseout(fresh, current, project, actor, status);
+    // Only `finish` ever passes `laneLandedPathAllowed: true` — `move` and
+    // `update --status Done` skip `checkFinishContent`'s safeguards entirely
+    // and so must never get the closeout bypass (WP2 item 4).
+    ensureHumanGateCloseout(fresh, current, project, actor, status, { laneLandedPathAllowed: true });
     requireAgentOwnership(fresh, current, actor, { attempt: attemptOf(argv) });
-    await checkFinishContent(fresh, keyFor(current), status, commentText, worklog, current);
+    await checkFinishContent(fresh, keyFor(current), status, commentText, worklog, current, project);
     let body = bodyTextOf(current);
     body = appendSection(body, 'Comments', commentText);
     body = upsertWorklog(body, keyFor(current), worklog);
-    return { changes: [{ path: current.relativePath, bytes: patchRecord(current, { status, claimAttempt: null }, body) }], result: { key: keyFor(current), status } };
+    return {
+      changes: [{
+        path: current.relativePath,
+        bytes: patchRecord(current, { status, claimAttempt: null, ...laneClearUpdate(current) }, body),
+      }],
+      result: { key: keyFor(current), status },
+    };
   });
 }
 
@@ -1040,6 +1177,30 @@ async function create(index, argv, files) {
   const assigneeRaw = valueOf(argv, 'assignee');
   const assignee = assigneeRaw === undefined || String(assigneeRaw).toLowerCase() === 'none' ? null : String(assigneeRaw);
   const labels = listValue(argv, 'label') ?? [];
+  const actor = actorOf(index, argv);
+  if (labels.length && actor.kind !== 'human') {
+    // ★★ THE AGENT IDENTITY MAY NEVER APPLY `approved` (WP2 item 4) — a
+    // ticket filed straight into Done with the label would let the loop sign
+    // its own human-gate closeout at create time, same as `update` refuses it
+    // after the fact.
+    if (labels.some(value => value.toLowerCase() === 'approved')) {
+      return errorResult(
+        `refusing --label approved — only a human applies \`approved\`: create the ticket, then zagent update <KEY> --label approved --human`,
+        4, 'INVALID',
+      );
+    }
+    // A brand-new ticket has no `lane:` yet (only `claim` ever writes one),
+    // so an agent applying `integration-conflict` at create time can never
+    // be the lane row `zagent integrate` produces — refuse unconditionally
+    // rather than let an agent self-exempt a freshly filed ticket from the
+    // circuit breaker.
+    if (labels.some(value => value.toLowerCase() === 'integration-conflict')) {
+      return errorResult(
+        'refusing --label integration-conflict — only a lane row `zagent integrate` itself produces may carry it.',
+        4, 'INVALID',
+      );
+    }
+  }
   const points = pointsValue(argv) ?? null;
   const reason = valueOf(argv, 'reason');
   const blocks = parseKeyList(valueOf(argv, 'blocks'));
@@ -1339,6 +1500,7 @@ async function update(index, argv, files, shorthand = null) {
   const key = positional(argv, 1);
   if (!key) return errorResult(`Usage: zagent ${shorthand ?? 'update'} <TICKET_KEY> …`, 1);
   const actor = actorOf(index, argv);
+  const record = findTicket(index, key);
   const labelsApplied = listValue(argv, 'label');
   if (labelsApplied?.length) {
     // ★★ `needs-gpu` REQUIRES A MACHINE-READABLE REASON. Not retroactive —
@@ -1367,8 +1529,36 @@ async function update(index, argv, files, shorthand = null) {
         }
       }
     }
+
+    // ★★ THE AGENT IDENTITY MAY NEVER APPLY `approved` (WP2 item 4) — the
+    // lane closeout path in `ensureHumanGateCloseout` lifts the agent Done
+    // refusal ONLY for a landed lane row carrying this label, so letting the
+    // agent apply it itself would let the loop sign its own gate.
+    if (actor.kind !== 'human' && labelsApplied.some(value => value.toLowerCase() === 'approved')) {
+      return errorResult(
+        `refusing --label approved on ${key} — only a human applies \`approved\`: zagent update ${key} --label approved --human`,
+        4, 'INVALID',
+      );
+    }
+
+    // ★★ `integration-conflict` JOINS `scopeBlocked` (read.js), which is how
+    // it stays out of `maxConsecutiveBlocked` the same way `blocked-scope`
+    // does. To stop an agent self-exempting from the breaker by mislabelling
+    // an ordinary failure this way, refuse it unless the row already carries
+    // a truthy `lane:` — the only mode `zagent integrate` produces it in.
+    // Residual risk, documented rather than closed: an agent COULD still
+    // apply this to a genuine lane row it holds that never actually hit an
+    // integration conflict, since the label is real once a row is in a lane.
+    if (actor.kind !== 'human' && labelsApplied.some(value => value.toLowerCase() === 'integration-conflict')) {
+      const lane = record ? String(canonicalOf(record).lane ?? '').trim() : '';
+      if (!lane) {
+        return errorResult(
+          `refusing --label integration-conflict on ${key} — only a lane row \`zagent integrate\` itself produces may carry it.`,
+          4, 'INVALID',
+        );
+      }
+    }
   }
-  const record = findTicket(index, key);
   const expected = record ? { [record.relativePath]: expectedRevision(record) } : {};
   // ★ The DoD blast-radius scan (`dodBlastRadiusWarning`, above `create`)
   // only earns its `git grep` cost when the Definition of Done text could
@@ -1764,9 +1954,18 @@ async function resolveRow(index, argv) {
   });
 }
 
+// `integrate` (WP3) does not go through `runOperation`/`executeOperation`
+// below — it never edits a board file, so it has no `prepare(fresh)`
+// callback for that wrapper to call. See `cli/integrate.mjs`'s own header
+// for why, and `server/operations.mjs`'s `executeIntegrate` for the part
+// that actually runs under the lock.
+async function integrateEngine() {
+  return import('./integrate.mjs');
+}
+
 export function isWriteCommand(argv = []) {
   const command = String(argv[0] ?? '').toLowerCase();
-  if (['next', 'claim', 'comment', 'move', 'finish', 'create', 'link', 'unlink', 'parent', 'update', 'estimate', 'flag', 'resolve', 'ask', 'decide', 'shortfall', 'changelog', 'suggest'].includes(command)) return true;
+  if (['next', 'claim', 'comment', 'move', 'finish', 'create', 'link', 'unlink', 'parent', 'update', 'estimate', 'flag', 'resolve', 'ask', 'decide', 'shortfall', 'changelog', 'suggest', 'integrate'].includes(command)) return true;
   if (command === 'sprint') return String(argv[1] ?? 'list').toLowerCase() !== 'list';
   if (command === 'version') return String(argv[1] ?? 'list').toLowerCase() !== 'list';
   if (command === 'rows') return argv.slice(1).some(value => String(value).toLowerCase() === 'resolve');
@@ -1812,6 +2011,10 @@ export async function dispatchWrite(index, argv = [], files = {}, context = {}) 
     if (command === 'estimate' || command === 'flag' || command === 'resolve') return await update(index, effectiveArgv, files, command);
     if (['ask', 'decide', 'shortfall', 'changelog', 'suggest'].includes(command)) return await knowledge(index, effectiveArgv, files, command);
     if (command === 'rows' || command === 'suggestions') return await resolveRow(index, effectiveArgv);
+    if (command === 'integrate') {
+      const { integrate } = await integrateEngine();
+      return await integrate(index, effectiveArgv, files);
+    }
     return null;
   } catch (error) {
     if (error instanceof WriteError) return errorResult(error.message, error.exitCode, error.code);
@@ -1819,11 +2022,18 @@ export async function dispatchWrite(index, argv = [], files = {}, context = {}) 
   }
 }
 
+// `actorOf`/`agentEmail`/`isAgentOwner` are exported for `cli/integrate.mjs`
+// (WP3) only — it needs the same actor-resolution and ownership predicate
+// every other agent mutation here already uses, and does not own this file
+// to duplicate them. `findTicket` was already exported below.
 export {
+  actorOf,
+  agentEmail,
   appendSection,
   bytesOf,
   expectedRevision,
   findTicket,
+  isAgentOwner,
   patchRecord,
   replaceSections,
 };

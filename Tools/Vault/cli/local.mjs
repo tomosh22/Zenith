@@ -16,7 +16,23 @@ export function dispatchLocal(index,args,files={},context={}) {
     readOnly:true,
     commands:['show','check','queue','owns','links','blocked','transitions','history','gates','guard','epic','sprint list','version list','report epic','report velocity','rows','suggestions','doctor','docs ls','docs read','docs search','docs status','board status'],
   });
-  if(command==='doctor') return result({ok:index.valid,diagnostics:index.diagnostics,projects:index.boardRoots.map(r=>r.project),ticketCount:index.tickets.size},index.valid?0:1);
+  if(command==='doctor') {
+    // WP1 (parallel lanes): `index.laneDoctor` is stashed asynchronously by
+    // client.mjs's `dynamicDispatcher` before this synchronous case runs —
+    // `dispatchLocal` itself cannot make the git calls a lane block needs.
+    // Absent (e.g. `cli/zagent.mjs`'s `npm run vault` entry, which calls
+    // `dispatchLocal` directly) defaults to an inert lane block that changes
+    // nothing about today's payload or exit code.
+    const laneDoctor=index.laneDoctor??{lanes:[],unregisteredWorktreeCount:0,diagnostic:null};
+    // The per-lane block is informational and lives under its own `lanes`
+    // key, never in `diagnostics` — an unlanded `agent/*` elsewhere is a
+    // normal lane state. The ONE lane diagnostic (this invocation's OWN lane
+    // unprovisioned or missing) is folded into `diagnostics` and the exit
+    // code, same as every other diagnostic here.
+    const diagnostics=laneDoctor.diagnostic?[...index.diagnostics,laneDoctor.diagnostic]:index.diagnostics;
+    const ok=index.valid&&!laneDoctor.diagnostic;
+    return result({ok,diagnostics,projects:index.boardRoots.map(r=>r.project),ticketCount:index.tickets.size,lanes:laneDoctor.lanes,unregisteredWorktreeCount:laneDoctor.unregisteredWorktreeCount},ok?0:1);
+  }
   if(command==='docs') {
     const docs=[...index.files.values()].filter(r=>r.kind==='document');
     if(sub==='ls') return result(docs.map(r=>({path:r.relativePath,title:r.metadata.title??r.relativePath})));
