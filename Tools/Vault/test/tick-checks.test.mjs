@@ -478,12 +478,12 @@ test('abandon posts a comment and structurally cannot touch status, assignee, or
   const root = await makeVault(t);
   await claimFd1(root);
   for (const bad of [['--status', 'Done'], ['--assignee', 'human@example.test'], ['--label', 'x']]) {
-    const refused = await runClient(['--vault', root, 'abandon', 'FD-1', '--comment', 'lost ownership', ...bad], { repoRoot: root });
+    const refused = await runClient(['--vault', root, 'abandon', 'FD-1', '--comment', 'lost ownership', ...bad], { repoRoot: root, cwd: root });
     assert.equal(refused.exitCode, 1, JSON.stringify(refused.payload));
     assert.match(refused.payload.error, /does not accept/);
   }
   const before = (await loadVault(root)).getTicket('FD-1').metadata;
-  const ok = await runClient(['--vault', root, 'abandon', 'FD-1', '--comment', 'lost ownership, here is the evidence'], { repoRoot: root });
+  const ok = await runClient(['--vault', root, 'abandon', 'FD-1', '--comment', 'lost ownership, here is the evidence'], { repoRoot: root, cwd: root });
   assert.equal(ok.exitCode, 0, JSON.stringify(ok.payload));
   const after = (await loadVault(root)).getTicket('FD-1');
   assert.equal(after.metadata.status, before.status, 'abandon must not change status');
@@ -496,26 +496,26 @@ test('guard fails on a stale tick_gates.json headSha, but an existing guard fail
   const changed = path.join(root, 'changed.txt');
   await fs.writeFile(changed, 'FD/tickets/FD-1.md\n');
   const gatesPath = path.join(root, 'gates.json');
-  const gates = await runClient(['--vault', root, 'gates', 'FD-1', '--file', changed, '--json'], { repoRoot: root });
+  const gates = await runClient(['--vault', root, 'gates', 'FD-1', '--file', changed, '--json'], { repoRoot: root, cwd: root });
   assert.equal(gates.exitCode, 0, JSON.stringify(gates.payload));
   await fs.writeFile(gatesPath, JSON.stringify(gates.payload));
 
   // guard's own check passes (the recorded selection still matches this
   // diff), but with no tick_gates.json at all, freshness must turn that
   // would-be pass into a failure.
-  const noVerdict = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root });
+  const noVerdict = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root, cwd: root });
   assert.equal(noVerdict.exitCode, 1, JSON.stringify(noVerdict.payload));
   assert.equal(noVerdict.payload.gateVerdictFresh, false);
 
   await fs.mkdir(path.join(root, '.zagent', 'run', 'FD-1'), { recursive: true });
   await fs.writeFile(path.join(root, '.zagent', 'run', 'FD-1', 'tick_gates.json'), JSON.stringify({ state: 'complete', exitCode: 0, headSha: 'not-the-real-sha' }));
-  const stale = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root });
+  const stale = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root, cwd: root });
   assert.equal(stale.exitCode, 1, JSON.stringify(stale.payload));
   assert.equal(stale.payload.gateVerdictFresh, false);
 
   const head = await git(root, ['rev-parse', 'HEAD']);
   await fs.writeFile(path.join(root, '.zagent', 'run', 'FD-1', 'tick_gates.json'), JSON.stringify({ state: 'complete', exitCode: 0, headSha: head }));
-  const fresh = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root });
+  const fresh = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root, cwd: root });
   assert.equal(fresh.exitCode, 0, JSON.stringify(fresh.payload));
 
   // Now make guard's OWN check fail (the recorded selection made stale by a
@@ -523,7 +523,7 @@ test('guard fails on a stale tick_gates.json headSha, but an existing guard fail
   // message must still be present, even with a stale tick_gates.json still
   // sitting there from the assertions above.
   await fs.writeFile(gatesPath, JSON.stringify({ gates: [] }));
-  const ownFailure = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root });
+  const ownFailure = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root, cwd: root });
   assert.equal(ownFailure.exitCode, 1, JSON.stringify(ownFailure.payload));
   assert.ok(ownFailure.payload.gateSelectionStale, "guard's own stale-selection message must still be present");
 });
@@ -536,7 +536,7 @@ async function lastExit(root) {
 
 test('runClient: a successful command records exit 0 to last.exit', async t => {
   const root = await makeVault(t);
-  const result = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root });
+  const result = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root, cwd: root });
   assert.equal(result.exitCode, 0, JSON.stringify(result.payload));
   assert.equal(await lastExit(root), '0');
 });
@@ -544,7 +544,7 @@ test('runClient: a successful command records exit 0 to last.exit', async t => {
 test('runClient: an early usage refusal records its OWN exit code — a prior success cannot survive as a stale value', async t => {
   const root = await makeVault(t);
   // A prior, successful call leaves last.exit = 0 on disk.
-  const ok = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root });
+  const ok = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root, cwd: root });
   assert.equal(ok.exitCode, 0, JSON.stringify(ok.payload));
   assert.equal(await lastExit(root), '0');
 
@@ -552,14 +552,14 @@ test('runClient: an early usage refusal records its OWN exit code — a prior su
   // — exactly the shape that used to skip `persistLast` entirely and leave
   // the previous command's `0` on disk, indistinguishable from a genuine
   // success. This is the coordinator's smoke test, reproduced in-process.
-  const refused = await runClient(['--vault', root, 'abandon', 'FD-1', '--status', 'Done', '--comment', 'x'], { repoRoot: root });
+  const refused = await runClient(['--vault', root, 'abandon', 'FD-1', '--status', 'Done', '--comment', 'x'], { repoRoot: root, cwd: root });
   assert.equal(refused.exitCode, 1, JSON.stringify(refused.payload));
   assert.equal(await lastExit(root), '1', 'the refusal must overwrite the previous success, not leave it stale');
 });
 
 test('runClient: last.exit is invalidated before the command runs, so a killed write cannot leave a stale value either', async t => {
   const root = await makeVault(t);
-  await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root });
+  await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root, cwd: root });
   assert.equal(await lastExit(root), '0');
   // Simulate the sentinel `markRunning` writes at the very start of the NEXT
   // invocation, before that invocation's own command has even run — the
@@ -574,14 +574,14 @@ test('runClient: last.exit is invalidated before the command runs, so a killed w
 
 test('runClient: last.json does not survive as a stale payload into a later, non-JSON invocation', async t => {
   const root = await makeVault(t);
-  const first = await runClient(['--vault', root, 'claim', 'FD-1', '--json'], { repoRoot: root });
+  const first = await runClient(['--vault', root, 'claim', 'FD-1', '--json'], { repoRoot: root, cwd: root });
   assert.equal(first.exitCode, 0, JSON.stringify(first.payload));
   const firstJson = JSON.parse(await fs.readFile(path.join(root, '.zagent', 'last.json'), 'utf8'));
   assert.equal(firstJson.key, 'FD-1');
 
   // A later, non-JSON abandon refusal must not leave FD-1's claim payload
   // sitting next to the NEW exit code as though it described this call.
-  const refused = await runClient(['--vault', root, 'abandon', 'FD-1', '--assignee', 'human@example.test', '--comment', 'y'], { repoRoot: root });
+  const refused = await runClient(['--vault', root, 'abandon', 'FD-1', '--assignee', 'human@example.test', '--comment', 'y'], { repoRoot: root, cwd: root });
   assert.equal(refused.exitCode, 1, JSON.stringify(refused.payload));
   await assert.rejects(
     fs.readFile(path.join(root, '.zagent', 'last.json'), 'utf8'),
@@ -595,14 +595,14 @@ test('runClient: the guard-freshness override records the OVERRIDDEN exit code, 
   const changed = path.join(root, 'changed.txt');
   await fs.writeFile(changed, 'FD/tickets/FD-1.md\n');
   const gatesPath = path.join(root, 'gates.json');
-  const gates = await runClient(['--vault', root, 'gates', 'FD-1', '--file', changed, '--json'], { repoRoot: root });
+  const gates = await runClient(['--vault', root, 'gates', 'FD-1', '--file', changed, '--json'], { repoRoot: root, cwd: root });
   assert.equal(gates.exitCode, 0, JSON.stringify(gates.payload));
   await fs.writeFile(gatesPath, JSON.stringify(gates.payload));
 
   // No tick_gates.json at all: guard's own check passes (would answer 0),
   // but the freshness fold must override it to 1 — and that overridden
   // value, not the board's original, is what must land in last.exit.
-  const guard = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root });
+  const guard = await runClient(['--vault', root, 'guard', 'FD-1', '--file', changed, '--gates', gatesPath], { repoRoot: root, cwd: root });
   assert.equal(guard.exitCode, 1, JSON.stringify(guard.payload));
   assert.equal(guard.payload.gateVerdictFresh, false);
   assert.equal(await lastExit(root), '1', "the recorded code must be the OVERRIDDEN one, not the board's original 0");
@@ -610,7 +610,7 @@ test('runClient: the guard-freshness override records the OVERRIDDEN exit code, 
 
 test('runClient: a thrown dispatcher error still records to last.exit, not a stale prior value', async t => {
   const root = await makeVault(t);
-  const ok = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root });
+  const ok = await runClient(['--vault', root, 'claim', 'FD-1'], { repoRoot: root, cwd: root });
   assert.equal(ok.exitCode, 0, JSON.stringify(ok.payload));
   assert.equal(await lastExit(root), '0');
 
@@ -622,6 +622,7 @@ test('runClient: a thrown dispatcher error still records to last.exit, not a sta
   // cleanly, since `runClient` itself would reject).
   const thrown = await runClient(['--vault', root, 'show', 'FD-1'], {
     repoRoot: root,
+    cwd: root,
     dispatch: async () => { throw new Error('boom'); },
   });
   assert.equal(thrown.exitCode, 1, JSON.stringify(thrown.payload));
@@ -638,6 +639,7 @@ test('runClient: a non-1 refusal code from the dispatcher is recorded verbatim, 
   // plain refusal.
   const refused = await runClient(['--vault', root, 'show', 'FD-1'], {
     repoRoot: root,
+    cwd: root,
     dispatch: async () => ({ exitCode: 5, payload: { error: 'repo busy' } }),
   });
   assert.equal(refused.exitCode, 5, JSON.stringify(refused.payload));

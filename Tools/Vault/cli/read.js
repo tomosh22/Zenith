@@ -353,7 +353,18 @@ function checkPayload(index, ticket, projectKey, options = {}) {
 }
 
 function dispatchQueue(index, argv) {
-  const selection = projectSelection(index, argv);
+  // Lane mode: a bare `queue` (no `--project`) is scoped to the lane's own
+  // project, mirroring `queueCandidate`'s (write.mjs) injection for a bare
+  // `next`. An explicit `--project` — including another project's key —
+  // still wins: `queue` is a read, and reading another board from a lane is
+  // legitimate (unlike `claim`/`next`, which stay refused outright). Outside
+  // lane mode `index.lane` is undefined and this is a no-op.
+  const laneProject = index?.lane?.project;
+  const requestedProject = option(argv, '--project');
+  const scopedArgv = requestedProject === undefined && laneProject
+    ? [...(Array.isArray(argv) ? argv : []), '--project', laneProject]
+    : argv;
+  const selection = projectSelection(index, scopedArgv);
   if (selection.failure) return selection.failure;
   const projectKey = selection.projectKey;
   const invalidRepository = invalidRepositoryReason(index);

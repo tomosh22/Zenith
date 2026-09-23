@@ -896,13 +896,35 @@ Write-Host "`n=== the build slot (Tools/build_lock.ps1, dot-sourced transitively
 # Enter-ZenithBuildSlot / Exit-ZenithBuildSlot are defined by build_lock.ps1,
 # which tick_gates.ps1 dot-sources unconditionally near its own top (before
 # the -NoRun gate) -- so they are already in scope here via this file's own
-# `. tick_gates.ps1 -NoRun` at the top. These tests acquire the REAL
-# machine-wide `Local\ZenithBuildSlot` mutex, so every one of them releases
-# what it acquired in a `finally`, and the diagnostics-file tests clean up
-# after themselves in THIS repo's own .git directory (Enter-ZenithBuildSlot's
-# repoRoot always resolves to wherever Tools/build_lock.ps1 itself lives,
-# never a test fixture -- it is a real machine-wide resource by design).
+# `. tick_gates.ps1 -NoRun` at the top.
 #
+# TEST ISOLATION (ZEN-113 fix-forward): this file is itself commonly run as a
+# CHILD of tick_gates.ps1 -- which holds the REAL machine-wide
+# `Local\ZenithBuildSlot` mutex for its whole phase and exports
+# ZENITH_BUILD_SLOT_HELD=1 to every child it spawns. Both leak into this
+# process's own environment by inheritance, so every test below would either
+# contend with tick_gates.ps1's own held slot (the blocking/timeout tests) or
+# silently short-circuit to an INHERITED handle without ever touching a mutex
+# at all (every other test) -- measured: 65/69 under tick_gates, 69/69
+# standalone, all four misses in this section. Give this whole section a
+# PRIVATE slot identity via ZENITH_BUILD_SLOT_NAME (build_lock.ps1's
+# isolation seam) and clear the inherited handshake flag for the section;
+# both are restored in the `finally` below no matter how the section exits,
+# covering every child process it spawns (Start-Process inherits environment
+# by default -- the same mechanism the handshake test just below already
+# relies on). The one test that deliberately exercises the inherited-handshake
+# short-circuit still sets ZENITH_BUILD_SLOT_HELD=1 itself, inside its own
+# try/finally, exactly as before -- it must keep working with a private slot
+# name in scope too, since the short-circuit fires on the env var alone,
+# before the mutex name is ever consulted.
+$priorBuildSlotNameEnv = $env:ZENITH_BUILD_SLOT_NAME
+$priorBuildSlotHeldEnv = $env:ZENITH_BUILD_SLOT_HELD
+$testSlotName = "Local\ZenithBuildSlotTest-$PID-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+$env:ZENITH_BUILD_SLOT_NAME = $testSlotName
+Remove-Item Env:\ZENITH_BUILD_SLOT_HELD -ErrorAction SilentlyContinue
+
+try {
+
 # A holder on a genuinely separate OS thread is required for the blocking
 # tests -- NOT a PowerShell scriptblock run via [Threading.Thread] (that
 # throws "no Runspace available": a scriptblock delegate always needs the
@@ -934,10 +956,13 @@ public class ZenithTestMutexHolder {
 
 function Start-ZenithTestMutexHolderThread {
     # Returns @{ Thread; Ready; Release } -- Release.Set() then Thread.Join()
-    # to tear down.
+    # to tear down. Holds the section's OVERRIDDEN slot name ($testSlotName,
+    # read here via ZENITH_BUILD_SLOT_NAME -- the same variable
+    # Enter-ZenithBuildSlot itself resolves to) -- never the real
+    # machine-wide one.
     $ready = New-Object System.Threading.ManualResetEvent($false)
     $release = New-Object System.Threading.ManualResetEvent($false)
-    $holder = New-Object ZenithTestMutexHolder('Local\ZenithBuildSlot', $ready, $release)
+    $holder = New-Object ZenithTestMutexHolder($env:ZENITH_BUILD_SLOT_NAME, $ready, $release)
     $del = [Delegate]::CreateDelegate([System.Threading.ThreadStart], $holder, 'Run')
     $thread = [System.Threading.Thread]::new($del)
     $thread.IsBackground = $true
@@ -986,8 +1011,12 @@ Assert-That 'a bounded wait with a tiny -WaitMinutes and small -PollMilliseconds
 Assert-That 'an ABANDONED mutex (holder killed) counts as ACQUIRED on the next WaitOne' {
     $marker = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_abandon_" + [guid]::NewGuid().ToString('N') + '.marker')
     $childScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_abandon_child_" + [guid]::NewGuid().ToString('N') + '.ps1')
+    # Embeds the section's overridden $testSlotName directly into the CHILD
+    # script's own text (rather than relying on it reading the env var) --
+    # simplest way to guarantee the child holds the exact same private mutex
+    # Enter-ZenithBuildSlot resolves to below, never the real one.
     Set-Content -LiteralPath $childScriptPath -Value @(
-        '$m = New-Object System.Threading.Mutex($false, ''Local\ZenithBuildSlot'')',
+        "`$m = New-Object System.Threading.Mutex(`$false, '$testSlotName')",
         '$null = $m.WaitOne()',
         "Set-Content -LiteralPath '$marker' -Value '1'",
         'Start-Sleep -Seconds 300'
@@ -1097,6 +1126,15 @@ Assert-That 'the diagnostics file exists while the slot is held and is gone afte
     Exit-ZenithBuildSlot $h
     $goneAfterRelease = (-not [string]::IsNullOrEmpty($diagPath)) -and (-not (Test-Path -LiteralPath $diagPath))
     $existedWhileHeld -and $goneAfterRelease
+}
+
+}
+finally {
+    # Restore exactly what was there before -- $null means "was unset", not
+    # "restore to the literal string $null" (same convention build_lock.ps1's
+    # own Exit-ZenithBuildSlot uses for the same two variables).
+    if ($null -eq $priorBuildSlotNameEnv) { Remove-Item Env:\ZENITH_BUILD_SLOT_NAME -ErrorAction SilentlyContinue } else { $env:ZENITH_BUILD_SLOT_NAME = $priorBuildSlotNameEnv }
+    if ($null -eq $priorBuildSlotHeldEnv) { Remove-Item Env:\ZENITH_BUILD_SLOT_HELD -ErrorAction SilentlyContinue } else { $env:ZENITH_BUILD_SLOT_HELD = $priorBuildSlotHeldEnv }
 }
 
 Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue

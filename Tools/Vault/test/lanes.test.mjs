@@ -16,11 +16,27 @@ import { dispatchWrite } from '../cli/write.mjs';
 import { git } from '../server/operations.mjs';
 import { loadVault } from '../server/main.js';
 
-async function fixture(t, { lanesEnabled = false, lanesRoot } = {}) {
+async function fixture(t, { lanesEnabled = false, lanesRoot, secondProject = false } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-lanes-'));
   t.onTestFinished(() => fs.rm(root, { recursive: true, force: true }));
   await fs.mkdir(path.join(root, 'FD/tickets'), { recursive: true });
-  await fs.mkdir(path.join(root, 'WEB'), { recursive: true });
+  await fs.mkdir(path.join(root, 'WEB/tickets'), { recursive: true });
+  const webProjectPolicy = secondProject
+    ? {
+        WEB: {
+          repo: null,
+          baseBranch: 'master',
+          branching: 'direct',
+          branchPrefix: 'agent/',
+          gates: [],
+          merge: { push: false },
+          conventions: '',
+          cleanup: [],
+          reviewOn: [],
+          workerTools: 'Read,Edit,Write,Grep,Glob',
+        },
+      }
+    : {};
   await fs.writeFile(path.join(root, 'vault.config.json'), JSON.stringify({
     boardRoots: [
       { project: 'FD', path: 'FD' },
@@ -45,6 +61,7 @@ async function fixture(t, { lanesEnabled = false, lanesRoot } = {}) {
             reviewOn: [],
             workerTools: 'Read,Edit,Write,Grep,Glob',
           },
+          ...webProjectPolicy,
         },
       },
     },
@@ -53,6 +70,12 @@ async function fixture(t, { lanesEnabled = false, lanesRoot } = {}) {
     path.join(root, 'FD/tickets/FD-1.md'),
     '---\nkey: FD-1\ntitle: Before\nstatus: To Do\n---\n## Goal\nFixture ticket for lane tests.\n\n## Definition of Done\n- [ ] n/a\n\n## Gates\n- echo ok\n',
   );
+  if (secondProject) {
+    await fs.writeFile(
+      path.join(root, 'WEB/tickets/WEB-1.md'),
+      '---\nkey: WEB-1\ntitle: Before\nstatus: To Do\n---\n## Goal\nFixture ticket for the second-project lane queue test.\n\n## Definition of Done\n- [ ] n/a\n\n## Gates\n- echo ok\n',
+    );
+  }
   await fs.writeFile(path.join(root, '.gitignore'), '.zagent/\n');
   await fs.writeFile(path.join(root, 'zagent.project.json'), JSON.stringify({
     project: 'FD',
@@ -234,6 +257,48 @@ test('the carrier gap is closed: claim\'s payload `repo` is the lane path, and f
     lines.some(line => /no filelist\.txt/.test(line) && line.toLowerCase().includes(normalize(lane).replace(/\//g, path.sep))),
     `expected checkFinishContent to warn about the LANE's own filelist.txt, got: ${JSON.stringify(lines)}`,
   );
+});
+
+// ═══ `queue` defaults to the lane's own project (ZEN-113) ══════════════
+//
+// `dispatchQueue` (cli/read.js) picks its project via `projectSelection`,
+// which falls back to the checkout default with no `--project` — the one
+// board read a lane session used to leave unscoped, unlike `lane which`,
+// `next` and `claim`. It now mirrors `queueCandidate`'s (write.mjs) bare-`next`
+// injection: a bare `queue` from a lane defaults to `index.lane.project`, and
+// an explicit `--project` — including another project's key — still wins,
+// because `queue` is a read and reading another board from a lane is
+// legitimate (unlike `claim`/`next`, which stay refused outright).
+
+test('lane mode: a bare `queue` defaults to the lane project; an explicit --project still overrides, even to another project; main mode is unchanged', async t => {
+  const root = await fixture(t, { secondProject: true });
+  const lane = await addWorktree(t, root);
+  await registerLane(root, 'FD', lane);
+
+  const laneQueue = await runClient(['--vault', root, 'queue', '--json'], { cwd: lane });
+  assert.equal(laneQueue.exitCode, 0, JSON.stringify(laneQueue.payload));
+  assert.ok(laneQueue.payload.length > 0, 'the lane-scoped queue must not be empty');
+  assert.ok(
+    laneQueue.payload.every(row => row.key.startsWith('FD-')),
+    `a bare queue from a lane must default to the lane's own project (FD), got: ${JSON.stringify(laneQueue.payload.map(row => row.key))}`,
+  );
+  assert.ok(laneQueue.payload.some(row => row.key === 'FD-1'));
+
+  const explicit = await runClient(['--vault', root, 'queue', '--project', 'WEB', '--json'], { cwd: lane });
+  assert.equal(explicit.exitCode, 0, JSON.stringify(explicit.payload));
+  assert.ok(
+    explicit.payload.every(row => row.key.startsWith('WEB-')),
+    'an explicit --project from a lane must still win, even naming another project entirely',
+  );
+  assert.ok(explicit.payload.some(row => row.key === 'WEB-1'));
+
+  // Main mode: unchanged from before this ticket. A bare `queue` from the
+  // main checkout still falls back to the checkout default project (FD, per
+  // zagent.project.json's `project` field) — never scoped by any lane.
+  const mainQueue = await runClient(['--vault', root, 'queue', '--json'], { cwd: root });
+  assert.equal(mainQueue.exitCode, 0, JSON.stringify(mainQueue.payload));
+  assert.ok(mainQueue.payload.some(row => row.key === 'FD-1'), 'main mode bare queue still defaults to the checkout default project');
+  assert.ok(!mainQueue.payload.some(row => row.key === 'WEB-1'), 'main mode bare queue must not pick up a lane scope that does not exist here');
 });
 
 // ═══ `--lane` handling (D2) ════════════════════════════════════════════

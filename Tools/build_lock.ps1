@@ -54,7 +54,42 @@ $ErrorActionPreference = 'Stop'
 # The one name every harness/checkout shares. `Local\` (rather than
 # `Global\`) needs no `SeCreateGlobalPrivilege` and still serializes every
 # session on this machine, which is the scope this repo's builds compete in.
-$script:ZenithBuildMutexName = 'Local\ZenithBuildSlot'
+function Get-ZenithBuildSlotName {
+    <#
+      The effective mutex name for THIS acquire attempt -- resolved at CALL
+      TIME, never cached at dot-source time.
+
+      TEST-ISOLATION SEAM (ZEN-113 fix-forward, attempt 2): a $script:
+      constant computed ONCE when this file is dot-sourced broke under
+      Tools/Test_TickGates.ps1, which dot-sources this file (via
+      tick_gates.ps1) near ITS OWN top -- long before its own build-slot
+      section ever sets ZENITH_BUILD_SLOT_NAME. A value snapshotted that
+      early was still the REAL slot name by the time Enter-ZenithBuildSlot
+      actually ran in-process, so the test's private-mutex holders
+      (ZenithTestMutexHolder, the abandoned-mutex child) and this
+      in-process caller silently contended on two DIFFERENT mutexes
+      instead of the same private one -- under tick_gates the in-process
+      side waited on the real, parent-held slot forever (until its own
+      bounded timeout); standalone it acquired the real slot immediately
+      and never touched the test's private one at all. Calling this
+      function fresh from inside Enter-ZenithBuildSlot on every acquire
+      attempt picks up an override set at ANY point before THAT call, not
+      only one set before dot-sourcing -- a child `pwsh -File
+      Tools/build_lock.ps1 -Run ...` process already worked correctly
+      because it always re-reads the environment at its own startup; this
+      makes the in-process, dot-sourced path behave the same way.
+
+      UNSET -- every real invocation, always -- returns the exact literal
+      this name held before this seam existed: behaviour is byte-identical.
+    #>
+    if ($env:ZENITH_BUILD_SLOT_NAME) {
+        # SHOULD-FIX (review): a leaked test override in a real build must be
+        # visible, not a silent swap of the slot that serializes it.
+        Write-Host "[build_lock] TEST slot override active: $($env:ZENITH_BUILD_SLOT_NAME)" -ForegroundColor DarkYellow
+        return $env:ZENITH_BUILD_SLOT_NAME
+    }
+    return 'Local\ZenithBuildSlot'
+}
 
 # --- Config -------------------------------------------------------------
 
@@ -214,10 +249,25 @@ function Enter-ZenithBuildSlot {
     $effectiveWaitMinutes = if ($null -ne $WaitMinutes) { $WaitMinutes } else { Get-ZenithBuildSlotWaitMinutesDefault -RepoRoot $repoRoot }
     if ($effectiveWaitMinutes -lt 0) { $effectiveWaitMinutes = 0 }
 
-    $mutex = New-Object System.Threading.Mutex($false, $script:ZenithBuildMutexName)
+    $slotName = Get-ZenithBuildSlotName
+    $mutex = New-Object System.Threading.Mutex($false, $slotName)
     $diagPath = $null
     $gitCommonDir = Get-ZenithGitCommonDir -RepoRoot $repoRoot
-    if ($gitCommonDir) { $diagPath = Join-Path $gitCommonDir 'zenith-build-slot.json' }
+    # Namespaced the same way as the mutex above, from the SAME already-resolved
+    # $slotName (not a second raw env read -- one Get-ZenithBuildSlotName call
+    # per acquire attempt, so its Write-Host fires at most once here too): an
+    # overridden slot name must not read or clobber the REAL slot's
+    # diagnostics file, since a private-mutex test run still shares this
+    # repo's own .git directory with whatever real build_lock.ps1 invocation
+    # (if any) is running alongside it. UNSET -- byte-identical filename,
+    # same as always, since $slotName is then the same literal it always was.
+    $diagFileName = if ($env:ZENITH_BUILD_SLOT_NAME) {
+        'zenith-build-slot-' + ($slotName -replace '[\\/:*?"<>|]', '_') + '.json'
+    }
+    else {
+        'zenith-build-slot.json'
+    }
+    if ($gitCommonDir) { $diagPath = Join-Path $gitCommonDir $diagFileName }
 
     $remainingMs = [long]([Math]::Round($effectiveWaitMinutes * 60000.0))
     if ($remainingMs -lt 0) { $remainingMs = 0 }
