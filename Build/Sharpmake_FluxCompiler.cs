@@ -38,6 +38,17 @@ public class FluxCompilerProject : ZenithBaseProject
 		conf.Defines.Add($"SHADER_SOURCE_ROOT=\"{shaderSourceRoot}\"");
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 
+		// zenith.lib is compiled WITH this define in a _True config, and
+		// this tool's own TU reaches g_xEngine (the Flux_FeatureRegistry
+		// trampolines the Phase 5.4 comment below describes, e.g.
+		// g_xEngine.Shadows()) — without it here the two TUs disagree
+		// about Zenith_Engine's layout (ODR violation), same as
+		// Sharpmake_TilePuzzleRegistryViewer.cs / Sharpmake_Games.cs.
+		if (target.ToolsEnabled == ToolsEnabled.True)
+		{
+			conf.Defines.Add("ZENITH_TOOLS");
+		}
+
 		// Include paths
 		conf.IncludePaths.Add(RootPath + "/Zenith");
 		conf.IncludePaths.Add(RootPath + "/Zenith/Core");

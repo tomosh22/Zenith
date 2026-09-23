@@ -22,23 +22,29 @@ const char* Project_GetGameAssetsDirectory() { return ""; }
 const char* Project_GetName() { return "FluxCompiler"; }
 
 // FluxCompiler links zenith.lib but never boots the engine, so the game-project
-// hooks Zenith_Engine references must be satisfied with empty stubs (mirrors the
-// no-op editor-log stub below). Without these the tool fails to LINK — a
-// pre-existing breakage (stale stub set) independent of the shader migration.
+// hooks Zenith_Engine references must be satisfied with empty stubs. Without
+// these the tool fails to LINK — a pre-existing breakage (stale stub set)
+// independent of the shader migration.
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&) {}
 void Project_RegisterGameComponents() {}
 void Project_Shutdown() {}
-// Defined unconditionally: FluxCompiler.cpp is compiled WITHOUT ZENITH_TOOLS, but
-// it links the tools-enabled zenith.lib, whose Zenith_Engine::InitialiseProject
-// references these two editor-only hooks. (In _False builds they go unreferenced.)
+// Project_InitializeResources / Project_RegisterEditorAutomationSteps are
+// declared `extern` only under ZENITH_TOOLS (Zenith_ProjectHooks.h). Defined
+// here unconditionally so the same two lines satisfy both configs — in a
+// _True config zenith.lib now sees the declaration and could call them
+// through Zenith_Engine::InitialiseProject's tools branch, but never does:
+// FluxCompiler never calls Zenith_Engine::Initialise() (see main() below), so
+// neither hook is ever invoked either way.
 void Project_InitializeResources() {}
 void Project_RegisterEditorAutomationSteps() {}
 void Project_LoadInitialScene() {} // referenced by the non-tools InitialiseProject branch
 
-#ifdef ZENITH_TOOLS
-// Stub for editor logging - FluxCompiler doesn't have an editor console
-void Zenith_EditorAddLogMessage(const char*, int, Zenith_LogCategory) {}
-#endif
+// NOTE: no Zenith_EditorAddLogMessage stub here (ZEN-111). zenitheditor.lib
+// (Zenith/Editor/Zenith_Editor.cpp) already defines it, and this project now
+// defines ZENITH_TOOLS in a _True config (see Sharpmake_FluxCompiler.cs) —
+// a local stub duplicated that symbol and failed the link (LNK2005). The
+// _False config never references it at all: Zenith.h's ZENITH_TOOLS branch
+// is the only place that declares or calls it.
 
 static void WriteSpirv(const std::string& strPath, const Zenith_Vector<uint32_t>& axSpirv)
 {
