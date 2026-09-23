@@ -664,3 +664,167 @@ ZENITH_TEST(ZM_DialogueBox, HostScreenEnum_DialogueIsAppendedAndNotARootEntry)
 			"no ROOT entry opens the dialogue -- it is raised only by PushDialogueLines");
 	}
 }
+
+// ---- ZM-89: the cap bounds PENDING lines, not the conversation --------------
+//
+// Shortfalls 1.6 recorded the queue as cumulative-per-conversation: it never compacted
+// as lines were read, so QueueLine while active could not chunk a conversation past
+// uMAX_QUEUED_LINES(8) total lines. The tests below prove the fix: consuming a line
+// frees its ring slot immediately, so the cap (GetRemainingLineCount(), the PENDING
+// count) and the cumulative counters (GetQueuedLineCount(), GetCurrentLineIndex()) are
+// now genuinely different things, and every accessor outside this file still reads the
+// cumulative ones it always has.
+
+ZENITH_TEST(ZM_DialogueBox, QueueLine_WhileActive_AdmitsANinthLineOncePendingDropsBelowCap)
+{
+	// ANTI-VACUITY: under the PRE-ZM-89 implementation (capacity checked against the
+	// cumulative m_uLineCount) this 9th QueueLine would be refused outright, because
+	// m_uLineCount could never move past uMAX_QUEUED_LINES in the first place -- the
+	// whole point of compaction is that reading a line frees its slot for a new one.
+	ZM_UI_DialogueBox xBox;
+	for (u_int i = 0u; i < ZM_UI_DialogueBox::uMAX_QUEUED_LINES; ++i)
+	{
+		ZENITH_ASSERT_TRUE(xBox.QueueLine("line"), "the initial 8 lines all queue");
+	}
+	ZENITH_ASSERT_FALSE(xBox.QueueLine("line 8"),
+		"with all 8 pending and none read yet, a 9th line is still refused");
+
+	// "line" is 4 glyphs -- a full tick reveals it completely, so ONE confirm both
+	// completes the reveal and advances (see Confirm_ShortLineAdvancesRatherThanCompleting).
+	xBox.Tick(fFULL_ELAPSED);
+	ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_NEXT_LINE,
+		"one line consumed -- one pending slot freed");
+
+	ZENITH_ASSERT_TRUE(xBox.QueueLine("line 8"),
+		"a 9th CUMULATIVE line is accepted now that only 7 lines are pending");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 9u,
+		"GetQueuedLineCount() is the CUMULATIVE total ever queued -- unaffected by compaction");
+	ZENITH_ASSERT_EQ(xBox.GetRemainingLineCount(), 8u,
+		"the PENDING count is back at the physical cap: 7 of the original 8 plus the new one");
+	ZENITH_ASSERT_EQ(xBox.GetCurrentLineIndex(), 1u,
+		"the current line index is still the CUMULATIVE read cursor, never reset by compaction");
+}
+
+ZENITH_TEST(ZM_DialogueBox, QueueLines_BatchCapIsThePendingBudgetNotTheCumulativeTotal)
+{
+	ZM_UI_DialogueBox xBox;
+	const char* aszInitial[3] = { "a", "b", "c" };
+	ZENITH_ASSERT_TRUE(xBox.QueueLines(aszInitial, 3u), "the initial 3-line batch queues");
+
+	// Consume 2 of the 3 (each is 1 glyph -- one confirm apiece), freeing 2 pending slots
+	// while the cumulative total (3) stays put.
+	for (u_int i = 0u; i < 2u; ++i)
+	{
+		xBox.Tick(fFULL_ELAPSED);
+		ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_NEXT_LINE,
+			"each single-glyph line advances on one confirm");
+	}
+	ZENITH_ASSERT_EQ(xBox.GetRemainingLineCount(), 1u, "one of the original three is still pending");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 3u, "the cumulative total is unaffected by reading");
+
+	// Remaining pending room is uMAX_QUEUED_LINES(8) - 1 = 7, even though the cumulative
+	// total (3) is nowhere near capacity -- the cap bounds what is UNREAD.
+	const char* aszTooMany[ZM_UI_DialogueBox::uMAX_QUEUED_LINES] = {
+		"1", "2", "3", "4", "5", "6", "7", "8" };
+	ZENITH_ASSERT_FALSE(xBox.QueueLines(aszTooMany, ZM_UI_DialogueBox::uMAX_QUEUED_LINES),
+		"a batch of 8 exceeds the 7 lines of PENDING room");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 3u, "the rejected batch queued nothing");
+
+	const char* aszFits[ZM_UI_DialogueBox::uMAX_QUEUED_LINES - 1u] = {
+		"1", "2", "3", "4", "5", "6", "7" };
+	ZENITH_ASSERT_TRUE(xBox.QueueLines(aszFits, ZM_UI_DialogueBox::uMAX_QUEUED_LINES - 1u),
+		"a batch of exactly 7 fits the remaining pending capacity");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 10u,
+		"the cumulative total has grown PAST uMAX_QUEUED_LINES -- impossible pre-ZM-89");
+	ZENITH_ASSERT_EQ(xBox.GetRemainingLineCount(), ZM_UI_DialogueBox::uMAX_QUEUED_LINES,
+		"pending is back at the physical cap");
+}
+
+ZENITH_TEST(ZM_DialogueBox, LongConversation_TwentyLinesPlayInOrderThroughCompaction)
+{
+	// THE PROOF for Shortfalls 1.6 / ZM-89: a conversation longer than uMAX_QUEUED_LINES
+	// plays every line in order, chunked past the cap by QueueLine-while-active as the
+	// player reads -- exactly the S9 gym-leader / Tidegate / daycare-couple shape.
+	//
+	// ANTI-VACUITY: this fails under the pre-ZM-89 implementation, which can never accept
+	// a QueueLine once the cumulative total reaches uMAX_QUEUED_LINES -- the loop below
+	// would have its 9th QueueLine call return false and stall the conversation at line 7.
+	constexpr u_int uTOTAL_LINES = 20u;
+	static_assert(uTOTAL_LINES > ZM_UI_DialogueBox::uMAX_QUEUED_LINES,
+		"the fixture must exceed the pending cap for this test to prove anything");
+	constexpr const char* aszLines[uTOTAL_LINES] = {
+		"Line 0",  "Line 1",  "Line 2",  "Line 3",  "Line 4",
+		"Line 5",  "Line 6",  "Line 7",  "Line 8",  "Line 9",
+		"Line 10", "Line 11", "Line 12", "Line 13", "Line 14",
+		"Line 15", "Line 16", "Line 17", "Line 18", "Line 19",
+	};
+
+	ZM_UI_DialogueBox xBox;
+	// Fill the pending queue to capacity up front, as an NPC's opening batch would.
+	for (u_int i = 0u; i < ZM_UI_DialogueBox::uMAX_QUEUED_LINES; ++i)
+	{
+		ZENITH_ASSERT_TRUE(xBox.QueueLine(aszLines[i]), "the initial fill accepts every line");
+	}
+
+	u_int uNextToQueue = ZM_UI_DialogueBox::uMAX_QUEUED_LINES;
+	for (u_int uRead = 0u; uRead < uTOTAL_LINES; ++uRead)
+	{
+		ZENITH_ASSERT_TRUE(xBox.IsActive(), "the box is active for every one of the 20 lines");
+		ZENITH_ASSERT_EQ(xBox.GetCurrentLineIndex(), uRead,
+			"the cumulative read cursor matches the line being read");
+		ZENITH_ASSERT_STREQ(xBox.GetCurrentLine().c_str(), aszLines[uRead],
+			"every line is shown IN ORDER -- this is the whole point of the fixture");
+
+		// Every fixture line is short enough that one full tick reveals it completely, so
+		// one real Confirm() edge both completes the reveal and advances (or closes).
+		xBox.Tick(fFULL_ELAPSED);
+		const ZM_DIALOGUE_ADVANCE eOutcome = xBox.Confirm();
+		const bool bIsLast = (uRead + 1u == uTOTAL_LINES);
+		ZENITH_ASSERT_EQ((u_int)eOutcome,
+			(u_int)(bIsLast ? ZM_DIALOGUE_ADVANCE_CLOSED : ZM_DIALOGUE_ADVANCE_NEXT_LINE),
+			"a single confirm on this short line advances (or closes on the very last line)");
+
+		if (!bIsLast && uNextToQueue < uTOTAL_LINES)
+		{
+			// Simulate the NPC streaming more of the conversation in as the player reads --
+			// exactly the QueueLine-while-active idiom the cap now supports past 8 lines.
+			ZENITH_ASSERT_TRUE(xBox.QueueLine(aszLines[uNextToQueue]),
+				"the pending slot freed by the confirm above admits the next line");
+			++uNextToQueue;
+		}
+	}
+
+	ZENITH_ASSERT_FALSE(xBox.IsActive(), "the whole 20-line conversation ran to completion");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 0u, "closing reset the cumulative counters too");
+}
+
+ZENITH_TEST(ZM_DialogueBox, ReadAccessors_StayCumulativeAcrossCompaction)
+{
+	// Pins the accessor contract ZM-89 relies on: GetQueuedLineCount() and
+	// GetCurrentLineIndex() are NEVER reset by compaction, only by Reset()/close --
+	// ZM_UI_MenuStack's debug panel and several windowed ZM_AutoTests_*.cpp fixtures
+	// (e.g. the re-raise-while-open negative in ZM_AutoTests_NpcTalk.cpp /
+	// ZM_AutoTests_NpcServices.cpp, and the press-by-press index checks in
+	// ZM_AutoTests_UI.cpp's ZM_DialogueTalk_Test) read them as the cumulative read
+	// cursor / total, not as "how many lines are pending right now" -- that is
+	// GetRemainingLineCount(), the one accessor compaction DOES move independently.
+	ZM_UI_DialogueBox xBox;
+	for (u_int i = 0u; i < ZM_UI_DialogueBox::uMAX_QUEUED_LINES; ++i)
+	{
+		ZENITH_ASSERT_TRUE(xBox.QueueLine("line"), "the initial fill accepts every line");
+	}
+	for (u_int i = 0u; i < 5u; ++i)
+	{
+		xBox.Tick(fFULL_ELAPSED);
+		ZENITH_ASSERT_EQ((u_int)xBox.Confirm(), (u_int)ZM_DIALOGUE_ADVANCE_NEXT_LINE,
+			"each confirm advances by exactly one line");
+		ZENITH_ASSERT_TRUE(xBox.QueueLine("line"),
+			"the slot the confirm above just freed admits a fresh line");
+	}
+	ZENITH_ASSERT_EQ(xBox.GetCurrentLineIndex(), 5u,
+		"5 confirms advanced the CUMULATIVE cursor to 5, never reset by compaction");
+	ZENITH_ASSERT_EQ(xBox.GetQueuedLineCount(), 13u,
+		"8 initial + 5 appended, CUMULATIVE -- not the 8 still physically pending");
+	ZENITH_ASSERT_EQ(xBox.GetRemainingLineCount(), 8u,
+		"GetRemainingLineCount() is the one accessor that reads the PENDING count");
+}

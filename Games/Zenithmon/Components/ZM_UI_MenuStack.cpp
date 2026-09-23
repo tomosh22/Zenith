@@ -1097,8 +1097,8 @@ void ZM_UI_MenuStack::PerformSaveToSlot(ZM_SAVE_SLOT eSlot)
 
 	// Queue a result line onto the box. It is EMPTY here (either the SAVE screen is on top,
 	// or the confirm prompt already Reset the box when it resolved), so this never appends
-	// to a live conversation -- the 8-line cap is cumulative per conversation
-	// (Shortfalls.md:72). PushDialogueLines stacks DIALOGUE on top of SAVE (or keeps the
+	// to a live conversation (the box's cap bounds PENDING lines since ZM-89, so an append
+	// would fit either way). PushDialogueLines stacks DIALOGUE on top of SAVE (or keeps the
 	// prompt's DIALOGUE screen) and the ordinary read-to-the-end path pops it.
 	char acLine[uSAVE_LINE_CAPACITY];
 	if (m_xLastSaveStatus.IsOk())

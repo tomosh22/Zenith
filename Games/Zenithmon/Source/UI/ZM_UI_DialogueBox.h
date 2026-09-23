@@ -16,6 +16,14 @@ class Zenith_UIComponent;
 // Zenith_UIComponent (ZM_ConfigureMenuRoot), and the menu stack drives it
 // Tick / Confirm / Present / Hide.
 //
+// ZM-89: the queue is a fixed uMAX_QUEUED_LINES-slot RING BUFFER, and the cap it
+// enforces bounds PENDING (unread) lines, not the whole conversation -- a line
+// consumed by Confirm() frees its slot immediately, so QueueLine/QueueLines can
+// keep admitting new lines past uMAX_QUEUED_LINES total as the player reads.
+// GetQueuedLineCount() and GetCurrentLineIndex() stay CUMULATIVE (never reset by
+// compaction, only by Reset()) -- do not read either as "how many lines are
+// physically queued right now"; that is GetRemainingLineCount().
+//
 // Members are only std::string + PODs (no Zenith_Vector, no owning pointers, no
 // references). std::string's own move is noexcept, so the owning component's
 // defaulted noexcept move stays well-formed when the ECS pool relocates it.
@@ -79,11 +87,14 @@ public:
 
 	// Drop every queued line and the in-flight reveal state.
 	void Reset();
-	// Append one line. Rejects null / empty / a full queue (no mutation on reject).
-	// Appending WHILE active is legal and never disturbs the in-flight reveal.
+	// Append one line. Rejects null / empty / a PENDING queue already at capacity (no
+	// mutation on reject) -- capacity is uMAX_QUEUED_LINES UNREAD lines, not
+	// uMAX_QUEUED_LINES lines total this conversation (ZM-89). Appending WHILE active is
+	// legal and never disturbs the in-flight reveal.
 	bool QueueLine(const char* szLine);
 	// Append a batch, ALL-OR-NOTHING: the queue is only touched when every entry is
-	// accepted (non-null, non-empty, and the whole batch fits).
+	// accepted (non-null, non-empty, and the whole batch fits in the remaining PENDING
+	// capacity -- see QueueLine).
 	bool QueueLines(const char* const* paszLines, u_int uCount);
 	// Advance the current line's typewriter clock (no-op when inactive or dt <= 0).
 	void Tick(float fDeltaSeconds);
@@ -159,9 +170,16 @@ private:
 	// Reset everything EXCEPT the answer, which is then stored back.
 	void StoreChoiceAnswer(ZM_DIALOGUE_CHOICE eAnswer);
 
+	// A RING BUFFER (ZM-89): slot [i % uMAX_QUEUED_LINES] holds cumulative line i. Only
+	// ever holds PENDING (unread) lines -- QueueLine/QueueLines refuse once
+	// m_uLineCount - m_uCurrentLine reaches uMAX_QUEUED_LINES, so a slot is always free
+	// of any still-unread line before it is overwritten.
 	std::string m_astrLines[uMAX_QUEUED_LINES];
 	std::string m_strYesLabel;
 	std::string m_strNoLabel;
+	// CUMULATIVE since the last Reset() -- NOT bounded by uMAX_QUEUED_LINES, and NOT what
+	// compaction frees (that is m_uLineCount - m_uCurrentLine). External callers read
+	// these as GetQueuedLineCount() / GetCurrentLineIndex() and depend on that.
 	u_int       m_uLineCount = 0u;
 	u_int       m_uCurrentLine = 0u;
 	float       m_fLineElapsedSeconds = 0.0f;
