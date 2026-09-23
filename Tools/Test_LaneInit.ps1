@@ -282,6 +282,50 @@ Assert-That 'the returned exit code compares correctly with -ne (the array-filte
     -not ($result -ne 0)
 }
 
+Assert-That 'Invoke-LaneInitGateLine also captures stderr (Write-Error) text into the output tail' {
+    # run_unit_gate.ps1's own diagnostics (a timeout, a missing "Unit tests
+    # complete" line, the boot log path) go through Write-Error -- confirmed
+    # empirically that stderr from a nested pwsh child does NOT reach a bare
+    # success-stream capture without merging it in, which is exactly what
+    # this function's `2>&1` exists to do.
+    $line = 'pwsh -NoProfile -Command "Write-Output before; Write-Error ''boom detail''; Write-Output after; exit 1"'
+    $null = Invoke-LaneInitGateLine -LaneRoot ([IO.Path]::GetTempPath()) -Line $line
+    $tail = Get-LaneInitCleanOutputTail
+    ($tail -match 'before') -and ($tail -match 'boom detail') -and ($tail -match 'after')
+}
+
+Write-Host "`n=== Set-LaneInitUnitGateTimeout: rewrite/append the provisioning timeout ===" -ForegroundColor Cyan
+# Regression coverage for a second live defect: a lane's FIRST boot re-runs
+# the full tool export/bake (the copied asset manifests key on absolute
+# paths, so the copy from -Main is never seen as warm) on top of the full
+# unit suite, which does not fit the -TimeoutSec 600 every gate line already
+# carries (copied from zagent.project.json, or synthesized by the same
+# convention). A pure string function -- never spawns anything.
+
+Assert-That 'an existing -TimeoutSec below the minimum is raised to the minimum' {
+    $line = 'pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 -Exe Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe -Game Zenithmon -TimeoutSec 600'
+    $result = Set-LaneInitUnitGateTimeout -Line $line -MinimumSeconds 3600
+    $result -eq 'pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 -Exe Games\Zenithmon\Build\output\win64\null_vs2022_debug_win64_true\zenithmon.exe -Game Zenithmon -TimeoutSec 3600'
+}
+
+Assert-That 'a line with no -TimeoutSec at all gets one appended' {
+    $line = 'pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 -Exe Games\RenderTest\Build\output\win64\null_vs2022_debug_win64_true\rendertest.exe -Game RenderTest'
+    $result = Set-LaneInitUnitGateTimeout -Line $line -MinimumSeconds 3600
+    $result -eq "$line -TimeoutSec 3600"
+}
+
+Assert-That 'an existing -TimeoutSec already at or above the minimum is left byte-unchanged' {
+    $line = 'pwsh -NoProfile -ExecutionPolicy Bypass -File Tools\run_unit_gate.ps1 -Exe Games\Combat\Build\output\win64\null_vs2022_debug_win64_true\combat.exe -Game Combat -TimeoutSec 7200'
+    $result = Set-LaneInitUnitGateTimeout -Line $line -MinimumSeconds 3600
+    [string]::Equals($result, $line, [System.StringComparison]::Ordinal)
+}
+
+Assert-That 'exactly-equal-to-the-minimum is also left unchanged (never lowered, never needlessly rewritten)' {
+    $line = 'pwsh -NoProfile -File Tools\run_unit_gate.ps1 -Exe x -Game Fixture -TimeoutSec 3600'
+    $result = Set-LaneInitUnitGateTimeout -Line $line -MinimumSeconds 3600
+    [string]::Equals($result, $line, [System.StringComparison]::Ordinal)
+}
+
 Write-Host ''
 Write-Host ("{0}/{1} assertions passed." -f ($script:count - $script:failures), $script:count)
 if ($script:failures -eq 0) {

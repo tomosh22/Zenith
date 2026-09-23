@@ -38,6 +38,17 @@ param(
     [switch]$SkipAssets,
     [switch]$SkipProvision,
 
+    # A lane's FIRST provisioning boot pays a one-time cost no steady-state
+    # gate line's own -TimeoutSec budgets for: the tool export/bake re-runs
+    # in full (the copied asset manifests key on absolute paths, so a lane's
+    # copy from -Main is never seen as warm in the new tree), stacked on top
+    # of the full unit suite. Every unit-gate line used during provisioning
+    # -- copied from zagent.project.json or synthesized by convention alike
+    # -- has its own -TimeoutSec raised to the larger of itself and this
+    # value before it runs; steady-state gates (run by the tick afterwards,
+    # never by this script) are untouched.
+    [int]$ProvisionTimeoutSec = 3600,
+
     # Define the functions and return without running anything. This is how
     # Tools/Test_LaneInit.ps1 reaches the bounded helpers: dot-sourcing a
     # script RUNS it, and a test that pretends to provision a lane is the one
@@ -74,6 +85,11 @@ param(
 .PARAMETER SkipProvision
     Skip the build + unit-gate pass for every baseline row. Useful for
     re-running only the copy/regen steps.
+.PARAMETER ProvisionTimeoutSec
+    The minimum -TimeoutSec every provisioning unit-gate line is raised to
+    (never lowered). Default 3600 -- a lane's first boot re-runs the full
+    tool export/bake on top of the full unit suite, which does not fit the
+    600s every steady-state gate line carries.
 .PARAMETER NoRun
     Define the functions and return without doing anything.
 #>
@@ -397,14 +413,36 @@ function Invoke-LaneInitGateLine {
     # whose "exit code" -- once string-interpolated into the error message --
     # was the entire captured build log with a stray `0` stuck on the end.
     #
-    # Out-Host is a SINK: it writes every object it receives straight to the
-    # host and emits nothing back onto the pipeline, so progress stays fully
-    # visible (unbuffered, streamed as it arrives) while this function's only
-    # pipeline output becomes the single explicit `return` below.
-    param([Parameter(Mandatory)][string]$LaneRoot, [Parameter(Mandatory)][string]$Line)
+    # Also captures a trimmed TAIL of everything the child printed -- stdout
+    # AND stderr, merged via appending `2>&1` to the invoked line -- into
+    # $script:LaneInitLastGateOutputTail, for a caller to build a richer
+    # failure message from. This matters because run_unit_gate.ps1's own
+    # diagnostic lines (a timeout, a missing "Unit tests complete" line, the
+    # boot log path) go through `Write-Error`, which crosses a process
+    # boundary as plain text but is rendered straight to the console and
+    # does NOT reach a bare success-stream capture -- confirmed empirically:
+    # without the `2>&1` merge, stderr text from a nested `pwsh` child never
+    # appears on this function's own pipeline at all, capture list included.
+    # `[string]$_` on a merged stderr line yields a readable ErrorRecord
+    # rendering (colour escapes and all); the caller strips those before use.
+    #
+    # A ForEach-Object scriptblock whose statements emit nothing themselves
+    # (`List.Add` returns void; Write-Host bypasses the success stream) is
+    # itself a sink -- so, like Out-Host, this function's only pipeline
+    # output is still the single explicit `return` below, and the fix this
+    # function exists for (a plain, single [int] return) is unchanged.
+    param([Parameter(Mandatory)][string]$LaneRoot, [Parameter(Mandatory)][string]$Line, [int]$TailLines = 60)
     Push-Location -LiteralPath $LaneRoot
     try {
-        Invoke-Expression $Line | Out-Host
+        $captured = New-Object System.Collections.Generic.List[string]
+        Invoke-Expression "$Line 2>&1" | ForEach-Object {
+            $text = [string]$_
+            $captured.Add($text)
+            Write-Host $text
+        }
+        $script:LaneInitLastGateOutputTail =
+        if ($captured.Count -gt $TailLines) { @($captured.GetRange($captured.Count - $TailLines, $TailLines)) }
+        else { @($captured.ToArray()) }
         $code = $LASTEXITCODE
         if ($null -eq $code) { $code = 0 }
         return [int]$code
@@ -412,12 +450,46 @@ function Invoke-LaneInitGateLine {
     finally { Pop-Location }
 }
 
+function Get-LaneInitCleanOutputTail {
+    # $script:LaneInitLastGateOutputTail, joined and stripped of ANSI colour
+    # escapes (a merged stderr ErrorRecord renders with them), for embedding
+    # in a failure message.
+    $lines = if ($script:LaneInitLastGateOutputTail) { $script:LaneInitLastGateOutputTail } else { @() }
+    $joined = ($lines -join "`n")
+    $esc = [string][char]27
+    $ansiPattern = [regex]::Escape($esc) + '\[[0-9;]*m'
+    return ($joined -replace $ansiPattern, '')
+}
+
+function Set-LaneInitUnitGateTimeout {
+    # Rewrites (or appends) a run_unit_gate.ps1 command line's -TimeoutSec to
+    # the larger of its existing value and $MinimumSeconds -- never smaller,
+    # and byte-unchanged when the existing value already meets it. A lane's
+    # FIRST provisioning boot pays a one-time cost no steady-state gate
+    # line's own -TimeoutSec budgets for: the tool export/bake re-runs in
+    # full (the copied asset manifests key on absolute paths, so a lane's
+    # copy from -Main is never seen as warm in the new tree), stacked on top
+    # of the full unit suite. Applies the same way to a line copied verbatim
+    # from zagent.project.json and to one this script synthesized by
+    # convention -- both already spell `-TimeoutSec <n>`.
+    param([Parameter(Mandatory)][string]$Line, [Parameter(Mandatory)][int]$MinimumSeconds)
+    if ($Line -match '-TimeoutSec\s+(\d+)') {
+        $existing = [int]$Matches[1]
+        if ($existing -ge $MinimumSeconds) { return $Line }
+        return ($Line -replace '-TimeoutSec\s+\d+', "-TimeoutSec $MinimumSeconds")
+    }
+    return "$Line -TimeoutSec $MinimumSeconds"
+}
+
 function Invoke-LaneInitProvisionCheck {
     # For every game in the lane's own unit_baselines.json, build
     # Null_vs2022_Debug_Win64_True (via that game's --headless build line) and
     # run its unit gate, requiring both to succeed. Throws on the first
-    # failure, naming the game and the command.
-    param([Parameter(Mandatory)][string]$LaneRoot)
+    # failure, naming the game and the command, with a trimmed tail of the
+    # failing gate's own output attached (build and unit-gate alike) so the
+    # cause is visible without having to open a multi-thousand-line boot log
+    # by hand.
+    param([Parameter(Mandatory)][string]$LaneRoot, [int]$ProvisionTimeoutSec = 3600)
 
     $games = Get-LaneInitBaselineGames -LaneRoot $LaneRoot
     foreach ($game in $games) {
@@ -431,16 +503,37 @@ function Invoke-LaneInitProvisionCheck {
             Write-Host "[lane_init]   $game has no run_unit_gate.ps1 line in zagent.project.json; synthesizing by convention" -ForegroundColor Yellow
         }
 
+        # A lane's FIRST provisioning boot re-runs the full tool export/bake
+        # on top of the full unit suite (see Set-LaneInitUnitGateTimeout's
+        # own comment), which the gate line's copied-or-synthesized
+        # `-TimeoutSec 600` does not budget for -- raise it, never lower it.
+        $rewrittenUnitLine = Set-LaneInitUnitGateTimeout -Line $unitLine -MinimumSeconds $ProvisionTimeoutSec
+        if ($rewrittenUnitLine -ne $unitLine) {
+            Write-Host "[lane_init]   $game -- unit gate timeout raised to ${ProvisionTimeoutSec}s for provisioning" -ForegroundColor DarkGray
+        }
+        else {
+            Write-Host "[lane_init]   $game -- unit gate timeout already >= ${ProvisionTimeoutSec}s; unchanged" -ForegroundColor DarkGray
+        }
+        $unitLine = $rewrittenUnitLine
+
         Write-Host "[lane_init]   $game -- build" -ForegroundColor Cyan
         $buildExit = Invoke-LaneInitGateLine -LaneRoot $LaneRoot -Line $lines.BuildLine
         if ($buildExit -ne 0) {
-            throw "[lane_init] build failed for '$game' (exit $buildExit): $($lines.BuildLine)"
+            $tail = Get-LaneInitCleanOutputTail
+            throw "[lane_init] build failed for '$game' (exit $buildExit): $($lines.BuildLine)`n--- last $(@($script:LaneInitLastGateOutputTail).Count) output line(s) ---`n$tail"
         }
 
         Write-Host "[lane_init]   $game -- unit gate" -ForegroundColor Cyan
         $unitExit = Invoke-LaneInitGateLine -LaneRoot $LaneRoot -Line $unitLine
         if ($unitExit -ne 0) {
-            throw "[lane_init] unit gate failed for '$game' (exit $unitExit): $unitLine"
+            $tail = Get-LaneInitCleanOutputTail
+            $timedOut = $tail -match '(?i)timeout after \d+s'
+            $timeoutNote = if ($timedOut) { ' -- TIMED OUT' } else { '' }
+            $logNote = ''
+            if ($tail -match '(?i)\(log:\s*([^)]+)\)') {
+                $logNote = " -- boot log: $($Matches[1].Trim())"
+            }
+            throw "[lane_init] unit gate failed for '$game'$timeoutNote (exit $unitExit)$logNote`: $unitLine`n--- last $(@($script:LaneInitLastGateOutputTail).Count) output line(s) ---`n$tail"
         }
     }
     return $games
@@ -455,7 +548,8 @@ function Invoke-LaneInit {
         [Parameter(Mandatory)][string]$Lane,
         [Parameter(Mandatory)][string]$Main,
         [switch]$SkipAssets,
-        [switch]$SkipProvision
+        [switch]$SkipProvision,
+        [int]$ProvisionTimeoutSec = 3600
     )
 
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -504,7 +598,7 @@ function Invoke-LaneInit {
     }
     else {
         Write-Host "[lane_init] Provisioning: build + unit gate for every baseline row..." -ForegroundColor Cyan
-        $gamesProvisioned = Invoke-LaneInitProvisionCheck -LaneRoot $laneRoot
+        $gamesProvisioned = Invoke-LaneInitProvisionCheck -LaneRoot $laneRoot -ProvisionTimeoutSec $ProvisionTimeoutSec
     }
 
     $sw.Stop()
@@ -516,7 +610,7 @@ function Invoke-LaneInit {
 if ($NoRun) { return }
 
 try {
-    Invoke-LaneInit -Lane $Lane -Main $Main -SkipAssets:$SkipAssets -SkipProvision:$SkipProvision
+    Invoke-LaneInit -Lane $Lane -Main $Main -SkipAssets:$SkipAssets -SkipProvision:$SkipProvision -ProvisionTimeoutSec $ProvisionTimeoutSec
     exit 0
 }
 catch {
