@@ -163,6 +163,38 @@ Assert-That 'the Engine gate list builds every game that has a .zproj' {
     $missing.Count -eq 0
 }
 
+# fixB/ZEN-111 (ZEN-D-044): a game's own extraSharpmakeProjects (TilePuzzle's
+# TilePuzzleLevelGen / TilePuzzleRegistryViewer) live only in THAT game's own
+# sln, and a scoped `build <Game> --headless` (/t:<Game>) never touches them
+# -- tilepuzzlelevelgen.exe failed to link while every ZEN-111 gate stayed
+# green. A `--whole` build of the game's sln in a ToolsEnabled=True config
+# is the fix; this asserts the gate list actually carries one for every game
+# that needs it, so adding a tool project to a game's .zproj and forgetting
+# the gate line FAILS here instead of silently narrowing coverage again.
+Assert-That 'every game whose .zproj carries a non-empty extraSharpmakeProjects has an Engine gate line building it --whole in a _True config' {
+    $projectRepo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    $file = Get-Content (Join-Path $projectRepo 'zagent.project.json') -Raw | ConvertFrom-Json
+    $gates = @($file.categories.Engine.gates)
+
+    $gamesWithTools = @(Get-ChildItem -Path (Join-Path $projectRepo 'Games') -Directory -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $zprojPath = Join-Path $_.FullName ("{0}.zproj" -f $_.Name)
+            if (-not (Test-Path $zprojPath)) { return }
+            $zproj = Get-Content $zprojPath -Raw | ConvertFrom-Json
+            if ($zproj.PSObject.Properties['extraSharpmakeProjects'] -and @($zproj.extraSharpmakeProjects).Count -gt 0) { $_.Name }
+        } | Where-Object { $_ })
+    if ($gamesWithTools.Count -eq 0) { Write-Host '       no game with a non-empty extraSharpmakeProjects found -- cannot assert'; return $false }
+
+    $missing = @($gamesWithTools | Where-Object {
+            $game = $_
+            -not (@($gates | Where-Object { $_ -match [regex]::Escape("build $game ") -and $_ -match '--whole' -and $_ -match '_True' })).Count
+        })
+    if ($missing.Count) {
+        Write-Host ("       games with extraSharpmakeProjects missing a --whole _True Engine gate line: " + ($missing -join ', '))
+    }
+    $missing.Count -eq 0
+}
+
 # Compile before test: a compile break in ANY game should stop the run
 # before a minute goes into one game's suite. If a `test` line drifts
 # above a `build` line the list still passes, just slower and less

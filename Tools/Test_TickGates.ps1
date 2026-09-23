@@ -429,6 +429,47 @@ Assert-That 'a shared-engine-tree miss (wrong config leaf present) reports $null
     } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
+Assert-That 'finds a standalone tool-project .obj at <ProjectDir>/obj/win64/<config>/<leaf>.obj (fixB/ZEN-111: FluxCompiler etc, DERIVED from the top-level dir owning its own obj/win64/)' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        $objDir = Join-Path $fixture 'FluxCompiler/obj/win64/vulkan_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $objDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $objDir 'FluxCompiler.obj') -Value 'fake' -Encoding utf8
+        $built = @([PSCustomObject]@{ Game = 'TilePuzzle'; Leaf = 'vulkan_vs2022_debug_win64_true' })
+        $hit = Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'FluxCompiler/FluxCompiler.cpp' -BuiltConfigs $built
+        ($null -ne $hit) -and ($hit -like '*FluxCompiler.obj')
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a standalone tool-project miss reports $null and does NOT fall through to the broad Build/obj search' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        # This project's own obj/win64/ tree exists but holds nothing for the
+        # built leaf -- and a decoy with the SAME leaf + filename sits under
+        # Build/obj, exactly where the broad engine-wide search below would
+        # find it if the tool-project branch fell through instead of
+        # returning $null outright.
+        New-Item -ItemType Directory -Path (Join-Path $fixture 'TilePuzzleLevelGen/obj/win64/vulkan_vs2022_debug_win64_true') -Force | Out-Null
+        $decoyDir = Join-Path $fixture 'Build/obj/zenithtools/win64/vulkan_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $decoyDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $decoyDir 'TilePuzzleLevelGen.obj') -Value 'fake' -Encoding utf8
+        $built = @([PSCustomObject]@{ Game = 'TilePuzzle'; Leaf = 'vulkan_vs2022_debug_win64_true' })
+        $null -eq (Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'TilePuzzleLevelGen/TilePuzzleLevelGen.cpp' -BuiltConfigs $built)
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+Assert-That 'a Tools/ source (ZenithTools) is NOT treated as a standalone tool project -- it has no Tools/obj tree, so it still resolves via the broad Build/obj search' {
+    $fixture = New-ObjFixtureRoot
+    try {
+        $objDir = Join-Path $fixture 'Build/obj/zenithtools/win64/vulkan_vs2022_debug_win64_true'
+        New-Item -ItemType Directory -Path $objDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $objDir 'Zenith_Tools_BrandNew.obj') -Value 'fake' -Encoding utf8
+        $built = @([PSCustomObject]@{ Game = $null; Leaf = 'vulkan_vs2022_debug_win64_true' })
+        $hit = Find-CompiledObjectPath -RepoRoot $fixture -SourcePath 'Tools/Zenith_Tools_BrandNew.cpp' -BuiltConfigs $built
+        ($null -ne $hit) -and ($hit -like '*Zenith_Tools_BrandNew.obj')
+    } finally { Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 Write-Host "`n=== Get-AutomatedRegistryCount ===" -ForegroundColor Cyan
 # The paren-anchored regex is load-bearing -- doc_lint.ps1 check C7's own
 # reasoning, mirrored here rather than re-derived: a bare

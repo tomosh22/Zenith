@@ -245,7 +245,7 @@ begin with. See `Zenith/RenderBackends/CLAUDE.md`.
 |---------|-------------|--------|
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
-| ZenithTools | Asset tools (Windows only) | Executable (.exe) |
+| ZenithTools | Asset-bake helpers, linked into every ToolsEnabled=True game exe (Windows only) | Static lib (.lib) |
 | Game projects | Combat, TilePuzzle, RenderTest, CityBuilder (SimCity/C:S-style — see Games/CityBuilder/CLAUDE.md), DevilsPlayground, Zenithmon (monster-collecting RPG — see Games/Zenithmon/CLAUDE.md), ScriptTest (zero-gameplay-C++ Behaviour Graph proving ground — see Games/ScriptTest/CLAUDE.md) | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
@@ -294,12 +294,18 @@ See `Docs/BuildSystem.md` §9 for both measurements.
 `Games/<Name>/<name>_win64.sln`; set the game as startup project, pick a config
 (e.g. `Vulkan_vs2022_Debug_Win64_True|x64`), F5.
 
-**Engine-only work:** `msbuild Build\zenith_engine_win64.sln /t:Zenith` (or
-`/t:FluxCompiler` / `/t:Sentinel*` / `/t:ZenithHub`); `zenith build engine` does this.
-`zenith build engine` uses `/t:` for speed and because it needs to span both
-`ToolsEnabled` configs in one call (Sentinels exist only in `_False`); a whole
-`zenith_engine_win64.sln` build is supported and green in
-`Vulkan_vs2022_Debug_Win64_True` — see `Docs/BuildSystem.md` §9.
+**Engine-only work:** `zenith build engine` — a WHOLE `Build\zenith_engine_win64.sln`
+build in the requested config (every project the sln maps to `Build.0` for it,
+including `FluxCompiler` and `ZenithHub`), plus `/t:Sentinel*` against the
+`_False` sibling (Sentinels exist only in `ToolsEnabled=False`, so that half
+still needs a scoped target rather than a second whole build). This replaced a
+scoped `/t:Zenith` step (ZEN-111 / ZEN-D-044, fixB): it never linked the sln's
+own exe projects or the `ZenithTools` static lib they depend on, so
+`fluxcompiler.exe` failed to link while every Engine gate stayed green. A whole
+`zenith_engine_win64.sln` build is measured green in
+`Vulkan_vs2022_Debug_Win64_True` — see `Docs/BuildSystem.md` §9. Direct msbuild
+equivalent: `msbuild Build\zenith_engine_win64.sln /p:Configuration=<C> /p:Platform=x64`
+(no `/t:`) for the whole half, `/t:Sentinel*` for the rest.
 
 ### Build Troubleshooting
 

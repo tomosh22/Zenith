@@ -508,7 +508,7 @@ function Invoke-ZenithWithBuildSlot {
 function Invoke-ZenithBuild {
     param([string[]]$CmdArgs)
     Import-BuildSystem
-    $target = $null; $config = $null; $timeoutMin = 0; $headless = $false
+    $target = $null; $config = $null; $timeoutMin = 0; $headless = $false; $whole = $false
     for ($i = 0; $i -lt $CmdArgs.Count; $i++) {
         $a = $CmdArgs[$i]
         # A flag whose VALUE is missing used to read past the end of the array
@@ -521,6 +521,12 @@ function Invoke-ZenithBuild {
             if ($a -eq '--config') { $config = $CmdArgs[++$i] } else { $timeoutMin = [int]$CmdArgs[++$i] }
         }
         elseif ($a -eq '--headless') { $headless = $true }
+        # fixB/ZEN-111: builds the game's WHOLE sln (no /t:) -- every project
+        # it maps to Build.0 for the config, including a game's own
+        # extraSharpmakeProjects (e.g. TilePuzzle's offline tools), which a
+        # scoped /t:<Game> never touches. Has no effect on `build engine`,
+        # which already builds its sln whole unconditionally (see below).
+        elseif ($a -eq '--whole') { $whole = $true }
         elseif ($a -like '--*') { Write-CliError "unknown option '$a'"; return $script:EXIT_USAGE }
         # A SECOND positional was silently dropped: `zenith build Zenithmon
         # Combat` built Zenithmon and reported success, which reads exactly
@@ -528,7 +534,7 @@ function Invoke-ZenithBuild {
         elseif ($null -eq $target) { $target = $a }
         else { Write-CliError "unexpected argument '$a' (build takes ONE target; got '$target' and '$a')"; return $script:EXIT_USAGE }
     }
-    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]"; return $script:EXIT_USAGE }
+    if ([string]::IsNullOrEmpty($target)) { Write-CliError "usage: zenith build <Name|engine> [--config <C>] [--headless] [--whole] [--timeout <min>]"; return $script:EXIT_USAGE }
     # --headless selects the Null-backend config (the GPU-less build every
     # headless/CI run executes). An explicit --config always wins.
     if ([string]::IsNullOrEmpty($config)) {
@@ -546,7 +552,7 @@ function Invoke-ZenithBuild {
     # module-scoped, not local variables).
     $repoRoot = Get-CliRepoRoot
     $work = {
-        param($target, $config, $timeoutMin)
+        param($target, $config, $timeoutMin, $whole)
         $msbuild = Get-ZenithMsbuild
         if (-not $msbuild) {
             Write-CliError ("MSBuild not found on PATH or via vswhere. Install Visual Studio 2022 " +
@@ -563,18 +569,41 @@ function Invoke-ZenithBuild {
         foreach ($p in $staleProcs) { Write-Host "  killed stale $($p.Name) (pid $($p.Id))" -ForegroundColor Yellow }
 
         if ($target -ieq 'engine') {
-            # Engine build: Zenith + Sentinels, via /t: because NO single
-            # whole-solution build can cover this. The Sentinels exist only in
-            # ToolsEnabled=False configs (leaf-purity proof), so they build with
-            # the config's _False sibling -- this command necessarily spans two
-            # configurations, which one sln build cannot. (A whole
-            # zenith_engine_win64.sln build IS supported and green in
-            # ToolsEnabled=True as of ZEN-85 -- see Docs/BuildSystem.md section 9.
-            # /t: here is a scoping requirement, not a workaround for red projects.)
+            # Engine build, two halves (fixB/ZEN-111, decision ZEN-D-044):
+            #
+            # 1. A WHOLE zenith_engine_win64.sln build in $config -- builds
+            #    every project the sln maps to Build.0 for that config, not
+            #    just the scoped /t:Zenith target this used to run. A scoped
+            #    /t:Zenith never linked the sln's own exe projects
+            #    (FluxCompiler, ZenithHub) or the ZenithTools static lib they
+            #    depend on -- nothing gated them, and fluxcompiler.exe failed
+            #    to link (LNK2005) in Vulkan_vs2022_Debug_Win64_True while
+            #    every Engine gate stayed green (ZEN-111). A whole build is
+            #    measured green for this sln+config (ZEN-85, see
+            #    Docs/BuildSystem.md section 9), and it correctly SKIPS a
+            #    Vulkan-only exe project under a Null_/D3D12_ config: those
+            #    projects carry an ActiveCfg mapping every Null_/D3D12_
+            #    config onto their Vulkan sibling but NO Build.0 for it, so
+            #    an explicit /t: on one of them under such a config would
+            #    silently build the WRONG (Vulkan) binary instead of being
+            #    skipped -- a whole build has no /t: to go wrong this way.
+            # 2. The Sentinels exist only in ToolsEnabled=False configs
+            #    (leaf-purity proof), so they still build via /t: against the
+            #    config's _False sibling -- a whole _False build would
+            #    recompile every engine lib a SECOND time in a second
+            #    configuration, which nothing here needs.
             $sln = Join-Path (Get-CliRepoRoot) 'Build/zenith_engine_win64.sln'
             $sentinelConfig = $config -replace '_True$', '_False'
+
+            Write-CliInfo "[build] engine (whole sln, $config)..."
+            # `10.0` resolves to the newest installed Windows SDK. Generated projects
+            # retain their authoring-machine SDK pin, which GitHub-hosted VS images do
+            # not guarantee (MSB8036).
+            $wholeArgs = @($sln, "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
+            $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $wholeArgs -TimeoutMinutes $timeoutMin
+            if ($rc -ne 0) { Write-CliError "engine whole-sln build failed ($config)"; return $script:EXIT_BUILD }
+
             $steps = @(
-                @{ Target = 'Zenith'; Config = $config },
                 @{ Target = 'SentinelECS'; Config = $sentinelConfig },
                 @{ Target = 'SentinelPhysics'; Config = $sentinelConfig },
                 @{ Target = 'SentinelAI'; Config = $sentinelConfig },
@@ -585,9 +614,6 @@ function Invoke-ZenithBuild {
             )
             foreach ($s in $steps) {
                 Write-CliInfo "[build] $($s.Target) ($($s.Config))..."
-                # `10.0` resolves to the newest installed Windows SDK. Generated projects
-                # retain their authoring-machine SDK pin, which GitHub-hosted VS images do
-                # not guarantee (MSB8036).
                 $buildArgs = @($sln, "/t:$($s.Target)", "/p:Configuration=$($s.Config)", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
                 $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
                 if ($rc -ne 0) { Write-CliError "engine target '$($s.Target)' failed"; return $script:EXIT_BUILD }
@@ -599,9 +625,23 @@ function Invoke-ZenithBuild {
         if (-not $name) { Write-CliError "no such game '$target'"; return $script:EXIT_NOTFOUND }
         $sln = Get-GameWin64Sln $name
         if (-not (Test-Path $sln)) { Write-CliError "solution not found: $sln (run 'zenith regen')"; return $script:EXIT_GENERATION }
-        Write-CliInfo "[build] $name ($config)..."
         # Match the explicit CI MSBuild calls: resolve, rather than pin, the Windows SDK.
-        $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
+        if ($whole) {
+            # fixB/ZEN-111: no /t: -- builds every project the sln maps to
+            # Build.0 for $config, including this game's own
+            # extraSharpmakeProjects (e.g. TilePuzzle's TilePuzzleLevelGen /
+            # TilePuzzleRegistryViewer), which a scoped /t:<Game> never
+            # reaches. Those tool projects carry no Build.0 under a
+            # Null_/D3D12_ config, so a whole build simply skips them there
+            # rather than risk an explicit /t: silently building their
+            # Vulkan sibling instead.
+            Write-CliInfo "[build] $name (whole sln, $config)..."
+            $buildArgs = @($sln, "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
+        }
+        else {
+            Write-CliInfo "[build] $name ($config)..."
+            $buildArgs = @($sln, "/t:$name", "/p:Configuration=$config", '/p:Platform=x64', '/p:WindowsTargetPlatformVersion=10.0', '/m', '/nologo', '/v:minimal')
+        }
         $rc = Invoke-ZenithMsbuildStep -Msbuild $msbuild -BuildArgs $buildArgs -TimeoutMinutes $timeoutMin
         if ($rc -ne 0) { Write-CliError "build failed"; return $script:EXIT_BUILD }
 
@@ -632,7 +672,7 @@ function Invoke-ZenithBuild {
         return $script:EXIT_OK
     }
 
-    return (Invoke-ZenithWithBuildSlot -RepoRoot $repoRoot -Reason "zenith build $target" -Work $work -WorkArgs @($target, $config, $timeoutMin) `
+    return (Invoke-ZenithWithBuildSlot -RepoRoot $repoRoot -Reason "zenith build $target" -Work $work -WorkArgs @($target, $config, $timeoutMin, $whole) `
             -SlotBusyExitCode $script:EXIT_BUILD -RegenFailExitCode $script:EXIT_BUILD)
 }
 
@@ -979,7 +1019,7 @@ Usage:
   zenith open <Name>
   zenith list [--json]
   zenith regen [--check]
-  zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]
+  zenith build <Name|engine> [--config <C>] [--headless] [--whole] [--timeout <min>]
   zenith run <Name> [--config <C>] [--build] [-- <game args>]
   zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
               [--per-process] [--fail-fast] [--build] [--results-dir D]

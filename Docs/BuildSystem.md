@@ -49,7 +49,7 @@ zenith new <Name> [--template <T>] [--no-android] [--no-open]
 zenith open <Name>
 zenith list [--json]
 zenith regen [--check]
-zenith build <Name|engine> [--config <C>] [--headless] [--timeout <min>]
+zenith build <Name|engine> [--config <C>] [--headless] [--whole] [--timeout <min>]
 zenith run <Name> [--config <C>] [--build] [-- <game args>]
 zenith test <Name|all> [--filter X] [--tier N] [--config <C>] [--headless]
             [--per-process] [--fail-fast] [--build] [--results-dir D]
@@ -69,9 +69,16 @@ Command notes beyond the obvious:
 - **`build`** resolves MSBuild via PATH then vswhere (Insiders/prerelease
   included); kills compiler processes older than 30 minutes on entry (hung-lock
   self-heal — a live concurrent build is never touched); `--timeout` arms a
-  watchdog that taskkills the msbuild tree. `build engine` builds `/t:Zenith`
-  in the requested config plus the three Sentinels in its `_False` sibling
-  config (Sentinels exist only in `ToolsEnabled=False`; see §4).
+  watchdog that taskkills the msbuild tree. `--whole` builds the target's sln
+  with no `/t:` — every project the sln maps to `Build.0` for that config,
+  including a game's own `extraSharpmakeProjects` (e.g. TilePuzzle's offline
+  tools), which a scoped `/t:<Game>` never reaches (ZEN-111 / ZEN-D-044, §9).
+  `build engine` builds `Build/zenith_engine_win64.sln` WHOLE in the requested
+  config (this replaced a scoped `/t:Zenith`, which never linked the sln's own
+  exe projects — see §9), plus the seven Sentinels via `/t:` against its
+  `_False` sibling config (Sentinels exist only in `ToolsEnabled=False`; see
+  §4) — `--whole` has no effect on `build engine`, which already builds its
+  sln whole unconditionally.
 - **`regen --check`** is a read-only staleness report: recomputes the codegen
   text from the descriptors and byte-compares against the on-disk generated
   `.cs`, then verifies every expected `.sln` exists. Exit 3 = run `zenith regen`.
@@ -1330,6 +1337,22 @@ repaired against the current engine API (below) rather than retired —
 now builds with the same "exit 0, zero errors" result as every other row in
 the table above, closing the one exception this section used to document.
 
+**Update (ZEN-111 / ZEN-D-044, fixB): this table's measurement is now WIRED
+IN, not just recorded here.** Every row above was true and unenforced —
+`zenith build engine` still ran only the scoped `/t:Zenith`, and
+`zenith build TilePuzzle --headless` still ran only the scoped
+`/t:TilePuzzle` — so neither `zenith_engine_win64.sln`'s own exe projects
+(`FluxCompiler`, `ZenithHub`) nor `tilepuzzle_win64.sln`'s
+`extraSharpmakeProjects` (`TilePuzzleLevelGen`, `TilePuzzleRegistryViewer`)
+were ever gated: `fluxcompiler.exe` failed to link (LNK2005) in
+`Vulkan_vs2022_Debug_Win64_True` while every Engine gate stayed green.
+`zenith build engine` now runs `Build/zenith_engine_win64.sln` WHOLE (plus
+the seven Sentinels via `/t:`, unchanged), `zenith build <Game> --whole` is
+a new flag for the per-game case, and the Engine gate list
+(`zagent.project.json`) adds
+`zenith build TilePuzzle --config Vulkan_vs2022_Debug_Win64_True --whole`
+after `build engine` — see §2's `build` command notes and §11 invariant 2.
+
 ### How a standalone tool obtains runtime services (ZEN-107, 2026-09-22)
 
 **★ BUILDING WAS NOT RUNNING, and ZEN-103 delivered only the first.** Both tools
@@ -1466,9 +1489,10 @@ Neither project was retired: the registry they own is 668 committed
 the two tools would strand it with nothing able to regenerate or inspect it.
 (That is an argument from what the tools OWN, not from what they currently do
 — as the subsection above records, neither can presently run at all.)
-`zenith build TilePuzzle` (`/t:TilePuzzle`) never built these two projects and
-is unaffected either way; the fix only changes which whole-solution build
-passes.
+`zenith build TilePuzzle` (`/t:TilePuzzle`) never built these two projects;
+`zenith build TilePuzzle --whole` now does (fixB/ZEN-111, §2, §9's ZEN-111
+update above) — the scoped form is unaffected either way, since the fix
+only changes which whole-solution build passes.
 
 **A `_True` solution build legitimately skips some projects, by target
 declaration rather than by being broken.** From the `.sln` files: the engine
@@ -1491,12 +1515,15 @@ ZEN-103 update above). Every skip in both counts is one of:
 
 None of these nine is broken; each is absent from one configuration by target
 declaration and built by another. **Which other thing builds it differs, and
-`zenith build engine` is not the answer for all nine:** it runs `/t:Zenith`
-plus `/t:Sentinel*`, so it covers the seven Sentinels (stepping them through
-the `_False` sibling of whatever config it was given) but builds neither
-backend library. The two backend libraries are covered by the **Engine gate
-list** instead — `zenith build Combat --headless` builds the `Null_`
-configuration, and `zenith build Combat --config
+`zenith build engine` is not the answer for all nine:** it now builds
+`Build/zenith_engine_win64.sln` WHOLE in the requested config (fixB/ZEN-111,
+replacing the old scoped `/t:Zenith` step — see §2, §9) plus `/t:Sentinel*`
+against the `_False` sibling, so it covers the seven Sentinels (stepping them
+through the `_False` sibling of whatever config it was given) but builds
+neither backend library — a whole `_True` build maps no `Build.0` for either,
+same as the table above. The two backend libraries are covered by the
+**Engine gate list** instead — `zenith build Combat --headless` builds the
+`Null_` configuration, and `zenith build Combat --config
 D3D12_vs2022_Debug_Win64_False` the `D3D12_` one.
 
 ## 10. Key defines (set by Sharpmake)
@@ -1512,13 +1539,21 @@ baked paths — overridable at runtime by `--assets-root`, §7).
 1. **One entry point per operation; no legacy/compat code whatsoever.** No
    forwarder scripts, no alias remaps, no "deprecated" surfaces — migrate every
    caller and delete the old name in the same commit.
-2. Prefer `/t:<target>` over a whole-solution build — it's faster and scopes
-   exactly what changed, and it's what `zenith build`/`zenith build engine`
-   always use. A whole-solution build is supported and green for the engine
+2. Prefer `/t:<target>` for a SCOPED build (faster, exactly what changed) —
+   but this is no longer what every `zenith build` path always uses.
+   `zenith build engine` builds `Build/zenith_engine_win64.sln` WHOLE (plus
+   `/t:Sentinel*` against the `_False` sibling), and `zenith build <Game>
+   --whole` does the same for a game's own sln — both deliberately, because a
+   scoped `/t:Zenith`/`/t:<Game>` never built a sln's OWN exe projects or a
+   game's `extraSharpmakeProjects` (ZEN-111/ZEN-D-044: `fluxcompiler.exe` and
+   `tilepuzzlelevelgen.exe` failed to link while every Engine gate stayed
+   green). A whole-solution build is supported and green for the engine
    solution and every game solution, including
    `Games\TilePuzzle\tilepuzzle_win64.sln` since ZEN-103 (see "Whole-solution
-   build status (ZEN-85, 2026-09-21)" in §9), so it is not a workaround to
-   reach for — just not the recommended default.
+   build status (ZEN-85, 2026-09-21)" in §9). Default to `/t:<target>` for
+   ad hoc scoped work; use `--whole` (or `build engine`'s built-in whole
+   step) when the sln's OTHER projects — not just the named target — need to
+   be verified, which is exactly what the Engine gate list now does.
 3. Never run Sharpmake/regen from a linked worktree — except a registered
    [lane](../Tools/zagent/README.md#lanes) (§3).
 4. Nothing generated is committed; nothing hand-written is ignored (enforced

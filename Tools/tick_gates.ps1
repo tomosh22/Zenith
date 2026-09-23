@@ -763,13 +763,32 @@ function Find-CompiledObjectPath {
     # ever proves too broad -- a stale .obj under an unrelated lib with a
     # colliding file name -- narrow it with the real membership table rather
     # than loosening the check.
+    #
+    # fixB/ZEN-111: the Engine gate list now also builds standalone repo-root
+    # tool exe projects whole (FluxCompiler, ZenithHub, and TilePuzzle's
+    # extraSharpmakeProjects TilePuzzleLevelGen/TilePuzzleRegistryViewer via
+    # `build TilePuzzle --whole`). Each of those has its own FLAT obj tree at
+    # <ProjectDir>/obj/win64/<config>/<leaf>.obj -- the same shape as a game's
+    # own Build/obj, just rooted one level up -- so a source under one of
+    # them gets the same exact lookup as a Games/<Name> file, DERIVED from
+    # whether its own top-level directory owns an obj/win64/ subtree rather
+    # than a hard-coded project list (verified on disk against the real
+    # checkout's FluxCompiler/, ZenithHub/, TilePuzzleLevelGen/,
+    # TilePuzzleRegistryViewer/ output). ZenithTools is deliberately NOT one
+    # of these: Sharpmake_ZenithTools.cs gives it its OWN IntermediatePath
+    # under Build/obj/ZenithTools/win64/<config>/, so its sources (under
+    # Tools/) already resolve through the broad Build/obj search below, same
+    # as every other engine lib -- and Zenith/** itself has no Zenith/obj
+    # tree of its own for the same reason (its objects land directly under
+    # Build/obj/win64/<config>/, part of that same broad search).
     param(
         [Parameter(Mandatory)][string]$RepoRoot,
         [Parameter(Mandatory)][string]$SourcePath,
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$BuiltConfigs
     )
     $leaf = [System.IO.Path]::GetFileNameWithoutExtension((Split-Path -Leaf $SourcePath))
-    $gameMatch = [regex]::Match(($SourcePath -replace '\\', '/'), '^Games/([^/]+)/')
+    $normalizedSource = ($SourcePath -replace '\\', '/')
+    $gameMatch = [regex]::Match($normalizedSource, '^Games/([^/]+)/')
 
     if ($gameMatch.Success) {
         $game = $gameMatch.Groups[1].Value
@@ -792,6 +811,24 @@ function Find-CompiledObjectPath {
     }
 
     $leaves = @($BuiltConfigs | ForEach-Object { $_.Leaf } | Select-Object -Unique)
+
+    $topMatch = [regex]::Match($normalizedSource, '^([^/]+)/')
+    if ($topMatch.Success) {
+        $topDir = $topMatch.Groups[1].Value
+        $projObjRoot = Join-Path $RepoRoot "$topDir/obj/win64"
+        if (Test-Path -LiteralPath $projObjRoot) {
+            foreach ($cfgLeaf in $leaves) {
+                $candidate = Join-Path $RepoRoot "$topDir/obj/win64/$cfgLeaf/$leaf.obj"
+                if (Test-Path -LiteralPath $candidate) { return $candidate }
+            }
+            # This top-level dir owns a flat obj tree of its own (a tool exe
+            # project), so -- exactly like the Games/<Name> case above -- a
+            # miss here is a real miss, not a cue to fall through to the
+            # broad engine-wide search below.
+            return $null
+        }
+    }
+
     $engineObjRoot = Join-Path $RepoRoot 'Build/obj'
     if (-not (Test-Path -LiteralPath $engineObjRoot)) { return $null }
     foreach ($cfgLeaf in $leaves) {

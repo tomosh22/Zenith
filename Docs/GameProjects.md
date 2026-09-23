@@ -108,8 +108,13 @@ msbuild Games\Combat\combat_win64.sln /t:Combat /p:Configuration=Vulkan_vs2022_D
 msbuild Build\zenith_engine_win64.sln   /t:Zenith  /p:Configuration=Vulkan_vs2022_Debug_Win64_True /p:Platform=x64
 ```
 
-`zenith build` and `zenith build engine` always use `/t:<target>` — it's
-faster, and it's what CI does. It is no longer a workaround for red projects:
+`zenith build <Game>` uses `/t:<Game>` — it's faster, and it's what CI does —
+unless you pass `--whole`, which builds the game's whole sln (including its
+`extraSharpmakeProjects`, e.g. TilePuzzle's two tools). `zenith build engine`
+builds `Build\zenith_engine_win64.sln` WHOLE in its config, then the Sentinels
+via `/t:` in the `_False` sibling (ZEN-111 / ZEN-D-044: a scoped `/t:Zenith`
+never linked FluxCompiler or ZenithHub, so a link break there gated green; see
+`Docs/BuildSystem.md` §9). `/t:` is no longer a workaround for red projects:
 FluxCompiler and the three font-dependency projects (`Sharpmake_FreeType.cs`,
 `Sharpmake_Msdfgen.cs`, `Sharpmake_MsdfAtlasGen.cs`) all build green in
 `Vulkan_vs2022_Debug_Win64_True`, in every solution they appear in (ZEN-85,

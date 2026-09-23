@@ -348,7 +348,31 @@ try {
             $entries = @($log)
             Assert ((@($entries | Where-Object { $_ -eq 'enter' })).Count -eq 1) "entered exactly once"
             Assert ((@($entries | Where-Object { $_ -eq 'exit' })).Count -eq 1) "exited exactly once"
-            Assert ((@($entries | Where-Object { $_ -eq 'msbuild' })).Count -eq 8) "8 msbuild steps (Zenith + 7 Sentinels): $((@($entries)) -join ',')"
+            Assert ((@($entries | Where-Object { $_ -eq 'msbuild' })).Count -eq 8) "8 msbuild steps (whole engine sln + 7 Sentinels): $((@($entries)) -join ',')"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "fixB/ZEN-111: build engine's first msbuild step is a WHOLE zenith_engine_win64.sln build -- no /t:, the 7 Sentinel /t: steps follow" {
+        $captured = [System.Collections.Generic.List[object]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $captured.Add(@($b)); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'engine')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            $steps = @($captured)
+            Assert ($steps.Count -eq 8) "8 steps captured, got $($steps.Count)"
+            $wholeArgs = @($steps[0])
+            Assert ((@($wholeArgs | Where-Object { $_ -like '/t:*' })).Count -eq 0) "step 1 must carry no /t: at all -- got: $($wholeArgs -join ' ')"
+            Assert ($wholeArgs[0] -like '*zenith_engine_win64.sln') "step 1 must target the engine sln -- got: $($wholeArgs[0])"
+            for ($i = 1; $i -lt 8; $i++) {
+                $sentinelArgs = @($steps[$i])
+                Assert (($sentinelArgs | Where-Object { $_ -like '/t:Sentinel*' }).Count -eq 1) "sentinel step $i must carry exactly one /t:Sentinel* -- got: $($sentinelArgs -join ' ')"
+            }
         }
         finally { Clear-Wp5BuildHooks }
     }
@@ -370,6 +394,48 @@ try {
             Assert ((@($entries | Where-Object { $_ -eq 'msbuild' })).Count -eq 1) "one msbuild step for a single game"
         }
         finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "fixB/ZEN-111: without --whole, a game build still carries /t:<Game> as before" {
+        $captured = [System.Collections.Generic.List[object]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $captured.Add(@($b)); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'Combat')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            Assert ($captured.Count -eq 1) "one msbuild step, got $($captured.Count)"
+            $args = @($captured[0])
+            Assert ((@($args | Where-Object { $_ -eq '/t:Combat' })).Count -eq 1) "must carry /t:Combat -- got: $($args -join ' ')"
+            Assert ($args[0] -like '*combat_win64.sln') "must target the game's own sln -- got: $($args[0])"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "fixB/ZEN-111: --whole builds the game's sln with NO /t: (every Build.0 project, incl. extraSharpmakeProjects)" {
+        $captured = [System.Collections.Generic.List[object]]::new()
+        try {
+            Set-Wp5BuildHooks `
+                -EnterSlot ({ param($Reason) [pscustomobject]@{ Token = 't' } }.GetNewClosure()) `
+                -ExitSlot ({ param($h) }.GetNewClosure()) `
+                -RegenStale ({ param($r) [pscustomobject]@{ Stale = $false; Reason = '' } }.GetNewClosure()) `
+                -InvokeRegen ({ 0 }.GetNewClosure()) `
+                -MsbuildStep ({ param($m, $b, $t) $captured.Add(@($b)); 0 }.GetNewClosure())
+            $rc = Invoke-CliCode @('build', 'Combat', '--whole')
+            Assert ($rc -eq 0) "rc should be 0, got $rc"
+            Assert ($captured.Count -eq 1) "one msbuild step, got $($captured.Count)"
+            $args = @($captured[0])
+            Assert ((@($args | Where-Object { $_ -like '/t:*' })).Count -eq 0) "--whole must carry no /t: -- got: $($args -join ' ')"
+            Assert ($args[0] -like '*combat_win64.sln') "must target the game's own sln -- got: $($args[0])"
+        }
+        finally { Clear-Wp5BuildHooks }
+    }
+
+    Invoke-Test "fixB/ZEN-111: --whole is refused together with an unrelated bad flag like any other option" {
+        Assert ((Invoke-CliCode @('build', 'Combat', '--whole', '--bogus')) -eq 1) "unknown option after --whole -> EXIT_USAGE (1)"
     }
 
     Invoke-Test "slot busy (`$null): no regen, no msbuild, returns the build-failure exit" {
