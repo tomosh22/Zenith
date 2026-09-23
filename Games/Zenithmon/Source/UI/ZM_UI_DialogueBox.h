@@ -133,6 +133,17 @@ public:
 	const std::string& GetNoLabel() const { return m_strNoLabel; }
 
 	bool  IsActive() const;
+	// The panel-shown rule Present() actually applies: shown while a line is active OR
+	// while a choice is armed and awaiting its answer (ZM-D-121). The advance that opens
+	// the wait leaves the box IsActive() == false, so this predicate is deliberately NOT
+	// just IsActive() -- a regression to that would hide the panel and blank the text the
+	// instant the last line is confirmed, exactly the ZM-D-112 bleed-through class the S5
+	// gate exists to catch. Factored out (ZM-119) so a regression to bare IsActive() is
+	// now caught in the HEADLESS gate too, not only by the windowed ZM_CareCenterHeal_Test
+	// (its ReadChoiceElements() samples panel + text found/visible while the choice is
+	// awaited; ZM-D-121 names it the lock -- ZM_S6UIGate_Test's heal phases check
+	// IsDialogueAwaitingChoice() and focus only, never panel/text visibility).
+	bool  IsPanelShown() const { return IsActive() || IsAwaitingChoice(); }
 	u_int GetQueuedLineCount() const { return m_uLineCount; }
 	// Lines still to be read INCLUDING the current one; 0 when inactive.
 	u_int GetRemainingLineCount() const;
