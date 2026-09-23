@@ -18,10 +18,16 @@ The S0-S7 narrative that used to fill the back half of this file moved VERBATIM 
 its own template in `AgentBriefing.md` §2.3 specifies. Nothing was deleted.
 
 **★ LIVE PIN (UPDATED 2026-09-23):
-ZM boot `4588`; engine boot (Null Combat) `2731`; Null RenderTest `2834`; registry **116**.**
+ZM boot `4594`; engine boot (Null Combat) `2737`; Null RenderTest `2840`; registry **116**.**
 
 > OBSERVED from `Null_` runs; `Tools/unit_baselines.json` is the authority for
 > the boot pins, and the registry is counted from the declared automated tests.
+
+> **+6 ALL BOOTS (2026-09-23) — ZEN-44 `Zenith_PriorityQueue`.** Six backend-neutral
+> `Core` units (the new heap; `Zenith_Pathfinding`'s A* open list migrated onto it).
+> OBSERVED on Null: Combat 2,737 ran / 2,736 passed / 0 failed / 1 skipped (was 2,731);
+> Zenithmon 4,594 ran / 4,592 passed / 0 failed / 2 skipped (was 4,588). The RenderTest
+> row is INFERRED +6 (no gate line boots RenderTest's unit suite).
 
 > **+4 ZM BOOT (2026-09-23) — ZM-89 dialogue compaction.** `ZM_UI_DialogueBox`'s
 > 8-slot queue became a ring buffer capped on PENDING lines; +4 headless

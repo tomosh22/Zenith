@@ -18,6 +18,7 @@
 #include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_HashSet.h"
 #include "Collections/Zenith_MemoryPool.h"
+#include "Collections/Zenith_PriorityQueue.h"
 #include "Flux/Flux_Types.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"  // v7->v8 serialization framing regression
 #include "ZenithECS/Zenith_ComponentMeta.h"
@@ -1457,6 +1458,253 @@ void Zenith_UnitTests::TestCircularQueueNonPOD(){
 		ZENITH_ASSERT_GT(TestDestructorCounter::s_uDestructorCallCount, uPreDequeueCount, "Destructors should be called during Clear");
 	}
 
+}
+
+// ============================================================================
+// Zenith_PriorityQueue - binary heap over Zenith_Vector (ZEN-44)
+// ============================================================================
+
+ZENITH_TEST(Core, PriorityQueueOrdering)
+{
+	Zenith_PriorityQueue<int> xQueue;
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "PriorityQueue should start empty");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 0, "PriorityQueue should have size 0");
+
+	const int aiValues[] = { 5, 1, 9, 3, 7, 2, 8, 4, 6, 0 };
+	for (int iValue : aiValues)
+	{
+		xQueue.Push(iValue);
+	}
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 10, "PriorityQueue should hold all pushed elements");
+	ZENITH_ASSERT_FALSE(xQueue.Empty(), "PriorityQueue with elements is not empty");
+
+	// Default Compare (Zenith_Less<int>, operator<) is a MAX-heap: Top() is the largest.
+	int iPrevious = xQueue.Top();
+	ZENITH_ASSERT_EQ(iPrevious, 9, "Top() must be the maximum element under the default comparator");
+
+	u_int uCount = 0;
+	while (!xQueue.Empty())
+	{
+		const int iCurrent = xQueue.Top();
+		ZENITH_ASSERT_TRUE(iCurrent <= iPrevious, "Pop order must be non-increasing under the default max-heap comparator");
+		iPrevious = iCurrent;
+		xQueue.Pop();
+		uCount++;
+	}
+	ZENITH_ASSERT_EQ(uCount, 10, "Every pushed element must be popped exactly once");
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "PriorityQueue must be empty after popping every element");
+}
+
+namespace
+{
+	// Mirrors Zenith_Pathfinding.cpp's AStarNodeCompare: wrapping operator>
+	// turns the default max-heap into a min-heap, reproducing the old
+	// std::priority_queue<T, std::vector<T>, std::greater<T>> idiom.
+	struct PQTest_Greater
+	{
+		bool operator()(int iLHS, int iRHS) const { return iLHS > iRHS; }
+	};
+}
+
+ZENITH_TEST(Core, PriorityQueueCustomComparatorMinHeap)
+{
+	Zenith_PriorityQueue<int, PQTest_Greater> xQueue;
+	const int aiValues[] = { 5, 1, 9, 3, 7, 2, 8, 4, 6, 0 };
+	for (int iValue : aiValues)
+	{
+		xQueue.Push(iValue);
+	}
+
+	int iPrevious = xQueue.Top();
+	ZENITH_ASSERT_EQ(iPrevious, 0, "Top() must be the minimum element under a std::greater-style comparator");
+
+	u_int uCount = 0;
+	while (!xQueue.Empty())
+	{
+		const int iCurrent = xQueue.Top();
+		ZENITH_ASSERT_TRUE(iCurrent >= iPrevious, "Pop order must be non-decreasing under a min-heap comparator");
+		iPrevious = iCurrent;
+		xQueue.Pop();
+		uCount++;
+	}
+	ZENITH_ASSERT_EQ(uCount, 10, "Every pushed element must be popped exactly once under the custom comparator too");
+}
+
+ZENITH_TEST(Core, PriorityQueueEqualKeys)
+{
+	Zenith_PriorityQueue<int> xQueue;
+	const int aiValues[] = { 3, 3, 1, 3, 2, 1, 3, 2 };
+
+	Zenith_HashMap<int, u_int> xExpectedCounts;
+	for (int iValue : aiValues)
+	{
+		xQueue.Push(iValue);
+		u_int* puCount = xExpectedCounts.TryGet(iValue);
+		if (puCount != nullptr) (*puCount)++;
+		else xExpectedCounts.Insert(iValue, 1u);
+	}
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 8, "All pushed elements, including duplicates, must be counted");
+
+	// A binary heap makes no FIFO promise for equal keys, but it must never
+	// drop or invent one, and the overall pop order must still be
+	// non-increasing across (and within) equal-key runs.
+	Zenith_HashMap<int, u_int> xActualCounts;
+	int iPrevious = xQueue.Top();
+	while (!xQueue.Empty())
+	{
+		const int iCurrent = xQueue.Top();
+		ZENITH_ASSERT_TRUE(iCurrent <= iPrevious, "Equal-key run must not break the non-increasing pop order");
+		iPrevious = iCurrent;
+		u_int* puCount = xActualCounts.TryGet(iCurrent);
+		if (puCount != nullptr) (*puCount)++;
+		else xActualCounts.Insert(iCurrent, 1u);
+		xQueue.Pop();
+	}
+
+	ZENITH_ASSERT_EQ(xActualCounts.GetSize(), xExpectedCounts.GetSize(), "Same distinct key set must come out as went in");
+	for (int iValue : aiValues)
+	{
+		const u_int* puExpected = xExpectedCounts.TryGet(iValue);
+		const u_int* puActual = xActualCounts.TryGet(iValue);
+		ZENITH_ASSERT_TRUE(puActual != nullptr, "Every pushed key must appear in the popped output");
+		if (puActual != nullptr)
+		{
+			ZENITH_ASSERT_EQ(*puActual, *puExpected, "Duplicate key %d must be popped exactly as many times as it was pushed", iValue);
+		}
+	}
+}
+
+ZENITH_TEST(Core, PriorityQueueGrowth)
+{
+	Zenith_PriorityQueue<int> xQueue;
+	const u_int uInitialCapacity = xQueue.GetCapacity();
+	ZENITH_ASSERT_GT(uInitialCapacity, 0, "PriorityQueue must allocate an initial capacity up front, like Zenith_Vector");
+
+	// 37 and 100 are coprime, so (u * 37) % 100 walks every value in
+	// [0, 100) exactly once, in a non-monotonic order -- growth happens
+	// mid-heap, not just while the tail is already sorted.
+	constexpr u_int uCOUNT = 100;
+	for (u_int u = 0; u < uCOUNT; u++)
+	{
+		xQueue.Push(static_cast<int>((u * 37u) % uCOUNT));
+	}
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), uCOUNT, "All pushed elements must be retained across growth");
+	ZENITH_ASSERT_GT(xQueue.GetCapacity(), uInitialCapacity, "Capacity must have grown past the initial allocation");
+
+	int iPrevious = xQueue.Top();
+	u_int uPopped = 0;
+	while (!xQueue.Empty())
+	{
+		const int iCurrent = xQueue.Top();
+		ZENITH_ASSERT_TRUE(iCurrent <= iPrevious, "Ordering must survive growth/reallocation");
+		iPrevious = iCurrent;
+		xQueue.Pop();
+		uPopped++;
+	}
+	ZENITH_ASSERT_EQ(uPopped, uCOUNT, "Every element pushed across growth must be popped exactly once");
+}
+
+ZENITH_TEST(Core, PriorityQueueEmptyRefusal)
+{
+	Zenith_PriorityQueue<int> xQueue;
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "PriorityQueue must start empty");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 0, "PriorityQueue must start at size 0");
+
+	u_int32 uPopHits = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xQueue.Pop();
+		uPopHits = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uPopHits, 1u, "Pop() on an empty queue must assert exactly once, not silently succeed");
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "Pop() on an empty queue must refuse, not underflow");
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), 0, "Pop() on an empty queue must leave size at 0");
+
+	u_int32 uTopHits = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		(void)xQueue.Top();
+		uTopHits = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_GT(uTopHits, 0u, "Top() on an empty queue must assert, not return garbage silently");
+
+	// Push one element, drain it, then re-confirm the refusal on the now-empty queue.
+	xQueue.Push(1);
+	xQueue.Pop();
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "Queue must be empty again after popping its only element");
+
+	u_int32 uSecondPopHits = 0;
+	{
+		Zenith_AssertCaptureScope xCapture;
+		xQueue.Pop();
+		uSecondPopHits = xCapture.GetHitCount();
+	}
+	ZENITH_ASSERT_EQ(uSecondPopHits, 1u, "A second empty Pop() must also assert cleanly");
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "Queue must remain empty after the second refused Pop()");
+}
+
+namespace
+{
+	// Fixed-seed xorshift32 PRNG, local to this test -- deterministic and
+	// self-contained (no std::rand), same shape as the WS10_Rng used later
+	// in this file for the sparse-index randomised comparison.
+	struct PQTest_Rng
+	{
+		uint32_t m_uState;
+		explicit PQTest_Rng(uint32_t uSeed) : m_uState(uSeed ? uSeed : 0x1u) {}
+		uint32_t Next()
+		{
+			uint32_t x = m_uState;
+			x ^= x << 13;
+			x ^= x >> 17;
+			x ^= x << 5;
+			m_uState = x;
+			return x;
+		}
+		uint32_t NextBelow(uint32_t uN) { return uN ? (Next() % uN) : 0u; }
+	};
+}
+
+ZENITH_TEST(Core, PriorityQueueRandomVsSortedReference)
+{
+	PQTest_Rng xRng(0xC0FFEEu);
+	constexpr u_int uCOUNT = 500;
+
+	Zenith_PriorityQueue<int> xQueue;
+	Zenith_Vector<int> xReference;
+
+	for (u_int u = 0; u < uCOUNT; u++)
+	{
+		const int iValue = static_cast<int>(xRng.NextBelow(1000));
+		xQueue.Push(iValue);
+		xReference.PushBack(iValue);
+	}
+
+	// Independent reference: a plain insertion sort over the same values,
+	// descending to match the default max-heap comparator. Deliberately NOT
+	// std::sort or any other shared code path with the container under test.
+	for (u_int u = 1; u < xReference.GetSize(); u++)
+	{
+		const int iKey = xReference.Get(u);
+		u_int uInsertAt = u;
+		while (uInsertAt > 0 && xReference.Get(uInsertAt - 1) < iKey)
+		{
+			xReference.Get(uInsertAt) = xReference.Get(uInsertAt - 1);
+			uInsertAt--;
+		}
+		xReference.Get(uInsertAt) = iKey;
+	}
+
+	ZENITH_ASSERT_EQ(xQueue.GetSize(), xReference.GetSize(), "Queue and reference must hold the same count going in");
+
+	for (u_int u = 0; u < uCOUNT; u++)
+	{
+		ZENITH_ASSERT_FALSE(xQueue.Empty(), "Queue must not run dry before the reference does");
+		const int iPopped = xQueue.Top();
+		xQueue.Pop();
+		ZENITH_ASSERT_EQ(iPopped, xReference.Get(u), "PriorityQueue pop order must match an independently sorted reference at index %u", u);
+	}
+	ZENITH_ASSERT_TRUE(xQueue.Empty(), "Queue must be fully drained once the reference is exhausted");
 }
 
 ZENITH_TEST(Core, VectorSelfAssignment) { Zenith_UnitTests::TestVectorSelfAssignment(); }

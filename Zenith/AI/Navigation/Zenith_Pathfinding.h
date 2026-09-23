@@ -57,8 +57,8 @@ public:
 
 private:
 	// AStarNode lives in an anonymous namespace in Zenith_Pathfinding.cpp so the
-	// file-scope expand-neighbour helper can take it without leaking <queue> /
-	// <unordered_set> / <unordered_map> into this header.
+	// file-scope expand-neighbour helper can take it without leaking the open-list
+	// (Zenith_PriorityQueue) or its closed-set / cost-map containers into this header.
 
 	// Get midpoint of shared edge between two polygons
 	static Zenith_Maths::Vector3 GetPortalMidpoint(const Zenith_NavMesh& xNavMesh,
