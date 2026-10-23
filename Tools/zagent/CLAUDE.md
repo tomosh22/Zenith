@@ -2,7 +2,9 @@
 
 The `/tick` protocol and the machinery that runs it on **three** agent
 harnesses — Claude Code, OpenCode, Codex — from ONE canonical source. See
-`Tools/zagent/README.md` for setup (`PATH`, `zagent doctor`) and the client
+`Tools/zagent/README.md` for setup (no PATH setup: invoke
+`pwsh -NoProfile -File Tools\zagent\zagent.ps1` from the repo root, never a bare `zagent`, because the user
+`PATH` may point at another repository's shim) and the client
 layout (`zagent.ps1`, `ZagentClient.psm1`, `build_prompt.ps1`). This file is
 about `protocol/`: what is canonical, what is generated from it, and how to
 change either without hand-editing a harness's own files.

@@ -649,12 +649,15 @@ it from outside the web app. It lives HERE, in `Tools/zagent/`, as a
 PowerShell script:
 
 ```
-zagent <command> [--json]
+pwsh -NoProfile -File Tools\zagent\zagent.ps1 <command> [--json]
 ```
 
-That works from `C:\dev\Zenith` and from any subdirectory of it
-(`Games\Zenithmon`), in PowerShell, cmd or Git Bash — **but not because it
-walks up looking for `zagent.project.json`.** `zagent.ps1` resolves this
+Run it from the repo root (`C:\dev\Zenith`), in PowerShell, cmd or Git Bash
+— **there is no PATH setup, and a bare `zagent` must never be used here:**
+the user `PATH` may point at another repository's shim (Zenith2's), which
+would drive that repository's board. Below, a bare `zagent <verb>` is
+shorthand for the call above. The shim does not walk up looking for
+`zagent.project.json` either: `zagent.ps1` resolves this
 repo's root from its own script location (`$PSScriptRoot/../..`), the
 same way on every invocation, never by searching upward from the current
 directory the way git walks up for `.git`. A run from `Games\Zenithmon`
@@ -669,9 +672,7 @@ Its scratch is `.zagent/last.json` and `.zagent/run/<KEY>/` at the repo
 root, gitignored so `git status --porcelain` stays empty while a ticket
 is in flight — the loop's precondition depends on that.
 
-If `zagent` is not on PATH, `Tools/zagent/README.md` has the one-time
-setup; you can always call `pwsh -NoProfile -File Tools\zagent\zagent.ps1`
-directly.
+`Tools/zagent/README.md` has the setup.
 
 **There is no protocol handshake left to describe.** The single local
 backend has nothing to negotiate a version with, and `zagent contract`
@@ -969,10 +970,13 @@ from `check` means nothing durable is wrong — the repo is simply busy
 right now. The lock clears by itself; a durable refusal does not, and
 reporting the one that clears hides the one that matters.
 
-**Setting a machine up** (once): put `Tools\zagent` on `PATH`. That is the
-whole setup — no token, no URL, nothing to mint, because the board is this
-checkout and there is exactly one backend. `Tools/zagent/README.md` has
-the commands; `zagent doctor` names whatever piece is missing.
+**Setting a machine up**: there is no PATH setup — invoke
+`pwsh -NoProfile -File Tools\zagent\zagent.ps1` from the repo root. No token, no URL, nothing to mint, because
+the board is this checkout and there is exactly one backend. Do not put
+`Tools\zagent` on `PATH` (the user `PATH` may already point at another
+repository's shim, so a bare `zagent` must never be used here).
+`Tools/zagent/README.md` has the commands; `doctor` names whatever piece is
+missing.
 
 `packages/agent/CLAUDE.md` in the other repo is the full reference for
 the dispatcher, `apps/jira/CLAUDE.md` for the HTTP surface.

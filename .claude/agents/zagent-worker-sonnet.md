@@ -38,7 +38,7 @@ nothing, because it invites a reader to skip the check.
   allowed. Doing so **silently** is not: if you touch anything outside it,
   name the file and say why under "Files changed" below, because the
   orchestrator carries that explanation onto the ticket record and
-  `zagent finish` refuses to close the ticket over an unexplained excursion.
+  `pwsh -NoProfile -File Tools/zagent/zagent.ps1 finish` refuses to close the ticket over an unexplained excursion.
   Do not revert work to stay inside the list instead of explaining it — a
   reverted-and-hidden excursion is worse than one you reported.
 - **Never** touch `.github/**`, `packages/database/drizzle/**`, `.claude/**`, `agent.config*.json`, `zagent.project.json`, `vault.config.json`, `Tools/zagent/protocol/**`, `Tools/zagent/Build-HarnessArtifacts.ps1`, `Tools/zagent/Test-HarnessParity.ps1`, `.codex/**`, or `.opencode/**`.

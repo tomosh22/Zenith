@@ -48,23 +48,20 @@ tick-protocol checks that backend used to carry (file-list excursions,
 commit completeness, `blocked-scope` defensibility, gate-verdict
 freshness), wired into `Tools/Vault/cli/write.mjs` and `client.mjs`.
 
-Put `Tools\zagent` on `PATH` so a bare `zagent` resolves. **Prepend it,
-do not append it** — `PATH` is ordered, and a machine that once had an
-older `zagent` installed (a pnpm/npm global shim, say) still has that
-shim earlier in the list. Appending leaves the stale one winning.
+There is no PATH setup. Invoke the shim by its repo-relative path, from the
+repository root:
 
 ```powershell
-$path = [Environment]::GetEnvironmentVariable('PATH', 'User')
-[Environment]::SetEnvironmentVariable('PATH', "C:\dev\Zenith\Tools\zagent;$path", 'User')
+pwsh -NoProfile -File Tools\zagent\zagent.ps1 <verb> [args...]
 ```
 
-Confirm the right one won — this should print a path inside this repo:
+**Never use a bare `zagent` in this repo.** The user `PATH` may point at
+another repository's shim (Zenith2's), and a bare call would drive that
+repository's board. The shim resolves its own repo root from where the
+script lives, so the relative path always drives THIS checkout. Elsewhere in
+this file a bare `zagent <verb>` is shorthand for that call.
 
-```powershell
-(Get-Command zagent).Source
-```
-
-Verify with `zagent doctor`.
+Verify with `pwsh -NoProfile -File Tools\zagent\zagent.ps1 doctor`.
 
 ## Where things live
 

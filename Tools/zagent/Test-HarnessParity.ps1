@@ -515,6 +515,41 @@ Assert-That 'no NEW bare haiku/sonnet/opus mention in TICK.md is missing from ti
     $newMentions.Count -eq 0
 }
 
+Write-Host "`n=== 7b. no generated harness file calls or grants a bare zagent ===" -ForegroundColor Cyan
+# A bare `zagent <verb>` call resolves through the user PATH, and on the
+# owner's machine PATH may hold ANOTHER repository's shim (Zenith2's), which
+# drives that repository's board. Every call in the protocol and in every
+# generated file is therefore the repo-relative shim
+# (`pwsh -NoProfile -File Tools/zagent/zagent.ps1 <verb>`). The verb list is
+# every CLI command name in Tools/Vault/spec/command-matrix.md plus abandon
+# (client-composed). `zagent` preceded by a path character
+# (Tools/zagent/zagent.ps1) is the repo-relative shim and is the only allowed
+# spelling; anything else is a call that PATH decides.
+$bareZagentVerbs = 'help|auth|provision|doctor|next|claim|show|check|queue|owns|comment|move|finish|integrate|gates|guard|create|link|unlink|links|transitions|blocked|epic|parent|sprint|version|update|estimate|flag|resolve|history|report|board|notion|docs|rows|ask|decide|shortfall|changelog|suggest|suggestions|contract|abandon|lane'
+$bareZagentCall = [regex]('(?<![\w./\:$-])zagent(?:\.cmd|\.ps1)?[ \t]+(?:' + $bareZagentVerbs + ')\b')
+$bareZagentGrant = [regex]'(?:Bash|PowerShell)\(\s*zagent\b'
+foreach ($relPath in $generatedFiles) {
+    Assert-That "$relPath contains no bare zagent call or grant" {
+        $full = Join-Path $repoRoot $relPath
+        $text = Get-Content -Raw -LiteralPath $full
+        $callHits = @($bareZagentCall.Matches($text) | ForEach-Object { $_.Value })
+        $grantHits = @($bareZagentGrant.Matches($text) | ForEach-Object { $_.Value })
+        $all = @($callHits + $grantHits)
+        if ($all.Count -gt 0) { Write-Host "       found: $($all -join '; ')" }
+        $all.Count -eq 0
+    }
+}
+Assert-That 'the canonical Tools/zagent/protocol/TICK.md contains no bare zagent call' {
+    $hits = @($bareZagentCall.Matches($tickText) | ForEach-Object { $_.Value })
+    if ($hits.Count -gt 0) { Write-Host "       found: $($hits -join '; ')" }
+    $hits.Count -eq 0
+}
+$claudeSettingsPath = Join-Path $repoRoot '.claude/settings.json'
+Assert-That '.claude/settings.json exists and does not allow a bare zagent command' {
+    (Test-Path -LiteralPath $claudeSettingsPath) -and
+    (-not $bareZagentGrant.IsMatch((Get-Content -Raw -LiteralPath $claudeSettingsPath)))
+}
+
 # ═════════════════════════════════════════════════════════════════════════
 #  Profile completeness -- fail-closed
 # ═════════════════════════════════════════════════════════════════════════
@@ -820,6 +855,10 @@ function Get-MandatedCommandsFromTick {
         foreach ($m in [regex]::Matches($lines[$i], '`([^`\n]+)`')) {
             $span = $m.Groups[1].Value.Trim()
             if ($span -eq '') { continue }
+            # A lone `zagent` span NAMES the tool ("`zagent` needs nothing but..."); it
+            # is not a command. A `zagent <verb>` span is still collected here, and
+            # assertion 7b fails it as a bare call.
+            if ($span -eq 'zagent') { continue }
             $firstToken = ($span -split '\s+')[0]
             if ($FirstTokens -contains $firstToken) {
                 $found.Add([PSCustomObject]@{ Line = $i + 1; Command = $span })

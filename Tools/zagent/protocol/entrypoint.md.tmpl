@@ -71,7 +71,7 @@ Definition-of-Done assertion scan) already asks for:
 
 `{{PREAUTH_KIND}}`, sourced from: {{PREAUTH_SOURCES}}.
 
-Every gate line `zagent gates <KEY>` can produce for this repo's categories
+Every gate line `pwsh -NoProfile -File Tools/zagent/zagent.ps1 gates <KEY>` can produce for this repo's categories
 must be reachable through this mechanism before a tick runs unattended —
 that is what "pre-authorised" means here, and `Tools/zagent/Test-HarnessParity.ps1`
 checks it for all three harnesses so a gate line added without its

@@ -734,32 +734,32 @@ Write-Host "`n=== Get-GateList -ReuseGateList ===" -ForegroundColor Cyan
 # WP4: skip the `zagent gates` shell-out and read the ticket's own recorded
 # gates.json instead. There is no existing precedent in this suite for
 # stubbing `zagent` -- every other test's own header warns never to call the
-# REAL one -- so this builds a fake one: a temp dir holding a `zagent.cmd`
-# that writes a marker file if invoked, prepended to PATH. -ReuseGateList
+# REAL one -- so this builds a fake one: a temp `zagent.ps1` that writes a
+# marker file if invoked, injected through tick_gates.ps1's $script:ZagentShim
+# seam (the shim is called by path, never from PATH). -ReuseGateList
 # reaching the shell-out at all would be the regression; the marker's
 # absence is the proof it did not.
 New-Item -ItemType Directory -Path $runDir -Force | Out-Null
 
-function New-FakeZagentOnPath {
+function New-FakeZagentShim {
     param([string]$MarkerPath)
     $dir = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_fakezagent_" + [guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    $cmdPath = Join-Path $dir 'zagent.cmd'
-    Set-Content -LiteralPath $cmdPath -Value @(
-        '@echo off',
-        "echo marker > ""$MarkerPath"""
-        'exit /b 1'
+    $shimPath = Join-Path $dir 'zagent.ps1'
+    Set-Content -LiteralPath $shimPath -Value @(
+        "Set-Content -LiteralPath '$MarkerPath' -Value marker",
+        'exit 1'
     ) -Encoding ascii
     return $dir
 }
 
 Assert-That '-ReuseGateList reads gates.json directly -- the zagent shell-out marker never appears' {
     $marker = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_marker_" + [guid]::NewGuid().ToString('N') + '.txt')
-    $fakeDir = New-FakeZagentOnPath -MarkerPath $marker
-    $priorPath = $env:PATH
+    $fakeDir = New-FakeZagentShim -MarkerPath $marker
+    $priorShim = $script:ZagentShim
     $gatesJsonPath = Join-Path $runDir 'gates.json'
     try {
-        $env:PATH = "$fakeDir;$priorPath"
+        $script:ZagentShim = Join-Path $fakeDir 'zagent.ps1'
         Set-Content -LiteralPath $gatesJsonPath -Value (@{ gates = @('pwsh -NoProfile -Command "exit 0"', 'pwsh -NoProfile -Command "exit 0"') } | ConvertTo-Json) -Encoding utf8
 
         # Exercises the SAME function both real call sites (measure's initial
@@ -771,11 +771,31 @@ Assert-That '-ReuseGateList reads gates.json directly -- the zagent shell-out ma
         (@($lines).Count -eq 2) -and (-not (Test-Path -LiteralPath $marker))
     }
     finally {
-        $env:PATH = $priorPath
+        $script:ZagentShim = $priorShim
         Remove-Item -LiteralPath $fakeDir -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $gatesJsonPath -Force -ErrorAction SilentlyContinue
     }
+}
+
+Assert-That 'Get-GateList without -ReuseGateList calls the repo-relative shim by path (stub is reached) and returns $null on its exit 1' {
+    $marker = Join-Path ([System.IO.Path]::GetTempPath()) ("tickgates_marker_" + [guid]::NewGuid().ToString('N') + '.txt')
+    $fakeDir = New-FakeZagentShim -MarkerPath $marker
+    $priorShim = $script:ZagentShim
+    try {
+        $script:ZagentShim = Join-Path $fakeDir 'zagent.ps1'
+        $lines = Get-GateList
+        ($null -eq $lines) -and (Test-Path -LiteralPath $marker)
+    }
+    finally {
+        $script:ZagentShim = $priorShim
+        Remove-Item -LiteralPath $fakeDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Assert-That 'the default $script:ZagentShim is Tools/zagent/zagent.ps1 of the checkout holding tick_gates.ps1' {
+    (Resolve-Path -LiteralPath $script:ZagentShim).Path -eq (Resolve-Path -LiteralPath (Join-Path $repoRoot 'Tools/zagent/zagent.ps1')).Path
 }
 
 Assert-That '-ReuseGateList with NO gates.json on disk returns $null -- the same shape the exit-5 path checks' {

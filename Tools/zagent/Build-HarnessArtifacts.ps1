@@ -358,7 +358,7 @@ function Get-ClaudeArtifacts {
     $entryFm = @(
         '---'
         'description: Run one agent ticket — the queue head, or a ticket you name'
-        'allowed-tools: Bash(zagent:*), Bash(timeout *), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup, TaskStop'
+        'allowed-tools: Bash(timeout *), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup, TaskStop'
         'argument-hint: [PROJECT_KEY | TICKET_KEY]'
         '---'
     ) -join "`n"

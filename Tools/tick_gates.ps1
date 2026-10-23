@@ -118,6 +118,11 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrEmpty($RepoRoot)) { $RepoRoot = Split-Path -Parent $PSScriptRoot }
 $script:RepoRoot = $RepoRoot
 
+# THIS checkout's own zagent shim, by path from this file's location. Never a
+# bare `zagent`: PATH may point at ANOTHER repository's shim, which would drive
+# that repository's board. Tests point this at a stub.
+$script:ZagentShim = Join-Path $PSScriptRoot 'zagent/zagent.ps1'
+
 # Enter-ZenithBuildSlot / Exit-ZenithBuildSlot. Dot-sourcing this defines
 # functions only -- nothing runs merely by reaching this line, -NoRun
 # included, which is why it happens unconditionally at the top rather than
@@ -547,11 +552,11 @@ function Get-GateList {
         return $lines
     }
 
-    Write-Banner "zagent gates $Key"
-    & zagent gates $Key 2>&1 | ForEach-Object { Write-Line "  $_" }
+    Write-Banner "zagent.ps1 gates $Key"
+    & pwsh -NoProfile -File $script:ZagentShim gates $Key 2>&1 | ForEach-Object { Write-Line "  $_" }
     $rc = $LASTEXITCODE
     if ($rc -ne 0) {
-        Write-Line "[tick_gates] 'zagent gates $Key' exited $rc" 'Red'
+        Write-Line "[tick_gates] 'zagent.ps1 gates $Key' exited $rc" 'Red'
         return $null
     }
     if (-not (Test-Path -LiteralPath $gatesJson)) {

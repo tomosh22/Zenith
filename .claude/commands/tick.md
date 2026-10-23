@@ -1,6 +1,6 @@
 ---
 description: Run one agent ticket — the queue head, or a ticket you name
-allowed-tools: Bash(zagent:*), Bash(timeout *), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup, TaskStop
+allowed-tools: Bash(timeout *), Bash(pwsh -NoProfile*), Bash(git:*), Agent, Read, Write, Edit, ScheduleWakeup, TaskStop
 argument-hint: [PROJECT_KEY | TICKET_KEY]
 ---
 
@@ -32,7 +32,7 @@ and every mutation is a commit. See step 0 for the three rules that follow.
 `--add-dir`, no second checkout. `zagent` needs nothing but this
 checkout and Node on `PATH`: no token, no URL, no board machine to
 reach, because it always talks to the local Vault. `Tools/zagent/README.md`
-covers the setup and `zagent doctor` names whatever piece is missing.
+covers the setup and `pwsh -NoProfile -File Tools/zagent/zagent.ps1 doctor` names whatever piece is missing.
 
 # Operating invariants
 
@@ -139,7 +139,7 @@ loop without it lies to itself.
    have gates.
 
    > **This rule binds the LOOP, and the owner has amended the file three
-   > times outside a tick** (2026-08-24 twice, 2026-08-26). `zagent guard`
+   > times outside a tick** (2026-08-24 twice, 2026-08-26). `pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard`
    > still refuses any diff touching this repo's protected paths under a
    > ticket, which is the part that matters. Recorded because a file saying
    > "never edited" beside a git history showing edits is worse than either;
@@ -148,7 +148,7 @@ loop without it lies to itself.
 # Never
 
 - No `psql`, no direct database access, no importing `@upstream/database`.
-  Every board interaction is a `zagent …` call.
+  Every board interaction is a `pwsh -NoProfile -File Tools/zagent/zagent.ps1 …` call.
 - No `git push`. No `--force`. No `reset --hard`. No deleting a branch,
   except in [lane mode](#lane-mode), where step 9 runs a safe
   `git branch -d` (never `-D`) on `agent/<KEY>` once it has landed.
@@ -157,7 +157,7 @@ loop without it lies to itself.
   `git switch -c` — step 4 cuts `agent/<KEY>` from `baseBranch` by name,
   in every ticket, whatever `branching` says. `git worktree` itself stays
   forbidden inside a tick either way: a lane is registered by a human
-  running `zagent lane add`, never by a tick.
+  running `pwsh -NoProfile -File Tools/zagent/zagent.ps1 lane add`, never by a tick.
 - No `git merge --abort`, except in [lane mode](#lane-mode) on our OWN
   `agent/<KEY>` with `MERGE_HEAD` present (a REGATE conflict outside the
   allowed pin sites, or crash recovery).
@@ -167,15 +167,15 @@ loop without it lies to itself.
 
 # Running the CLI, and reading its output
 
-**`zagent …`, bare**, from this repo, from any subdirectory of it, or from
-a [registered lane](#lane-mode). **It does NOT walk up from the current
+**Every board call is the repo-relative shim, run from the repository root**
+(or a [registered lane's](#lane-mode) own root): `pwsh -NoProfile -File
+Tools/zagent/zagent.ps1 <verb> [args…]`. **It does NOT walk up from the current
 directory looking for `zagent.project.json`** — `zagent.ps1` resolves its
-own repo root from where the `zagent` script itself lives, the same way on
-every invocation, never by searching upward the way git walks up for
-`.git`. What the current directory DOES decide is which MODE this firing
-runs in — main, lane, or an unregistered worktree that must stop — see
-[Lane mode](#lane-mode). If `zagent` is not on PATH, `Tools/zagent/README.md`
-has the one-time setup.
+own repo root from where the script itself lives, never by searching upward
+the way git walks up for `.git`; what the current directory DOES decide is
+which MODE this firing runs in — see [Lane mode](#lane-mode). Never spell it
+as a bare `zagent` on `PATH`: the user `PATH` may point at another
+repository's shim. `Tools/zagent/README.md` has the setup.
 
 Its scratch is HERE now: `.zagent/last.json`, `.zagent/last.exit` and
 `.zagent/run/<KEY>/`, at the repo root, gitignored so `git status
@@ -200,7 +200,7 @@ corrupt it. **Unlike `last.json`, which is only written when you pass
 the same way you read `last.json`:
 
 ```
-zagent guard <KEY>
+pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard <KEY>
 $code = Get-Content .zagent/last.exit          # trust this, not $LASTEXITCODE
 ```
 
@@ -212,7 +212,7 @@ third would have committed a RED ticket as Done with evidence claiming
 the gates passed:
 
 ```
-zagent guard ZM-21 | head            # $? is HEAD's (0), not guard's (1)
+pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard ZM-21 | head            # $? is HEAD's (0), not guard's (1)
 pwsh tick_gates.ps1 … ; echo "$?"    # the run had exited 10, and you read 0
 pwsh tick_gates.ps1 … ; echo "$?"    # …and here 4 — A GATE HAD FAILED
 ```
@@ -232,7 +232,7 @@ mistake for you:
 
 - **Branch on the exit code**, never on stdout prose.
 - **Read the JSON from a file**, not from the pipe, when the command
-  writes one: every `zagent --json` call writes `.zagent/last.json`, and
+  writes one: every `pwsh -NoProfile -File Tools/zagent/zagent.ps1 --json` call writes `.zagent/last.json`, and
   a claim also writes `.zagent/run/<KEY>/ticket.json` and
   `.zagent/run/<KEY>/body.md`. A firing can crash between the call and
   the read, and a file survives that where a pipe does not.
@@ -269,7 +269,7 @@ no URL, no board machine to reach. `zagent.ps1` is a thin shim that execs
 Run it and read the JSON, not prose rows:
 
 ```
-zagent doctor --json
+pwsh -NoProfile -File Tools/zagent/zagent.ps1 doctor --json
 ```
 
 Require **exit 0** (from `.zagent/last.exit`), `ok: true`, and an empty
@@ -307,7 +307,7 @@ this, **11 of the last 12 commits on `master` were board commits**.
    They commit. So `git status --porcelain` stays empty while HEAD moves under
    you. That is fine — it is what the precondition wants — but do not read a
    clean tree as "nothing has happened since I started".
-2. **★ NO BOARD WRITE BETWEEN `-Phase measure` AND `zagent guard`.** `guard`
+2. **★ NO BOARD WRITE BETWEEN `-Phase measure` AND `pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard`.** `guard`
    overrides a would-be PASS whose `tick_gates.json` `headSha` no longer
    matches HEAD (step 6.4). A board write in that window moves HEAD and turns
    a green run into a guard failure for a reason that has nothing to do with
@@ -333,8 +333,8 @@ Every passage elsewhere in this file whose premise a lane falsifies carries
 a one-line pointer back to here; this section is where the delta actually
 lives, spelled out per step.
 
-**Step 0, amended.** After `zagent doctor --json`, also run
-`zagent lane which --json` once, at the start of the firing. It always
+**Step 0, amended.** After `pwsh -NoProfile -File Tools/zagent/zagent.ps1 doctor --json`, also run
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 lane which --json` once, at the start of the firing. It always
 exits 0 and answers `{mode, project, path, inFlight}` — `mode` is `main`,
 `lane`, or `unregistered`. `unregistered` means this session sits in a
 linked worktree nobody registered as a lane: **the tick STOPS here**,
@@ -342,7 +342,7 @@ reporting the path. Driving `zagent` from an unregistered worktree while
 its own tree holds edits nothing else knows about is exactly the hazard
 lanes exist to close, not a state to work around.
 
-**Step 1, entry — run `zagent lane which --json` on EVERY firing, not just
+**Step 1, entry — run `pwsh -NoProfile -File Tools/zagent/zagent.ps1 lane which --json` on EVERY firing, not just
 the first.** Step 0 is "first firing after a restart only"; mode and path
 may be cached across firings, `inFlight` may not — it names this lane's
 OWN agent-owned In Progress ticket, using the same predicate I5's lane
@@ -356,12 +356,12 @@ ticket.
 - **`inFlight` is a key, and `$1` is absent or matches it.** Skip
   `claim`/`next` entirely and go straight to the recovery list below — a
   re-claim here would archive the very scratch recovery depends on.
-  Confirm first with `zagent show <KEY> --json` (In Progress, assignee
+  Confirm first with `pwsh -NoProfile -File Tools/zagent/zagent.ps1 show <KEY> --json` (In Progress, assignee
   this agent), then enter recovery.
 - **`inFlight` is null (an idle lane).** Dispatch as the serial protocol's
   step 1 describes — `next`, scoped to this lane's project, or
   `claim $1` — with one addition: **before claiming an In Review `$1`,
-  run `zagent show <KEY> --json` and require `approved`.** No `approved`
+  run `pwsh -NoProfile -File Tools/zagent/zagent.ps1 show <KEY> --json` and require `approved`.** No `approved`
   → report it, change nothing, `stop` — an unapproved claim must never
   wedge the lane on a ticket it cannot land. With `approved` present, the
   order is: `claim` — this shape (lane mode, `previousStatus` In Review,
@@ -465,8 +465,8 @@ entirely — direct or branch, every lane ticket gets its own `agent/<KEY>`.
 | Lock busy, or landing raced a code commit | Retry inside this tick, at most 2 attempts (the same budget REGATE 3.8 shares) | — |
 | `MAIN_DIRTY`, main not on `baseBranch`, or the build slot busy past its wait | Not yet — the wait row above | `agent/<KEY>` |
 
-**Land through the build slot, never with a bare `zagent integrate`:**
-`pwsh -NoProfile -File Tools/build_lock.ps1 -Run "zagent integrate <KEY>"`.
+**Land through the build slot, never with a bare `pwsh -NoProfile -File Tools/zagent/zagent.ps1 integrate`:**
+`pwsh -NoProfile -File Tools/build_lock.ps1 -Run "pwsh -NoProfile -File Tools/zagent/zagent.ps1 integrate <KEY>"`.
 `integrate`'s `read-tree -m -u` rewrites sources in the main checkout, and
 doing that underneath a human's own in-progress `zenith build` there is
 exactly the hazard the build slot exists to prevent — this is the same
@@ -519,7 +519,7 @@ lane:**
   output the build rewrote — the same `add -A` rule as the serial
   [step 7](#7-integrate)). Tree clean → skip this step.
 - **3.8** Land again —
-  `pwsh -NoProfile -File Tools/build_lock.ps1 -Run "zagent integrate <KEY>"`,
+  `pwsh -NoProfile -File Tools/build_lock.ps1 -Run "pwsh -NoProfile -File Tools/zagent/zagent.ps1 integrate <KEY>"`,
   the same wrapped form [step 7](#7-integrate) uses. **2 attempts total,
   hard-coded** — not per REGATE call.
 
@@ -564,12 +564,12 @@ The argument disambiguates itself: ticket keys always end in `-<digits>`,
 and project keys never can. Digits ARE legal inside a project key, so
 match on the suffix, not on "letters".
 
-- `$1` matches `/-\d+$/` → **targeted**: `zagent claim $1 --harness <id> --json`
+- `$1` matches `/-\d+$/` → **targeted**: `pwsh -NoProfile -File Tools/zagent/zagent.ps1 claim $1 --harness <id> --json`
 - `$1` is a project key → **queue, THAT project**:
-  `zagent next --project $1 --harness <id> --json`
+  `pwsh -NoProfile -File Tools/zagent/zagent.ps1 next --project $1 --harness <id> --json`
 - `$1` absent → **queue, ONE project**: the lane's own project inside a
   registered lane, else the checkout default (`ZEN`):
-  `zagent next --harness <id> --json`. `/tick <PROJECT>` is how another
+  `pwsh -NoProfile -File Tools/zagent/zagent.ps1 next --harness <id> --json`. `/tick <PROJECT>` is how another
   board is reached
 
 **`--harness <id>` is the key this entry point is generated for**
@@ -618,8 +618,8 @@ tool call leaving no trace at all — which also satisfies invariant I6.
 
 **Contract invalid (exit 4).** Read `contractError` from the payload.
 
-- Queue mode: `zagent comment <KEY> --text "<contractError>"`, then
-  `zagent move <KEY> Blocked`. Then step 9.
+- Queue mode: `pwsh -NoProfile -File Tools/zagent/zagent.ps1 comment <KEY> --text "<contractError>"`, then
+  `pwsh -NoProfile -File Tools/zagent/zagent.ps1 move <KEY> Blocked`. Then step 9.
 - Targeted mode: **report the error and change nothing.** A human is
   waiting and just asked for this ticket by name — do not Block it.
 
@@ -662,12 +662,12 @@ pattern. Handle it as any contract failure; do not re-derive the rule.
 the GOAL names a protected path and the DoD names none — a ticket that is
 contract-VALID and says in its own words that it needs a human. ZEN-3's
 Goal reads *"This needs a human: `.github/**` is a protected path, so the
-agent loop is refused by `zagent guard`"*, and it passed every check,
+agent loop is refused by `pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard`"*, and it passed every check,
 because its DoD says only "Some workflow runs …". It is a warning rather
 than a refusal on purpose: a Goal quoting a protected path as background
 is ordinary writing, and refusing that would make the check something
 people route around. When you see one, read the Goal — and if it is right,
-`zagent update <KEY> --label needs-human` and release the ticket.
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --label needs-human` and release the ticket.
 
 That leaves the shapes no scanner can see, and these you do still read
 for:
@@ -688,7 +688,7 @@ and it cost a full opus-tier dispatch to confirm what was already known.
 
 **Resolve it HERE instead.** Three moves, in preference order: relabel the
 ticket (`needs-gpu` and do both halves — you probably have a GPU); rescope it
-with `zagent update <KEY> --dod <file>`; or Block it *before* dispatching and
+with `pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --dod <file>`; or Block it *before* dispatching and
 file the properly-scoped replacement. Encoding the doubt into a worker prompt
 is not one of them — step 2 says plainly **"do not dispatch a worker to
 discover this expensively"**.
@@ -703,7 +703,7 @@ See the baseline note in step 6.
 Check those against the DoD text.
 
 **Two shapes that were rows here are now refused by the claim query**,
-so you no longer read for them. An EPIC comes back exit 4 from `zagent
+so you no longer read for them. An EPIC comes back exit 4 from `pwsh -NoProfile -File Tools/zagent/zagent.ps1
 check`, on the queue AND by name — **including while another ticket holds the
 repo lock, which was not true until ZEN-76 was fixed.** `check`'s exit ladder
 tested the lock before the contract, so with anything in flight it answered 5
@@ -720,7 +720,7 @@ queue but still claimable BY NAME on purpose: `/tick ZM-46` is how you
 pull work forward, and the show, check and claim payloads carry
 `sprint.inScope: false` (with `check.queue.reason` naming the PLANNED
 sprint) when it applies. `sprint` is on the claim payload now, so the sequence check
-needs no `zagent sprint list` and no squint at Goal prose.
+needs no `pwsh -NoProfile -File Tools/zagent/zagent.ps1 sprint list` and no squint at Goal prose.
 
 Together they cost three claims in one session before any of that
 existed: ZM-17 arrived at `sonnet/medium` already **100% (1/1)** done,
@@ -757,7 +757,7 @@ unhelpfully. The pin has ONE home: `Tools/unit_baselines.json`. **Do not
 Block on this and do not inline it verbatim**: correct it in the worker
 prompt to "every affected game's pinned baseline bumped from an OBSERVED
 run", say you did in the work log, and fix the ticket body with
-`zagent update <KEY> --dod <file>` if a human is not mid-edit on it.
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --dod <file>` if a human is not mid-edit on it.
 Blocking a ticket over a stale sentence, when the work it describes is a
 one-line edit to an unprotected file, is the contract failing the ticket
 rather than the reverse.
@@ -777,11 +777,11 @@ prose that no field captures:
 - a ticket may say outright it should not be built yet. ZM-48 reads
   *"Zenithmon does NOT need this now … lands when populated-world NPC
   pathing actually needs it"*; ZM-47 is *"DEFERRED post-Zenithmon"*. Claim,
-  comment, **`zagent update <KEY> --label deferred --assignee none`**,
+  comment, **`pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --label deferred --assignee none`**,
   release to To Do — do not dispatch.
 
   **`--assignee none` is not optional either.** The claim wrote
-  `assignee_id`; `zagent move` only changes status; and the claim query
+  `assignee_id`; `pwsh -NoProfile -File Tools/zagent/zagent.ps1 move` only changes status; and the claim query
   skips ANY assigned ticket. So a release without it puts the card back in
   the lane permanently invisible to the queue — which looks like the
   deferral working, right up until somebody wants the ticket back. Four
@@ -866,7 +866,7 @@ tells you is HOW to build: the deliverable needs a `Vulkan_*_True` build and a
 windowed run, not the `--headless` `Null_` config every gate line defaults to.
 
 **★★ APPLYING THE LABEL NOW REQUIRES A MACHINE-READABLE REASON, IN THE SAME
-WRITE.** `zagent update <KEY> --label needs-gpu` refuses unless exactly one
+WRITE.** `pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --label needs-gpu` refuses unless exactly one
 companion `gpu-reason:*` label lands in the same write. Not retroactive: a
 ticket that already carries `needs-gpu` from before this rule existed is
 untouched until somebody writes to its labels again. The four values, and
@@ -888,7 +888,7 @@ was applied**: if the deliverable genuinely also needs a graphics driver for som
 other reason, relabel it with the companion that actually applies and build
 Vulkan/boot windowed as below. If scene re-authoring was the only reason, do it
 headless, say so in the work log, and remove both labels —
-`zagent update <KEY> --unlabel needs-gpu,gpu-reason:legacy-scene-reauthor`.
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --unlabel needs-gpu,gpu-reason:legacy-scene-reauthor`.
 
 Several open Zenithmon tickets predate ZEN-6 and still carry the label on the old
 reasoning. It is worth removing when you notice one — six of the ten tickets on
@@ -1341,7 +1341,7 @@ worker that ignored it.
 
 **★ EXCURSIONS OUTSIDE THIS LIST ARE ALLOWED, AND NOW CHECKED, NOT JUST
 AVOIDED.** `build_prompt.ps1` writes `.zagent/run/<KEY>/filelist.txt`, and
-`zagent finish` (step 8) diffs it against the changed set before it will
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 finish` (step 8) diffs it against the changed set before it will
 close the ticket: a changed file neither on the list nor named (a plain,
 case-insensitive substring match) in the `--comment`/`--worklog` text
 refuses. Going outside the list is not forbidden — the survey above is done
@@ -1478,7 +1478,7 @@ report is _proposed text_ that you apply (I4).
 **★ THE ORDER IS TOTAL, AND IT IS NOT THE NUMBERING BELOW.** `verify` cannot sit
 inside 6.2, because 6.2's own prose says it certifies *"the reviewer's doc
 findings"* and the reviewer is 6.3. It also cannot come after 6.4, because
-`guard` compares the current changed set against the recording `zagent gates`
+`guard` compares the current changed set against the recording `pwsh -NoProfile -File Tools/zagent/zagent.ps1 gates`
 made and only a `gates` run refreshes that — measured on ZM-65, `gates.json` at
 guard time held a 4-file changed set while the tree had 6, both additions being
 edits this step had just instructed. Benign there because the gate LIST was
@@ -1488,7 +1488,7 @@ unchanged; not benign on a ticket whose post-measure edit reaches a new area. So
 owns → measure → your edits → reviewer → apply findings → verify → guard → coverage → owns
 ```
 
-1. `zagent owns <KEY>` — exit 5 → abandon path (step 9).
+1. `pwsh -NoProfile -File Tools/zagent/zagent.ps1 owns <KEY>` — exit 5 → abandon path (step 9).
 2. **`Tools/tick_gates.ps1`, backgrounded, in two phases:**
 
    ```
@@ -1497,7 +1497,7 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    pwsh -NoProfile -File Tools/tick_gates.ps1 <KEY> -Phase verify
    ```
 
-   It runs `zagent gates <KEY>` and then every line that prints, in order,
+   It runs `pwsh -NoProfile -File Tools/zagent/zagent.ps1 gates <KEY>` and then every line that prints, in order,
    appending to `.zagent/run/<KEY>/gates.log`. First non-zero stops.
 
    **★★ READ `.zagent/run/<KEY>/tick_gates.json`. Full stop — not "the exit
@@ -1573,7 +1573,7 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    same reasoning that keeps `Tools/**` out of `Engine`.)
 
    **Never hand-assemble the list, and never run a line in the foreground.**
-   `zagent gates` takes the same changed set `guard` computes and UNIONS in
+   `pwsh -NoProfile -File Tools/zagent/zagent.ps1 gates` takes the same changed set `guard` computes and UNIONS in
    every category whose declared `paths` the diff reached, so a `Zenithmon`
    ticket that edits `Zenith/**` builds and tests Combat and checks the engine
    pin too. It only ever ADDS — the ticket's own list stays a prefix — and it
@@ -1708,7 +1708,7 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    are different facts, and only one of them is otherwise visible. On ZM-67 that
    section is what surfaced the fact that **no gate compiles the non-tools path** —
    nothing else in the pipeline would have said so.
-4. `zagent guard <KEY>` — **with the key, and with no `--file`**.
+4. `pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard <KEY>` — **with the key, and with no `--file`**.
    Non-zero → Blocked regardless of gate colour.
 
    **★★ `guard` ALSO OVERRIDES A PASS WHOSE GATE VERDICT ISN'T FRESH.**
@@ -1722,7 +1722,7 @@ owns → measure → your edits → reviewer → apply findings → verify → g
 
    The key is what makes step 6.2 mechanical rather than remembered.
    `guard` re-derives the gate selection from the ticket and the CURRENT
-   changed set and compares it against the `gates.json` that `zagent
+   changed set and compares it against the `gates.json` that `pwsh -NoProfile -File Tools/zagent/zagent.ps1
    gates` recorded: no recording, or a recording that no longer covers
    the diff, is a non-zero exit naming the gates that never ran. It is
    checked here because `guard` is already the mandatory merge-blocking
@@ -1790,7 +1790,7 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    a written answer rather than a thought: an empty **Coverage** row on
    the board is visible, and a skipped consideration is not.
 
-6. `zagent owns <KEY>` again, immediately before writing anything.
+6. `pwsh -NoProfile -File Tools/zagent/zagent.ps1 owns <KEY>` again, immediately before writing anything.
 
 **Nothing you edit after a gate run is covered by that run**, and `-Phase
 verify` exists to be that last run: it re-derives the gate list against the
@@ -1811,7 +1811,7 @@ with zero failing tests. That is the gate working.
 any pin is written. The gate lines and the workflows name the GAME
 (`-Game Zenithmon`), and `run_unit_gate.ps1` resolves the number from the
 manifest — so a count change is a one-line edit to an UNPROTECTED file that
-`zagent guard` permits.
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 guard` permits.
 
 It did not use to be. The number was duplicated into
 `.github/workflows/zm-tests.yml` and `zagent.project.json`, both
@@ -1920,7 +1920,7 @@ Green-or-Red:
   whatever must be decided.
 - **Red** → the fix-forward path further down.
 
-`zagent finish <KEY> --status Done` refuses when the work log's
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 finish <KEY> --status Done` refuses when the work log's
 `## Definition of Done` section leaves any box unticked, naming every one —
 **Done-only**, so `Blocked` and `"In Review"` still accept an unmet box, which
 is why the choice above still matters. **Decide it here anyway**: the check
@@ -1929,7 +1929,7 @@ at a refusal you did not expect is how a tick starts editing checkboxes to get
 past a gate instead of picking the honest status.
 
 **★★ AND WHEN YOU BLOCK, SAY WHICH KIND OF BLOCK IT IS.**
-`zagent update <KEY> --label blocked-scope` whenever the ticket was **not
+`pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --label blocked-scope` whenever the ticket was **not
 buildable as filed** — a scope gap, a missing file list, a ruling nobody has
 made — as opposed to a run that failed.
 
@@ -1946,7 +1946,7 @@ are both true of a tick that simply failed, and both would let a thrashing
 loop past the breaker by accident. If the gates went red, it is a failure
 block whatever else is also true of it.
 
-**★★ AND NOW IT IS CHECKED, NOT JUST ASKED.** `zagent update <KEY> --label
+**★★ AND NOW IT IS CHECKED, NOT JUST ASKED.** `pwsh -NoProfile -File Tools/zagent/zagent.ps1 update <KEY> --label
 blocked-scope` reads the same `tick_gates.json` verdict a human would, before
 the label ever lands, and refuses when it was genuinely RED (exit 2/3/4 — a
 gate actually ran and actually failed). A green verdict, an absent one, a
@@ -2000,7 +2000,7 @@ Then:
   → Blocked. No rebase, no merge commit.
 - `direct` mode: already there.
 - [Lane mode](#lane-mode): neither of the above — land through the build
-  slot instead (`Tools/build_lock.ps1 -Run "zagent integrate <KEY>"`), and
+  slot instead (`Tools/build_lock.ps1 -Run "pwsh -NoProfile -File Tools/zagent/zagent.ps1 integrate <KEY>"`), and
   branch on its result ladder.
 - `push` is false — nothing reaches a remote.
 
@@ -2118,7 +2118,7 @@ become a refusal. The work log's shape:
 **Gates**
 | Command | Result |
 |---|---|
-<!-- mark any line unioned in by `zagent gates` with the category it came from -->
+<!-- mark any line unioned in by `pwsh -NoProfile -File Tools/zagent/zagent.ps1 gates` with the category it came from -->
 
 **Coverage**
 | Changed file | What executes the changed line |
@@ -2132,7 +2132,7 @@ become a refusal. The work log's shape:
 **Durable findings**
 
 - none, or: `<PROJ-D-N>`[, `<PROJ-D-N>` …] — the decision reference(s)
-  `zagent decide` recorded for anything learned here that outlives this ticket.
+  `pwsh -NoProfile -File Tools/zagent/zagent.ps1 decide` recorded for anything learned here that outlives this ticket.
 
 **Deviations / follow-ups**
 
@@ -2148,7 +2148,7 @@ file used to tell you to WRITE one. So a worker's durable discovery landed in
 next worker never reads. The grep and the thing it greps for were never
 connected.
 
-**`zagent finish` now refuses any terminal status — Done, Blocked, In
+**`pwsh -NoProfile -File Tools/zagent/zagent.ps1 finish` now refuses any terminal status — Done, Blocked, In
 Review — whose work log carries no `Durable findings` answer.** Nobody can
 verify the JUDGEMENT — "was there really nothing durable here" is not
 computable — so, exactly like the **Coverage** row below, the mechanism is
@@ -2167,7 +2167,7 @@ answer must be exactly `none` or one or more references shaped like
 
 - no line at all: *"the work log carries no "Durable findings" line — add
   `**Durable findings**: none` or name the decision reference(s) recorded
-  via `zagent decide` (e.g. ZM-D-208)"*
+  via `pwsh -NoProfile -File Tools/zagent/zagent.ps1 decide` (e.g. ZM-D-208)"*
 - a label with nothing after it: *"the "Durable findings" line has no
   content — say "none" or name the decision reference(s)"*
 - content that is neither "none" nor a decision reference: *"the "Durable
@@ -2181,7 +2181,7 @@ blast-radius grep finds that — the coupling is by table scan, not by identifie
 — and **seven more gym reward moves remain**, so it recurs seven times.
 
 So: when the tick learns something TRUE OF THE CODEBASE rather than of this
-ticket, `zagent decide` it. The test is whether the next worker on a different
+ticket, `pwsh -NoProfile -File Tools/zagent/zagent.ps1 decide` it. The test is whether the next worker on a different
 ticket would need it. A ticket-specific deviation stays in the work log; a fact
 about how the repo behaves goes where I3 will find it.
 
@@ -2202,7 +2202,7 @@ has to pick up.
 Then one call closes the ticket:
 
 ```
-zagent finish <KEY> --status Done|Blocked|"In Review" \
+pwsh -NoProfile -File Tools/zagent/zagent.ps1 finish <KEY> --status Done|Blocked|"In Review" \
   --comment .zagent/run/<KEY>/result.md \
   --worklog .zagent/run/<KEY>/worklog.md
 ```
@@ -2229,7 +2229,7 @@ to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
   re-run the same key forever.
 - **Abandon path** (ownership lost at any checkpoint): write the work log
   as far as it got, then
-  `zagent abandon <KEY> --comment .zagent/run/<KEY>/worklog.md`, sweep, then
+  `pwsh -NoProfile -File Tools/zagent/zagent.ps1 abandon <KEY> --comment .zagent/run/<KEY>/worklog.md`, sweep, then
   write disposition `again` to `.zagent/next.json`.
 
   `abandon` is client-composed and has no `--status`, `--assignee` or
@@ -2237,7 +2237,7 @@ to be the ONLY sweep, and it runs after the gates: an exe left alive by a cut
   mutation, so the two things this release must never touch are not choices
   it is capable of making, not just ones it is asked not to. Somebody else
   holds the ticket now: the human owns the description, and the assignee and
-  status stay exactly where they were. Use `zagent update` yourself,
+  status stay exactly where they were. Use `pwsh -NoProfile -File Tools/zagent/zagent.ps1 update` yourself,
   deliberately, only if you actually mean to reassign or reopen it — that is
   the one release where "deliberate" matters more than "fast".
 

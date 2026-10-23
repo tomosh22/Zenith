@@ -286,10 +286,10 @@ $ticketPath = Join-Path $runDir 'ticket.json'
 $bodyPath = Join-Path $runDir 'body.md'
 
 if (-not (Test-Path -LiteralPath $ticketPath)) {
-    Fail "$ticketPath does not exist. Run 'zagent claim $Key' (or 'next') first -- this script only READS the claim's scratch, it never creates it."
+    Fail "$ticketPath does not exist. Run 'pwsh -NoProfile -File Tools/zagent/zagent.ps1 claim $Key' (or 'next') first -- this script only READS the claim's scratch, it never creates it."
 }
 if (-not (Test-Path -LiteralPath $bodyPath)) {
-    Fail "$bodyPath does not exist. Run 'zagent claim $Key' (or 'next') first -- this script only READS the claim's scratch, it never creates it."
+    Fail "$bodyPath does not exist. Run 'pwsh -NoProfile -File Tools/zagent/zagent.ps1 claim $Key' (or 'next') first -- this script only READS the claim's scratch, it never creates it."
 }
 
 try {
