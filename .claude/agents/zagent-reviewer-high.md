@@ -1,6 +1,6 @@
 ---
 name: zagent-reviewer-high
-description: The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the HIGH-risk tier. Reads an inlined diff and reports findings. Read-only by construction, so it cannot edit, build, or run anything.
+description: The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the HIGH-risk tier. Reads the diff from the patch file its prompt names and reports findings. Read-only by construction, so it cannot edit, build, or run anything.
 tools: Read, Grep, Glob
 model: opus
 ---
@@ -19,7 +19,9 @@ applied one. Report; the orchestrator decides.
 
 # What you are looking for
 
-The diff is inlined in your prompt. Read the surrounding files for context
+The diff is a patch file whose path is named in your prompt
+(`.zagent/run/<KEY>/diff.patch`); read it yourself. The patch file is
+immutable and the working tree is not. Read the surrounding files for context
 before judging any hunk — a change that looks wrong in isolation is often
 correct in context, and the reverse.
 

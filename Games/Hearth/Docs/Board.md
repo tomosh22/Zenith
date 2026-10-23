@@ -35,7 +35,7 @@ Every `## [HE-n]` heading in [Roadmap.md](Roadmap.md) is an epic, one per TDD §
 
 ## 3. Sprints
 
-**Every phase is also a sprint, one for one with its epic**, named identically, its goal the TDD's exit line. One is ACTIVE at a time (a DB constraint); `zagent sprint start "<name>"` is the human decision that opens a phase -- until then every ticket shows `OUT OF STAGE` and the queue offers nothing (`zagent check <KEY>` prints it). Nothing has been started: the first ticket is the scaffold, and its category gates FAIL until that diff lands.
+**Every phase is also a sprint, one for one with its epic**, named identically, its goal the TDD's exit line. One is ACTIVE at a time (a DB constraint); `zagent sprint start "<name>"` is the human decision that opens a phase -- until then every ticket carries `sprint.inScope: false` and the queue offers nothing (`zagent check <KEY> --json` reports it, with `check.queue.reason` naming the PLANNED sprint). Nothing has been started: the first ticket is the scaffold, and its category gates FAIL until that diff lands.
 
 ★ **Completing a sprint needs its gate.** Each phase's acceptance ticket (`human-gate`) is the sprint's designated gate (`zagent sprint gate`); `sprint complete` is refused while it is unmet, and `--force` does not reach the check.
 

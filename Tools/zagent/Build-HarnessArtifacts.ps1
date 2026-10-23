@@ -335,7 +335,7 @@ function Get-ClaudeArtifacts {
         $risk = $riskProp.Name
         $model = $riskProp.Value.model
         $riskLower = $risk.ToLowerInvariant()
-        $description = "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the $risk-risk tier. Reads an inlined diff and reports findings. Read-only by construction, so it cannot edit, build, or run anything."
+        $description = "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the $risk-risk tier. Reads the diff from the patch file its prompt names and reports findings. Read-only by construction, so it cannot edit, build, or run anything."
         $content = New-AgentFileContent -Name "zagent-reviewer-$riskLower" -Description $description `
             -Tools $reviewerToolsList -Model $model -SourceDescription $reviewerSource -Body $reviewerBody
         $artifacts[".claude/agents/zagent-reviewer-$riskLower.md"] = $content
@@ -499,7 +499,7 @@ function Get-OpenCodeArtifacts {
         $risk = $riskProp.Name
         $model = $riskProp.Value.model
         $riskLower = $risk.ToLowerInvariant()
-        $description = "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the $risk-risk tier. Reads an inlined diff and reports findings. Read-only by construction (permission.edit/bash/task = deny), so it cannot edit, build, or run anything."
+        $description = "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the $risk-risk tier. Reads the diff from the patch file its prompt names and reports findings. Read-only by construction (permission.edit/bash/task = deny), so it cannot edit, build, or run anything."
         $name = "zagent-reviewer-$riskLower"
         $agentEntries[$name] = Get-OpenCodeAgentEntry -Name $name -Description $description -Model $model `
             -Permission $reviewerPermission -PromptRelativePath '../Tools/zagent/protocol/roles/generated/reviewer.resolved.md'
@@ -743,7 +743,7 @@ function Get-CodexArtifacts {
         $model = $riskProp.Value.model
         $riskLower = $risk.ToLowerInvariant()
         $name = "zagent-reviewer-$riskLower"
-        $description = "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the $risk-risk tier. Reads an inlined diff and reports findings. Read-only by construction (sandbox_mode = read-only), so it cannot edit, build, or run anything."
+        $description = "The REVIEW half of a /tick, spawned when a ticket's review is required — the OR of its risk being in reviewOn and a scan of its Definition of Done for claims a gate cannot settle — routed at the $risk-risk tier. Reads the diff from the patch file its prompt names and reports findings. Read-only by construction (sandbox_mode = read-only), so it cannot edit, build, or run anything."
         $content = New-CodexAgentToml -Name $name -Description $description -Model $model -SandboxMode $reviewerSandboxMode `
             -SourceDescription $reviewerSource -Body $reviewerBody
         $artifacts[".codex/agents/$name.toml"] = $content

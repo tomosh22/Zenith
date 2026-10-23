@@ -182,17 +182,17 @@ Its scratch is HERE now: `.zagent/last.json`, `.zagent/last.exit` and
 --porcelain` stays empty while a ticket is in flight. The precondition
 check below depends on that.
 
-Exits 3/4/5/6 are ordinary control flow, not failures. **Exit 7 is new
-and is not one of them**: it means the board was unreachable. Treat it as
-infrastructure, not as a verdict on the ticket — comment nothing, change
-no status, and reschedule. A network blip written into a ticket as a
-contract failure is a lie that outlives the blip.
+Exits 3/4/5/6 are ordinary control flow, not failures. There is no
+"board unreachable" code: the board is this checkout, so there is no
+network hop left to fail that way, and a local read/write problem is
+exit 1. Treat exit 1 as infrastructure, not as a verdict on the ticket —
+comment nothing, change no status, and stop to report it.
 
 **★★ READ `.zagent/last.exit`. That is the primary instruction in this
 section now — everything below it is what to do when nothing wrote one
-for you.** Every `zagent` call, on **either backend** (the live local
-Vault client in `Tools/Vault/cli/client.mjs` and the legacy PowerShell
-one in `Tools/zagent/zagent.ps1` alike), writes its own exit code to this
+for you.** Every `zagent` call (there is one backend: `Tools/zagent/zagent.ps1`
+is a dispatch shim that execs the local Vault client,
+`Tools/Vault/cli/client.mjs`), writes its own exit code to this
 one-line file (`"<code>\n"`) on every exit path, including the early
 ones, before the value ever has to pass back through a shell that could
 corrupt it. **Unlike `last.json`, which is only written when you pass
@@ -567,8 +567,10 @@ match on the suffix, not on "letters".
 - `$1` matches `/-\d+$/` → **targeted**: `zagent claim $1 --harness <id> --json`
 - `$1` is a project key → **queue, THAT project**:
   `zagent next --project $1 --harness <id> --json`
-- `$1` absent → **queue, every project this repo declares**, in declaration
-  order: `zagent next --harness <id> --json`
+- `$1` absent → **queue, ONE project**: the lane's own project inside a
+  registered lane, else the checkout default (`ZEN`):
+  `zagent next --harness <id> --json`. `/tick <PROJECT>` is how another
+  board is reached
 
 **`--harness <id>` is the key this entry point is generated for**
 (`harnesses.json`'s own top-level key, e.g. `claude`). The Vault RECORDS it,
@@ -578,10 +580,10 @@ it into `predispatch.json` (step 5); `finish`'s routing-line assertion
 (step 8) checks the work log against that same recorded value.
 
 **Pass `--project`. Both branches used to spell the same command**, which made
-`/tick ZM` a lie: with no `--project`, `next` walks all three declared projects
-in order and takes the first claimable ticket anywhere. A `/tick ZM` in a session
-where ZEN had work claimed ZEN-1, consuming the one-ticket-per-repo lock on a
-board the caller had just named a different one.
+`/tick ZM` a lie: with no `--project`, `next` claims from one project only (the
+lane's own, else the checkout default `ZEN`), never the one the caller named. A
+`/tick ZM` in a session where ZEN had work claimed ZEN-1, consuming the
+one-ticket-per-repo lock on a board the caller had just named a different one.
 
 Then read `.zagent/last.json` and branch on the exit code. Each disposition
 below is written to `.zagent/next.json`, not called directly:
@@ -611,7 +613,6 @@ tool call leaving no trace at all — which also satisfies invariant I6.
 | 4    | Claimed, contract invalid | → step 2                                                                                              |
 | 5    | Repo busy, or would steal | Report which key holds it. Queue mode: disposition `wait` (delaySeconds 300). Targeted: disposition `stop`. |
 | 6    | Circuit breaker open      | Report, disposition `stop`. A loop that keeps failing should stop, not spin.                         |
-| 7    | Board unreachable         | Nothing was claimed. Change no status, comment nothing. Disposition `wait` (delaySeconds 300).        |
 
 ## 2. Contract and label checks
 
@@ -716,8 +717,9 @@ a rollup container, and its
 "Every child issue Done" would be inlined into a worker prompt as the
 specification under I3. A ticket in a PLANNED sprint is skipped by the
 queue but still claimable BY NAME on purpose: `/tick ZM-46` is how you
-pull work forward, and `check`/`show` print an `OUT OF STAGE` line when
-it applies. `sprint` is on the claim payload now, so the sequence check
+pull work forward, and the show, check and claim payloads carry
+`sprint.inScope: false` (with `check.queue.reason` naming the PLANNED
+sprint) when it applies. `sprint` is on the claim payload now, so the sequence check
 needs no `zagent sprint list` and no squint at Goal prose.
 
 Together they cost three claims in one session before any of that
@@ -768,8 +770,8 @@ a time.
 Read the body for the ticket's OWN timing — several defer themselves in
 prose that no field captures:
 
-- a ticket from a later sprint is skipped by the queue and flagged
-  `OUT OF STAGE` on a targeted claim. That is the mechanism; the
+- a ticket from a later sprint is skipped by the queue and carries
+  `sprint.inScope: false` on a targeted claim. That is the mechanism; the
   judgement is still yours, and it is usually that what the ticket
   measures does not exist yet (ZM-45's budgets, ZM-43's chapters);
 - a ticket may say outright it should not be built yet. ZM-48 reads
@@ -1675,16 +1677,17 @@ owns → measure → your edits → reviewer → apply findings → verify → g
    `reviewOn` and a scan of the DoD for claims a gate cannot settle — an
    equivalence, an absence, or an assertion about the tests themselves.
 
-   **★ A THIRD TERM BELONGS IN THAT OR AND IS NOT THERE YET:
+   **★ THAT OR HAS A THIRD TERM, AND THE BOARD COMPUTES IT:
    *the ticket's subject matter is governed by a recorded decision*.**
    ZM-23's DoD makes no equivalence, absence or test claim. It was reviewed
    purely because `MEDIUM` sits in `reviewOn` — the luck of a sizing field
    chosen before anyone saw a diff — and that review is the only thing that
-   caught it contradicting `ZM-D-203` Ruling 3. The term is computable from
-   the same decision-log match I3 now requires, and it beats risk as a
-   predictor because it keys on what the ticket TOUCHES rather than on how
-   big someone guessed it was. Until the board computes it: **if a ruling
-   governs the subject matter, review it whatever `review.required` says.**
+   caught it contradicting `ZM-D-203` Ruling 3. The term comes from the same
+   decision-log match I3 requires (`reviewOf` hands the category's decision
+   log to `reviewDecision`, which matches governing rulings), and it beats
+   risk as a predictor because it keys on what the ticket TOUCHES rather than
+   on how big someone guessed it was. Trust `review.required`: it already
+   includes this term, so a governed ticket arrives with review required.
 
    **★ A ZERO-DIFF TICKET HAS NOTHING TO REVIEW. Do the review's JOB instead, and
    say so.** When the worker changed no files, `review.required` is still true and

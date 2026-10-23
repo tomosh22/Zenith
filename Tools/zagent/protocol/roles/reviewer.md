@@ -6,7 +6,9 @@ applied one. Report; the orchestrator decides.
 
 # What you are looking for
 
-The diff is inlined in your prompt. Read the surrounding files for context
+The diff is a patch file whose path is named in your prompt
+(`.zagent/run/<KEY>/diff.patch`); read it yourself. The patch file is
+immutable and the working tree is not. Read the surrounding files for context
 before judging any hunk — a change that looks wrong in isolation is often
 correct in context, and the reverse.
 
