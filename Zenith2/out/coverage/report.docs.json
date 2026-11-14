@@ -1,0 +1,12 @@
+{
+ "mode": "docs",
+ "generatedAt": "2026-10-23T18:29:51.049Z",
+ "errorCount": 0,
+ "warningCount": 0,
+ "findings": [],
+ "notes": [
+  "docs: 35 normative-family file(s), 3386 prose line(s) scanned, 2154 tagged bullet(s); reference checks over 405 file(s); DecisionLog ids 140; Budgets Row index rows 342"
+ ],
+ "normativeCount": 2154,
+ "repo": "C:\\dev\\Zenith"
+}

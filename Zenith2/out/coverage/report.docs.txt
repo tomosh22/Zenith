@@ -1,0 +1,11 @@
+# session coverage checker — mode docs
+# 0 error(s), 0 warning(s)
+
+
+# summary by area
+AREA          ERRORS  WARNINGS
+
+# summary by rule
+
+# notes
+- docs: 35 normative-family file(s), 3386 prose line(s) scanned, 2154 tagged bullet(s); reference checks over 405 file(s); DecisionLog ids 140; Budgets Row index rows 342
